@@ -101,12 +101,30 @@ internal sealed partial class FeatureChangeRetryQueue(
                 continue;
             }
 
-            var waitForQueue = _queue.Reader.WaitToReadAsync(cancellationToken).AsTask();
-            var waitForRecovery = Task.Delay(nextRecoveryAt - now, cancellationToken);
+            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var waitForQueue = _queue.Reader.WaitToReadAsync(waitCts.Token).AsTask();
+            var waitForRecovery = Task.Delay(nextRecoveryAt - now, waitCts.Token);
             var completed = await Task.WhenAny(waitForQueue, waitForRecovery).ConfigureAwait(false);
-            if (completed == waitForQueue && !await waitForQueue.ConfigureAwait(false))
+            if (completed == waitForQueue)
             {
-                yield break;
+                if (!await waitForQueue.ConfigureAwait(false))
+                {
+                    waitCts.Cancel();
+                    yield break;
+                }
+
+                waitCts.Cancel();
+                continue;
+            }
+
+            waitCts.Cancel();
+            try
+            {
+                await waitForQueue.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
+            {
+                // Ignore expected cancellation for the alternate waiter.
             }
         }
     }

@@ -529,21 +529,42 @@ internal static class FeatureStreamEndpoints
             var effectivePollInterval = pollInterval.GetValueOrDefault(TimeSpan.FromSeconds(1));
             while (!cancellationToken.IsCancellationRequested)
             {
-                var waitToReadTask = session.Reader.WaitToReadAsync(cancellationToken).AsTask();
+                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
                 var waitForPollTask = onPoll == null
-                    ? Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
-                    : Task.Delay(effectivePollInterval, cancellationToken);
+                    ? Task.Delay(Timeout.InfiniteTimeSpan, waitCts.Token)
+                    : Task.Delay(effectivePollInterval, waitCts.Token);
                 var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
 
                 if (completed == waitForPollTask)
                 {
+                    waitCts.Cancel();
+                    try
+                    {
+                        await waitToReadTask.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
+                    {
+                        // Ignore expected cancellation for the alternate waiter.
+                    }
+
                     replayCursor = await onPoll!(replayCursor, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
+                waitCts.Cancel();
                 if (!await waitToReadTask.ConfigureAwait(false))
                 {
                     break;
+                }
+
+                try
+                {
+                    await waitForPollTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
+                {
+                    // Ignore expected cancellation for the alternate waiter.
                 }
 
                 while (session.Reader.TryRead(out var message))
@@ -722,19 +743,40 @@ internal static class FeatureStreamEndpoints
 
             while (!linkedCts.Token.IsCancellationRequested)
             {
-                var waitToReadTask = session.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
-                var waitForPollTask = Task.Delay(options.CrossNodeSyncInterval, linkedCts.Token);
+                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
+                var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
+                var waitForPollTask = Task.Delay(options.CrossNodeSyncInterval, waitCts.Token);
                 var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
 
                 if (completed == waitForPollTask)
                 {
+                    waitCts.Cancel();
+                    try
+                    {
+                        await waitToReadTask.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
+                    {
+                        // Ignore expected cancellation for the alternate waiter.
+                    }
+
                     replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
                     continue;
                 }
 
+                waitCts.Cancel();
                 if (!await waitToReadTask.ConfigureAwait(false))
                 {
                     break;
+                }
+
+                try
+                {
+                    await waitForPollTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (waitCts.Token.IsCancellationRequested)
+                {
+                    // Ignore expected cancellation for the alternate waiter.
                 }
 
                 while (session.Reader.TryRead(out var message))
