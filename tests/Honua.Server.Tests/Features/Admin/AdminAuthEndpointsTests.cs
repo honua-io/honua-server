@@ -149,6 +149,15 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/logout")]
+    public async Task Logout_IsAnonymous_Returns200()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/auth/logout", new object());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
     public async Task CreateAuthorizeUrl_NoOidcConfigured_ReturnsNotFound()
     {
