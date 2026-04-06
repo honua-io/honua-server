@@ -34,15 +34,23 @@ internal sealed class DuckDBSpatialBootstrap
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(_extensionPath))
+        try
         {
-            _logger.LogInformation("Loading DuckDB spatial extension from offline path: {Path}", _extensionPath);
-            await ExecuteNonQueryAsync(connection, $"SET extension_directory='{_extensionPath}'", cancellationToken).ConfigureAwait(false);
-        }
+            if (!string.IsNullOrWhiteSpace(_extensionPath))
+            {
+                _logger.LogInformation("Loading DuckDB spatial extension from offline path: {Path}", _extensionPath);
+                await ExecuteNonQueryAsync(connection, $"SET extension_directory='{_extensionPath}'", cancellationToken).ConfigureAwait(false);
+            }
 
-        await ExecuteNonQueryAsync(connection, "INSTALL spatial", cancellationToken).ConfigureAwait(false);
-        await ExecuteNonQueryAsync(connection, "LOAD spatial", cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("DuckDB spatial extension loaded");
+            await ExecuteNonQueryAsync(connection, "INSTALL spatial", cancellationToken).ConfigureAwait(false);
+            await ExecuteNonQueryAsync(connection, "LOAD spatial", cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("DuckDB spatial extension loaded");
+        }
+        catch
+        {
+            Volatile.Write(ref _initialized, 0);
+            throw;
+        }
     }
 
     private static async Task ExecuteNonQueryAsync(DbConnection connection, string sql, CancellationToken cancellationToken)

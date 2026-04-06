@@ -52,6 +52,12 @@ public sealed class DuckDBLayerOptions
 
     /// <summary>Geometry type (Point, Polygon, etc.).</summary>
     public string GeometryType { get; set; } = "Point";
+
+    /// <summary>
+    /// Optional explicit attribute column names to expose.
+    /// When null, columns are discovered from the DuckDB schema at startup.
+    /// </summary>
+    public string[]? Attributes { get; set; }
 }
 
 /// <summary>

@@ -71,6 +71,7 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
 | `ObjectIdColumn` | `id` | Primary key column (BIGINT). |
 | `Srid` | `4326` | Spatial Reference System ID of the geometry data. |
 | `GeometryType` | `Point` | Geometry type: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`. |
+| `Attributes` | `null` | Optional explicit list of attribute column names to expose. When omitted, columns are discovered from the DuckDB schema at startup. |
 
 #### Service Settings
 

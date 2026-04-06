@@ -71,8 +71,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 1;
 
+        var geomExpr = BuildTransformedGeometryExpression(mapping, query);
+
         sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT ST_X({mapping.QuotedGeometryColumn}) AS x, ST_Y({mapping.QuotedGeometryColumn}) AS y FROM {mapping.QuotedTableName} WHERE 1=1");
+            $"SELECT ST_X({geomExpr}) AS x, ST_Y({geomExpr}) AS y FROM {mapping.QuotedTableName} WHERE 1=1");
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
         AppendSpatialFilter(sb, mapping, query, ref paramIndex, parameters);
@@ -246,12 +248,14 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var parameters = new List<object>();
         var paramIndex = 1;
 
+        var geomExpr = BuildTransformedGeometryExpression(mapping, effectiveQuery);
+
         sb.Append(CultureInfo.InvariantCulture,
             $"""
-            SELECT MIN(ST_XMin({mapping.QuotedGeometryColumn})),
-                   MIN(ST_YMin({mapping.QuotedGeometryColumn})),
-                   MAX(ST_XMax({mapping.QuotedGeometryColumn})),
-                   MAX(ST_YMax({mapping.QuotedGeometryColumn}))
+            SELECT MIN(ST_XMin({geomExpr})),
+                   MIN(ST_YMin({geomExpr})),
+                   MAX(ST_XMax({geomExpr})),
+                   MAX(ST_YMax({geomExpr}))
             FROM {mapping.QuotedTableName}
             WHERE {mapping.QuotedGeometryColumn} IS NOT NULL
             """);
@@ -562,9 +566,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var paramIndex = 1;
 
         var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
+        var geomExpr = BuildTransformedGeometryExpression(mapping, query);
 
         sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT {mapping.QuotedObjectIdColumn}, {geometryFunction}({mapping.QuotedGeometryColumn}) AS geometry");
+            $"SELECT {mapping.QuotedObjectIdColumn}, {geometryFunction}({geomExpr}) AS geometry");
 
         if (!string.IsNullOrEmpty(columnsExpr))
         {
@@ -590,9 +595,10 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var paramIndex = 1;
 
         var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
+        var geomExpr = BuildTransformedGeometryExpression(mapping, query);
 
         sb.Append(CultureInfo.InvariantCulture,
-            $"SELECT {mapping.QuotedObjectIdColumn}, {geometryFunction}({mapping.QuotedGeometryColumn}) AS geometry");
+            $"SELECT {mapping.QuotedObjectIdColumn}, {geometryFunction}({geomExpr}) AS geometry");
 
         if (!string.IsNullOrEmpty(columnsExpr))
         {
@@ -611,14 +617,24 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
 
-    private static string BuildGeometryWkbExpression(DuckDBLayerMapping mapping, FeatureQuery query)
+    /// <summary>
+    /// Returns a geometry SQL expression with ST_Transform applied when the requested
+    /// output SRID differs from the layer's source SRID.
+    /// </summary>
+    private static string BuildTransformedGeometryExpression(DuckDBLayerMapping mapping, FeatureQuery query)
     {
-        if (query.ExcludeAttributes && !query.SpatialFilter.HasValue)
+        if (query.OutputSrid.HasValue && query.OutputSrid.Value != mapping.Srid)
         {
-            return $"ST_AsWKB({mapping.QuotedGeometryColumn})";
+            return $"ST_Transform({mapping.QuotedGeometryColumn}, 'EPSG:{mapping.Srid}', 'EPSG:{query.OutputSrid.Value}')";
         }
 
-        return $"ST_AsWKB({mapping.QuotedGeometryColumn})";
+        return mapping.QuotedGeometryColumn;
+    }
+
+    private static string BuildGeometryWkbExpression(DuckDBLayerMapping mapping, FeatureQuery query)
+    {
+        var geomExpr = BuildTransformedGeometryExpression(mapping, query);
+        return $"ST_AsWKB({geomExpr})";
     }
 
     private static string BuildAttributeColumnsExpression(DuckDBLayerMapping mapping, FeatureQuery query)
@@ -719,7 +735,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             SpatialRelationship.Equals =>
                 $"ST_Equals({geomCol}, {filterGeomParam})",
             SpatialRelationship.WithinDistance when filter.Distance.HasValue =>
-                $"ST_DWithin({geomCol}, {filterGeomParam}, {filter.Distance.Value.ToString(CultureInfo.InvariantCulture)})",
+                BuildWithinDistanceClause(geomCol, filterGeomParam, filter, ref paramIndex, parameters),
             _ => throw new NotSupportedException(
                 $"Spatial relationship '{filter.SpatialRelationship}' is not supported by the DuckDB provider.")
         };
@@ -973,6 +989,25 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         return parts;
     }
+
+    private static string BuildWithinDistanceClause(
+        string geomCol, string filterGeomParam,
+        SpatialFilter filter, ref int paramIndex, List<object> parameters)
+    {
+        var distanceInMeters = ConvertDistanceToMeters(filter.Distance!.Value, filter.DistanceUnit);
+        parameters.Add(distanceInMeters);
+        return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
+    }
+
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
+        unit switch
+        {
+            DistanceUnit.Meters => distance,
+            DistanceUnit.Feet => distance * 0.3048,
+            DistanceUnit.Kilometers => distance * 1000.0,
+            DistanceUnit.Miles => distance * 1609.344,
+            _ => distance
+        };
 
     #endregion
 }

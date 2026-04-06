@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.DuckDB.Features.Catalog;
 using Honua.DuckDB.Features.FeatureStore;
 using Honua.DuckDB.Features.FeatureStore.Services;
+using DuckDB.NET.Data;
 using Honua.DuckDB.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,7 +61,7 @@ internal static class ServiceCollectionExtensions
 
         services.AddSingleton<DuckDBLayerRegistry>(sp =>
         {
-            var mappings = BuildLayerMappings(options, sp);
+            var mappings = BuildLayerMappings(options, connectionString, sp);
             return new DuckDBLayerRegistry(mappings);
         });
 
@@ -108,20 +109,21 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
-    private static List<DuckDBLayerMapping> BuildLayerMappings(DuckDBOptions options, IServiceProvider sp)
+    private static List<DuckDBLayerMapping> BuildLayerMappings(
+        DuckDBOptions options, string connectionString, IServiceProvider sp)
     {
         var mappings = new List<DuckDBLayerMapping>(options.Layers.Length);
         var logger = sp.GetRequiredService<ILogger<DuckDBLayerRegistry>>();
 
         foreach (var layerOpt in options.Layers)
         {
-            // Discover attribute columns: all fields from config except geometry and object ID
-            // In a future iteration, this could introspect DuckDB schema at startup
-            var attributeColumns = new List<string>();
+            var attributeColumns = layerOpt.Attributes is { Length: > 0 }
+                ? layerOpt.Attributes.ToList()
+                : DiscoverAttributeColumns(connectionString, layerOpt, logger);
 
             logger.LogInformation(
-                "Registered DuckDB layer {LayerId}: table={Table}, geom={GeomCol}, oid={OidCol}",
-                layerOpt.Id, layerOpt.Table, layerOpt.GeometryColumn, layerOpt.ObjectIdColumn);
+                "Registered DuckDB layer {LayerId}: table={Table}, geom={GeomCol}, oid={OidCol}, attrs={AttrCount}",
+                layerOpt.Id, layerOpt.Table, layerOpt.GeometryColumn, layerOpt.ObjectIdColumn, attributeColumns.Count);
 
             mappings.Add(new DuckDBLayerMapping
             {
@@ -135,6 +137,41 @@ internal static class ServiceCollectionExtensions
         }
 
         return mappings;
+    }
+
+    private static List<string> DiscoverAttributeColumns(
+        string connectionString, DuckDBLayerOptions layerOpt, ILogger logger)
+    {
+        try
+        {
+            using var connection = new DuckDBConnection(connectionString);
+            connection.Open();
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"PRAGMA table_info('{layerOpt.Table}')";
+            using var reader = cmd.ExecuteReader();
+
+            var columns = new List<string>();
+            while (reader.Read())
+            {
+                var columnName = reader.GetString(1);
+                if (!string.Equals(columnName, layerOpt.GeometryColumn, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(columnName, layerOpt.ObjectIdColumn, StringComparison.OrdinalIgnoreCase))
+                {
+                    columns.Add(columnName);
+                }
+            }
+
+            return columns;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Could not discover attribute columns for DuckDB layer {LayerId} table {Table}; " +
+                "set DuckDB:Layers:N:Attributes in configuration to specify columns explicitly",
+                layerOpt.Id, layerOpt.Table);
+            return [];
+        }
     }
 
     private static (List<LayerDefinition> Layers, List<ServiceDefinition> Services) BuildCatalogEntries(DuckDBOptions options)

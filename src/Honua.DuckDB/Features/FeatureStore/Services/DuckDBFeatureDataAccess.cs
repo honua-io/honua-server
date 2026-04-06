@@ -249,7 +249,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
                 Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture), // ymin
                 Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture), // xmax
                 Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture), // ymax
-                featureQuery.SpatialReferenceSrid ?? 4326);
+                featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? 4326);
         }
 
         return null;
