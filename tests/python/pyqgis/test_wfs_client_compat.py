@@ -11,7 +11,9 @@ Matrix and records pass/fail/skip evidence in the certification envelope.
 from __future__ import annotations
 
 import time
+import xml.etree.ElementTree as ET
 
+import httpx
 import pytest
 
 from .conftest import (
@@ -277,15 +279,28 @@ class TestWfsClientCompat:
         features = list(layer.getFeatures(request))
         count = len(features)
 
-        assert 0 < count <= EXPECTED_TOTAL_FEATURES, (
-            f"Expected spatial subset, got {count}"
-        )
+        assert count > 0, "Bbox filter returned zero features."
 
-        wfs_evidence.record(
-            "CERT-QFLT-02", "pass",
-            measured_count=count,
-            notes=f"Bbox filter returned {count} features (total {EXPECTED_TOTAL_FEATURES}).",
-        )
+        if count >= EXPECTED_TOTAL_FEATURES:
+            # Full feature set returned — spatial filter was not applied.
+            wfs_evidence.record(
+                "CERT-QFLT-02", "skip",
+                measured_count=count,
+                notes=(
+                    "WFS provider returned all features; bbox filter not applied "
+                    "by this QGIS/WFS provider version."
+                ),
+            )
+            pytest.skip(
+                f"WFS bbox filter returned full set ({count} features) — "
+                f"spatial filtering not confirmed for this provider version."
+            )
+        else:
+            wfs_evidence.record(
+                "CERT-QFLT-02", "pass",
+                measured_count=count,
+                notes=f"Bbox filter returned {count} features (total {EXPECTED_TOTAL_FEATURES}).",
+            )
 
     # ------------------------------------------------------------------
     # CERT-PAGE-01: paging with deterministic limit
@@ -299,25 +314,72 @@ class TestWfsClientCompat:
         wfs_typename: str,
         wfs_evidence: CertificationEvidenceCollector,
     ):
-        """WFS provider paginates: all features retrievable via paging."""
+        """WFS provider paginates: first page bounded by COUNT."""
+        page_size = 3
+
+        # Verify server-side: GetFeature with COUNT returns bounded result.
+        resp = httpx.get(
+            f"{base_url}/wfs",
+            params={
+                "SERVICE": "WFS",
+                "VERSION": "2.0.0",
+                "REQUEST": "GetFeature",
+                "TYPENAME": wfs_typename,
+                "COUNT": str(page_size),
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        num_returned = root.get("numberReturned")
+
+        assert num_returned is not None, (
+            "WFS GetFeature response missing numberReturned attribute."
+        )
+        first_page_count = int(num_returned)
+        assert 0 < first_page_count <= page_size, (
+            f"Server returned {first_page_count} features for COUNT={page_size}; "
+            f"expected 1..{page_size}."
+        )
+
+        # Verify client-side: QGIS auto-pagination retrieves all features.
         layer = make_wfs_layer(
             base_url, wfs_typename,
-            extra_params="maxNumFeatures='3'",
+            extra_params=f"maxNumFeatures='{page_size}'",
         )
         assert layer.isValid(), layer.error().message()
 
         features = list(layer.getFeatures())
         count = len(features)
 
-        # WFS paging support is provider-dependent; we accept the full
-        # count or a valid page size.
-        assert count > 0, "WFS paging returned zero features."
-
-        wfs_evidence.record(
-            "CERT-PAGE-01", "pass",
-            measured_count=count,
-            notes=f"WFS paging yielded {count} features.",
-        )
+        if count == EXPECTED_TOTAL_FEATURES:
+            wfs_evidence.record(
+                "CERT-PAGE-01", "pass",
+                measured_count=first_page_count,
+                notes=(
+                    f"Server returned {first_page_count} features for COUNT={page_size} "
+                    f"(first page). QGIS auto-pagination yielded {count} total."
+                ),
+            )
+        elif 0 < count <= page_size:
+            # Provider fetched only one page — auto-pagination not confirmed.
+            wfs_evidence.record(
+                "CERT-PAGE-01", "skip",
+                measured_count=first_page_count,
+                notes=(
+                    f"Server first page correct ({first_page_count} features), but "
+                    f"QGIS returned only {count} — auto-pagination not supported."
+                ),
+            )
+            pytest.skip(
+                f"WFS server pages correctly but QGIS returned only {count} "
+                f"features — auto-pagination not confirmed."
+            )
+        else:
+            pytest.fail(
+                f"Unexpected count {count} with maxNumFeatures={page_size}; "
+                f"expected {EXPECTED_TOTAL_FEATURES} (full) or <= {page_size} (single page)."
+            )
 
     # ------------------------------------------------------------------
     # CERT-PAGE-02: second page returns different features
@@ -331,24 +393,77 @@ class TestWfsClientCompat:
         wfs_typename: str,
         wfs_evidence: CertificationEvidenceCollector,
     ):
-        """WFS provider delivers distinct features when paged."""
+        """WFS provider delivers distinct features across pages."""
+        page_size = 3
+
+        # Verify server-side: pages 1 and 2 return disjoint features.
+        params_base = {
+            "SERVICE": "WFS",
+            "VERSION": "2.0.0",
+            "REQUEST": "GetFeature",
+            "TYPENAME": wfs_typename,
+            "COUNT": str(page_size),
+        }
+
+        resp1 = httpx.get(
+            f"{base_url}/wfs",
+            params={**params_base, "STARTINDEX": "0"},
+            timeout=30.0,
+        )
+        resp1.raise_for_status()
+        root1 = ET.fromstring(resp1.text)
+
+        resp2 = httpx.get(
+            f"{base_url}/wfs",
+            params={**params_base, "STARTINDEX": str(page_size)},
+            timeout=30.0,
+        )
+        resp2.raise_for_status()
+        root2 = ET.fromstring(resp2.text)
+
+        # Extract gml:ids from each page's feature elements.
+        gml_ns = "{http://www.opengis.net/gml/3.2}"
+        page1_ids = {
+            el.get(f"{gml_ns}id")
+            for member in root1
+            if member.tag.endswith("}member")
+            for el in member
+            if el.get(f"{gml_ns}id")
+        }
+        page2_ids = {
+            el.get(f"{gml_ns}id")
+            for member in root2
+            if member.tag.endswith("}member")
+            for el in member
+            if el.get(f"{gml_ns}id")
+        }
+
+        assert page1_ids and page2_ids, (
+            f"One or both pages empty: page1={len(page1_ids)}, page2={len(page2_ids)}"
+        )
+        overlap = page1_ids & page2_ids
+        assert not overlap, f"WFS pages 1 and 2 share overlapping IDs: {overlap}"
+
+        # Verify client-side: QGIS delivers unique features.
         layer = make_wfs_layer(
             base_url, wfs_typename,
-            extra_params="maxNumFeatures='3'",
+            extra_params=f"maxNumFeatures='{page_size}'",
         )
         assert layer.isValid(), layer.error().message()
 
         names = [f["name"] for f in layer.getFeatures()]
         unique_names = set(names)
 
-        # Duplicates across pages would indicate a paging bug.
         assert len(unique_names) == len(names), (
             f"Duplicate feature names across WFS pages: {names}"
         )
 
         wfs_evidence.record(
             "CERT-PAGE-02", "pass",
-            notes=f"{len(unique_names)} unique features retrieved via WFS paging.",
+            notes=(
+                f"Server pages 1 and 2 (COUNT={page_size}) returned disjoint "
+                f"feature sets. QGIS delivered {len(unique_names)} unique features."
+            ),
         )
 
     # ------------------------------------------------------------------

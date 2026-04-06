@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import time
 
+import httpx
 import pytest
 
 from .conftest import (
@@ -288,14 +289,29 @@ class TestOapifClientCompat:
     ):
         """OAPIF provider paginates: first page returns limited features."""
         page_size = 3
+
+        # Verify server-side: items endpoint respects limit parameter.
+        items_url = (
+            f"{base_url}/ogc/features/collections/"
+            f"{test_collection_id}/items"
+        )
+        resp = httpx.get(items_url, params={"limit": page_size}, timeout=30.0)
+        resp.raise_for_status()
+        first_page_features = resp.json().get("features", [])
+        first_page_count = len(first_page_features)
+
+        assert 0 < first_page_count <= page_size, (
+            f"Server returned {first_page_count} features for limit={page_size}; "
+            f"expected 1..{page_size}."
+        )
+
+        # Verify client-side: QGIS auto-pagination retrieves all features.
         layer = make_oapif_layer(
             base_url, test_collection_id,
             extra_params=f"pageSize='{page_size}'",
         )
         assert layer.isValid(), layer.error().message()
 
-        # Consume all features — the provider will page internally.
-        # We verify total count matches the seed.
         features = list(layer.getFeatures())
         count = len(features)
 
@@ -305,8 +321,11 @@ class TestOapifClientCompat:
 
         oapif_evidence.record(
             "CERT-PAGE-01", "pass",
-            measured_count=count,
-            notes=f"Paging with pageSize={page_size} yielded {count} total features.",
+            measured_count=first_page_count,
+            notes=(
+                f"Server returned {first_page_count} features for limit={page_size} "
+                f"(first page). QGIS auto-pagination yielded {count} total."
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -323,6 +342,37 @@ class TestOapifClientCompat:
     ):
         """OAPIF provider delivers distinct features across pages."""
         page_size = 3
+        items_url = (
+            f"{base_url}/ogc/features/collections/"
+            f"{test_collection_id}/items"
+        )
+
+        # Verify server-side: page 1 and page 2 return disjoint features.
+        resp1 = httpx.get(
+            items_url, params={"limit": page_size, "offset": 0}, timeout=30.0,
+        )
+        resp1.raise_for_status()
+        page1_ids = {
+            f.get("id") or f.get("properties", {}).get("objectid")
+            for f in resp1.json().get("features", [])
+        }
+
+        resp2 = httpx.get(
+            items_url, params={"limit": page_size, "offset": page_size}, timeout=30.0,
+        )
+        resp2.raise_for_status()
+        page2_ids = {
+            f.get("id") or f.get("properties", {}).get("objectid")
+            for f in resp2.json().get("features", [])
+        }
+
+        assert page1_ids and page2_ids, (
+            f"One or both pages empty: page1={len(page1_ids)}, page2={len(page2_ids)}"
+        )
+        overlap = page1_ids & page2_ids
+        assert not overlap, f"Pages 1 and 2 share overlapping IDs: {overlap}"
+
+        # Verify client-side: QGIS auto-pagination delivers unique features.
         layer = make_oapif_layer(
             base_url, test_collection_id,
             extra_params=f"pageSize='{page_size}'",
@@ -338,7 +388,10 @@ class TestOapifClientCompat:
 
         oapif_evidence.record(
             "CERT-PAGE-02", "pass",
-            notes=f"{len(unique_names)} unique features across paginated requests.",
+            notes=(
+                f"Server pages 1 and 2 (limit={page_size}) returned disjoint "
+                f"feature sets. QGIS delivered {len(unique_names)} unique features."
+            ),
         )
 
     # ------------------------------------------------------------------
