@@ -294,7 +294,14 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
         Action<ILogger, string, Exception> logProgressUpdateFailed,
         CancellationToken jobCancellationToken)
     {
-        if (jobCancellationToken.IsCancellationRequested || IsFinalized)
+        try
+        {
+            if (jobCancellationToken.IsCancellationRequested || IsFinalized)
+            {
+                return;
+            }
+        }
+        catch (ObjectDisposedException)
         {
             return;
         }
