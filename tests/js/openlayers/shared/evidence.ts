@@ -260,7 +260,12 @@ export class EvidenceCollector {
     });
   }
 
-  /** Record an extension result (JS-EXT-*, OL-EXT-*, etc.). */
+  /**
+   * Record an extension result (JS-EXT-*, OL-EXT-*, etc.).
+   * Fail-wins: once a 'fail' is recorded for an ID, later non-fail calls
+   * are ignored. A 'pass' also takes precedence over 'skip'/'not-applicable'
+   * so that a subsequent lower-priority status cannot downgrade a result.
+   */
   recordExtension(
     testCaseId: string,
     status: CertStatus,
@@ -270,6 +275,12 @@ export class EvidenceCollector {
       notes?: string;
     } = {},
   ): void {
+    const existing = this.extensionMap.get(testCaseId);
+    if (existing) {
+      // fail > pass > skip > not-applicable
+      if (existing.status === 'fail' && status !== 'fail') return;
+      if (existing.status === 'pass' && status !== 'fail' && status !== 'pass') return;
+    }
     this.extensionMap.set(testCaseId, {
       test_case_id: testCaseId,
       status,
@@ -379,6 +390,11 @@ export class EvidenceCollector {
    *   2. Spec-compliant file (`<run-id>-js-<protocol>.cert.json`) matching
    *      the naming convention in CROSS_CLIENT_CERTIFICATION_EVIDENCE.md.
    * Skips writing for protocols not in the certification spec.
+   *
+   * SAFETY: Merge-on-write assumes sequential file execution. The vitest
+   * config sets `fileParallelism: false` + `pool: 'forks'`, so each test
+   * file's afterAll writes complete before the next file starts. Do not
+   * enable parallel file execution without adding file-level locking here.
    */
   write(): string | null {
     if (!VALID_PROTOCOLS.has(this.protocol)) {

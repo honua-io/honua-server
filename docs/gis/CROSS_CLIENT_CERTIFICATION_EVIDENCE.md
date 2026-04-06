@@ -124,7 +124,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
-The JS lane covers FeatureServer, OGC API Features, WFS, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). Additional protocols (OData, MapServer) will produce evidence files once automated suites are added.
+The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests run via Vitest but do not produce `.cert.json` evidence files until `wfs20` is formally added to the valid protocol set. Additional protocols (OData, MapServer) will produce evidence files once automated suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, and Admin API evidence files. FeatureServer and OGC API Features files will be produced once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
