@@ -87,6 +87,7 @@ afterAll(() => {
 
 describe('OGC API Tiles MVT', () => {
   it('MVT tile fetch returns binary data', async () => {
+    evidence.attemptExtension('JS-EXT-01');
     const { tileMatrix, tileRow, tileCol } = await discoverTileWithFeatures();
 
     const start = Date.now();
@@ -123,6 +124,7 @@ describe('OGC API Tiles MVT', () => {
   });
 
   it('ol/format/MVT decodes features from tile', async () => {
+    evidence.attemptExtension('JS-EXT-01');
     const { tileMatrix, tileRow, tileCol } = await discoverTileWithFeatures();
 
     const resp = await fetch(

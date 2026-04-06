@@ -215,6 +215,7 @@ export class EvidenceCollector {
   private readonly results = new Map<string, CertResult>();
   private readonly extensionMap = new Map<string, CertResult>();
   private readonly attempted = new Set<string>();
+  private readonly attemptedExtensions = new Set<string>();
   readonly protocol: string;
 
   constructor(protocol: string) {
@@ -258,6 +259,15 @@ export class EvidenceCollector {
       notes: opts.notes ?? '',
       evidence_ref: opts.evidenceRef ?? '',
     });
+  }
+
+  /**
+   * Mark an extension ID as attempted. Mirrors attempt() for core IDs:
+   * if a test throws before recordExtension() is reached, build() emits
+   * 'fail' instead of preserving a stale 'pass' from an earlier test.
+   */
+  attemptExtension(testCaseId: string): void {
+    this.attemptedExtensions.add(testCaseId);
   }
 
   /**
@@ -338,6 +348,23 @@ export class EvidenceCollector {
       if (prior.status === 'fail' && ext.status !== 'fail') continue;
       if (prior.status === 'pass' && ext.status !== 'fail' && ext.status !== 'pass') continue;
       mergedExt.set(id, ext);
+    }
+
+    // Attempted-but-not-recorded extensions → fail (mirrors core CERT logic).
+    // If a test called attemptExtension() but threw before recordExtension(),
+    // override any prior 'pass' so a stale result cannot mask a failure.
+    for (const id of this.attemptedExtensions) {
+      if (!this.extensionMap.has(id)) {
+        mergedExt.set(id, {
+          test_case_id: id,
+          status: 'fail',
+          duration_ms: null,
+          measured_count: null,
+          measured_delta: null,
+          notes: 'Test attempted but assertion failed before evidence was recorded',
+          evidence_ref: '',
+        });
+      }
     }
 
     const allResults: CertResult[] = CORE_TEST_IDS.map(id => {

@@ -26,6 +26,7 @@ The bootstrap uses `.venv-tests/bin/python` when available, otherwise `python3`.
 HONUA_BASE_URL=http://localhost:5555    # Honua server URL
 HONUA_SERVICE_ID=test_service_gw0       # Test service ID
 HONUA_LAYER_ID=1000                     # Test layer ID (also 0 for OpenLayers)
+HONUA_API_KEY=your-api-key              # API key (CI sets this; optional locally)
 HONUA_TEST_TIMEOUT=30000                # Request timeout (ms)
 ```
 
@@ -187,6 +188,7 @@ tests/js/
     │   ├── tiles-metadata.test.ts
     │   └── tiles-mvt.test.ts
     └── rendering/             # Playwright browser rendering
+        ├── global-setup.ts    # Server health check before tests
         ├── playwright.config.ts
         ├── serve-test-page.ts # Express server for test page
         ├── test-page.html     # OpenLayers UMD + MVT source
