@@ -395,6 +395,7 @@ public static class EndpointRegistry
         new("GET", "/ogc/maps/openapi.json"),
         new("GET", "/ogc/maps/collections/{collectionId}/map"),
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),
+        new("GET", "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}"),
         new("GET", "/ogc/maps/map"),
 
         // Static Map
