@@ -75,7 +75,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.7" />
+    <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.10" />
     <PackageReference Include="Grpc.Tools" Version="2.78.0" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.22" />
     <PackageReference Include="AWSSDK.SQS" Version="4.0.2.20" />
