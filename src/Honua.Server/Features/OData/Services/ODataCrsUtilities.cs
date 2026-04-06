@@ -25,7 +25,8 @@ internal static class ODataCrsUtilities
         }
 
         var definition = await crsRegistry.ResolveBySridAsync(srid.Value, cancellationToken).ConfigureAwait(false);
-        return definition?.AxisOrder ?? AxisOrder.EastNorth;
+        var axisOrder = definition?.AxisOrder ?? AxisOrder.EastNorth;
+        return axisOrder == AxisOrder.NorthEast ? AxisOrder.EastNorth : axisOrder;
     }
 
     public static ValueTask<(bool IsValid, CrsDefinition? Definition, string? ErrorMessage)> TryResolveGeometryCrsAsync(
@@ -68,6 +69,8 @@ internal static class ODataCrsUtilities
             return (false, null, $"Geometry CRS SRID {definition.Value.Srid} does not match layer SRID {requiredSrid.Value}.");
         }
 
-        return (true, definition, null);
+        var normalizedDefinition = definition with { AxisOrder = definition.Value.AxisOrder == AxisOrder.NorthEast ? AxisOrder.EastNorth : definition.Value.AxisOrder };
+
+        return (true, normalizedDefinition, null);
     }
 }
