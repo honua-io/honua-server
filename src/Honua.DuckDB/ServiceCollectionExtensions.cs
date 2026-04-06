@@ -96,6 +96,8 @@ internal static class ServiceCollectionExtensions
         // Register segregated interfaces
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter());
+        services.AddScoped<IReplicaRepository>(_ => new ReadOnlyReplicaRepository());
+        services.AddScoped<IChangeTracker>(_ => new ReadOnlyChangeTracker());
         services.AddScoped<IGeoJsonFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
 

@@ -373,6 +373,16 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             return BuildSelectQuery(layerId, query, geometryStorageType);
         }
 
+        foreach (var field in topFilter.GroupByFields)
+        {
+            ValidateFieldName(field);
+        }
+
+        foreach (var orderBy in topFilter.OrderByFields)
+        {
+            ValidateFieldName(orderBy.Field);
+        }
+
         var geometryExpr = BuildGeometryWkbExpression(mapping, query);
         var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
         var partitionFields = string.Join(", ", topFilter.GroupByFields.Select(f => $"\"{f}\""));
