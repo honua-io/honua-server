@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
@@ -35,14 +36,13 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// The caching layer only optimizes execution, not query construction.
 /// </para>
 /// </remarks>
-internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider, IDisposable, IAsyncDisposable
+internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
     private readonly QueryConcurrencyGate? _concurrencyGate;
-    private int _acquiredSlots;
 
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -73,10 +73,8 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             if (!await _concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false))
             {
                 ConnectionAcquisitionTimedOut(_logger, null);
-                throw new TimeoutException("Connection acquisition timed out — server is under heavy load.");
+                throw new ServiceUnavailableException("Connection acquisition timed out — server is under heavy load.");
             }
-
-            Interlocked.Increment(ref _acquiredSlots);
         }
 
         try
@@ -88,11 +86,14 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
-            return connection;
+
+            return _concurrencyGate is not null
+                ? new SemaphoreReleasingConnection(connection, () => _concurrencyGate.Release())
+                : connection;
         }
         catch
         {
-            ReleaseOneSlot();
+            _concurrencyGate?.Release();
             throw;
         }
     }
@@ -191,35 +192,6 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
                 DatabaseDeadlockRetry(_logger, attempt, ex.Message, ex);
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        var slots = Interlocked.Exchange(ref _acquiredSlots, 0);
-        if (slots > 0)
-        {
-            _concurrencyGate?.Release(slots);
-        }
-    }
-
-    /// <inheritdoc/>
-    public ValueTask DisposeAsync()
-    {
-        Dispose();
-        return ValueTask.CompletedTask;
-    }
-
-    private void ReleaseOneSlot()
-    {
-        if (Interlocked.Decrement(ref _acquiredSlots) >= 0)
-        {
-            _concurrencyGate?.Release();
-        }
-        else
-        {
-            Interlocked.Increment(ref _acquiredSlots);
-        }
     }
 
     [LoggerMessage(1, LogLevel.Warning, "Database connection retry attempt {Attempt}: {ErrorMessage}")]

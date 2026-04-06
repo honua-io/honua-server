@@ -8,21 +8,21 @@ using Npgsql;
 namespace Honua.Postgres.Features.Infrastructure;
 
 /// <summary>
-/// Wraps a database connection to release a semaphore when disposed.
+/// Wraps a database connection to invoke a release callback when disposed.
 /// Used by <see cref="Caching.CachingDatabaseConnectionProvider"/> to enforce
-/// MaxConcurrentQueries — the semaphore is acquired before opening the connection
+/// MaxConcurrentQueries — the gate slot is acquired before opening the connection
 /// and released when the connection is returned (disposed).
 /// </summary>
 internal sealed class SemaphoreReleasingConnection : DbConnection
 {
     private readonly NpgsqlConnection _inner;
-    private readonly SemaphoreSlim _semaphore;
+    private readonly Action _releaseAction;
     private bool _disposed;
 
-    public SemaphoreReleasingConnection(NpgsqlConnection inner, SemaphoreSlim semaphore)
+    public SemaphoreReleasingConnection(NpgsqlConnection inner, Action releaseAction)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-        _semaphore = semaphore ?? throw new ArgumentNullException(nameof(semaphore));
+        _releaseAction = releaseAction ?? throw new ArgumentNullException(nameof(releaseAction));
     }
 
     internal NpgsqlConnection InnerConnection => _inner;
@@ -61,7 +61,7 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
             if (disposing)
             {
                 _inner.Dispose();
-                _semaphore.Release();
+                _releaseAction();
             }
         }
 
@@ -74,7 +74,7 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
         {
             _disposed = true;
             await _inner.DisposeAsync().ConfigureAwait(false);
-            _semaphore.Release();
+            _releaseAction();
         }
 
         await base.DisposeAsync().ConfigureAwait(false);
