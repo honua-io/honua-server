@@ -24,6 +24,7 @@ public static class EndpointRegistry
 
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/auth/config"),
+        new("POST", "/api/v1/admin/auth/logout"),
         new("GET", "/api/v1/admin/auth/session"),
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/authorize-url"),
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/token"),
