@@ -69,7 +69,10 @@ internal static class ODataCrsUtilities
             return (false, null, $"Geometry CRS SRID {definition.Value.Srid} does not match layer SRID {requiredSrid.Value}.");
         }
 
-        var normalizedDefinition = definition with { AxisOrder = definition.Value.AxisOrder == AxisOrder.NorthEast ? AxisOrder.EastNorth : definition.Value.AxisOrder };
+        var normalizedDefinition = definition.Value with
+        {
+            AxisOrder = definition.Value.AxisOrder == AxisOrder.NorthEast ? AxisOrder.EastNorth : definition.Value.AxisOrder
+        };
 
         return (true, normalizedDefinition, null);
     }
