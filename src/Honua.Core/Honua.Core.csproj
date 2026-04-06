@@ -30,7 +30,7 @@
     <PackageReference Include="Grpc.Tools" Version="2.78.0" PrivateAssets="All" />
 
     <!-- Geocoding provider dependencies -->
-    <PackageReference Include="AWSSDK.LocationService" Version="4.0.3.20" />
+    <PackageReference Include="AWSSDK.LocationService" Version="4.0.3.23" />
 
     <!-- Geospatial gRPC protocols from standard -->
   </ItemGroup>
