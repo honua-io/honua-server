@@ -161,6 +161,7 @@ WFS/GML tests require a DOM parser in Node.js. The setup file `openlayers/shared
 tests/js/
 ├── package.json               # Dependencies and scripts
 ├── vitest.config.ts           # Vitest configuration
+├── vitest.global.ts           # Auto-bootstrap (starts PostGIS + server if needed)
 ├── tsconfig.json              # TypeScript config
 ├── shared/                    # Shared helpers for Feature Server tests
 │   ├── client.ts              # HTTP client for FeatureServer
