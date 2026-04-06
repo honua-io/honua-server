@@ -12,7 +12,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 | **QGIS/GeoServer clients (legacy OGC)** | WMS 1.3 / WMTS 1.0 | `.../MapServer/WMS` or `.../MapServer/WMTS` | Legacy OGC raster map services |
 | **Server-rendered maps (OGC)** | OGC API Maps | `/ogc/maps` | Standards-based rendered map images |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
-| **Web Maps (MapLibre)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
+| **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
@@ -251,6 +251,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Typical use cases:**
 - MapLibre GL JS maps with auto-generated styles
+- OpenLayers VectorTile layers
 - Leaflet and Mapbox GL maps
 - Fast vector rendering at multiple zoom levels
 

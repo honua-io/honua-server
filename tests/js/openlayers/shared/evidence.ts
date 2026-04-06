@@ -327,7 +327,18 @@ export class EvidenceCollector {
         merged.set(id, result);
       }
     }
-    const mergedExt = new Map([...priorExtensions, ...this.extensionMap]);
+    const mergedExt = new Map(priorExtensions);
+    for (const [id, ext] of this.extensionMap) {
+      const prior = mergedExt.get(id);
+      if (!prior) {
+        mergedExt.set(id, ext);
+        continue;
+      }
+      // fail > pass > skip > not-applicable (mirrors recordExtension precedence)
+      if (prior.status === 'fail' && ext.status !== 'fail') continue;
+      if (prior.status === 'pass' && ext.status !== 'fail' && ext.status !== 'pass') continue;
+      mergedExt.set(id, ext);
+    }
 
     const allResults: CertResult[] = CORE_TEST_IDS.map(id => {
       const isApplicable = applicable?.has(id) ?? false;
