@@ -158,7 +158,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
             // Create progress reporter
             var progressReporter = new Progress<GeoservicesImportProgress>(p =>
-                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, jobCancellation.Token));
+                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None));
 
             // Execute the import
             var result = await importService.ImportLayerAsync(request, progressReporter, jobCancellation.Token);

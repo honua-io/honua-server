@@ -143,7 +143,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             await using var scope = _scopeFactory.CreateAsyncScope();
             var importService = scope.ServiceProvider.GetRequiredService<IGeoServerImportService>();
             var progressReporter = new Progress<GeoServerImportProgress>(p =>
-                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, jobCancellation.Token));
+                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None));
 
             var result = await importService.ImportConfigurationAsync(request, progressReporter, jobCancellation.Token).ConfigureAwait(false);
 
