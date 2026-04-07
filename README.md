@@ -8,7 +8,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service), STAC API, OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service), STAC API, OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
 
 ## Why Honua
 
@@ -114,11 +114,18 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 All settings use environment variables. Copy [`.env.example`](.env.example) for a full reference.
 
-**Required:**
+**Required (PostgreSQL provider — default):**
 ```bash
 ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres"
 HONUA_ADMIN_PASSWORD="change-me"
 ```
+
+**DuckDB provider** (no external database):
+```bash
+DataSource__Provider=duckdb
+DuckDB__DatabasePath="/data/layers.duckdb"
+```
+See the [DuckDB Provider Guide](docs/operator/duckdb-provider.md) for layer and service configuration.
 
 **Common options:**
 ```bash
@@ -139,6 +146,7 @@ Invalid configuration causes a startup failure with a detailed error message.
 src/
   Honua.Core/         Domain models and abstractions
   Honua.Postgres/     PostGIS implementation
+  Honua.DuckDB/       DuckDB read-only provider (analytics, GeoParquet, edge)
   Honua.Server/       HTTP host (Minimal APIs, vertical slices)
   Honua.Admin/        Blazor WASM admin UI
   Honua.AppHost/      .NET Aspire orchestration

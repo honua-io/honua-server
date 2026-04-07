@@ -1,6 +1,8 @@
 # Database Support Matrix
 
-Honua requires PostgreSQL with PostGIS. This page documents tested engine/extension versions and provider-specific guidance for managed Postgres deployments.
+Honua's primary provider requires PostgreSQL with PostGIS. This page documents tested engine/extension versions and provider-specific guidance for managed Postgres deployments.
+
+For read-only analytical and reference workloads, Honua also supports an embedded [DuckDB provider](duckdb-provider.md) that requires no external database infrastructure.
 
 ## Tested Configurations
 

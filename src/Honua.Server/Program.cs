@@ -383,12 +383,18 @@ builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedRep
     new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.FeatureServer.DistributedReplicaStore>>()));
-builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
-    new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
-        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
-builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
-    new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
-        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+// Replica/change-tracking services are provider-specific: Postgres registers concrete
+// implementations; DuckDB (read-only) registers no-op stubs via AddDuckDBServices.
+var replicaProvider = builder.Configuration.GetValue<string>("DataSource:Provider");
+if (!string.Equals(replicaProvider, "duckdb", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
+        new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
+        new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+}
 builder.Services.AddScoped<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
     new Honua.Server.Features.FeatureServer.Services.CachingReplicaStore(
         sp.GetRequiredService<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(),
@@ -977,6 +983,10 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
         provider.Equals("postgis", StringComparison.OrdinalIgnoreCase))
     {
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+    }
+    else if (provider.Equals("duckdb", StringComparison.OrdinalIgnoreCase))
+    {
+        Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
     }
     else
     {

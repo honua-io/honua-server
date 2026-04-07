@@ -254,7 +254,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
-        content.Should().Contain("boolean predicate");
+        content.Should().Contain("Invalid WFS parameter value");
     }
 
     [IntegrationTest]
@@ -270,7 +270,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
-        content.Should().Contain("boolean predicate");
+        content.Should().Contain("Invalid WFS parameter value");
     }
 
     [IntegrationTest]
