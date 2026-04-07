@@ -441,7 +441,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         string binExpr;
         if (dateBin.IsCalendarBin && dateBin.CalendarUnit != null)
         {
-            binExpr = $"date_trunc('{dateBin.CalendarUnit}', {fieldExpr})";
+            var truncUnit = ValidateCalendarUnit(dateBin.CalendarUnit);
+            binExpr = $"date_trunc('{truncUnit}', {fieldExpr})";
         }
         else if (dateBin.FixedInterval.HasValue)
         {
@@ -838,6 +839,22 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             throw new ArgumentException($"Invalid field name: {fieldName}");
         }
     }
+
+    private static string ValidateCalendarUnit(string unit) =>
+        unit.ToLowerInvariant() switch
+        {
+            "year" => "year",
+            "quarter" => "quarter",
+            "month" => "month",
+            "week" => "week",
+            "day" => "day",
+            "hour" => "hour",
+            "minute" => "minute",
+            "second" => "second",
+            "millisecond" => "millisecond",
+            "microsecond" => "microsecond",
+            _ => throw new ArgumentException($"Unsupported calendar unit: {unit}")
+        };
 
     private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {

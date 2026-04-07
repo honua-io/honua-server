@@ -241,6 +241,39 @@ public class DuckDBFeatureQueryBuilderTests
             _builder.BuildStatisticsQuery(TestLayerId, query));
     }
 
+    [Theory]
+    [InlineData("'; DROP TABLE parcels--")]
+    [InlineData("month'; DROP TABLE")]
+    [InlineData("INVALID")]
+    public void BuildDateBinsQuery_InvalidCalendarUnit_Throws(string calendarUnit)
+    {
+        var dateBin = new DateBinDefinition
+        {
+            BinField = "created_date",
+            CalendarUnit = calendarUnit
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            _builder.BuildDateBinsQuery(TestLayerId, new FeatureQuery(), dateBin));
+    }
+
+    [Theory]
+    [InlineData("year")]
+    [InlineData("Month")]
+    [InlineData("DAY")]
+    public void BuildDateBinsQuery_ValidCalendarUnit_Succeeds(string calendarUnit)
+    {
+        var dateBin = new DateBinDefinition
+        {
+            BinField = "name",
+            CalendarUnit = calendarUnit
+        };
+
+        var result = _builder.BuildDateBinsQuery(TestLayerId, new FeatureQuery(), dateBin);
+
+        Assert.Contains("date_trunc('" + calendarUnit.ToLowerInvariant() + "'", result.Sql);
+    }
+
     [Fact]
     public void BuildSelectQuery_UnknownLayerId_Throws()
     {
