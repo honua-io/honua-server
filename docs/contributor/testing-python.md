@@ -58,6 +58,11 @@ tests/python/
 ├── stac_client/             # STAC client compatibility tests
 │   ├── conftest.py          # Snapshot-seeded runtime + evidence writer
 │   └── test_client_compat.py
+├── pyqgis/                  # PyQGIS desktop client compatibility tests
+│   ├── conftest.py          # PyQGIS runtime + cert evidence writer
+│   ├── test_oapif_client_compat.py
+│   ├── test_wfs_client_compat.py
+│   └── test_render_path.py
 └── gdal_ogr/                # GDAL/OGR interoperability tests
     ├── conftest.py           # GDAL fixtures, evidence collector
     ├── test_oapif_discovery.py
@@ -77,6 +82,7 @@ tests/python/
 3. **Built Honua Server** - Run `dotnet build` before tests
 4. **GDAL tools** (optional) - Install `gdal-bin` to run GDAL/OGR interoperability tests. Requires GDAL 3.4+. Tests are skipped automatically when `ogrinfo` is not found.
 5. **PySTAC tooling** - Installed from `requirements.txt` and used by the STAC compatibility lane.
+6. **PyQGIS** (optional) - Requires a system QGIS installation (3.28+). PyQGIS is **not** installable via pip; it is provided by the QGIS installation. Tests are skipped automatically when `qgis.core` cannot be imported. See the [PyQGIS lane](#pyqgis-lane) section below.
 
 ## Configuration
 
@@ -112,6 +118,8 @@ The test suite automatically:
 | `@pytest.mark.smoke` | Quick sanity checks |
 | `@pytest.mark.gdal` | GDAL/OGR interoperability tests (require gdal-bin) |
 | `@pytest.mark.stac` | STAC client compatibility tests using PySTAC and PySTAC-Client |
+| `@pytest.mark.pyqgis` | PyQGIS desktop client compatibility tests (require QGIS installation) |
+| `@pytest.mark.cert` | CERT-\* certification case marker (argument: CERT-ID string) |
 
 ## Geometry Coverage
 
@@ -155,6 +163,42 @@ The STAC lane emits both machine-readable and human-readable evidence files at t
 
 Each report includes the runtime server version, local git commit SHA, and the seed snapshot name used for the run.
 
+## PyQGIS Lane
+
+The `tests/python/pyqgis/` package exercises OGC API Features and WFS endpoints with real QGIS providers. It auto-skips when PyQGIS is not available.
+
+### Running locally
+
+```bash
+# Requires QGIS installed with python3-qgis
+QT_QPA_PLATFORM=offscreen pytest tests/python/pyqgis -m pyqgis --tb=short
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HONUA_PYQGIS_BASE_URL` | Target an already-running server | unset (starts local) |
+| `HONUA_PYQGIS_SERVICE_ID` | Service ID in the compatibility seed | `test_service` |
+| `HONUA_PYQGIS_COLLECTION_ID` | Collection ID in the seed | `0` |
+| `HONUA_PYQGIS_SEED_PATH` | SQL snapshot for the local runtime | `tests/seed/client-compat-v1.sql` |
+| `HONUA_PYQGIS_PORT` | Base server port (worker index added for xdist) | `5575` |
+| `HONUA_PYQGIS_TIMEOUT` | Server startup timeout (seconds) | `120` |
+| `QGIS_PREFIX_PATH` | QGIS installation prefix | auto-detected |
+
+### Evidence Output
+
+The PyQGIS lane produces per-protocol `.cert.json` certification envelopes under `tests/TestResults/`:
+
+- `<run-id>-desktop-qgis-ogc-features.cert.json`
+- `<run-id>-desktop-qgis-wfs.cert.json`
+
+Each envelope follows the [Cross-Client Certification Evidence](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) schema with the actual QGIS version captured from the runtime.
+
+### Nightly CI
+
+The `pyqgis-client-compat-nightly.yml` workflow runs this lane daily at 7:30 AM UTC against `ubuntu-24.04` with PostGIS, QGIS/PyQGIS, and `xvfb`. Evidence artifacts are uploaded automatically.
+
 ## Using Docker Compose Test Profile
 
 ```bash
@@ -195,6 +239,7 @@ def test_items_returns_geojson(http_client, test_collection_id):
 - Each worker uses a separate schema and increments the base port (`HONUA_TEST_PORT`)
 - For a shared PostGIS container, set `HONUA_TEST_DB_URL` so all workers connect to the same DB
 - The STAC compatibility lane writes one JSON/Markdown evidence pair per worker when `pytest-xdist` is enabled.
+- The PyQGIS lane uses worker-scoped ports (`HONUA_PYQGIS_PORT` + worker index) to avoid port collisions under xdist.
 
 ### Database connection errors
 - Verify PostGIS container is healthy

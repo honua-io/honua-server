@@ -1,0 +1,128 @@
+name: PyQGIS Client Compatibility Certification
+
+on:
+  schedule:
+    - cron: '30 7 * * *' # Daily 7:30 AM UTC
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  CLIENT_COMPAT_SERVICE_ID: test_service
+  CLIENT_COMPAT_COLLECTION_ID: '0'
+  CLIENT_COMPAT_SEED_SOURCE: tests/seed/client-compat-v1.sql
+
+concurrency:
+  group: pyqgis-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pyqgis-compat:
+    name: PyQGIS OGC + WFS Compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U honua"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Honua Server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          base-seed-path: ${{ env.CLIENT_COMPAT_SEED_SOURCE }}
+          log-path: tests/TestResults/server.log
+
+      - name: Install QGIS and PyQGIS
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gnupg \
+            software-properties-common
+          sudo mkdir -m 755 -p /etc/apt/keyrings
+          sudo wget -qO /etc/apt/keyrings/qgis-archive-keyring.gpg \
+            https://download.qgis.org/downloads/qgis-archive-keyring.gpg
+          sudo tee /etc/apt/sources.list.d/qgis.sources << 'SOURCES'
+          Types: deb
+          URIs: https://qgis.org/ubuntu-ltr
+          Suites: noble
+          Architectures: amd64
+          Components: main
+          Signed-By: /etc/apt/keyrings/qgis-archive-keyring.gpg
+          SOURCES
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            qgis \
+            python3-qgis \
+            xvfb
+
+      - name: Install Python test dependencies
+        run: pip install -r tests/python/requirements.txt
+
+      - name: Run PyQGIS compatibility suite
+        env:
+          HONUA_PYQGIS_BASE_URL: http://localhost:5000
+          HONUA_PYQGIS_SERVICE_ID: ${{ env.CLIENT_COMPAT_SERVICE_ID }}
+          HONUA_PYQGIS_COLLECTION_ID: ${{ env.CLIENT_COMPAT_COLLECTION_ID }}
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          xvfb-run -a pytest tests/python/pyqgis \
+            -m pyqgis \
+            --tb=short \
+            -v
+
+      - name: Upload certification evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          path: |
+            tests/TestResults/*-desktop-qgis-*.cert.json
+            tests/TestResults/server.log
+          tier: nightly
+
+      - name: Validate certification envelopes
+        if: always()
+        run: |
+          shopt -s nullglob
+          certs=(tests/TestResults/*-desktop-qgis-*.cert.json)
+          if [ ${#certs[@]} -eq 0 ]; then
+            echo "::error::No .cert.json envelopes were produced."
+            exit 1
+          fi
+          echo "Found ${#certs[@]} certification envelope(s):"
+          for f in "${certs[@]}"; do
+            echo "  - $(basename "$f")"
+            # Fail the workflow if any CERT-* case has status "fail"
+            if python3 -c "
+          import json, sys
+          data = json.load(open('$f'))
+          failed = [r for r in data.get('results', []) if r['status'] == 'fail']
+          if failed:
+              for f in failed:
+                  print(f'FAIL: {f[\"test_case_id\"]}: {f.get(\"notes\", \"\")}', file=sys.stderr)
+              sys.exit(1)
+          "; then
+              echo "    All cases passed or skipped."
+            else
+              echo "::error::Certification failures detected in $(basename "$f")"
+              exit 1
+            fi
+          done

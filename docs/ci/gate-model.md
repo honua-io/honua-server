@@ -56,6 +56,7 @@ These workflows run on schedule and can be dispatched manually:
 | `performance-benchmarks.yml` (full) | Daily 6am UTC | Full benchmark suite + cross-platform |
 | `geoservices-parity-nightly.yml` | Scheduled | GeoServices parity check |
 | `windows-client-compat-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
+| `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
 | `load-soak-nightly.yml` | Scheduled | Load and soak testing |
 | `container-security.yml` | Scheduled | Container security scan |
 | `security-nightly.yml` | Scheduled | Security analysis |

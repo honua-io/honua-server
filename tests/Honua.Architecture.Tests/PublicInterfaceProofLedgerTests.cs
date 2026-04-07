@@ -169,7 +169,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
             .Where(line => line.StartsWith("| ", StringComparison.Ordinal) && line.Contains(".cert.json", StringComparison.Ordinal))
             .ToArray();
 
-        evidenceRows.Should().HaveCount(6, "the current release ledger should enumerate ArcGIS Pro, QGIS, Power BI, Excel, and MapLibre evidence rows");
+        evidenceRows.Should().HaveCount(8, "the current release ledger should enumerate ArcGIS Pro, QGIS, Power BI, Excel, MapLibre, and PyQGIS (OGC/WFS) evidence rows");
 
         foreach (var row in evidenceRows)
         {

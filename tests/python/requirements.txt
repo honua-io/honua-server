@@ -22,9 +22,10 @@ shapely>=2.0.0
 geopandas>=0.14.0
 pyproj>=3.6.0
 
-# Optional: PyQGIS integration (for FeatureServer validation)
-# Note: PyQGIS requires separate QGIS installation
-# qgis  # Uncomment if QGIS is installed
+# Optional: PyQGIS integration (for desktop client compatibility tests)
+# Note: PyQGIS is a system dependency provided by the QGIS installation.
+# It is NOT installable via pip. The pyqgis test suite auto-skips when
+# qgis.core is not importable. See docs/contributor/testing-python.md.
 
 # Utilities
 python-dotenv>=1.0.0
