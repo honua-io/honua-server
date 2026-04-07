@@ -93,10 +93,16 @@ internal static partial class MapServerEndpoints
         }
 
         var queryHandler = context.RequestServices.GetRequiredService<IFeatureQueryDispatcher>();
+        var mergedValues = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
+        foreach (var pair in values)
+        {
+            mergedValues[pair.Key] = pair.Value;
+        }
+
         return await queryHandler.HandleQueryFeaturesAsync(
             serviceId,
             layerId,
-            values,
+            mergedValues,
             context,
             queryValidator,
             cancellationToken);

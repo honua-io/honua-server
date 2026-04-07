@@ -1,8 +1,8 @@
 @* Copyright (c) Honua. All rights reserved. *@
 @* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
 
-@* Invisible component that runs a periodic timer to refresh tokens before expiry. *@
-@* Drop this into MainLayout so it runs while the user is active. *@
+@* Invisible component that checks whether the current access token is still valid. *@
+@* Drop this into MainLayout so expired admin sessions are redirected back to sign-in. *@
 
 @implements IDisposable
 
@@ -15,7 +15,7 @@
 
     protected override void OnInitialized()
     {
-        // Check every 60 seconds whether the token needs refreshing
+        // Check every 60 seconds whether the access token has expired.
         _timer = new Timer(async _ => await CheckRefreshAsync(), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
     }
 
@@ -26,7 +26,7 @@
             var valid = await Session.EnsureValidSessionAsync();
             if (!valid)
             {
-                // Session could not be refreshed; redirect to re-auth prompt
+                // Session expired; redirect to re-auth prompt.
                 await InvokeAsync(() =>
                 {
                     Nav.NavigateTo("/admin/auth/login?expired=true", forceLoad: true);
@@ -34,7 +34,7 @@
             }
             else
             {
-                // Token was refreshed; update auth state
+                // Token is still valid; keep the UI auth state fresh.
                 await InvokeAsync(() => AuthState.NotifyAuthStateChanged());
             }
         }

@@ -117,7 +117,7 @@ internal sealed class CacheOperationsInvalidationRequest
     public int? LayerId { get; init; }
 
     /// <summary>
-    /// Named scope for predefined invalidation targets: "ogc-metadata".
+    /// Named scope for predefined invalidation targets: "ogc-metadata" or "all".
     /// </summary>
     public string? Scope { get; init; }
 }

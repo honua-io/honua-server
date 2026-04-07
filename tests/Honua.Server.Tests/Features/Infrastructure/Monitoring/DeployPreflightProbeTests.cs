@@ -66,7 +66,7 @@ public sealed class DeployPreflightProbeTests
 
         snapshot.ReadyForCoordinatedDeploy.Should().BeFalse();
         snapshot.Migration.PlanAvailable.Should().BeFalse();
-        snapshot.Migration.PlanError.Should().Be("resolver failure");
+        snapshot.Migration.PlanError.Should().Be("Migration planning is temporarily unavailable.");
     }
 
     private sealed class StubReadinessCheckService : IReadinessCheckService

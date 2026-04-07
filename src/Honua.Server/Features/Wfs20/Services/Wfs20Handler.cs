@@ -13,6 +13,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
@@ -48,6 +49,7 @@ internal sealed class Wfs20Handler
     private readonly IFilterExpressionService _filterExpressionService;
     private readonly OgcFeaturesGeometryServices _geometryServices;
     private readonly Wfs20Options _wfs20Options;
+    private readonly ICrsRegistry _crsRegistry;
 
     public Wfs20Handler(
         ILogger<Wfs20Handler> logger,
@@ -59,6 +61,7 @@ internal sealed class Wfs20Handler
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _filterExpressionService = queryServices.FilterExpressionService;
         _geometryServices = queryServices.GeometryServices;
+        _crsRegistry = queryServices.CrsRegistry;
         _wfs20Options = queryServices.Wfs20Options;
     }
 
@@ -229,14 +232,15 @@ internal sealed class Wfs20Handler
             if (ShouldUsePagedGetFeatureFastPath(selectedTypes, normalizedFormat, isHitsRequest, maxFeatures))
             {
                 var descriptor = selectedTypes[0];
-                var query = BuildFeatureQuery(
+                var query = (await BuildFeatureQueryAsync(
                     descriptor.Layer,
                     propertyName,
                     sortBy,
                     bbox,
                     filter,
                     resourceId,
-                    srsName) with
+                    srsName,
+                    cancellationToken).ConfigureAwait(false)) with
                 {
                     Offset = offset,
                     Limit = maxFeatures
@@ -306,7 +310,10 @@ internal sealed class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                "Invalid WFS parameter value; see logs for details.");
         }
         catch (Exception ex)
         {
@@ -409,7 +416,10 @@ internal sealed class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                "Invalid WFS parameter value; see logs for details.");
         }
         catch (Exception ex)
         {
@@ -470,14 +480,15 @@ internal sealed class Wfs20Handler
 
         foreach (var featureType in featureTypes)
         {
-            var query = BuildFeatureQuery(
+            var query = await BuildFeatureQueryAsync(
                 featureType.Layer,
                 propertyName,
                 sortBy,
                 bbox,
                 filter,
                 resourceId,
-                srsName);
+                srsName,
+                cancellationToken);
 
             var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
             totalMatched += layerMatched;
@@ -538,13 +549,14 @@ internal sealed class Wfs20Handler
         foreach (var featureType in featureTypes)
         {
             var resolvedValueReference = ResolveValueReference(featureType.Layer, valueReference);
-            var query = BuildValueQuery(
+            var query = await BuildValueQueryAsync(
                 featureType.Layer,
                 resolvedValueReference,
                 bbox,
                 filter,
                 resourceId,
-                srsName);
+                srsName,
+                cancellationToken);
 
             var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
             totalMatched += layerMatched;
@@ -587,14 +599,15 @@ internal sealed class Wfs20Handler
         return new LayerValuePlanSet(plans.ToImmutable(), totalMatched);
     }
 
-    private FeatureQuery BuildFeatureQuery(
+    private async ValueTask<FeatureQuery> BuildFeatureQueryAsync(
         LayerDefinition layer,
         string? propertyName,
         string? sortBy,
         string? bbox,
         string? filter,
         string? resourceId,
-        string? srsName)
+        string? srsName,
+        CancellationToken cancellationToken)
     {
         var projectedFields = ResolveProjectedFields(layer, propertyName);
         var sqlFilter = TranslateFesFilter(layer, filter);
@@ -602,7 +615,7 @@ internal sealed class Wfs20Handler
         var objectIds = ParseResourceIds(resourceId);
         var orderBy = ParseSortBy(layer, sortBy);
         var outputSrid = ParseSrid(srsName) ?? layer.SpatialReference.ToSrid();
-        var outputAxisOrder = ResolveOutputAxisOrder(srsName, outputSrid);
+        var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
 
         return new FeatureQuery
         {
@@ -617,13 +630,14 @@ internal sealed class Wfs20Handler
         };
     }
 
-    private FeatureQuery BuildValueQuery(
+    private async ValueTask<FeatureQuery> BuildValueQueryAsync(
         LayerDefinition layer,
         ValueReferenceResolution valueReference,
         string? bbox,
         string? filter,
         string? resourceId,
-        string? srsName)
+        string? srsName,
+        CancellationToken cancellationToken)
     {
         ImmutableArray<string>? outFields = valueReference.IsGeometry || valueReference.IsFeatureId
             ? ImmutableArray<string>.Empty
@@ -633,7 +647,7 @@ internal sealed class Wfs20Handler
         var spatialFilter = ParseBboxFilter(bbox, layer);
         var objectIds = ParseResourceIds(resourceId);
         var outputSrid = ParseSrid(srsName) ?? layer.SpatialReference.ToSrid();
-        var outputAxisOrder = ResolveOutputAxisOrder(srsName, outputSrid);
+        var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
 
         return new FeatureQuery
         {
@@ -850,12 +864,21 @@ internal sealed class Wfs20Handler
         return null;
     }
 
-    private static AxisOrder ResolveOutputAxisOrder(string? srsName, int outputSrid)
+    private async ValueTask<AxisOrder> ResolveOutputAxisOrderAsync(
+        string? srsName,
+        int outputSrid,
+        CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(srsName) &&
             srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
         {
             return AxisOrder.EastNorth;
+        }
+
+        var definition = await _crsRegistry.ResolveBySridAsync(outputSrid, cancellationToken).ConfigureAwait(false);
+        if (definition.HasValue)
+        {
+            return definition.Value.AxisOrder;
         }
 
         return SpatialReference.Create(outputSrid).IsGeographic
@@ -1352,6 +1375,7 @@ internal sealed class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
+            var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
             var projectedProperties = GetProjectedProperties(plan.Query);
 
             if (geoJsonFeatureStore is not null)
@@ -1362,7 +1386,7 @@ internal sealed class Wfs20Handler
                     features.Add(OgcGeoJsonFeatureBuilder.Create(
                         feature,
                         plan.Descriptor.Layer,
-                        AxisOrder.EastNorth,
+                        axisOrder,
                         _geometryServices,
                         projectedProperties,
                         featureId => BuildFeatureId(plan.Descriptor, featureId)));
@@ -1377,7 +1401,7 @@ internal sealed class Wfs20Handler
                 features.Add(OgcGeoJsonFeatureBuilder.Create(
                     feature,
                     plan.Descriptor.Layer,
-                    AxisOrder.EastNorth,
+                    axisOrder,
                     _geometryServices,
                     projectedProperties,
                     featureId => BuildFeatureId(plan.Descriptor, featureId)));
@@ -1411,6 +1435,7 @@ internal sealed class Wfs20Handler
             var attributeHeaders = GetProjectedAttributeFields(descriptor.Layer, query)
                 .Select(field => field.Name)
                 .ToArray();
+            var axisOrder = query.OutputAxisOrder ?? AxisOrder.EastNorth;
 
             foreach (var feature in result.Items)
             {
@@ -1429,7 +1454,7 @@ internal sealed class Wfs20Handler
 
                 if (descriptor.Layer.HasGeometry)
                 {
-                    row["geometry"] = SerializeGeometryAsJson(feature.Geometry);
+                    row["geometry"] = SerializeGeometryAsJson(feature.Geometry, axisOrder);
                 }
 
                 rows.Add(row);
@@ -1528,6 +1553,7 @@ internal sealed class Wfs20Handler
                 }
             }
 
+            var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
             var result = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
             foreach (var feature in result.Items)
             {
@@ -1546,7 +1572,7 @@ internal sealed class Wfs20Handler
 
                 if (geometryRequested)
                 {
-                    row["geometry"] = SerializeGeometryAsJson(feature.Geometry);
+                    row["geometry"] = SerializeGeometryAsJson(feature.Geometry, axisOrder);
                 }
 
                 rows.Add(row);
@@ -1646,6 +1672,7 @@ internal sealed class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
+            var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
             var featureResult = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
             foreach (var feature in featureResult.Items)
             {
@@ -1657,7 +1684,7 @@ internal sealed class Wfs20Handler
                 {
                     geometry = feature.Geometry is null
                         ? null
-                        : _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, AxisOrder.EastNorth);
+                        : _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
                 }
                 else if (plan.ValueReference.IsFeatureId)
                 {
@@ -1732,9 +1759,9 @@ internal sealed class Wfs20Handler
             : outFields.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private string? SerializeGeometryAsJson(byte[]? geometry)
+    private string? SerializeGeometryAsJson(byte[]? geometry, AxisOrder axisOrder)
     {
-        var simpleGeometry = _geometryServices.ConvertWkbToSimpleGeometry(geometry, AxisOrder.EastNorth);
+        var simpleGeometry = _geometryServices.ConvertWkbToSimpleGeometry(geometry, axisOrder);
         return simpleGeometry is null
             ? null
             : JsonSerializer.Serialize(simpleGeometry, OgcJsonContext.Default.SimpleGeoJsonGeometry);

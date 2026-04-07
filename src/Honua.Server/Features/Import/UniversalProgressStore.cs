@@ -27,6 +27,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
     private const string KeyPrefix = "universal:progress:";
     private const string TypePrefix = "universal:type:";
     private const string HealthCheckKey = "universal:progress:health";
+    private const string ActiveOperationIdsKey = "universal:progress:active";
+    private const string ActiveOperationTypePrefix = "universal:progress:active:type:";
     private readonly ConcurrentDictionary<string, IOperationProgress> _fallbackStore = new();
     private readonly ConcurrentDictionary<string, DateTime> _fallbackExpiry = new();
     private readonly ConcurrentDictionary<string, OperationType> _typeStore = new();
@@ -36,6 +38,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
     private long _lastCleanupTick = Environment.TickCount64;
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private volatile bool _isUsingFallback;
+    private bool AllowsLocalFallback => _cache == null;
 
     public UniversalProgressStore(
         IDistributedCache? cache,
@@ -56,7 +59,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         var typeKey = $"{TypePrefix}{operationId}";
         var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
 
-        CacheFallback(operationId, progress, effectiveTtl);
+        if (AllowsLocalFallback)
+        {
+            CacheFallback(operationId, progress, effectiveTtl);
+        }
 
         if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
         {
@@ -65,6 +71,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
         if (_isUsingFallback || _cache == null)
         {
+            if (_cache != null)
+            {
+                throw CreateDistributedStateUnavailableException("set progress");
+            }
+
             return;
         }
 
@@ -79,10 +90,16 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             await _cache.SetStringAsync(typeKey, progress.Type.ToString(),
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
                 cancellationToken);
+
+            if (_redis != null)
+            {
+                await AddToRedisIndexAsync(operationId, progress.Type).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "set progress");
+            throw CreateDistributedStateUnavailableException("set progress", ex);
         }
     }
 
@@ -104,6 +121,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
         if (_isUsingFallback || _cache == null)
         {
+            if (_cache != null)
+            {
+                throw CreateDistributedStateUnavailableException("get progress");
+            }
+
             CleanupFallbackIfNeeded(enforceMax: false);
 
             if (_fallbackStore.TryGetValue(key, out var fallbackProgress))
@@ -134,7 +156,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "get progress");
-            return _fallbackStore.TryGetValue(key, out var progress) ? progress : null;
+            throw CreateDistributedStateUnavailableException("get progress", ex);
         }
     }
 
@@ -156,13 +178,23 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         {
             try
             {
+                var storedType = await TryGetStoredOperationTypeAsync(operationId, cancellationToken).ConfigureAwait(false);
                 await _cache.RemoveAsync(key, cancellationToken);
                 await _cache.RemoveAsync(typeKey, cancellationToken);
+                if (_redis != null)
+                {
+                    await RemoveFromRedisIndexAsync(operationId, storedType).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "delete progress");
+                throw CreateDistributedStateUnavailableException("delete progress", ex);
             }
+        }
+        else if (_cache != null)
+        {
+            throw CreateDistributedStateUnavailableException("delete progress");
         }
     }
 
@@ -191,12 +223,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
     private static string SerializeProgress(IOperationProgress progress)
     {
-        // Create a type-aware wrapper for serialization
         var wrapper = new ProgressWrapper
         {
             Type = progress.Type,
             ProgressType = progress.GetType().Name,
-            Data = progress
+            Data = SerializeProgressData(progress)
         };
 
         return JsonSerializer.Serialize(wrapper, UniversalProgressJsonContext.Default.ProgressWrapper);
@@ -206,11 +237,39 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
     {
         var wrapper = JsonSerializer.Deserialize(json, UniversalProgressJsonContext.Default.ProgressWrapper);
         if (wrapper?.Data == null)
+        {
             return null;
+        }
 
-        // The JSON context handles polymorphic deserialization
-        return wrapper.Data;
+        return wrapper.ProgressType switch
+        {
+            nameof(ImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ImportProgress),
+            nameof(GeoservicesImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoservicesImportProgress),
+            nameof(GeoServerImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoServerImportProgress),
+            nameof(UploadProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.UploadProgress),
+            nameof(IngestProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.IngestProgress),
+            nameof(TileOperationProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TileOperationProgress),
+            nameof(ExportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress),
+            nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
+            nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
+            _ => null
+        };
     }
+
+    private static JsonElement SerializeProgressData(IOperationProgress progress)
+        => progress switch
+        {
+            ImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.ImportProgress),
+            GeoservicesImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoservicesImportProgress),
+            GeoServerImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoServerImportProgress),
+            UploadProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.UploadProgress),
+            IngestProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.IngestProgress),
+            TileOperationProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.TileOperationProgress),
+            ExportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.ExportProgress),
+            PrintProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PrintProgress),
+            RasterImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.RasterImportProgress),
+            _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
+        };
 
     private void CleanupFallbackIfNeeded(bool enforceMax)
     {
@@ -335,6 +394,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         Log.RedisFailed(_logger, operation, ex);
     }
 
+    private static InvalidOperationException CreateDistributedStateUnavailableException(string operation, Exception? innerException = null)
+        => new($"Distributed import progress state is unavailable while attempting to {operation}.", innerException);
+
     private async Task<IReadOnlyList<string>> GetActiveOperationIdsInternalAsync(
         OperationType? operationType,
         CancellationToken cancellationToken)
@@ -358,10 +420,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "scan progress");
+                throw CreateDistributedStateUnavailableException("list active operations", ex);
             }
         }
 
-        return GetActiveOperationIdsFromFallback(operationType);
+        throw CreateDistributedStateUnavailableException("list active operations");
     }
 
     private List<string> GetActiveOperationIdsFromFallback(OperationType? operationType)
@@ -380,84 +443,89 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         OperationType? operationType,
         CancellationToken cancellationToken)
     {
-        var ids = new List<string>();
         var db = _redis!.GetDatabase();
-        var database = db.Database;
-        foreach (var endpoint in _redis.GetEndPoints())
+        var setKey = operationType.HasValue
+            ? GetActiveOperationTypeKey(operationType.Value)
+            : ActiveOperationIdsKey;
+        var members = await db.SetMembersAsync(setKey).ConfigureAwait(false);
+        var activeIds = new List<string>(members.Length);
+
+        foreach (var member in members)
         {
-            var server = _redis.GetServer(endpoint);
-            if (!server.IsConnected)
+            cancellationToken.ThrowIfCancellationRequested();
+            var operationId = member.ToString();
+            if (string.IsNullOrWhiteSpace(operationId))
             {
                 continue;
             }
 
-            foreach (var key in server.Keys(database, pattern: $"{KeyPrefix}*"))
+            if (!await ProgressEntryExistsAsync(operationId, cancellationToken).ConfigureAwait(false))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var keyString = key.ToString();
-                if (!keyString.StartsWith(KeyPrefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var operationId = keyString[KeyPrefix.Length..];
-                if (string.IsNullOrWhiteSpace(operationId))
-                {
-                    continue;
-                }
-
-                ids.Add(operationId);
+                await RemoveFromRedisIndexAsync(operationId, operationType).ConfigureAwait(false);
+                continue;
             }
+
+            activeIds.Add(operationId);
         }
 
-        if (operationType == null)
-        {
-            return ids;
-        }
-
-        var filtered = new List<string>(ids.Count);
-        foreach (var operationId in ids)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var typeMatches = await MatchesOperationTypeAsync(db, operationId, operationType.Value).ConfigureAwait(false);
-            if (typeMatches)
-            {
-                filtered.Add(operationId);
-            }
-        }
-
-        return filtered;
+        return activeIds;
     }
 
-    private static async Task<bool> MatchesOperationTypeAsync(IDatabase db, string operationId, OperationType expectedType)
+    private async Task<OperationType?> TryGetStoredOperationTypeAsync(string operationId, CancellationToken cancellationToken)
     {
         try
         {
-            var typeValue = await db.StringGetAsync($"{TypePrefix}{operationId}").ConfigureAwait(false);
-            if (!typeValue.IsNullOrEmpty &&
+            var typeValue = await _cache!.GetStringAsync($"{TypePrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(typeValue) &&
                 Enum.TryParse<OperationType>(typeValue.ToString(), true, out var parsedType))
             {
-                return parsedType == expectedType;
+                return parsedType;
             }
 
-            var progressValue = await db.StringGetAsync($"{KeyPrefix}{operationId}").ConfigureAwait(false);
-            if (progressValue.IsNullOrEmpty)
+            var progressValue = await _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(progressValue))
             {
-                return false;
+                return null;
             }
 
             var progress = DeserializeProgress(progressValue.ToString());
-            return progress?.Type == expectedType;
+            return progress?.Type;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
+    private async Task<bool> ProgressEntryExistsAsync(string operationId, CancellationToken cancellationToken)
+    {
+        var progressJson = await _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+        return !string.IsNullOrWhiteSpace(progressJson);
+    }
+
+    private async Task AddToRedisIndexAsync(string operationId, OperationType operationType)
+    {
+        var db = _redis!.GetDatabase();
+        await db.SetAddAsync(ActiveOperationIdsKey, operationId).ConfigureAwait(false);
+        await db.SetAddAsync(GetActiveOperationTypeKey(operationType), operationId).ConfigureAwait(false);
+    }
+
+    private async Task RemoveFromRedisIndexAsync(string operationId, OperationType? operationType)
+    {
+        var db = _redis!.GetDatabase();
+        await db.SetRemoveAsync(ActiveOperationIdsKey, operationId).ConfigureAwait(false);
+        if (operationType.HasValue)
+        {
+            await db.SetRemoveAsync(GetActiveOperationTypeKey(operationType.Value), operationId).ConfigureAwait(false);
+        }
+    }
+
+    private static string GetActiveOperationTypeKey(OperationType operationType)
+        => $"{ActiveOperationTypePrefix}{operationType.ToString().ToLowerInvariant()}";
+
     private static partial class Log
     {
-        [LoggerMessage(7650, LogLevel.Warning, "Redis {Operation} failed, using fallback")]
+        [LoggerMessage(7650, LogLevel.Warning, "Redis {Operation} failed for progress store")]
         public static partial void RedisFailed(ILogger logger, string operation, Exception exception);
 
         [LoggerMessage(7651, LogLevel.Information, "Redis connection restored for progress store")]
@@ -537,7 +605,7 @@ internal sealed record ProgressWrapper
 {
     public required OperationType Type { get; init; }
     public required string ProgressType { get; init; }
-    public required IOperationProgress Data { get; init; }
+    public required JsonElement Data { get; init; }
 }
 
 /// <summary>
@@ -545,7 +613,6 @@ internal sealed record ProgressWrapper
 /// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]
 [JsonSerializable(typeof(ProgressWrapper))]
-[JsonSerializable(typeof(IOperationProgress))]
 [JsonSerializable(typeof(ImportProgress))]
 [JsonSerializable(typeof(GeoservicesImportProgress))]
 [JsonSerializable(typeof(GeoServerImportProgress))]

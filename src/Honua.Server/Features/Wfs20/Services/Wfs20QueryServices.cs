@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Services;
@@ -20,6 +21,7 @@ internal sealed class Wfs20QueryServices(
     IGmlFeatureStore gmlFeatureStore,
     IFilterExpressionService filterExpressionService,
     OgcFeaturesGeometryServices geometryServices,
+    ICrsRegistry crsRegistry,
     IOptions<Wfs20Options> wfs20Options)
 {
     internal ILayerCatalog LayerCatalog { get; } = layerCatalog;
@@ -31,6 +33,8 @@ internal sealed class Wfs20QueryServices(
     internal IFilterExpressionService FilterExpressionService { get; } = filterExpressionService;
 
     internal OgcFeaturesGeometryServices GeometryServices { get; } = geometryServices;
+
+    internal ICrsRegistry CrsRegistry { get; } = crsRegistry;
 
     internal Wfs20Options Wfs20Options { get; } = wfs20Options?.Value ?? throw new ArgumentNullException(nameof(wfs20Options));
 }

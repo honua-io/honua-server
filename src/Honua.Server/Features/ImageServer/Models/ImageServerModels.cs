@@ -370,8 +370,10 @@ public sealed class ExportImageRequest
     [Range(1, 4096, ErrorMessage = "Size must be between 1 and 4096")]
     public int? Size { get; init; }
 
+    [RegularExpression(@"^\d{1,6}$", ErrorMessage = "ImageSr must be a valid SRID")]
     public string? ImageSr { get; init; }
 
+    [RegularExpression(@"^\d{1,6}$", ErrorMessage = "BboxSr must be a valid SRID")]
     public string? BboxSr { get; init; }
 
     [RegularExpression(@"^(png|jpg|jpeg|tiff|tif)$",
@@ -405,7 +407,7 @@ public sealed class ExportImageRequest
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
 
-    [RegularExpression(@"^(json|pjson)$", ErrorMessage = "Format parameter must be 'json' or 'pjson'")]
+    [RegularExpression(@"^(json|pjson|image)$", ErrorMessage = "Format parameter must be 'json', 'pjson', or 'image'")]
     public string? F { get; init; } = "json";
 }
 
@@ -421,6 +423,7 @@ public sealed class IdentifyRequest
     [StringLength(50, ErrorMessage = "GeometryType is too long")]
     public string? GeometryType { get; init; } = "esriGeometryPoint";
 
+    [RegularExpression(@"^\d{1,6}$", ErrorMessage = "Sr must be a valid SRID")]
     public string? Sr { get; init; }
 
     [StringLength(1000, ErrorMessage = "MosaicRule is too long")]

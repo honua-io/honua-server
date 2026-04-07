@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Threading.Channels;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -12,7 +11,6 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Export.Writers;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
@@ -137,8 +135,8 @@ internal static class ExportEndpoints
         // Async path for large exports
         if (count > AsyncThreshold)
         {
-            var channel = httpContext.RequestServices.GetService<Channel<ExportJob>>();
-            if (channel is null)
+            var exportJobService = httpContext.RequestServices.GetService<IExportJobService>();
+            if (exportJobService is null)
             {
                 return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status503ServiceUnavailable,
@@ -161,17 +159,30 @@ internal static class ExportEndpoints
             var job = new ExportJob(jobId, serviceName, layerId, layer.Name, format,
                 query, selectedFields, outputSrid, count, layer.GeometryType);
 
-            if (!channel.Writer.TryWrite(job))
+            try
+            {
+                await exportJobService.StartAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex) when (string.Equals(
+                ex.Message,
+                "Large exports require durable background job storage to be configured.",
+                StringComparison.Ordinal))
             {
                 return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status503ServiceUnavailable,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                    "Export queue is full. Please retry later.");
+                    ex.Message);
             }
-
-            var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
-            var progress = ExportProgress.CreateInitial(jobId, format, serviceName, layerId, count);
-            await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromHours(24), cancellationToken);
+            catch (InvalidOperationException ex) when (string.Equals(
+                ex.Message,
+                "Export queue is full. Please retry later.",
+                StringComparison.Ordinal))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status503ServiceUnavailable,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                    ex.Message);
+            }
 
             ExportLog.AsyncExportQueued(logger, jobId, serviceName, layerId, format, count);
 

@@ -26,10 +26,15 @@ internal static class Wfs20DispatcherEndpoint
     {
         private readonly Dictionary<string, string> _values;
 
-        public WfsRequestParameters(Dictionary<string, string> values)
+        public WfsRequestParameters(Dictionary<string, string> values, int xmlQueryCount = 0)
         {
             _values = values;
+            XmlQueryCount = xmlQueryCount;
         }
+
+        public int XmlQueryCount { get; }
+
+        public bool HasMultipleXmlQueries => XmlQueryCount > 1;
 
         public string? Get(string primaryName, params string[] aliases)
         {
@@ -131,16 +136,20 @@ internal static class Wfs20DispatcherEndpoint
                 return await HandleTransaction(context, parameters, handler, logger);
             }
 
-            return Wfs20ErrorResults.CreateBadRequest(
+            return Wfs20ErrorResults.CreateNotImplemented(
                 context,
-                "InvalidParameterValue",
+                "OperationNotSupported",
                 $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction",
                 "request");
         }
         catch (InvalidDataException ex)
         {
             logger.LogWarning(ex, "Invalid WFS 2.0 XML request body");
-            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                "Invalid WFS XML request body.",
+                "request");
         }
         catch (Exception ex)
         {
@@ -273,6 +282,15 @@ internal static class Wfs20DispatcherEndpoint
     {
         try
         {
+            if (parameters.HasMultipleXmlQueries)
+            {
+                return Wfs20ErrorResults.CreateNotImplemented(
+                    context,
+                    "OperationNotSupported",
+                    "POST XML GetFeature requests with multiple wfs:Query elements are not supported.",
+                    "Query");
+            }
+
             var validationError = ValidateOperationRequestParameters(parameters);
 
             if (validationError is not null)
@@ -327,6 +345,15 @@ internal static class Wfs20DispatcherEndpoint
     {
         try
         {
+            if (parameters.HasMultipleXmlQueries)
+            {
+                return Wfs20ErrorResults.CreateNotImplemented(
+                    context,
+                    "OperationNotSupported",
+                    "POST XML GetPropertyValue requests with multiple wfs:Query elements are not supported.",
+                    "Query");
+            }
+
             var validationError = ValidateOperationRequestParameters(parameters);
 
             if (validationError is not null)
@@ -506,11 +533,11 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         var root = document.Root ?? throw new InvalidDataException("Invalid WFS XML request body.");
-        ApplyXmlParameters(root, values);
-        return new WfsRequestParameters(values);
+        var xmlQueryCount = ApplyXmlParameters(root, values);
+        return new WfsRequestParameters(values, xmlQueryCount);
     }
 
-    private static void ApplyXmlParameters(XElement root, Dictionary<string, string> values)
+    private static int ApplyXmlParameters(XElement root, Dictionary<string, string> values)
     {
         SetValue(values, Wfs20Utilities.ParameterNames.Request, root.Name.LocalName);
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.Service, "service");
@@ -545,7 +572,7 @@ internal static class Wfs20DispatcherEndpoint
         if (queries.Length == 0)
         {
             CopyElementValue(root, values, Wfs20Utilities.ParameterNames.ValueReference, "ValueReference");
-            return;
+            return 0;
         }
 
         var queryTypeNames = queries
@@ -593,6 +620,7 @@ internal static class Wfs20DispatcherEndpoint
         }
 
         CopyElementValue(root, values, Wfs20Utilities.ParameterNames.ValueReference, "ValueReference");
+        return queries.Length;
     }
 
     private static void CopyAttribute(

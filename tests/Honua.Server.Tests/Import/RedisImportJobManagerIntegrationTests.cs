@@ -111,12 +111,14 @@ public sealed class RedisImportJobManagerIntegrationTests
     {
         using var provider = BuildRedisServices();
         var cache = provider.GetRequiredService<IDistributedCache>();
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
         var keyPrefix = $"test:request:{Guid.NewGuid():N}:";
         var store = new RedisProgressStore<GeoservicesImportRequest>(
             cache,
             NullLogger.Instance,
             keyPrefix,
-            GeoservicesImportJsonContext.Default.GeoservicesImportRequest);
+            GeoservicesImportJsonContext.Default.GeoservicesImportRequest,
+            multiplexer);
 
         var request = new GeoservicesImportRequest
         {
@@ -136,6 +138,33 @@ public sealed class RedisImportJobManagerIntegrationTests
         await store.DeleteProgressAsync("job-1");
         var deleted = await store.GetProgressAsync("job-1");
         deleted.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task RequestStore_WithRedis_TracksActiveJobIds()
+    {
+        using var provider = BuildRedisServices();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
+        var keyPrefix = $"test:active:{Guid.NewGuid():N}:";
+        var store = new RedisProgressStore<GeoservicesImportRequest>(
+            cache,
+            NullLogger.Instance,
+            keyPrefix,
+            GeoservicesImportJsonContext.Default.GeoservicesImportRequest,
+            multiplexer);
+
+        await store.SetProgressAsync("job-1", new GeoservicesImportRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 1,
+            TableName = "test_table",
+            AutoPublish = false
+        }, TimeSpan.FromMinutes(5));
+
+        var activeIds = await store.GetActiveJobIdsAsync();
+
+        activeIds.Should().Contain("job-1");
     }
 
     private ServiceProvider BuildRedisServices()

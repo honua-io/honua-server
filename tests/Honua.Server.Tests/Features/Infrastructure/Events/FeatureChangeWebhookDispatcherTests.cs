@@ -36,7 +36,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
     {
         var store = new InMemoryFeatureChangeEventStore(
             Options.Create(new FeatureChangeEventOptions()),
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())));
+            null);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CountingHandler();
         httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
@@ -44,6 +44,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            null,
             httpClientFactory,
             Options.Create(new FeatureChangeWebhookOptions
             {
@@ -66,11 +67,12 @@ public sealed class FeatureChangeWebhookDispatcherTests
     {
         var store = new InMemoryFeatureChangeEventStore(
             Options.Create(new FeatureChangeEventOptions()),
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())));
+            null);
         var cache = new ThrowingDistributedCache();
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
             cache,
+            null,
             Substitute.For<IHttpClientFactory>(),
             Options.Create(new FeatureChangeWebhookOptions
             {
@@ -137,6 +139,68 @@ public sealed class FeatureChangeWebhookDispatcherTests
         Assert.NotNull(socketsHandler.ConnectCallback);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_WhenDistributedCacheConfiguredWithoutRedis_DoesNotDispatch()
+    {
+        var store = new TrackingFeatureChangeEventStore();
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        var dispatcher = new FeatureChangeWebhookDispatcher(
+            store,
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            null,
+            httpClientFactory,
+            Options.Create(new FeatureChangeWebhookOptions
+            {
+                Enabled = true,
+                Url = "https://hooks.example.com/feature-change",
+                Secret = "super-secret",
+                MaxAttempts = 1
+            }),
+            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
+
+        await Task.Delay(100);
+        Assert.Equal(0, store.QueryCallCount);
+        httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_WhenDurableEventStoreIsUnavailable_DoesNotDispatch()
+    {
+        var store = new UnavailableFeatureChangeEventStore();
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        var dispatcher = new FeatureChangeWebhookDispatcher(
+            store,
+            null,
+            null,
+            httpClientFactory,
+            Options.Create(new FeatureChangeWebhookOptions
+            {
+                Enabled = true,
+                Url = "https://hooks.example.com/feature-change",
+                Secret = "super-secret",
+                MaxAttempts = 1
+            }),
+            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
+
+        await Task.Delay(100);
+        Assert.Equal(0, store.QueryCallCount);
+        httpClientFactory.DidNotReceive().CreateClient("feature-change-webhook");
+
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+    }
+
     private static FeatureChangeEvent CreateEvent()
         => new()
         {
@@ -194,6 +258,52 @@ public sealed class FeatureChangeWebhookDispatcherTests
         {
             SendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class TrackingFeatureChangeEventStore : IFeatureChangeEventStore
+    {
+        public int QueryCallCount { get; private set; }
+
+        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            QueryCallCount++;
+            return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+        }
+    }
+
+    private sealed class UnavailableFeatureChangeEventStore : IFeatureChangeEventStore, IFeatureChangeEventStoreHealth
+    {
+        public int QueryCallCount { get; private set; }
+
+        public bool CanPersistEvents => false;
+
+        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            QueryCallCount++;
+            return Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
         }
     }
 

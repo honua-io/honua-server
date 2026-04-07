@@ -7,6 +7,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Tiles;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -84,17 +85,9 @@ internal sealed class CloudCogTileResolver : ICloudCogTileResolver
             return null;
         }
 
-        // Calculate tile index within this IFD.
-        // TODO: This maps web tile row/col directly to COG tile indices, which is
-        // only correct for COGs whose internal tiling aligns with the web mercator
-        // tile grid. Non-aligned COGs need extent-to-pixel coordinate transformation
-        // (web tile → geographic bounds → COG pixel coords → tile index).
-        var tilesAcross = (overviewLevel.Width + metadata.TileWidth - 1) / metadata.TileWidth;
-        var tilesDown = (overviewLevel.Height + metadata.TileHeight - 1) / metadata.TileHeight;
-        var tileIndex = row * tilesAcross + col;
-
-        if (tileIndex < 0 || tileIndex >= overviewLevel.TileOffsets.Length ||
-            row >= tilesDown || col >= tilesAcross)
+        if (!TryResolveAlignedTileIndex(metadata, overviewLevel, level, row, col, out var tileIndex) ||
+            tileIndex < 0 || tileIndex >= overviewLevel.TileOffsets.Length ||
+            tileIndex >= overviewLevel.TileByteCounts.Length)
         {
             CloudCogLog.CloudTileNotFound(_logger, registration.Id, level, row, col);
             return null;
@@ -240,27 +233,123 @@ internal sealed class CloudCogTileResolver : ICloudCogTileResolver
             return null;
         }
 
-        // COG IFD chain: level 0 = full resolution, level N = smallest overview.
-        // Web tile zoom: level 0 = world overview (low detail), higher = more detail.
-        // Strategy: each COG overview is roughly half the resolution of the previous.
-        // Match the requested zoom to the overview whose resolution is closest,
-        // using the ratio between full-res width and each overview's width.
-        var fullWidth = metadata.OverviewLevels[0].Width;
-        if (fullWidth <= 0)
+        var extentWidth = metadata.Extent.XMax - metadata.Extent.XMin;
+        var extentHeight = metadata.Extent.YMax - metadata.Extent.YMin;
+        if (extentWidth <= 0 || extentHeight <= 0 || metadata.TileWidth <= 0 || metadata.TileHeight <= 0)
         {
             return metadata.OverviewLevels[0];
         }
 
-        // The maximum zoom level this COG can serve at full resolution.
-        // Each overview level halves resolution, so the number of overview IFDs
-        // tells us how many zoom levels below full-res we can serve.
-        var maxZoom = metadata.OverviewLevels.Length - 1;
+        var requestedBounds = TileMath.GetTileBounds(0, 0, requestedLevel);
+        var requestedPixelWidth = (requestedBounds.XMax - requestedBounds.XMin) / metadata.TileWidth;
+        var requestedPixelHeight = (requestedBounds.YMax - requestedBounds.YMin) / metadata.TileHeight;
+        if (requestedPixelWidth <= 0 || requestedPixelHeight <= 0)
+        {
+            return metadata.OverviewLevels[0];
+        }
 
-        // Map: high web zoom → IFD 0 (full res), low web zoom → last IFD (smallest).
-        // Clamp so that zoom levels beyond the COG's range get the best available.
-        var ifdIndex = Math.Clamp(maxZoom - requestedLevel, 0, maxZoom);
+        CogOverviewLevel? bestMatch = null;
+        var bestScore = double.MaxValue;
 
-        return metadata.OverviewLevels[ifdIndex];
+        foreach (var overview in metadata.OverviewLevels)
+        {
+            if (overview.Width <= 0 || overview.Height <= 0)
+            {
+                continue;
+            }
+
+            var overviewPixelWidth = extentWidth / overview.Width;
+            var overviewPixelHeight = extentHeight / overview.Height;
+            var widthScore = Math.Abs(((requestedBounds.XMax - requestedBounds.XMin) / overviewPixelWidth) - metadata.TileWidth);
+            var heightScore = Math.Abs(((requestedBounds.YMax - requestedBounds.YMin) / overviewPixelHeight) - metadata.TileHeight);
+            var score = widthScore + heightScore;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestMatch = overview;
+
+                if (score <= 1e-6)
+                {
+                    break;
+                }
+            }
+        }
+
+        return bestMatch ?? metadata.OverviewLevels[0];
+    }
+
+    private static bool TryResolveAlignedTileIndex(
+        CogMetadata metadata,
+        CogOverviewLevel overviewLevel,
+        int level,
+        int row,
+        int col,
+        out int tileIndex)
+    {
+        tileIndex = -1;
+
+        if (metadata.Srid != 3857)
+        {
+            return false;
+        }
+
+        var extentWidth = metadata.Extent.XMax - metadata.Extent.XMin;
+        var extentHeight = metadata.Extent.YMax - metadata.Extent.YMin;
+        if (extentWidth <= 0 || extentHeight <= 0 || overviewLevel.Width <= 0 || overviewLevel.Height <= 0)
+        {
+            return false;
+        }
+
+        var tileBounds = TileMath.GetTileBounds(col, row, level);
+        var overviewPixelWidth = extentWidth / overviewLevel.Width;
+        var overviewPixelHeight = extentHeight / overviewLevel.Height;
+
+        if (!TryResolvePixelCoordinate((tileBounds.XMin - metadata.Extent.XMin) / overviewPixelWidth, out var minPixelX) ||
+            !TryResolvePixelCoordinate((tileBounds.XMax - metadata.Extent.XMin) / overviewPixelWidth, out var maxPixelX) ||
+            !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMax) / overviewPixelHeight, out var minPixelY) ||
+            !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMin) / overviewPixelHeight, out var maxPixelY))
+        {
+            return false;
+        }
+
+        if (maxPixelX - minPixelX != metadata.TileWidth ||
+            maxPixelY - minPixelY != metadata.TileHeight ||
+            minPixelX < 0 ||
+            minPixelY < 0 ||
+            maxPixelX > overviewLevel.Width ||
+            maxPixelY > overviewLevel.Height ||
+            minPixelX % metadata.TileWidth != 0 ||
+            minPixelY % metadata.TileHeight != 0)
+        {
+            return false;
+        }
+
+        var tileX = minPixelX / metadata.TileWidth;
+        var tileY = minPixelY / metadata.TileHeight;
+        var tilesAcross = (overviewLevel.Width + metadata.TileWidth - 1) / metadata.TileWidth;
+        var tilesDown = (overviewLevel.Height + metadata.TileHeight - 1) / metadata.TileHeight;
+        if (tileX < 0 || tileX >= tilesAcross || tileY < 0 || tileY >= tilesDown)
+        {
+            return false;
+        }
+
+        tileIndex = (tileY * tilesAcross) + tileX;
+        return true;
+    }
+
+    private static bool TryResolvePixelCoordinate(double value, out int pixelCoordinate)
+    {
+        const double epsilon = 1e-6;
+        var rounded = Math.Round(value);
+        if (Math.Abs(value - rounded) > epsilon || rounded < int.MinValue || rounded > int.MaxValue)
+        {
+            pixelCoordinate = 0;
+            return false;
+        }
+
+        pixelCoordinate = (int)rounded;
+        return true;
     }
 
     private static bool CanServeRequestedFormat(RasterFormat requestedFormat, string contentType) => requestedFormat switch

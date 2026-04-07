@@ -19,6 +19,8 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class CacheOperationsEndpoints
 {
+    private const string CacheHealthCheckFailedMessage = "Cache health check failed.";
+    private const string CacheInvalidationFailedMessage = "Cache invalidation failed.";
     public static void MapCacheOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/operations/cache")
@@ -83,7 +85,7 @@ internal static class CacheOperationsEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status500InternalServerError,
-                string.Concat("Cache health check failed: ", ex.Message));
+                CacheHealthCheckFailedMessage);
         }
     }
 
@@ -126,6 +128,16 @@ internal static class CacheOperationsEndpoints
                 detail = "OGC metadata cache invalidated";
                 AdminLog.CacheInvalidationRequested(logger, scope);
                 await invalidationService.InvalidateOgcMetadataAsync(context.RequestAborted).ConfigureAwait(false);
+            }
+            else if (hasScope && string.Equals(request.Scope, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                scope = "all";
+                detail = "All response and metadata caches invalidated";
+                AdminLog.CacheInvalidationRequested(logger, scope);
+                await Task.WhenAll(
+                    invalidationService.InvalidateLayerAsync(null, null, context.RequestAborted),
+                    invalidationService.InvalidateServiceCatalogAsync(null, null, context.RequestAborted),
+                    invalidationService.InvalidateOgcMetadataAsync(context.RequestAborted)).ConfigureAwait(false);
             }
             else if (hasServiceId && request.LayerId.HasValue)
             {
@@ -175,7 +187,7 @@ internal static class CacheOperationsEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status500InternalServerError,
-                string.Concat("Cache invalidation failed: ", ex.Message));
+                CacheInvalidationFailedMessage);
         }
     }
 

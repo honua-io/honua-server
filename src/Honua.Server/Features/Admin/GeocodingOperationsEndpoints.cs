@@ -16,6 +16,7 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class GeocodingOperationsEndpoints
 {
+    private const string ProviderHealthCheckFailedMessage = "Geocoding provider health check failed.";
     public static void MapGeocodingOperationsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/operations/geocoding")
@@ -85,7 +86,7 @@ internal static class GeocodingOperationsEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status500InternalServerError,
-                string.Concat("Geocoding provider health check failed: ", ex.Message));
+                ProviderHealthCheckFailedMessage);
         }
     }
 

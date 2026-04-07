@@ -35,7 +35,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
     public FeatureStreamCdcScaleTests()
     {
         var storeOptions = Options.Create(new FeatureChangeEventOptions { MaxRetainedEvents = TotalEdits + 1000 });
-        _store = new InMemoryFeatureChangeEventStore(storeOptions, null, null);
+        _store = new InMemoryFeatureChangeEventStore(storeOptions, null);
 
         var streamOptions = Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = TotalEdits + 256 });
         _sessionManager = new FeatureStreamSessionManager(streamOptions, NullLogger<FeatureStreamSessionManager>.Instance);

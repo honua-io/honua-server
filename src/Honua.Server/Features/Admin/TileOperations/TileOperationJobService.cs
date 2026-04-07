@@ -17,11 +17,13 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -43,7 +45,8 @@ internal sealed partial class TileOperationJobService(
     IServiceScopeFactory serviceScopeFactory,
     IOptions<TileOptions> tileOptions,
     IOptions<LimitsOptions> limitsOptions,
-    ILogger<TileOperationJobService> logger) : ITileOperationJobService
+    ILogger<TileOperationJobService> logger,
+    IConnectionMultiplexer? redis = null) : ITileOperationJobService
 {
     private readonly IUniversalProgressStore _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
     private readonly IDistributedCache? _requestCache = requestCache;
@@ -52,10 +55,13 @@ internal sealed partial class TileOperationJobService(
     private readonly TileOptions _tileOptions = tileOptions?.Value ?? throw new ArgumentNullException(nameof(tileOptions));
     private readonly TileLimits _tileLimits = limitsOptions?.Value?.Tiles ?? throw new ArgumentNullException(nameof(limitsOptions));
     private readonly ILogger<TileOperationJobService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IConnectionMultiplexer? _redis = redis;
 
     private const int JobRequestRetentionHours = 24;
     private static readonly TimeSpan _jobRequestRetention = TimeSpan.FromHours(JobRequestRetentionHours);
     private const string RequestCacheKeyPrefix = "tile:request:";
+    private const string ClaimKeyPrefix = "tile:job:claim:";
+    private static readonly TimeSpan ClaimTtl = TimeSpan.FromSeconds(30);
 
     private readonly ConcurrentDictionary<string, CachedTileOperationRequest> _jobRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _runningTokens = new(StringComparer.Ordinal);
@@ -181,9 +187,27 @@ internal sealed partial class TileOperationJobService(
 
     public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
+        var leaseCoordinator = await TryAcquireJobLeaseAsync(jobId).ConfigureAwait(false);
+        if (_redis != null && leaseCoordinator == null)
+        {
+            return;
+        }
+
+        using var renewalCts = leaseCoordinator is null ? null : new CancellationTokenSource();
+        var renewalTask = leaseCoordinator is null
+            ? Task.CompletedTask
+            : RenewLeaseAsync(leaseCoordinator, renewalCts!.Token);
+
         var cachedRequest = await TryGetActiveJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (cachedRequest == null)
         {
+            if (renewalCts != null)
+            {
+                renewalCts.Cancel();
+                await renewalTask.ConfigureAwait(false);
+                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -275,6 +299,12 @@ internal sealed partial class TileOperationJobService(
         {
             _runningTokens.TryRemove(jobId, out _);
             stopwatch.Stop();
+            if (renewalCts != null)
+            {
+                renewalCts.Cancel();
+                await renewalTask.ConfigureAwait(false);
+                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
+            }
         }
 
         await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
@@ -923,6 +953,40 @@ internal sealed partial class TileOperationJobService(
     }
 
     private static string GetRequestCacheKey(string jobId) => $"{RequestCacheKeyPrefix}{jobId}";
+
+    private Task<RedisLeaseCoordinator?> TryAcquireJobLeaseAsync(string jobId)
+    {
+        if (_redis == null)
+        {
+            return Task.FromResult<RedisLeaseCoordinator?>(null);
+        }
+
+        return TryAcquireLeaseAsync(new RedisLeaseCoordinator(_redis, $"{ClaimKeyPrefix}{jobId}", ClaimTtl));
+    }
+
+    private async Task RenewLeaseAsync(RedisLeaseCoordinator leaseCoordinator, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(ClaimTtl.TotalMilliseconds / 3d), cancellationToken).ConfigureAwait(false);
+                if (!await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+                {
+                    _logger.LogWarning("Tile-operation lease renewal was lost while processing a background tile job.");
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private static async Task<RedisLeaseCoordinator?> TryAcquireLeaseAsync(RedisLeaseCoordinator leaseCoordinator)
+        => await leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false)
+            ? leaseCoordinator
+            : null;
 
     private readonly record struct TileCoordinate(int Z, int X, int Y);
     private readonly record struct CachedTileOperationRequest(TileOperationStartRequest Request, string? SchemaName, DateTimeOffset ExpiresAtUtc);

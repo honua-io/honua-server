@@ -91,7 +91,7 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
         root.GetProperty("status").GetString().Should().Be("succeeded");
         root.GetProperty("planAvailable").GetBoolean().Should().BeFalse();
         root.GetProperty("upgradeRequired").GetBoolean().Should().BeFalse();
-        root.GetProperty("planError").GetString().Should().Be("Unable to inspect migrations.");
+        root.GetProperty("planError").GetString().Should().Be("Migration planning is temporarily unavailable.");
         root.GetProperty("pendingScripts").GetArrayLength().Should().Be(0);
     }
 

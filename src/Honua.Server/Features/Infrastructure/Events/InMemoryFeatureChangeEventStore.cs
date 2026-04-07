@@ -1,33 +1,76 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Infrastructure.Events;
 
 /// <summary>
-/// Feature-change event store with Redis/distributed-cache persistence and in-memory fallback.
+/// Feature-change event store with Redis persistence and in-memory fallback.
+/// Distributed-cache-only persistence is intentionally disabled because it cannot
+/// guarantee cross-node ordering or single-writer safety.
 /// </summary>
 internal sealed class InMemoryFeatureChangeEventStore(
     IOptions<FeatureChangeEventOptions> options,
-    IDistributedCache? distributedCache = null,
-    IConnectionMultiplexer? redis = null) : IFeatureChangeEventStore, IDisposable
+    IConnectionMultiplexer? redis = null,
+    bool allowInMemoryFallback = true) : IFeatureChangeEventStore, IFeatureChangeEventStoreHealth, IDisposable
 {
+    private const string DurableRedisUnavailableMessage = "Feature-change event storage requires Redis durability in this environment.";
     private const string CursorKey = "featurechange:cursor";
     private const string IndexKey = "featurechange:index";
     private const string EventKeyPrefix = "featurechange:event:";
+    private const string EventIdKeyPrefix = "featurechange:eventid:";
+    private const string AppendEventScript = """
+        local existingCursor = redis.call('GET', KEYS[3])
+        if existingCursor then
+            return { existingCursor, 0 }
+        end
+        local cursor = redis.call('INCR', KEYS[1])
+        local event = {
+            EventId = ARGV[1],
+            Cursor = tonumber(cursor),
+            Timestamp = ARGV[2],
+            ServiceId = ARGV[3],
+            LayerId = tonumber(ARGV[4]),
+            ObjectId = tonumber(ARGV[5]),
+            Operation = ARGV[6],
+            Protocol = ARGV[7],
+            RequestId = ARGV[8],
+            GeometryChanged = ARGV[9] == '1'
+        }
+        if ARGV[10] ~= '' then
+            event.ChangedAttributes = cjson.decode(ARGV[10])
+        end
+        if ARGV[11] ~= '' then
+            event.GeometryEnvelope = cjson.decode(ARGV[11])
+        end
+        if ARGV[12] ~= '' then
+            event.PropertiesJson = ARGV[12]
+        end
+        local eventKey = ARGV[13] .. cursor
+        local eventJson = cjson.encode(event)
+        redis.call('SET', eventKey, eventJson, 'EX', tonumber(ARGV[14]))
+        redis.call('SET', KEYS[3], cursor, 'EX', tonumber(ARGV[14]))
+        redis.call('ZADD', KEYS[2], cursor, cursor)
+        return { cursor, 1 }
+        """;
     private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
 
     private readonly object _sync = new();
     private readonly List<FeatureChangeEvent> _events = [];
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Dictionary<string, FeatureChangeEvent> _eventsById = new(StringComparer.Ordinal);
     private readonly int _maxRetained = Math.Max(100, options.Value.MaxRetainedEvents);
-    private readonly IDistributedCache? _distributedCache = distributedCache;
     private readonly IDatabase? _redisDb = redis?.GetDatabase();
+    private readonly bool _allowInMemoryFallback = allowInMemoryFallback;
     private long _nextCursor = 1;
+    private volatile bool _redisUnavailable;
+
+    public bool CanPersistEvents => _redisDb is not null
+        ? !_redisUnavailable || _allowInMemoryFallback
+        : _allowInMemoryFallback;
 
     public async Task<FeatureChangeEvent> AppendAsync(
         FeatureChangeEventRequest request,
@@ -35,10 +78,18 @@ internal sealed class InMemoryFeatureChangeEventStore(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (_redisDb == null && !_allowInMemoryFallback)
+        {
+            throw new InvalidOperationException(DurableRedisUnavailableMessage);
+        }
+
         var normalizedOperation = NormalizeOperation(request.Operation);
         var normalizedProtocol = string.IsNullOrWhiteSpace(request.Protocol)
             ? "unknown"
             : request.Protocol.Trim();
+        var normalizedEventId = string.IsNullOrWhiteSpace(request.EventId)
+            ? Guid.NewGuid().ToString("N")
+            : request.EventId.Trim();
         var normalizedServiceId = string.IsNullOrWhiteSpace(request.ServiceId)
             ? "unknown"
             : request.ServiceId.Trim();
@@ -46,46 +97,55 @@ internal sealed class InMemoryFeatureChangeEventStore(
             ? "unknown"
             : request.RequestId.Trim();
 
-        if (_redisDb != null)
+        if (_redisDb != null && await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
         {
-            return await AppendWithRedisAsync(
-                    normalizedServiceId,
-                    request.LayerId,
-                    request.ObjectId,
-                    normalizedOperation,
-                    normalizedProtocol,
-                    normalizedRequestId,
-                    request.Timestamp,
-                    request.ChangedAttributes,
-                    request.GeometryChanged,
-                    request.GeometryEnvelope,
-                    request.PropertiesJson,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                return await AppendWithRedisAsync(
+                        normalizedEventId,
+                        normalizedServiceId,
+                        request.LayerId,
+                        request.ObjectId,
+                        normalizedOperation,
+                        normalizedProtocol,
+                        normalizedRequestId,
+                        request.Timestamp,
+                        request.ChangedAttributes,
+                        request.GeometryChanged,
+                        request.GeometryEnvelope,
+                        request.PropertiesJson,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _redisUnavailable = true;
+                if (!_allowInMemoryFallback)
+                {
+                    throw new InvalidOperationException(DurableRedisUnavailableMessage, ex);
+                }
+            }
         }
 
-        if (_distributedCache != null)
+        if (!_allowInMemoryFallback)
         {
-            return await AppendWithDistributedCacheAsync(
-                    normalizedServiceId,
-                    request.LayerId,
-                    request.ObjectId,
-                    normalizedOperation,
-                    normalizedProtocol,
-                    normalizedRequestId,
-                    request.Timestamp,
-                    request.ChangedAttributes,
-                    request.GeometryChanged,
-                    request.GeometryEnvelope,
-                    request.PropertiesJson,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            throw new InvalidOperationException(DurableRedisUnavailableMessage);
         }
 
         FeatureChangeEvent created;
         lock (_sync)
         {
+            if (_eventsById.TryGetValue(normalizedEventId, out var existing))
+            {
+                return existing;
+            }
+
             created = CreateEvent(
+                normalizedEventId,
                 _nextCursor++,
                 normalizedServiceId,
                 request.LayerId,
@@ -100,6 +160,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 request.PropertiesJson);
 
             _events.Add(created);
+            _eventsById[normalizedEventId] = created;
             TrimIfNeeded();
         }
 
@@ -116,14 +177,34 @@ internal sealed class InMemoryFeatureChangeEventStore(
         cancellationToken.ThrowIfCancellationRequested();
         var effectiveLimit = Math.Clamp(limit, 1, 5_000);
 
-        if (_redisDb != null)
+        if (_redisDb == null && !_allowInMemoryFallback)
         {
-            return await QueryRedisAsync(cursor, from, to, effectiveLimit, cancellationToken).ConfigureAwait(false);
+            return [];
         }
 
-        if (_distributedCache != null)
+        if (_redisDb != null && await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
         {
-            return await QueryDistributedCacheAsync(cursor, from, to, effectiveLimit, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await QueryRedisAsync(cursor, from, to, effectiveLimit, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                _redisUnavailable = true;
+                if (!_allowInMemoryFallback)
+                {
+                    return [];
+                }
+            }
+        }
+
+        if (!_allowInMemoryFallback)
+        {
+            return [];
         }
 
         List<FeatureChangeEvent> snapshot;
@@ -141,44 +222,46 @@ internal sealed class InMemoryFeatureChangeEventStore(
             .ToArray();
     }
 
-    private async Task<FeatureChangeEvent> AppendWithRedisAsync(
-        string serviceId,
-        int layerId,
-        long objectId,
-        string operation,
-        string protocol,
-        string requestId,
-        DateTimeOffset? timestamp,
-        Dictionary<string, object?>? changedAttributes,
-        bool geometryChanged,
-        double[]? geometryEnvelope,
-        string? propertiesJson,
-        CancellationToken cancellationToken)
+    public async Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
     {
-        var cursor = (long)await _redisDb!.StringIncrementAsync(CursorKey).ConfigureAwait(false);
-        var created = CreateEvent(
-            cursor,
-            serviceId,
-            layerId,
-            objectId,
-            operation,
-            protocol,
-            requestId,
-            timestamp,
-            changedAttributes,
-            geometryChanged,
-            geometryEnvelope,
-            propertiesJson);
-        var eventKey = GetEventKey(cursor);
-        var eventJson = JsonSerializer.Serialize(created, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        await _redisDb.StringSetAsync(eventKey, eventJson, Retention).ConfigureAwait(false);
-        await _redisDb.SortedSetAddAsync(IndexKey, cursor.ToString(System.Globalization.CultureInfo.InvariantCulture), cursor).ConfigureAwait(false);
-        await TrimRedisAsync(cancellationToken).ConfigureAwait(false);
-        return created;
+        if (_redisDb != null && await EnsureRedisAvailableAsync(cancellationToken).ConfigureAwait(false))
+        {
+            try
+            {
+                var members = await _redisDb.SortedSetRangeByRankAsync(IndexKey, -1, -1, Order.Descending).ConfigureAwait(false);
+                if (members.Length == 0)
+                {
+                    return 0;
+                }
+
+                return long.TryParse(members[0].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var cursor)
+                    ? cursor
+                    : 0;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                _redisUnavailable = true;
+                if (!_allowInMemoryFallback)
+                {
+                    return 0;
+                }
+            }
+        }
+
+        lock (_sync)
+        {
+            return _events.Count == 0 ? 0 : _events[^1].Cursor;
+        }
     }
 
-    private async Task<FeatureChangeEvent> AppendWithDistributedCacheAsync(
+    private async Task<FeatureChangeEvent> AppendWithRedisAsync(
+        string eventId,
         string serviceId,
         int layerId,
         long objectId,
@@ -192,12 +275,32 @@ internal sealed class InMemoryFeatureChangeEventStore(
         string? propertiesJson,
         CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var cursors = await ReadCachedIndexAsync(cancellationToken).ConfigureAwait(false);
-            var cursor = await ReadCachedCursorAsync(cancellationToken).ConfigureAwait(false) + 1;
-            var created = CreateEvent(
+        cancellationToken.ThrowIfCancellationRequested();
+        var cursorResult = await _redisDb!.ScriptEvaluateAsync(
+                AppendEventScript,
+                [CursorKey, IndexKey, $"{EventIdKeyPrefix}{eventId}"],
+                [
+                    eventId,
+                    (timestamp ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
+                    serviceId,
+                    layerId,
+                    objectId,
+                    operation,
+                    protocol,
+                    requestId,
+                    geometryChanged ? "1" : "0",
+                    changedAttributes == null ? string.Empty : JsonSerializer.Serialize(changedAttributes),
+                    geometryEnvelope == null ? string.Empty : JsonSerializer.Serialize(geometryEnvelope),
+                    propertiesJson ?? string.Empty,
+                    EventKeyPrefix,
+                    (long)Retention.TotalSeconds
+                ])
+            .ConfigureAwait(false);
+        var resultArray = (RedisResult[])cursorResult!;
+        var cursor = long.Parse(resultArray[0].ToString()!, CultureInfo.InvariantCulture);
+        var created = await TryGetRedisEventAsync(cursor).ConfigureAwait(false)
+            ?? CreateEvent(
+                eventId,
                 cursor,
                 serviceId,
                 layerId,
@@ -210,40 +313,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 geometryChanged,
                 geometryEnvelope,
                 propertiesJson);
-            cursors.Add(cursor);
-
-            while (cursors.Count > _maxRetained)
-            {
-                var removedCursor = cursors[0];
-                cursors.RemoveAt(0);
-                await _distributedCache!.RemoveAsync(GetEventKey(removedCursor), cancellationToken).ConfigureAwait(false);
-            }
-
-            await _distributedCache!.SetStringAsync(
-                    GetEventKey(cursor),
-                    JsonSerializer.Serialize(created, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent),
-                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = Retention },
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await _distributedCache!.SetStringAsync(
-                    CursorKey,
-                    cursor.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = Retention },
-                    cancellationToken)
-                .ConfigureAwait(false);
-            await _distributedCache!.SetStringAsync(
-                    IndexKey,
-                    JsonSerializer.Serialize(cursors),
-                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = Retention },
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            return created;
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        await TrimRedisAsync(cancellationToken).ConfigureAwait(false);
+        _redisUnavailable = false;
+        return created;
     }
 
     private async Task<IReadOnlyList<FeatureChangeEvent>> QueryRedisAsync(
@@ -273,15 +345,13 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 continue;
             }
 
-            var json = await _redisDb.StringGetAsync(GetEventKey(eventCursor)).ConfigureAwait(false);
-            if (!json.HasValue)
+            var featureEvent = await TryGetRedisEventAsync(eventCursor).ConfigureAwait(false);
+            if (featureEvent == null)
             {
                 await _redisDb.SortedSetRemoveAsync(IndexKey, member).ConfigureAwait(false);
                 continue;
             }
-
-            var featureEvent = JsonSerializer.Deserialize(json.ToString()!, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
-            if (featureEvent == null || !MatchesWindow(featureEvent, from, to))
+            if (!MatchesWindow(featureEvent, from, to))
             {
                 continue;
             }
@@ -296,50 +366,30 @@ internal sealed class InMemoryFeatureChangeEventStore(
         return results;
     }
 
-    private async Task<IReadOnlyList<FeatureChangeEvent>> QueryDistributedCacheAsync(
-        long? cursor,
-        DateTimeOffset? from,
-        DateTimeOffset? to,
-        int limit,
-        CancellationToken cancellationToken)
+    private async Task<bool> EnsureRedisAvailableAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (_redisDb == null)
+        {
+            return false;
+        }
+
+        if (!_redisUnavailable)
+        {
+            return true;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
-            var cursors = await ReadCachedIndexAsync(cancellationToken).ConfigureAwait(false);
-            var results = new List<FeatureChangeEvent>(Math.Min(limit, cursors.Count));
-            foreach (var eventCursor in cursors)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (cursor.HasValue && eventCursor <= cursor.Value)
-                {
-                    continue;
-                }
-
-                var json = await _distributedCache!.GetStringAsync(GetEventKey(eventCursor), cancellationToken).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(json))
-                {
-                    continue;
-                }
-
-                var featureEvent = JsonSerializer.Deserialize(json, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
-                if (featureEvent == null || !MatchesWindow(featureEvent, from, to))
-                {
-                    continue;
-                }
-
-                results.Add(featureEvent);
-                if (results.Count >= limit)
-                {
-                    break;
-                }
-            }
-
-            return results;
+            await _redisDb.PingAsync().ConfigureAwait(false);
+            _redisUnavailable = false;
+            return true;
         }
-        finally
+        catch
         {
-            _gate.Release();
+            _redisUnavailable = true;
+            return false;
         }
     }
 
@@ -359,6 +409,12 @@ internal sealed class InMemoryFeatureChangeEventStore(
         {
             if (long.TryParse(member.ToString(), out var cursor))
             {
+                var featureEvent = await TryGetRedisEventAsync(cursor).ConfigureAwait(false);
+                if (featureEvent != null)
+                {
+                    await _redisDb.KeyDeleteAsync($"{EventIdKeyPrefix}{featureEvent.EventId}").ConfigureAwait(false);
+                }
+
                 await _redisDb.KeyDeleteAsync(GetEventKey(cursor)).ConfigureAwait(false);
             }
         }
@@ -369,24 +425,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
         }
     }
 
-    private async Task<List<long>> ReadCachedIndexAsync(CancellationToken cancellationToken)
-    {
-        var json = await _distributedCache!.GetStringAsync(IndexKey, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return [];
-        }
-
-        return JsonSerializer.Deserialize<List<long>>(json) ?? [];
-    }
-
-    private async Task<long> ReadCachedCursorAsync(CancellationToken cancellationToken)
-    {
-        var value = await _distributedCache!.GetStringAsync(CursorKey, cancellationToken).ConfigureAwait(false);
-        return long.TryParse(value, out var cursor) ? cursor : 0L;
-    }
-
     private static FeatureChangeEvent CreateEvent(
+        string eventId,
         long cursor,
         string serviceId,
         int layerId,
@@ -401,7 +441,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
         string? propertiesJson = null)
         => new()
         {
-            EventId = Guid.NewGuid().ToString("N"),
+            EventId = eventId,
             Cursor = cursor,
             Timestamp = timestamp ?? DateTimeOffset.UtcNow,
             ServiceId = serviceId,
@@ -424,12 +464,28 @@ internal sealed class InMemoryFeatureChangeEventStore(
         }
 
         var removeCount = _events.Count - _maxRetained;
+        foreach (var removed in _events.Take(removeCount))
+        {
+            _eventsById.Remove(removed.EventId);
+        }
+
         _events.RemoveRange(0, removeCount);
     }
 
     private static bool MatchesWindow(FeatureChangeEvent featureEvent, DateTimeOffset? from, DateTimeOffset? to)
         => (!from.HasValue || featureEvent.Timestamp >= from.Value)
            && (!to.HasValue || featureEvent.Timestamp <= to.Value);
+
+    private async Task<FeatureChangeEvent?> TryGetRedisEventAsync(long cursor)
+    {
+        var json = await _redisDb!.StringGetAsync(GetEventKey(cursor)).ConfigureAwait(false);
+        if (!json.HasValue)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize(json.ToString()!, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
+    }
 
     private static string GetEventKey(long cursor) => $"{EventKeyPrefix}{cursor}";
 
@@ -450,6 +506,5 @@ internal sealed class InMemoryFeatureChangeEventStore(
 
     public void Dispose()
     {
-        _gate.Dispose();
     }
 }

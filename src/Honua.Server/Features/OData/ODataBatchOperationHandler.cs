@@ -673,43 +673,23 @@ internal sealed partial class ODataBatchOperationHandler(
                 "DELETE" => "delete",
                 _ => "update"
             };
-            var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
-            var (geometryEnvelope, propertiesJson) = FeatureChangeEventEnrichment.FromFeature(responseItem.MutationFeature);
-
-            await _batchDependencies.FeatureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = eventOperation,
-                    Protocol = Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData,
-                    RequestId = $"{context.TraceIdentifier}:{responseItem.Id}",
-                    GeometryEnvelope = geometryEnvelope,
-                    PropertiesJson = propertiesJson
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _batchDependencies.MutationEventService.PublishAsync(
+                context,
+                layerId,
+                objectId,
+                eventOperation,
+                Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData,
+                CancellationToken.None,
+                mutationFeature: responseItem.MutationFeature,
+                serviceProtocol: ServiceProtocols.OData,
+                requestId: $"{context.TraceIdentifier}:{responseItem.Id}").ConfigureAwait(false);
         }
-    }
-
-    private static async Task<string> ResolveServiceIdAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
-            context,
-            layerId,
-            ServiceProtocols.OData,
-            cancellationToken);
-
-        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>
     /// Invalidates cache for layers modified in the batch operation
     /// </summary>
-    private static async Task InvalidateCacheForBatchAsync(
+    private async Task InvalidateCacheForBatchAsync(
         HttpContext context,
         ODataBatchRequest batchRequest,
         CancellationToken cancellationToken)
@@ -722,7 +702,7 @@ internal sealed partial class ODataBatchOperationHandler(
             {
                 foreach (var layerId in mutatedLayers)
                 {
-                    await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
+                    await _batchDependencies.MutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
                 }
             }
             else if (ContainsMutation(batchRequest))

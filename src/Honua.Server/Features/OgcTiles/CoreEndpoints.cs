@@ -48,23 +48,19 @@ internal static class CoreEndpoints
 
     private static IResult HandleGetLandingPage(HttpContext context, string? f)
     {
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
-        if (validationError is not null)
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                OgcTilesUtilities.AllowedQueryParameters.Metadata,
+                out var outputFormat,
+                out var errorResult))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return errorResult!;
         }
 
-        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
-        {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
-        }
-
-        var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/tiles";
-
-        var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
-            .ToBuilder();
+        var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
 
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/openapi.json",
@@ -109,15 +105,14 @@ internal static class CoreEndpoints
 
     private static IResult HandleGetConformance(HttpContext context, string? f)
     {
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcTilesUtilities.AllowedQueryParameters.Metadata);
-        if (validationError is not null)
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                OgcTilesUtilities.AllowedQueryParameters.Metadata,
+                out var outputFormat,
+                out var errorResult))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
-        }
-
-        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
-        {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
+            return errorResult!;
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -133,12 +128,10 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/png",
                 "http://www.opengis.net/spec/ogcapi-tiles-1/1.0/conf/oas30"
             ).AddRange(OgcConformanceUris.Common),
-            Links = OgcCommonUtilities.BuildFormatLinks(
-                context.Request,
+            Links = OgcCoreMetadataUtilities.BuildConformanceLinks(
+                context,
                 $"{baseUrl}/ogc/tiles/conformance",
-                outputFormat,
-                OgcCommonUtilities.MetadataFormats,
-                "Conformance declaration")
+                outputFormat)
         };
 
         return OgcCommonUtilities.FormatMetadataResponse(conformance, OgcTilesJsonContext.Default.ConformanceDeclaration, outputFormat, "Conformance");
@@ -160,7 +153,7 @@ internal static class CoreEndpoints
           "paths": {}
         }
         """;
-        return await OgcOpenApiSpecUtilities.GetOpenApiSpecAsync(
+        return await OgcCoreMetadataUtilities.GetOpenApiSpecAsync(
             context,
             f,
             environment,

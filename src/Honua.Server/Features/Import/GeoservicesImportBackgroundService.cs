@@ -15,6 +15,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDistributedImportJobManager _jobManager;
+    private readonly IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress> _workerJobManager;
     private readonly ILogger<GeoservicesImportBackgroundService> _logger;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _leaderCheckInterval = TimeSpan.FromSeconds(10);
@@ -26,68 +27,23 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobManager = jobManager ?? throw new ArgumentNullException(nameof(jobManager));
+        _workerJobManager = jobManager as IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>
+            ?? new DistributedImportWorkerJobManagerAdapter(jobManager);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        Log.ServiceStarting(_logger, _jobManager.LeaderElection.InstanceId);
-        var recoveredInFlightJobs = false;
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                // Try to acquire or maintain leadership
-                var isLeader = await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken);
-
-                if (!isLeader)
-                {
-                    recoveredInFlightJobs = false;
-                    Log.NotLeader(_logger, _jobManager.LeaderElection.InstanceId);
-                    await Task.Delay(_leaderCheckInterval, stoppingToken);
-                    continue;
-                }
-
-                // Send heartbeat to maintain leadership
-                var heartbeatMaintained = await _jobManager.LeaderElection.HeartbeatAsync(stoppingToken);
-                if (!heartbeatMaintained)
-                {
-                    recoveredInFlightJobs = false;
-                    Log.NotLeader(_logger, _jobManager.LeaderElection.InstanceId);
-                    await Task.Delay(_leaderCheckInterval, stoppingToken);
-                    continue;
-                }
-
-                if (!recoveredInFlightJobs)
-                {
-                    await _jobManager.JobQueue.RecoverInFlightAsync(stoppingToken).ConfigureAwait(false);
-                    recoveredInFlightJobs = true;
-                }
-
-                // Try to dequeue and process a job
-                var jobId = await _jobManager.JobQueue.DequeueAsync(_pollInterval, stoppingToken);
-
-                if (jobId != null)
-                {
-                    await ProcessJobAsync(jobId, stoppingToken);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log.ProcessingError(_logger, ex);
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-            }
-        }
-
-        // Release leadership on shutdown
-        await _jobManager.LeaderElection.ReleaseLeadershipAsync(CancellationToken.None);
-        Log.ServiceStopped(_logger, _jobManager.LeaderElection.InstanceId);
-    }
+        => await ImportBackgroundServiceCoordinator.RunAsync(
+            _workerJobManager,
+            _logger,
+            _pollInterval,
+            _leaderCheckInterval,
+            ProcessJobAsync,
+            Log.ServiceStarting,
+            Log.ServiceStopped,
+            Log.NotLeader,
+            Log.ProcessingError,
+            stoppingToken).ConfigureAwait(false);
 
     private async Task ProcessJobAsync(string jobId, CancellationToken stoppingToken)
     {
@@ -95,111 +51,29 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         Log.JobStarted(_logger, jobId);
 
         GeoservicesImportRequest? request = null;
-        GeoservicesImportProgress? progress = null;
         using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         CancellationTokenSource? monitorCancellation = null;
         Task? monitorTask = null;
-
-        using var progressGate = new SemaphoreSlim(1, 1);
-        var finalized = 0;
-
-        async Task SetProgressAsync(GeoservicesImportProgress update, CancellationToken token)
-        {
-            if (Volatile.Read(ref finalized) != 0)
-            {
-                return;
-            }
-
-            await progressGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-            try
-            {
-                if (Volatile.Read(ref finalized) != 0)
-                {
-                    return;
-                }
-
-                await _jobManager.ProgressStore.SetProgressAsync(jobId, update, cancellationToken: token)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                progressGate.Release();
-            }
-        }
-
-        async Task SetFinalProgressAsync(GeoservicesImportProgress update, CancellationToken token)
-        {
-            Volatile.Write(ref finalized, 1);
-            await progressGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-            try
-            {
-                await _jobManager.ProgressStore.SetProgressAsync(jobId, update,
-                        TimeSpan.FromHours(24), token)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                progressGate.Release();
-            }
-        }
-
-        async Task ReportProgressAsync(GeoservicesImportProgress update)
-        {
-            if (jobCancellation.IsCancellationRequested || Volatile.Read(ref finalized) != 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await SetProgressAsync(update, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Log.ProgressUpdateFailed(_logger, jobId, ex);
-            }
-        }
-
-        async Task MonitorCancellationAsync(string id, CancellationTokenSource jobCts, CancellationToken token)
-        {
-            while (!token.IsCancellationRequested && !jobCts.IsCancellationRequested)
-            {
-                try
-                {
-                    var current = await _jobManager.ProgressStore.GetProgressAsync(id, token).ConfigureAwait(false);
-                    if (current?.Status == GeoservicesImportStatus.Cancelled)
-                    {
-                        jobCts.Cancel();
-                        return;
-                    }
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Log.CancellationMonitorPollFailed(_logger, id, ex);
-                }
-
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2), token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    return;
-                }
-            }
-        }
+        var acknowledgeCompletion = true;
+        var leadershipLost = 0;
+        using var progressController = new ImportJobProgressController<GeoservicesImportProgress>(
+            jobId,
+            _jobManager.ProgressStore,
+            progressTtl: null,
+            finalProgressTtl: TimeSpan.FromHours(24));
 
         try
         {
-            progress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken);
-            if (progress?.Status == GeoservicesImportStatus.Cancelled)
+            var progress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken);
+            progressController.Seed(progress);
+            if (progress != null && IsTerminalStatus(progress.Status))
             {
-                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken);
-                Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                if (progress.Status == GeoservicesImportStatus.Cancelled)
+                {
+                    Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                }
+
                 return;
             }
 
@@ -223,7 +97,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                     CurrentPhase = "Import request missing"
                 };
 
-                await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+                await progressController.SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
                 return;
             }
 
@@ -242,19 +116,20 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                     SourceServiceUrl = request.ServiceUrl,
                     SourceLayerId = request.LayerId,
                     TableName = request.TableName,
-                    StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                    StartedAt = progressController.CurrentProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                     CompletedAt = DateTimeOffset.UtcNow,
                     ErrorMessage = serviceUrlValidation.ErrorMessage,
                     CurrentPhase = "Import blocked by service URL validation"
                 };
 
-                await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+                await progressController.SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
                 await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
                 Log.JobRejectedUnsafeServiceUrl(_logger, jobId, request.ServiceUrl);
                 return;
             }
 
             // Update progress to processing
+            progress = progressController.CurrentProgress;
             if (progress != null)
             {
                 progress = progress with
@@ -262,7 +137,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                     Status = GeoservicesImportStatus.Discovering,
                     CurrentPhase = "Discovering layer metadata"
                 };
-                await SetProgressAsync(progress, stoppingToken).ConfigureAwait(false);
+                await progressController.SetProgressAsync(progress, stoppingToken).ConfigureAwait(false);
             }
 
             // Create a scope for the import service
@@ -270,10 +145,20 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             var importService = scope.ServiceProvider.GetRequiredService<IGeoservicesImportService>();
 
             monitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            monitorTask = MonitorCancellationAsync(jobId, jobCancellation, monitorCancellation.Token);
+            monitorTask = ImportBackgroundServiceCoordinator.MonitorCancellationAsync(
+                jobId,
+                _workerJobManager,
+                jobCancellation,
+                current => current.Status == GeoservicesImportStatus.Cancelled,
+                () => Interlocked.Exchange(ref leadershipLost, 1),
+                _logger,
+                Log.LeadershipLostDuringJob,
+                Log.CancellationMonitorPollFailed,
+                monitorCancellation.Token);
 
             // Create progress reporter
-            var progressReporter = new Progress<GeoservicesImportProgress>(p => _ = ReportProgressAsync(p));
+            var progressReporter = new Progress<GeoservicesImportProgress>(p =>
+                _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None));
 
             // Execute the import
             var result = await importService.ImportLayerAsync(request, progressReporter, jobCancellation.Token);
@@ -291,14 +176,14 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 SourceServiceUrl = request.ServiceUrl,
                 SourceLayerId = request.LayerId,
                 TableName = request.TableName,
-                StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                StartedAt = progressController.CurrentProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = result.ErrorMessage,
                 Warnings = result.Warnings,
                 CurrentPhase = result.Success ? "Import completed" : "Import failed"
             };
 
-            await SetFinalProgressAsync(finalProgress, stoppingToken).ConfigureAwait(false);
+            await progressController.SetFinalProgressAsync(finalProgress, stoppingToken).ConfigureAwait(false);
 
             // Clean up request store
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken);
@@ -316,19 +201,89 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         {
             stopwatch.Stop();
 
+            if (Volatile.Read(ref leadershipLost) != 0)
+            {
+                acknowledgeCompletion = false;
+                var currentProgress = progressController.CurrentProgress;
+                var resumableProgress = (currentProgress ?? GeoservicesImportProgress.CreateInitial(
+                    jobId,
+                    request?.ServiceUrl ?? string.Empty,
+                    request?.LayerId ?? 0,
+                    request?.TableName ?? string.Empty,
+                    currentProgress?.SourceLayerName,
+                    currentProgress?.EstimatedTotalFeatures)) with
+                {
+                    Status = GeoservicesImportStatus.Queued,
+                    CompletedAt = null,
+                    ErrorMessage = null,
+                    CurrentPhase = "Queued for recovery after leadership loss"
+                };
+
+                await progressController.SetProgressAsync(resumableProgress, CancellationToken.None).ConfigureAwait(false);
+                Log.JobRequeuedAfterLeadershipLoss(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                return;
+            }
+
+            var currentCancelledProgress = progressController.CurrentProgress;
             var cancelledProgress = new GeoservicesImportProgress
             {
                 JobId = jobId,
                 Status = GeoservicesImportStatus.Cancelled,
-                SourceServiceUrl = request?.ServiceUrl ?? progress?.SourceServiceUrl ?? string.Empty,
-                SourceLayerId = request?.LayerId ?? progress?.SourceLayerId ?? 0,
-                TableName = request?.TableName ?? progress?.TableName ?? string.Empty,
-                StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                SourceServiceUrl = request?.ServiceUrl ?? currentCancelledProgress?.SourceServiceUrl ?? string.Empty,
+                SourceLayerId = request?.LayerId ?? currentCancelledProgress?.SourceLayerId ?? 0,
+                TableName = request?.TableName ?? currentCancelledProgress?.TableName ?? string.Empty,
+                StartedAt = currentCancelledProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Import cancelled"
             };
 
-            await SetFinalProgressAsync(cancelledProgress, CancellationToken.None).ConfigureAwait(false);
+            await progressController.SetFinalProgressAsync(cancelledProgress, CancellationToken.None).ConfigureAwait(false);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+
+            Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+        }
+        catch (Exception) when (jobCancellation.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+
+            if (Volatile.Read(ref leadershipLost) != 0)
+            {
+                acknowledgeCompletion = false;
+                var currentProgress = progressController.CurrentProgress;
+                var resumableProgress = (currentProgress ?? GeoservicesImportProgress.CreateInitial(
+                    jobId,
+                    request?.ServiceUrl ?? string.Empty,
+                    request?.LayerId ?? 0,
+                    request?.TableName ?? string.Empty,
+                    currentProgress?.SourceLayerName,
+                    currentProgress?.EstimatedTotalFeatures)) with
+                {
+                    Status = GeoservicesImportStatus.Queued,
+                    CompletedAt = null,
+                    ErrorMessage = null,
+                    CurrentPhase = "Queued for recovery after leadership loss"
+                };
+
+                await progressController.SetProgressAsync(resumableProgress, CancellationToken.None).ConfigureAwait(false);
+                Log.JobRequeuedAfterLeadershipLoss(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                return;
+            }
+
+            var currentCancelledProgress = progressController.CurrentProgress;
+            var cancelledProgress = new GeoservicesImportProgress
+            {
+                JobId = jobId,
+                Status = GeoservicesImportStatus.Cancelled,
+                SourceServiceUrl = request?.ServiceUrl ?? currentCancelledProgress?.SourceServiceUrl ?? string.Empty,
+                SourceLayerId = request?.LayerId ?? currentCancelledProgress?.SourceLayerId ?? 0,
+                TableName = request?.TableName ?? currentCancelledProgress?.TableName ?? string.Empty,
+                StartedAt = currentCancelledProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Import cancelled"
+            };
+
+            await progressController.SetFinalProgressAsync(cancelledProgress, CancellationToken.None).ConfigureAwait(false);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
 
             Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
         }
@@ -336,52 +291,40 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         {
             stopwatch.Stop();
 
+            var currentFailedProgress = progressController.CurrentProgress;
             var failedProgress = new GeoservicesImportProgress
             {
                 JobId = jobId,
                 Status = GeoservicesImportStatus.Failed,
-                SourceServiceUrl = request?.ServiceUrl ?? progress?.SourceServiceUrl ?? string.Empty,
-                SourceLayerId = request?.LayerId ?? progress?.SourceLayerId ?? 0,
-                TableName = request?.TableName ?? progress?.TableName ?? string.Empty,
-                StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                SourceServiceUrl = request?.ServiceUrl ?? currentFailedProgress?.SourceServiceUrl ?? string.Empty,
+                SourceLayerId = request?.LayerId ?? currentFailedProgress?.SourceLayerId ?? 0,
+                TableName = request?.TableName ?? currentFailedProgress?.TableName ?? string.Empty,
+                StartedAt = currentFailedProgress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = "Import failed.",
                 CurrentPhase = "Import failed with exception"
             };
 
-            await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+            await progressController.SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
 
             Log.JobException(_logger, jobId, ex);
         }
         finally
         {
-            try
-            {
-                await _jobManager.JobQueue.CompleteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Log.JobCompletionAcknowledgeFailed(_logger, jobId, ex);
-            }
+            await ImportBackgroundServiceCoordinator.AcknowledgeCompletionAsync(
+                _jobManager.JobQueue,
+                jobId,
+                acknowledgeCompletion,
+                _logger,
+                Log.JobCompletionAcknowledgeFailed).ConfigureAwait(false);
 
-            if (monitorCancellation != null)
-            {
-                monitorCancellation.Cancel();
-                if (monitorTask != null)
-                {
-                    try
-                    {
-                        await monitorTask.ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (monitorCancellation.IsCancellationRequested)
-                    {
-                    }
-                }
-
-                monitorCancellation.Dispose();
-            }
+            await ImportBackgroundServiceCoordinator.StopMonitorAsync(monitorCancellation, monitorTask).ConfigureAwait(false);
         }
     }
+
+    private static bool IsTerminalStatus(GeoservicesImportStatus status)
+        => status is GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled;
 
     private static partial class Log
     {
@@ -426,5 +369,11 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
         [LoggerMessage(7713, LogLevel.Warning, "Failed to acknowledge completion for import job {JobId}")]
         public static partial void JobCompletionAcknowledgeFailed(ILogger logger, string jobId, Exception exception);
+
+        [LoggerMessage(7714, LogLevel.Warning, "Leadership was lost while processing import job {JobId}; cancelling local execution.")]
+        public static partial void LeadershipLostDuringJob(ILogger logger, string jobId);
+
+        [LoggerMessage(7715, LogLevel.Warning, "Import job {JobId} yielded after leadership loss and will be recovered by the next durable leader (duration: {DurationSeconds:F1}s)")]
+        public static partial void JobRequeuedAfterLeadershipLoss(ILogger logger, string jobId, double durationSeconds);
     }
 }

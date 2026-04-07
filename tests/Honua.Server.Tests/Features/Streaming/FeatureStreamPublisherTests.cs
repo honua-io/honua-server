@@ -22,7 +22,7 @@ public sealed class FeatureStreamPublisherTests : IDisposable
     public FeatureStreamPublisherTests()
     {
         var storeOptions = Options.Create(new FeatureChangeEventOptions { MaxRetainedEvents = 100 });
-        _store = new InMemoryFeatureChangeEventStore(storeOptions, null, null);
+        _store = new InMemoryFeatureChangeEventStore(storeOptions, null);
 
         var streamOptions = Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = 256 });
         _sessionManager = new FeatureStreamSessionManager(streamOptions, NullLogger<FeatureStreamSessionManager>.Instance);
@@ -78,6 +78,32 @@ public sealed class FeatureStreamPublisherTests : IDisposable
 
         var stored = await _store.QueryAsync(null, null, null, 10);
         Assert.Single(stored);
+    }
+
+    [UnitTest]
+    public async Task PublishAsync_WhenAppendFails_DoesNotThrowAndDoesNotBroadcast()
+    {
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var retryQueue = new RecordingRetryQueue();
+        var publisher = new FeatureStreamPublisher(
+            new ThrowingFeatureChangeEventStore(),
+            _sessionManager,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            retryQueue);
+
+        await publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-1",
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "req-pub-fail"
+        });
+
+        Assert.False(session.Reader.TryRead(out _));
+        Assert.Single(retryQueue.Requests);
+        Assert.Equal("req-pub-fail", retryQueue.Requests[0].RequestId);
     }
 
     [UnitTest]
@@ -140,5 +166,43 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         Assert.True(session.Reader.TryRead(out var msg));
         Assert.NotNull(msg.Envelope.ChangedAttributes);
         Assert.True(msg.Envelope.GeometryChanged);
+    }
+
+    private sealed class ThrowingFeatureChangeEventStore : IFeatureChangeEventStore
+    {
+        public Task<FeatureChangeEvent> AppendAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("boom");
+
+        public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+
+        public Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
+            long? cursor,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            int limit,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+    }
+
+    private sealed class RecordingRetryQueue : IFeatureChangeRetryQueue
+    {
+        public List<FeatureChangeEventRequest> Requests { get; } = [];
+
+        public Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(Guid.NewGuid().ToString("N"));
+        }
+
+        public async IAsyncEnumerable<string> ReadQueuedIdsAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public Task ProcessQueuedAsync(string pendingId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

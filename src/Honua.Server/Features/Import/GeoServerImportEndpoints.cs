@@ -115,7 +115,7 @@ internal static partial class GeoServerImportEndpoints
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(context,
-                $"Failed to discover GeoServer service: {ex.Message}",
+                "Failed to discover GeoServer service with the supplied configuration.",
                 StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
@@ -135,6 +135,7 @@ internal static partial class GeoServerImportEndpoints
         var cancellationToken = context.RequestAborted;
         GeoServerImportJobManager? jobManager = null;
         string? jobId = null;
+        var jobQueued = false;
 
         GeoServerImportApiRequest? request;
         try
@@ -229,26 +230,28 @@ internal static partial class GeoServerImportEndpoints
                 } : null
             };
 
-            await jobManager.RequestStore.SetProgressAsync(jobId, importRequest, TimeSpan.FromHours(24), cancellationToken);
-            if (!await EnsureImportCoordinationStillDurableAsync(context, jobManager, jobId, cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            // Create initial progress
             var progress = GeoServerImportProgress.CreateInitial(
                 jobId,
                 request.GeoServerRestUrl,
                 importRequest.TargetHonuaUrl);
 
-            // Store initial progress
-            await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromHours(24), cancellationToken);
-            if (!await EnsureImportCoordinationStillDurableAsync(context, jobManager, jobId, cancellationToken).ConfigureAwait(false))
+            if (!await ImportEndpointCoordinationHelper.PersistQueuedJobStateAsync(
+                    context,
+                    jobManager.CanAcceptNewJobs,
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    importRequest,
+                    progress,
+                    TimeSpan.FromHours(24),
+                    "Distributed GeoServer import coordination became unavailable while the job was being enqueued. Retry when Redis is healthy.",
+                    cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
 
             await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken);
+            jobQueued = true;
 
             Log.ImportJobQueued(GetLogger(context), jobId, request.GeoServerRestUrl);
 
@@ -266,9 +269,13 @@ internal static partial class GeoServerImportEndpoints
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import queue is unavailable", StringComparison.OrdinalIgnoreCase))
         {
-            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId))
+            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
             {
-                await DeleteQueuedImportStateAsync(jobManager, jobId, CancellationToken.None).ConfigureAwait(false);
+                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    CancellationToken.None).ConfigureAwait(false);
             }
 
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
@@ -279,11 +286,32 @@ internal static partial class GeoServerImportEndpoints
         }
         catch (ArgumentException ex)
         {
+            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
+            {
+                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
-            await AdminResponseWriter.WriteErrorAsync(context, $"Invalid request: {ex.Message}", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Invalid GeoServer import request.",
+                StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
+            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
+            {
+                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
         }
@@ -422,34 +450,6 @@ internal static partial class GeoServerImportEndpoints
             ErrorMessage = progress.ErrorMessage,
             Progress = progress
         };
-
-    private static async Task<bool> EnsureImportCoordinationStillDurableAsync(
-        HttpContext context,
-        GeoServerImportJobManager jobManager,
-        string jobId,
-        CancellationToken cancellationToken)
-    {
-        if (jobManager.CanAcceptNewJobs)
-        {
-            return true;
-        }
-
-        await DeleteQueuedImportStateAsync(jobManager, jobId, cancellationToken).ConfigureAwait(false);
-        await AdminResponseWriter.WriteErrorAsync(
-            context,
-            "Distributed GeoServer import coordination became unavailable while the job was being enqueued. Retry when Redis is healthy.",
-            StatusCodes.Status503ServiceUnavailable);
-        return false;
-    }
-
-    private static async Task DeleteQueuedImportStateAsync(
-        GeoServerImportJobManager jobManager,
-        string jobId,
-        CancellationToken cancellationToken)
-    {
-        await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        await jobManager.ProgressStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-    }
 
     private static GeoServerImportJobStatus MapProgressStatusToJobStatus(GeoServerImportStatus status) => status switch
     {

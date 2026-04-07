@@ -12,6 +12,8 @@ internal interface IFeatureChangeEventStore
         FeatureChangeEventRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<FeatureChangeEvent>> QueryAsync(
         long? cursor,
         DateTimeOffset? from,
@@ -21,10 +23,17 @@ internal interface IFeatureChangeEventStore
 }
 
 /// <summary>
+/// Exposes runtime durability state for feature-change event storage.
+/// </summary>
+internal interface IFeatureChangeEventStoreHealth
+{
+    bool CanPersistEvents { get; }
+}
+
+/// <summary>
 /// Publishes normalized feature-change notifications.
 /// </summary>
 internal interface IFeatureChangeEventPublisher
 {
     Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default);
 }
-

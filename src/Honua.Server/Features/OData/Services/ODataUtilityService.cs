@@ -145,7 +145,8 @@ internal static class ODataUtilityService
         bool? count,
         string? expand = null,
         bool useSkipToken = false,
-        string? compute = null)
+        string? compute = null,
+        string? format = null)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>();
@@ -190,6 +191,11 @@ internal static class ODataUtilityService
         if (!string.IsNullOrWhiteSpace(compute))
         {
             queryParams.Add($"$compute={Uri.EscapeDataString(compute)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(format))
+        {
+            queryParams.Add($"$format={Uri.EscapeDataString(format)}");
         }
 
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";

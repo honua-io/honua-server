@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Events;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Admin;
 
@@ -20,17 +21,25 @@ namespace Honua.Server.Features.Admin;
 internal sealed partial class ManifestDriftWebhookDispatcher(
     IServiceScopeFactory scopeFactory,
     IDistributedCache? distributedCache,
+    IConnectionMultiplexer? redis,
     IHttpClientFactory httpClientFactory,
     IOptions<ManifestDriftWebhookOptions> options,
     ILogger<ManifestDriftWebhookDispatcher> logger) : BackgroundService
 {
     private const string LastDriftHashKey = "manifest:drift:last-hash";
+    private const string DriftLeaseKey = "manifest:drift:webhook:lease";
+    private static readonly TimeSpan DriftLeaseDuration = TimeSpan.FromMinutes(10);
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
     private readonly IDistributedCache? _distributedCache = distributedCache;
+    private readonly IDatabase? _redisDb = redis?.GetDatabase();
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
     private readonly ManifestDriftWebhookOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<ManifestDriftWebhookDispatcher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly RedisLeaseCoordinator _leaseCoordinator = new(redis, DriftLeaseKey, DriftLeaseDuration);
     private int _invalidConfigurationLogged;
+    private int _cursorLoadFailedLogged;
+    private int _cursorPersistFailedLogged;
+    private int _unsafeDistributedModeLogged;
     private int _unsafeWebhookUrlLogged;
     private string? _lastDriftHash;
 
@@ -40,45 +49,67 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
         _lastDriftHash = await TryLoadLastDriftHashAsync(stoppingToken).ConfigureAwait(false);
         var pollInterval = TimeSpan.FromSeconds(Math.Max(10, _options.PollIntervalSeconds));
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+                try
                 {
-                    await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
+                    if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+                    {
+                        await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(_options.Secret))
+                    {
+                        LogConfigurationInvalidOnce();
+                        await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (_distributedCache != null &&
+                        !_leaseCoordinator.IsConfigured)
+                    {
+                        LogUnsafeDistributedModeOnce();
+                        await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (_leaseCoordinator.IsConfigured &&
+                        !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+                    {
+                        await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    var validation = await FeatureChangeWebhookUrlValidation
+                        .ValidateAsync(_options.Url, stoppingToken)
+                        .ConfigureAwait(false);
+                    if (!validation.IsValid || validation.Uri == null)
+                    {
+                        LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+                        await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    await CheckAndDispatchDriftAsync(validation.Uri, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogDispatcherLoopFailed(_logger, ex);
                 }
 
-                if (string.IsNullOrWhiteSpace(_options.Secret))
-                {
-                    LogConfigurationInvalidOnce();
-                    await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                var validation = await FeatureChangeWebhookUrlValidation
-                    .ValidateAsync(_options.Url, stoppingToken)
-                    .ConfigureAwait(false);
-                if (!validation.IsValid || validation.Uri == null)
-                {
-                    LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
-                    await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                await CheckAndDispatchDriftAsync(validation.Uri, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                LogDispatcherLoopFailed(_logger, ex);
-            }
-
-            await Task.Delay(pollInterval, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await _leaseCoordinator.ReleaseAsync().ConfigureAwait(false);
         }
     }
 
@@ -135,7 +166,7 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
         }
     }
 
-    private static string ComputeDriftHash(List<ManifestDriftRecord> records)
+    private static string ComputeDriftHash(IReadOnlyList<ManifestDriftRecord> records)
     {
         var builder = new StringBuilder();
         foreach (var record in records
@@ -171,7 +202,7 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
         var signature = ComputeSignature(_options.Secret!, timestamp, payload);
         var maxAttempts = Math.Max(1, _options.MaxAttempts);
-        var eventId = Guid.NewGuid().ToString("N");
+        var eventId = $"manifest-drift-{ComputeDriftHash(report.Resources)}";
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -234,34 +265,55 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
 
     private async Task<string?> TryLoadLastDriftHashAsync(CancellationToken cancellationToken)
     {
-        if (_distributedCache == null)
-        {
-            return null;
-        }
-
         try
         {
+            if (_redisDb != null)
+            {
+                var value = await _redisDb.StringGetAsync(LastDriftHashKey).ConfigureAwait(false);
+                return value.HasValue ? value.ToString() : null;
+            }
+
+            if (_distributedCache == null)
+            {
+                return _lastDriftHash;
+            }
+
             return await _distributedCache.GetStringAsync(LastDriftHashKey, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            LogCursorLoadFailedOnce(ex);
             return null;
         }
     }
 
     private async Task TryPersistLastDriftHashAsync(string? hash, CancellationToken cancellationToken)
     {
-        if (_distributedCache == null)
-        {
-            return;
-        }
-
         try
         {
+            if (_redisDb != null)
+            {
+                if (hash == null)
+                {
+                    await _redisDb.KeyDeleteAsync(LastDriftHashKey).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _redisDb.StringSetAsync(LastDriftHashKey, hash, TimeSpan.FromDays(7)).ConfigureAwait(false);
+                }
+
+                return;
+            }
+
+            if (_distributedCache == null)
+            {
+                return;
+            }
+
             if (hash == null)
             {
                 await _distributedCache.RemoveAsync(LastDriftHashKey, cancellationToken).ConfigureAwait(false);
@@ -280,9 +332,9 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort persistence
+            LogCursorPersistFailedOnce(ex);
         }
     }
 
@@ -302,11 +354,38 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
         }
     }
 
+    private void LogCursorLoadFailedOnce(Exception exception)
+    {
+        if (Interlocked.Exchange(ref _cursorLoadFailedLogged, 1) == 0)
+        {
+            LogCursorLoadFailed(_logger, exception);
+        }
+    }
+
+    private void LogCursorPersistFailedOnce(Exception exception)
+    {
+        if (Interlocked.Exchange(ref _cursorPersistFailedLogged, 1) == 0)
+        {
+            LogCursorPersistFailed(_logger, exception);
+        }
+    }
+
+    private void LogUnsafeDistributedModeOnce()
+    {
+        if (Interlocked.Exchange(ref _unsafeDistributedModeLogged, 1) == 0)
+        {
+            LogUnsafeDistributedMode(_logger);
+        }
+    }
+
     [LoggerMessage(EventId = 9201, Level = LogLevel.Warning, Message = "Manifest drift webhook is enabled but secret is missing; delivery is disabled.")]
     private static partial void LogWebhookConfigurationInvalid(ILogger logger);
 
     [LoggerMessage(EventId = 9206, Level = LogLevel.Warning, Message = "Manifest drift webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
     private static partial void LogWebhookUrlRejected(ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 9207, Level = LogLevel.Warning, Message = "Manifest drift webhook delivery requires Redis lease coordination when distributed cache is enabled; delivery is disabled in fallback mode.")]
+    private static partial void LogUnsafeDistributedMode(ILogger logger);
 
     [LoggerMessage(EventId = 9202, Level = LogLevel.Debug, Message = "Manifest drift webhook delivery succeeded for event {EventId}.")]
     private static partial void LogDeliverySucceeded(ILogger logger, string eventId);
@@ -319,6 +398,12 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
 
     [LoggerMessage(EventId = 9205, Level = LogLevel.Warning, Message = "Manifest drift webhook dispatch loop failed; retrying.")]
     private static partial void LogDispatcherLoopFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9208, Level = LogLevel.Warning, Message = "Manifest drift webhook state load failed; continuing with in-memory state.")]
+    private static partial void LogCursorLoadFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9209, Level = LogLevel.Warning, Message = "Manifest drift webhook state persistence failed; continuing with in-memory state.")]
+    private static partial void LogCursorPersistFailed(ILogger logger, Exception exception);
 }
 
 /// <summary>

@@ -21,6 +21,7 @@ namespace Honua.Server.Features.Import;
 /// </summary>
 internal static partial class RasterImportEndpoints
 {
+    private const string InvalidRasterImportRequestMessage = "Raster import request is invalid.";
     /// <summary>
     /// Maximum size for sidecar text files (world files, .prj).
     /// World files are ~200 bytes; .prj files are typically &lt; 5 KB.
@@ -158,7 +159,7 @@ internal static partial class RasterImportEndpoints
             var logger = context.RequestServices.GetRequiredService<ILogger<RasterImportEndpointsLog>>();
             Log.ImportFailed(logger, parseResult.Request?.FileName ?? "unknown", ex);
             await AdminResponseWriter.WriteErrorAsync(
-                context, ex.Message, StatusCodes.Status400BadRequest);
+                context, InvalidRasterImportRequestMessage, StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
@@ -334,7 +335,7 @@ internal static partial class RasterImportEndpoints
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
         {
             MultipartParsingHelpers.TryDeleteFile(stagedFilePath);
-            return RasterImportParseResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
+            return RasterImportParseResult.Failure(InvalidRasterImportRequestMessage, StatusCodes.Status400BadRequest);
         }
         catch
         {

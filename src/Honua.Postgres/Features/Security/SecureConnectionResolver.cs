@@ -230,11 +230,15 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
                 {
                     _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' resolved host does not match configured host.");
                 }
 
                 if (builder.Port != 0 && builder.Port != connection.Port)
                 {
                     _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' resolved port does not match configured port.");
                 }
             }
             catch (ArgumentException ex)

@@ -36,11 +36,50 @@ public sealed class AdminAuthProviderInfo
     public required string DisplayName { get; set; }
 }
 
+/// <summary>
+/// Server-projected authentication state for the hosted admin UI.
+/// </summary>
+public sealed class AdminAuthSessionResponse
+{
+    /// <summary>
+    /// Gets or sets whether the current browser session is authenticated.
+    /// </summary>
+    public bool IsAuthenticated { get; set; }
+
+    /// <summary>
+    /// Gets or sets the selected provider key when available.
+    /// </summary>
+    public string? ProviderKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC expiry for the current admin session.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the authenticated claims projected for the hosted admin UI.
+    /// </summary>
+    public List<AdminAuthClaimInfo> Claims { get; set; } = [];
+}
+
+/// <summary>
+/// Claim projected from the authenticated admin session.
+/// </summary>
+public sealed class AdminAuthClaimInfo
+{
+    /// <summary>
+    /// Gets or sets the claim type.
+    /// </summary>
+    public required string Type { get; set; }
+
+    /// <summary>
+    /// Gets or sets the claim value.
+    /// </summary>
+    public required string Value { get; set; }
+}
+
 internal sealed class AdminAuthAuthorizeUrlRequest
 {
-    public string? State { get; set; }
-
-    public string? CodeChallenge { get; set; }
 }
 
 internal sealed class AdminAuthAuthorizeUrlResponse
@@ -54,9 +93,7 @@ internal sealed class AdminAuthTokenRequest
 
     public string? Code { get; set; }
 
-    public string? CodeVerifier { get; set; }
-
-    public string? RefreshToken { get; set; }
+    public string? State { get; set; }
 }
 
 internal sealed class AdminAuthTokenResponse
@@ -66,9 +103,6 @@ internal sealed class AdminAuthTokenResponse
 
     [System.Text.Json.Serialization.JsonPropertyName("id_token")]
     public string? IdToken { get; init; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("refresh_token")]
-    public string? RefreshToken { get; init; }
 
     [System.Text.Json.Serialization.JsonPropertyName("token_type")]
     public string TokenType { get; init; } = "Bearer";

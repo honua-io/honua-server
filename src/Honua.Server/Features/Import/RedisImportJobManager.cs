@@ -18,14 +18,9 @@ namespace Honua.Server.Features.Import;
 /// Redis-based distributed import job manager with in-memory fallback.
 /// Uses StackExchange.Redis primitives when available, falling back to IDistributedCache.
 /// </summary>
-internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IImportCoordinationHealth, IDisposable
+internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>, IImportCoordinationHealth, IDisposable
 {
-    private readonly RedisJobQueue _jobQueue;
-    private readonly RedisLeaderElection _leaderElection;
-    private readonly IUniversalProgressStore _universalProgressStore;
-    private readonly IDistributedProgressStore<GeoservicesImportProgress> _progressStore;
-    private readonly RedisProgressStore<GeoservicesImportRequest> _requestStore;
-    private readonly bool _requiresStrictDistributedMode;
+    private readonly ImportJobManagerState<GeoservicesImportRequest, GeoservicesImportProgress> _state;
 
     public RedisImportJobManager(
         IUniversalProgressStore universalProgressStore,
@@ -34,41 +29,33 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
         IHostEnvironment hostEnvironment,
         IConnectionMultiplexer? redis = null)
     {
-        ArgumentNullException.ThrowIfNull(universalProgressStore);
-        ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(hostEnvironment);
-
-        var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
-
-        _requiresStrictDistributedMode = RequiresStrictDistributedMode(hostEnvironment);
-        _jobQueue = new RedisJobQueue(redis, logger, "geoservices:import:queue", allowFallback: !_requiresStrictDistributedMode);
-        _leaderElection = new RedisLeaderElection(redis, logger, "geoservices:import:leader", instanceId);
-        _universalProgressStore = universalProgressStore;
-
-        // Use the universal progress store for progress tracking
-        _progressStore = new DistributedProgressStoreAdapter<GeoservicesImportProgress>(universalProgressStore);
-
-        // Keep using Redis directly for request storage (not progress tracking)
-        _requestStore = new RedisProgressStore<GeoservicesImportRequest>(
-            distributedCache, logger, "geoservices:import:request:", GeoservicesImportJsonContext.Default.GeoservicesImportRequest, redis);
+        _state = new ImportJobManagerState<GeoservicesImportRequest, GeoservicesImportProgress>(
+            universalProgressStore,
+            distributedCache,
+            logger,
+            hostEnvironment,
+            redis,
+            "geoservices:import:queue",
+            "geoservices:import:leader",
+            "geoservices:import:request:",
+            GeoservicesImportJsonContext.Default.GeoservicesImportRequest);
     }
 
-    public IDistributedJobQueueService JobQueue => _jobQueue;
-    public IDistributedLeaderElection LeaderElection => _leaderElection;
-    public IDistributedProgressStore<GeoservicesImportProgress> ProgressStore => _progressStore;
-    public IDistributedProgressStore<GeoservicesImportRequest> RequestStore => _requestStore;
-    internal bool IsClusterDurable =>
-        !_jobQueue.IsUsingFallback &&
-        !_leaderElection.IsUsingFallback &&
-        !_requestStore.IsUsingFallback &&
-        _universalProgressStore is not UniversalProgressStore { IsUsingFallback: true };
-    public bool CanAcceptNewJobs => IsClusterDurable || !_requiresStrictDistributedMode;
+    public IDistributedJobQueueService JobQueue => _state.JobQueue;
+    public IDistributedLeaderElection LeaderElection => _state.LeaderElection;
+    public IDistributedProgressStore<GeoservicesImportProgress> ProgressStore => _state.ProgressStore;
+    public IDistributedProgressStore<GeoservicesImportRequest> RequestStore => _state.RequestStore;
+    internal bool IsClusterDurable => _state.IsClusterDurable;
+    public bool CanAcceptNewJobs => _state.CanAcceptNewJobs;
     internal static bool RequiresStrictDistributedMode(IHostEnvironment hostEnvironment)
         => !hostEnvironment.IsDevelopment() && !hostEnvironment.IsEnvironment("Test");
 
     public void Dispose()
     {
-        _leaderElection.Dispose();
+        if (_state.LeaderElection is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 }
 
@@ -396,6 +383,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
     private readonly ILogger _logger;
     private readonly string _lockKey;
     private readonly string _instanceId;
+    private readonly bool _allowLocalFallbackLeadership;
     private readonly TimeSpan _leaseDuration = TimeSpan.FromSeconds(30);
     private readonly Timer _heartbeatTimer;
     private static readonly TimeSpan _redisRetryInterval = TimeSpan.FromSeconds(30);
@@ -409,16 +397,18 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         IConnectionMultiplexer? redis,
         ILogger logger,
         string lockKey,
-        string instanceId)
+        string instanceId,
+        bool allowLocalFallbackLeadership = true)
     {
         _redisDb = redis?.GetDatabase();
         _useRedis = _redisDb != null;
         _logger = logger;
         _lockKey = lockKey;
         _instanceId = instanceId;
+        _allowLocalFallbackLeadership = allowLocalFallbackLeadership;
         _heartbeatTimer = new Timer(HeartbeatCallback, null, Timeout.Infinite, Timeout.Infinite);
 
-        if (!_useRedis)
+        if (!_useRedis && _allowLocalFallbackLeadership)
         {
             ActivateLocalFallbackLeadership();
         }
@@ -439,8 +429,14 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
         if (!_useRedis || _redisDb == null)
         {
-            ActivateLocalFallbackLeadership();
-            return true;
+            if (_allowLocalFallbackLeadership)
+            {
+                ActivateLocalFallbackLeadership();
+                return true;
+            }
+
+            _isLeader = false;
+            return false;
         }
 
         if (_isLeader && !_usingLocalFallbackLeadership)
@@ -486,8 +482,14 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
         if (!_useRedis || _redisDb == null)
         {
-            ActivateLocalFallbackLeadership();
-            return true;
+            if (_allowLocalFallbackLeadership)
+            {
+                ActivateLocalFallbackLeadership();
+                return true;
+            }
+
+            _isLeader = false;
+            return false;
         }
 
         if (!_isLeader)
@@ -612,9 +614,18 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
     {
         _useRedis = false;
         _lastRedisFailure = DateTime.UtcNow;
-        if (!_usingLocalFallbackLeadership)
+        if (_allowLocalFallbackLeadership)
         {
-            ActivateLocalFallbackLeadership();
+            if (!_usingLocalFallbackLeadership)
+            {
+                ActivateLocalFallbackLeadership();
+            }
+        }
+        else
+        {
+            _isLeader = false;
+            _usingLocalFallbackLeadership = false;
+            _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
         }
 
         Log.LeadershipError(_logger, operation, ex);
@@ -685,11 +696,13 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 /// </summary>
 internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T> where T : class
 {
+    private const string ActiveIdsKeySuffix = "__active";
     private readonly IDistributedCache? _cache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly ILogger _logger;
     private readonly string _keyPrefix;
     private readonly string _healthCheckKey;
+    private readonly string _activeIdsKey;
     private readonly JsonTypeInfo<T> _jsonTypeInfo;
     private readonly ConcurrentDictionary<string, T> _fallbackStore = new();
     private readonly ConcurrentDictionary<string, DateTime> _fallbackExpiry = new();
@@ -699,6 +712,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     private long _lastCleanupTick = Environment.TickCount64;
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private volatile bool _isUsingFallback;
+    private bool AllowsLocalFallback => _cache == null;
 
     public RedisProgressStore(
         IDistributedCache? cache,
@@ -713,6 +727,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         _jsonTypeInfo = jsonTypeInfo;
         _redis = redis;
         _healthCheckKey = $"{_keyPrefix}__health_check__";
+        _activeIdsKey = $"{_keyPrefix}{ActiveIdsKeySuffix}";
         _isUsingFallback = cache == null;
     }
 
@@ -723,7 +738,10 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         var key = $"{_keyPrefix}{jobId}";
         var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
 
-        CacheFallback(key, progress, effectiveTtl);
+        if (AllowsLocalFallback)
+        {
+            CacheFallback(key, progress, effectiveTtl);
+        }
 
         if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
         {
@@ -732,6 +750,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         if (_isUsingFallback || _cache == null)
         {
+            if (_cache != null)
+            {
+                throw CreateDistributedStateUnavailableException("set progress");
+            }
+
             return;
         }
 
@@ -741,10 +764,15 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             await _cache.SetStringAsync(key, json,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
                 cancellationToken);
+            if (_redis != null)
+            {
+                await _redis.GetDatabase().SetAddAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "set progress");
+            throw CreateDistributedStateUnavailableException("set progress", ex);
         }
     }
 
@@ -759,6 +787,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         if (_isUsingFallback || _cache == null)
         {
+            if (_cache != null)
+            {
+                throw CreateDistributedStateUnavailableException("get progress");
+            }
+
             CleanupFallbackIfNeeded(enforceMax: false);
 
             if (_fallbackStore.TryGetValue(key, out var fallbackProgress))
@@ -788,7 +821,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "get progress");
-            return _fallbackStore.TryGetValue(key, out var progress) ? progress : null;
+            throw CreateDistributedStateUnavailableException("get progress", ex);
         }
     }
 
@@ -809,11 +842,20 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             try
             {
                 await _cache.RemoveAsync(key, cancellationToken);
+                if (_redis != null)
+                {
+                    await _redis.GetDatabase().SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "delete progress");
+                throw CreateDistributedStateUnavailableException("delete progress", ex);
             }
+        }
+        else if (_cache != null)
+        {
+            throw CreateDistributedStateUnavailableException("delete progress");
         }
     }
 
@@ -928,6 +970,9 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         Log.RedisFailed(_logger, operation, ex);
     }
 
+    private static InvalidOperationException CreateDistributedStateUnavailableException(string operation, Exception? innerException = null)
+        => new($"Distributed import state is unavailable while attempting to {operation}.", innerException);
+
     private async Task<IReadOnlyList<string>> GetActiveJobIdsInternalAsync(CancellationToken cancellationToken)
     {
         if (_cache == null)
@@ -949,10 +994,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "scan progress");
+                throw CreateDistributedStateUnavailableException("list active jobs", ex);
             }
         }
 
-        return GetActiveJobIdsFromFallback();
+        throw CreateDistributedStateUnavailableException("list active jobs");
     }
 
     private List<string> GetActiveJobIdsFromFallback()
@@ -966,44 +1012,37 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             .ToList();
     }
 
-    private Task<IReadOnlyList<string>> GetActiveJobIdsFromRedisAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<string>> GetActiveJobIdsFromRedisAsync(CancellationToken cancellationToken)
     {
-        var ids = new List<string>();
         var db = _redis!.GetDatabase();
-        var database = db.Database;
-        foreach (var endpoint in _redis.GetEndPoints())
+        var members = await db.SetMembersAsync(_activeIdsKey).ConfigureAwait(false);
+        var ids = new List<string>(members.Length);
+
+        foreach (var member in members)
         {
-            var server = _redis.GetServer(endpoint);
-            if (!server.IsConnected)
+            cancellationToken.ThrowIfCancellationRequested();
+            var jobId = member.ToString();
+            if (string.IsNullOrWhiteSpace(jobId))
             {
                 continue;
             }
 
-            foreach (var key in server.Keys(database, pattern: $"{_keyPrefix}*"))
+            var json = await _cache!.GetStringAsync($"{_keyPrefix}{jobId}", cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(json))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var keyString = key.ToString();
-                if (!keyString.StartsWith(_keyPrefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var jobId = keyString[_keyPrefix.Length..];
-                if (string.IsNullOrWhiteSpace(jobId))
-                {
-                    continue;
-                }
-
-                ids.Add(jobId);
+                await db.SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+                continue;
             }
+
+            ids.Add(jobId);
         }
 
-        return Task.FromResult<IReadOnlyList<string>>(ids);
+        return ids;
     }
 
     private static partial class Log
     {
-        [LoggerMessage(7620, LogLevel.Warning, "Redis {Operation} failed, using fallback")]
+        [LoggerMessage(7620, LogLevel.Warning, "Redis {Operation} failed for request/progress store")]
         public static partial void RedisFailed(ILogger logger, string operation, Exception exception);
 
         [LoggerMessage(7621, LogLevel.Information, "Redis connection restored for progress store")]

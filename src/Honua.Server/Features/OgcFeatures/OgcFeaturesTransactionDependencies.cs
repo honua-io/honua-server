@@ -17,14 +17,14 @@ internal sealed class OgcFeaturesTransactionDependencies
         ICrsRegistry crsRegistry,
         OgcFeaturesGeometryServices geometryServices,
         FeatureMutationValidator mutationValidator,
-        IFeatureChangeEventPublisher featureChangeEventPublisher)
+        FeatureMutationEventService mutationEventService)
     {
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
         CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         GeometryServices = geometryServices ?? throw new ArgumentNullException(nameof(geometryServices));
         MutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
-        FeatureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
+        MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
     }
 
     public IFeatureReader FeatureReader { get; }
@@ -32,5 +32,5 @@ internal sealed class OgcFeaturesTransactionDependencies
     public ICrsRegistry CrsRegistry { get; }
     public OgcFeaturesGeometryServices GeometryServices { get; }
     public FeatureMutationValidator MutationValidator { get; }
-    public IFeatureChangeEventPublisher FeatureChangeEventPublisher { get; }
+    public FeatureMutationEventService MutationEventService { get; }
 }

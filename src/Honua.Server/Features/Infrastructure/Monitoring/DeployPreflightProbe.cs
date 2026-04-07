@@ -22,6 +22,8 @@ internal sealed class DeployPreflightProbe(
     DatabaseCompatibilityState databaseCompatibilityState,
     IConnectionSecretResolver? secretResolver = null) : IDeployPreflightProbe
 {
+    private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
+
     public async Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
     {
         var readiness = await readinessCheckService.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
@@ -86,10 +88,10 @@ internal sealed class DeployPreflightProbe(
                 UpgradeRequired = plan.Successful && plan.UpgradeRequired,
                 PendingScripts = plan.PendingScripts,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                PlanError = plan.Successful ? null : plan.ErrorMessage
+                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
             };
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             return new DeployPreflightMigrationSnapshot
             {
@@ -97,7 +99,7 @@ internal sealed class DeployPreflightProbe(
                 Message = GetMigrationStatusMessage(migrationState),
                 PlanAvailable = false,
                 UpgradeRequired = false,
-                PlanError = exception.Message
+                PlanError = MigrationPlanUnavailableMessage
             };
         }
     }

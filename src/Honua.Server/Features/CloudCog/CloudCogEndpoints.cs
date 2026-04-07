@@ -24,6 +24,9 @@ internal sealed class CloudCogEndpointsLog;
 /// </summary>
 internal static class CloudCogEndpoints
 {
+    private const string DuplicateRegistrationMessage =
+        "A cloud raster with the same layer, provider, bucket, and object key is already registered.";
+
     /// <summary>
     /// Maps cloud COG admin endpoints.
     /// </summary>
@@ -89,7 +92,7 @@ internal static class CloudCogEndpoints
         catch (InvalidOperationException ex) when (ex.InnerException is not null &&
             ex.Message.Contains("already registered", StringComparison.Ordinal))
         {
-            return TypedResults.Conflict(ex.Message);
+            return TypedResults.Conflict(DuplicateRegistrationMessage);
         }
 
         var providerName = registration.Provider.ToString();

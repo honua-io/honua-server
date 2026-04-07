@@ -79,24 +79,21 @@ internal static class CoreEndpoints
     {
         OgcFeaturesLog.LandingPageRequested(logger);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
-        if (validationError is not null)
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                OgcFeaturesUtilities.AllowedQueryParameters.Metadata,
+                out var outputFormat,
+                out var errorResult))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return errorResult!;
         }
 
-        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
-        {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
-        }
-
-        var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/features";
         EnsureCacheControl(context, _landingPageCacheDuration);
 
-        var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
-            .ToBuilder();
+        var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
 
         // API definition
         links.Add(Link.Create(
@@ -167,15 +164,14 @@ internal static class CoreEndpoints
     {
         OgcFeaturesLog.ConformanceRequested(logger);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
-        if (validationError is not null)
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                OgcFeaturesUtilities.AllowedQueryParameters.Metadata,
+                out var outputFormat,
+                out var errorResult))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
-        }
-
-        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
-        {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
+            return errorResult!;
         }
 
         EnsureCacheControl(context, _conformanceCacheDuration);
@@ -207,12 +203,10 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete"
             ).AddRange(OgcConformanceUris.Common)
               .AddRange(OgcConformanceUris.VendorExtensions),
-            Links = OgcCommonUtilities.BuildFormatLinks(
-                context.Request,
+            Links = OgcCoreMetadataUtilities.BuildConformanceLinks(
+                context,
                 $"{baseUrl}/ogc/features/conformance",
-                outputFormat,
-                OgcCommonUtilities.MetadataFormats,
-                "Conformance declaration")
+                outputFormat)
         };
 
         OgcFeaturesLog.ConformanceReturned(logger, conformance.ConformsTo.Length);
@@ -250,7 +244,7 @@ internal static class CoreEndpoints
           "paths": {}
         }
         """;
-        return await OgcOpenApiSpecUtilities.GetOpenApiSpecAsync(
+        return await OgcCoreMetadataUtilities.GetOpenApiSpecAsync(
             context,
             f,
             environment,

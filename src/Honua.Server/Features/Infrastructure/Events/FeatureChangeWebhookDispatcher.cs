@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Infrastructure.Events;
 
@@ -14,18 +15,26 @@ namespace Honua.Server.Features.Infrastructure.Events;
 internal sealed partial class FeatureChangeWebhookDispatcher(
     IFeatureChangeEventStore store,
     IDistributedCache? distributedCache,
+    IConnectionMultiplexer? redis,
     IHttpClientFactory httpClientFactory,
     IOptions<FeatureChangeWebhookOptions> options,
     ILogger<FeatureChangeWebhookDispatcher> logger) : BackgroundService
 {
     private const string DeliveredCursorKey = "featurechange:webhook:delivered-cursor";
+    private const string DispatchLeaseKey = "featurechange:webhook:lease";
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan DispatchLeaseDuration = TimeSpan.FromMinutes(10);
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly IDistributedCache? _distributedCache = distributedCache;
+    private readonly IDatabase? _redisDb = redis?.GetDatabase();
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
     private readonly FeatureChangeWebhookOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<FeatureChangeWebhookDispatcher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly RedisLeaseCoordinator _leaseCoordinator = new(redis, DispatchLeaseKey, DispatchLeaseDuration);
+    private readonly IFeatureChangeEventStoreHealth? _storeHealth = store as IFeatureChangeEventStoreHealth;
     private int _invalidConfigurationLogged;
+    private int _eventStoreUnavailableLogged;
+    private int _unsafeDistributedModeLogged;
     private int _unsafeWebhookUrlLogged;
     private long _deliveredCursor;
 
@@ -33,62 +42,98 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     {
         _deliveredCursor = await TryLoadDeliveredCursorAsync(stoppingToken).ConfigureAwait(false);
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+                try
                 {
-                    await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (string.IsNullOrWhiteSpace(_options.Secret))
-                {
-                    LogWebhookConfigurationInvalidOnce();
-                    await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                var validation = await FeatureChangeWebhookUrlValidation
-                    .ValidateAsync(_options.Url, stoppingToken)
-                    .ConfigureAwait(false);
-                if (!validation.IsValid || validation.Uri == null)
-                {
-                    LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
-                    await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                var pending = await _store.QueryAsync(_deliveredCursor, null, null, limit: 100, stoppingToken).ConfigureAwait(false);
-                if (pending.Count == 0)
-                {
-                    await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                foreach (var featureEvent in pending)
-                {
-                    stoppingToken.ThrowIfCancellationRequested();
-                    var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, stoppingToken).ConfigureAwait(false);
-                    if (!delivered)
+                    if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
                     {
-                        break;
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
                     }
 
-                    _deliveredCursor = featureEvent.Cursor;
-                    await TryPersistDeliveredCursorAsync(_deliveredCursor, stoppingToken).ConfigureAwait(false);
+                    if (string.IsNullOrWhiteSpace(_options.Secret))
+                    {
+                        LogWebhookConfigurationInvalidOnce();
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (_storeHealth is { CanPersistEvents: false })
+                    {
+                        LogEventStoreUnavailableOnce();
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (_distributedCache != null &&
+                        !_leaseCoordinator.IsConfigured)
+                    {
+                        LogUnsafeDistributedModeOnce();
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (_leaseCoordinator.IsConfigured &&
+                        !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+                    {
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    var validation = await FeatureChangeWebhookUrlValidation
+                        .ValidateAsync(_options.Url, stoppingToken)
+                        .ConfigureAwait(false);
+                    if (!validation.IsValid || validation.Uri == null)
+                    {
+                        LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    var pending = await _store.QueryAsync(_deliveredCursor, null, null, limit: 100, stoppingToken).ConfigureAwait(false);
+                    if (pending.Count == 0)
+                    {
+                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    foreach (var featureEvent in pending)
+                    {
+                        stoppingToken.ThrowIfCancellationRequested();
+
+                        if (_leaseCoordinator.IsConfigured &&
+                            !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+                        {
+                            break;
+                        }
+
+                        var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, stoppingToken).ConfigureAwait(false);
+                        if (!delivered)
+                        {
+                            break;
+                        }
+
+                        _deliveredCursor = featureEvent.Cursor;
+                        await TryPersistDeliveredCursorAsync(_deliveredCursor, stoppingToken).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogDispatcherLoopFailed(_logger, ex);
+                    await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                LogDispatcherLoopFailed(_logger, ex);
-                await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-            }
+        }
+        finally
+        {
+            await _leaseCoordinator.ReleaseAsync().ConfigureAwait(false);
         }
     }
 
@@ -159,17 +204,33 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
 
     private async Task<long> LoadDeliveredCursorAsync(CancellationToken cancellationToken)
     {
+        if (_redisDb != null)
+        {
+            var redisValue = await _redisDb.StringGetAsync(DeliveredCursorKey).ConfigureAwait(false);
+            return long.TryParse(redisValue.ToString(), out var parsedRedisCursor) ? parsedRedisCursor : 0L;
+        }
+
         if (_distributedCache == null)
         {
             return Volatile.Read(ref _deliveredCursor);
         }
 
-        var value = await _distributedCache.GetStringAsync(DeliveredCursorKey, cancellationToken).ConfigureAwait(false);
-        return long.TryParse(value, out var cursor) ? cursor : 0L;
+        var cacheValue = await _distributedCache.GetStringAsync(DeliveredCursorKey, cancellationToken).ConfigureAwait(false);
+        return long.TryParse(cacheValue, out var parsedCacheCursor) ? parsedCacheCursor : 0L;
     }
 
     private async Task PersistDeliveredCursorAsync(long cursor, CancellationToken cancellationToken)
     {
+        if (_redisDb != null)
+        {
+            await _redisDb.StringSetAsync(
+                    DeliveredCursorKey,
+                    cursor.ToString(CultureInfo.InvariantCulture),
+                    TimeSpan.FromDays(7))
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (_distributedCache == null)
         {
             Volatile.Write(ref _deliveredCursor, cursor);
@@ -192,6 +253,14 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         }
     }
 
+    private void LogEventStoreUnavailableOnce()
+    {
+        if (Interlocked.Exchange(ref _eventStoreUnavailableLogged, 1) == 0)
+        {
+            LogEventStoreUnavailable(_logger);
+        }
+    }
+
     private void LogWebhookUrlRejectedOnce(string reason)
     {
         if (Interlocked.Exchange(ref _unsafeWebhookUrlLogged, 1) == 0)
@@ -200,8 +269,19 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         }
     }
 
+    private void LogUnsafeDistributedModeOnce()
+    {
+        if (Interlocked.Exchange(ref _unsafeDistributedModeLogged, 1) == 0)
+        {
+            LogUnsafeDistributedMode(_logger);
+        }
+    }
+
     [LoggerMessage(EventId = 9101, Level = LogLevel.Warning, Message = "Feature change webhook is enabled but secret is missing; delivery is disabled.")]
     private static partial void LogWebhookConfigurationInvalid(ILogger logger);
+
+    [LoggerMessage(EventId = 9110, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because durable event storage is unavailable in this environment.")]
+    private static partial void LogEventStoreUnavailable(ILogger logger);
 
     [LoggerMessage(EventId = 9106, Level = LogLevel.Warning, Message = "Feature change webhook cursor load failed; continuing with in-memory cursor state.")]
     private static partial void LogCursorLoadFailed(ILogger logger, Exception exception);
@@ -214,4 +294,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
 
     [LoggerMessage(EventId = 9105, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
     private static partial void LogWebhookUrlRejected(ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 9109, Level = LogLevel.Warning, Message = "Feature change webhook delivery requires Redis lease coordination when distributed cache is enabled; delivery is disabled in fallback mode.")]
+    private static partial void LogUnsafeDistributedMode(ILogger logger);
 }

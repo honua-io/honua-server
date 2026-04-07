@@ -307,6 +307,21 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithGmlFormat_IncludesCollectionMetadataAttributes()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?f=gml&limit=2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("numberMatched=\"");
+        content.Should().Contain("numberReturned=\"2\"");
+        content.Should().Contain("timeStamp=\"");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithGml4326Crs_UsesLatitudeLongitudeCoordinates()
     {
         var response = await _fixture.Client.GetAsync(

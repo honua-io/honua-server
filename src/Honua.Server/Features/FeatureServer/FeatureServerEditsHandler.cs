@@ -37,7 +37,7 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IFeatureServerGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
-    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = dependencies.FeatureChangeEventPublisher;
+    private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -125,8 +125,8 @@ internal sealed class FeatureServerEditsHandler(
             if (!editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
             {
-                await InvalidateCacheAsync(httpContext, serviceId, layerId, cancellationToken);
-                await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, cancellationToken);
+                await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, CancellationToken.None);
+                await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, CancellationToken.None);
             }
 
             // Build and return final response
@@ -417,19 +417,6 @@ internal sealed class FeatureServerEditsHandler(
             contentType: "application/json");
     }
 
-    private static async Task InvalidateCacheAsync(
-        HttpContext context,
-        string serviceId,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (cacheInvalidator != null)
-        {
-            await cacheInvalidator.InvalidateLayerAsync(serviceId, layerId, cancellationToken);
-        }
-    }
-
     private async Task PublishFeatureChangeEventsAsync(
         string serviceId,
         int layerId,
@@ -447,20 +434,16 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(context.CreateFeatures[i]);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = "create",
-                    Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId,
-                    GeometryEnvelope = createEnv,
-                    PropertiesJson = createProps
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _mutationEventService.PublishAsync(
+                _httpContextAccessor.HttpContext!,
+                layerId,
+                objectId,
+                "create",
+                HonuaTelemetry.Protocols.FeatureServer,
+                cancellationToken,
+                mutationFeature: context.CreateFeatures[i],
+                serviceId: serviceId,
+                requestId: requestId).ConfigureAwait(false);
         }
 
         for (var i = 0; i < context.UpdateFeatures.Count; i++)
@@ -472,20 +455,16 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            var (updateEnv, updateProps) = FeatureChangeEventEnrichment.FromFeature(context.UpdateFeatures[i]);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = "update",
-                    Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId,
-                    GeometryEnvelope = updateEnv,
-                    PropertiesJson = updateProps
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _mutationEventService.PublishAsync(
+                _httpContextAccessor.HttpContext!,
+                layerId,
+                objectId,
+                "update",
+                HonuaTelemetry.Protocols.FeatureServer,
+                cancellationToken,
+                mutationFeature: context.UpdateFeatures[i],
+                serviceId: serviceId,
+                requestId: requestId).ConfigureAwait(false);
         }
 
         for (var i = 0; i < context.DeleteIndexes.Count; i++)
@@ -498,20 +477,16 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             var deleteFeature = context.DeleteFeatures.Count > i ? context.DeleteFeatures[i] : null;
-            var (deleteEnv, deleteProps) = FeatureChangeEventEnrichment.FromFeature(deleteFeature);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = "delete",
-                    Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId,
-                    GeometryEnvelope = deleteEnv,
-                    PropertiesJson = deleteProps
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _mutationEventService.PublishAsync(
+                _httpContextAccessor.HttpContext!,
+                layerId,
+                objectId,
+                "delete",
+                HonuaTelemetry.Protocols.FeatureServer,
+                cancellationToken,
+                mutationFeature: deleteFeature,
+                serviceId: serviceId,
+                requestId: requestId).ConfigureAwait(false);
         }
     }
 

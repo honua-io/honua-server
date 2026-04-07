@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Logging;
 
@@ -15,6 +16,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 {
     private readonly IDatabaseHealthChecker _databaseHealthChecker;
     private readonly ICacheHealthChecker? _cacheHealthChecker;
+    private readonly IFeatureChangeEventStoreHealth? _featureChangeEventStoreHealth;
     private readonly MigrationState _migrationState;
     private readonly ILogger<ReadinessCheckService> _logger;
 
@@ -22,10 +24,12 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IDatabaseHealthChecker databaseHealthChecker,
         MigrationState migrationState,
         ILogger<ReadinessCheckService> logger,
-        ICacheHealthChecker? cacheHealthChecker = null)
+        ICacheHealthChecker? cacheHealthChecker = null,
+        IFeatureChangeEventStoreHealth? featureChangeEventStoreHealth = null)
     {
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
+        _featureChangeEventStoreHealth = featureChangeEventStoreHealth;
         _migrationState = migrationState ?? throw new ArgumentNullException(nameof(migrationState));
         _logger = logger;
     }
@@ -79,6 +83,12 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                 {
                     return ReadinessResult.NotReady("Cache unavailable");
                 }
+            }
+
+            if (_featureChangeEventStoreHealth is { CanPersistEvents: false })
+            {
+                Log.HealthCheckExecuted(_logger, "FeatureChangeEventStore", "Unhealthy", 0.0);
+                return ReadinessResult.NotReady("Feature-change event storage unavailable");
             }
 
             return ReadinessResult.Ready();

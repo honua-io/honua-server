@@ -66,6 +66,8 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
     {
     }
 
+    private static string ScopedKey(string key, string? schema = null) => CacheScopeKeys.EnsureScoped(key, schema);
+
     [UnitTest]
     [Operation(Operations.Cache)]
     public async Task GetLayerAsync_CacheHitNotNearExpiry_ReturnsWithoutRefresh()
@@ -100,7 +102,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         result!.Id.Should().Be(1);
 
         // Assert: background refresh was enqueued
-        _refreshCoordinator.EnqueuedKeys.Should().Contain("layer:1");
+        _refreshCoordinator.EnqueuedKeys.Should().Contain(ScopedKey("layer:1"));
         _innerCatalog.GetLayerCallCount.Should().Be(0); // NOT called synchronously
     }
 
@@ -132,7 +134,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        _refreshCoordinator.EnqueuedKeys.Should().Contain("service:testservice");
+        _refreshCoordinator.EnqueuedKeys.Should().Contain(ScopedKey("service:testservice"));
     }
 
     [UnitTest]
@@ -148,7 +150,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Assert
         result.Should().HaveCount(2);
-        _refreshCoordinator.EnqueuedKeys.Should().Contain("layers:all");
+        _refreshCoordinator.EnqueuedKeys.Should().Contain(ScopedKey("layers:all"));
     }
 
     [UnitTest]
@@ -164,7 +166,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Assert
         result.Should().HaveCount(2);
-        _refreshCoordinator.EnqueuedKeys.Should().Contain("services:all");
+        _refreshCoordinator.EnqueuedKeys.Should().Contain(ScopedKey("services:all"));
     }
 
     [UnitTest]
@@ -181,7 +183,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Assert: all return stale value, but only one refresh enqueued
         results.Should().AllSatisfy(r => r.Should().NotBeNull());
-        _refreshCoordinator.EnqueuedKeys.Count(k => k == "layer:1").Should().Be(1);
+        _refreshCoordinator.EnqueuedKeys.Count(k => k == ScopedKey("layer:1")).Should().Be(1);
     }
 
     [UnitTest]
@@ -223,8 +225,8 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None);
 
         // Assert: stale entry was NOT evicted; fresh value was written through
-        _cacheService.RemovedKeys.Should().NotContain("layer:1");
-        _cacheService.SetKeys.Should().Contain("layer:1");
+        _cacheService.RemovedKeys.Should().NotContain(ScopedKey("layer:1"));
+        _cacheService.SetKeys.Should().Contain(ScopedKey("layer:1"));
         _innerCatalog.GetLayerCallCount.Should().Be(1);
     }
 
@@ -244,8 +246,8 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None);
 
         // Assert: write-through — no eviction, fresh value written
-        _cacheService.RemovedKeys.Should().NotContain("layers:all");
-        _cacheService.SetKeys.Should().Contain("layers:all");
+        _cacheService.RemovedKeys.Should().NotContain(ScopedKey("layers:all"));
+        _cacheService.SetKeys.Should().Contain(ScopedKey("layers:all"));
         _innerCatalog.ListLayersCallCount.Should().Be(1);
     }
 
@@ -269,8 +271,8 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
             () => _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None));
 
         // Assert: stale entry was never evicted or overwritten — it stays in cache naturally
-        _cacheService.RemovedKeys.Should().NotContain("layer:1");
-        _cacheService.SetKeys.Should().NotContain("layer:1");
+        _cacheService.RemovedKeys.Should().NotContain(ScopedKey("layer:1"));
+        _cacheService.SetKeys.Should().NotContain(ScopedKey("layer:1"));
     }
 
     [UnitTest]
@@ -298,7 +300,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Act: first request triggers refresh enqueue
         var first = await _decorator.GetLayerAsync(1);
-        _refreshCoordinator.EnqueuedKeys.Should().Contain("layer:1");
+        _refreshCoordinator.EnqueuedKeys.Should().Contain(ScopedKey("layer:1"));
 
         // Callback is captured but NOT yet executed by background worker.
         // Concurrent requests before the worker runs should still get the stale value
@@ -330,7 +332,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _decorator.GetLayerAsync(1);
 
         // Simulate explicit invalidation while refresh is pending
-        _refreshCoordinator.NotifyInvalidation("layer:1");
+        _refreshCoordinator.NotifyInvalidation(ScopedKey("layer:1"));
 
         // Execute the captured refresh callback — it succeeds but should NOT write back
         _refreshCoordinator.CapturedCallbacks.Should().HaveCount(1);
@@ -338,7 +340,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Assert: inner catalog was called but write-back was skipped due to invalidation
         _innerCatalog.GetLayerCallCount.Should().Be(1);
-        _cacheService.SetKeys.Should().NotContain("layer:1");
+        _cacheService.SetKeys.Should().NotContain(ScopedKey("layer:1"));
     }
 
     [UnitTest]
@@ -352,7 +354,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         // Use the race-aware mock that invalidates the key during SetAsync
         var raceCacheService = new RaceAwareMockCacheService(
-            invalidateKeyDuringSet: "layer:1",
+            invalidateKeyDuringSet: ScopedKey("layer:1"),
             coordinator: _refreshCoordinator);
         raceCacheService.SetEntry("layer:1", layer, TimeSpan.FromSeconds(10));
 
@@ -373,7 +375,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None);
 
         // Assert: the post-write check detected the invalidation and removed the entry
-        raceCacheService.RemovedKeys.Should().Contain("layer:1");
+        raceCacheService.RemovedKeys.Should().Contain(ScopedKey("layer:1"));
     }
 
     [UnitTest]
@@ -395,8 +397,8 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None);
 
         // Assert: stale entry AND companion existence key both removed
-        _cacheService.RemovedKeys.Should().Contain("layer:1");
-        _cacheService.RemovedKeys.Should().Contain("layer:exists:1");
+        _cacheService.RemovedKeys.Should().Contain(ScopedKey("layer:1"));
+        _cacheService.RemovedKeys.Should().Contain(ScopedKey("layer:exists:1"));
     }
 
     [UnitTest]
@@ -418,8 +420,8 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None);
 
         // Assert: stale entry AND companion existence key both removed
-        _cacheService.RemovedKeys.Should().Contain("service:testservice");
-        _cacheService.RemovedKeys.Should().Contain("service:exists:testservice");
+        _cacheService.RemovedKeys.Should().Contain(ScopedKey("service:testservice"));
+        _cacheService.RemovedKeys.Should().Contain(ScopedKey("service:exists:testservice"));
     }
 
     [UnitTest]
@@ -429,7 +431,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         // Regression test: background refresh must query the same database schema
         // as the triggering request (X-Honua-Test-Schema header propagation).
         var layer = CreateTestLayer(1);
-        _cacheService.SetEntry("layer:1", layer, TimeSpan.FromSeconds(10));
+        _cacheService.SetEntry(ScopedKey("layer:1", "test_schema"), layer, TimeSpan.FromSeconds(10));
 
         // Create a schema-tracking scope factory so we can inspect the child scope's schema
         var childSchemaContext = new SchemaContext();
@@ -476,7 +478,7 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
         await _refreshCoordinator.CapturedCallbacks[0](CancellationToken.None);
 
         // Assert: refresh completed normally
-        _cacheService.SetKeys.Should().Contain("layer:1");
+        _cacheService.SetKeys.Should().Contain(ScopedKey("layer:1"));
     }
 
     #region Test Helpers
@@ -526,12 +528,12 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         public void SetEntry<T>(string key, T value, TimeSpan remainingTtl) where T : class
         {
-            _entries[key] = (value, remainingTtl);
+            _entries[ScopedKey(key)] = (value, remainingTtl);
         }
 
         public Task<CacheEntryMetadata<T>> GetWithMetadataAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
         {
-            if (_entries.TryGetValue(key, out var entry) && entry.Value is T typedValue)
+            if (_entries.TryGetValue(ScopedKey(key), out var entry) && entry.Value is T typedValue)
             {
                 return Task.FromResult(new CacheEntryMetadata<T>(typedValue, entry.RemainingTtl));
             }
@@ -546,22 +548,25 @@ public sealed class BackgroundRefreshCacheDecoratorTests : IDisposable
 
         public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
         {
-            SetKeys.Add(key);
-            _entries[key] = (value, TimeSpan.Zero);
+            var scopedKey = ScopedKey(key);
+            SetKeys.Add(scopedKey);
+            _entries[scopedKey] = (value, TimeSpan.Zero);
             return Task.CompletedTask;
         }
 
         public virtual Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken cancellationToken = default) where T : class
         {
-            SetKeys.Add(key);
-            _entries[key] = (value, ttl);
+            var scopedKey = ScopedKey(key);
+            SetKeys.Add(scopedKey);
+            _entries[scopedKey] = (value, ttl);
             return Task.CompletedTask;
         }
 
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
         {
-            RemovedKeys.Add(key);
-            _entries.Remove(key);
+            var scopedKey = ScopedKey(key);
+            RemovedKeys.Add(scopedKey);
+            _entries.Remove(scopedKey);
             return Task.CompletedTask;
         }
 

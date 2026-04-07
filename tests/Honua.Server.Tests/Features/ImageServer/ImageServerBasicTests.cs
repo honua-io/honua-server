@@ -4,9 +4,13 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.ImageServer;
 
@@ -91,6 +95,62 @@ public class ImageServerBasicTests : IAsyncLifetime
             json.RootElement.TryGetProperty("width", out _).Should().BeTrue();
             json.RootElement.TryGetProperty("height", out _).Should().BeTrue();
             json.RootElement.TryGetProperty("extent", out _).Should().BeTrue();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Operation(Operations.Export)]
+    public async Task ExportImage_WithInlineImageFormat_ReturnsImageBytes()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.GetPrimaryRasterInfoAsync(TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(new RasterInfo
+            {
+                Id = 100,
+                LayerId = TestLayerId,
+                Name = "test-raster",
+                Width = 1024,
+                Height = 1024,
+                BandCount = 3,
+                PixelType = "8BUI",
+                Srid = 4326,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        rasterStore.ExportImageAsync(TestLayerId, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [0x89, 0x50, 0x4E, 0x47],
+                ContentType = "image/png",
+                Width = 256,
+                Height = 128,
+                Srid = 4326,
+                Extent = new RasterExtent
+                {
+                    XMin = -180,
+                    YMin = -90,
+                    XMax = 180,
+                    YMax = 90,
+                    Srid = 4326
+                }
+            });
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(rasterStore));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/exportImage?bbox=-180,-90,180,90&size=256&format=png&f=image");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            (await response.Content.ReadAsByteArrayAsync()).Should().Equal([(byte)0x89, 0x50, 0x4E, 0x47]);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 

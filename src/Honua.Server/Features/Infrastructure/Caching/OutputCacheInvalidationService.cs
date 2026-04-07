@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Middleware;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -273,61 +274,33 @@ internal sealed partial class OutputCacheInvalidationService
             keys.Add($"{CachingLayerCatalog.LayerExistsKeyPrefix}{layerId}");
         }
 
+        string? currentSchema = SchemaContext.AmbientCurrentSchema;
+
         foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            string scopedKey = await CachingLayerCatalog.ScopeKeyAsync(
+                _metadataCache,
+                key,
+                currentSchema,
+                cancellationToken).ConfigureAwait(false);
+
             // Notify the refresh coordinator so any pending background refresh
             // for this key skips stale-value restoration on failure.
-            _refreshCoordinator?.NotifyInvalidation(key);
+            _refreshCoordinator?.NotifyInvalidation(scopedKey);
 
             try
             {
-                await _metadataCache.RemoveAsync(key, cancellationToken);
+                await _metadataCache.RemoveAsync(scopedKey, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                LogEvictMetadataKeyFailed(_logger, key, ex);
+                LogEvictMetadataKeyFailed(_logger, scopedKey, ex);
             }
         }
 
-        foreach (var pattern in GetScopedMetadataPatterns(keys, layerIds))
-        {
-            try
-            {
-                await _metadataCache.RemoveByPatternAsync(pattern, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                LogEvictMetadataPatternFailed(_logger, pattern, ex);
-            }
-        }
-
-        foreach (var layerId in layerIds)
-        {
-            var pattern = $"{CachingLayerCatalog.RelationshipKeyPrefix}{layerId}:*";
-            try
-            {
-                await _metadataCache.RemoveByPatternAsync(pattern, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                LogEvictMetadataPatternFailed(_logger, pattern, ex);
-            }
-        }
-    }
-
-    private static IEnumerable<string> GetScopedMetadataPatterns(
-        IEnumerable<string> keys,
-        IReadOnlyCollection<int> layerIds)
-    {
-        foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            yield return $"scope:*:{key}";
-        }
-
-        foreach (var layerId in layerIds.Distinct())
-        {
-            yield return $"scope:*:relationship:{layerId}:*";
-        }
+        // Metadata cache keys are already schema-scoped by the cache implementation for
+        // the current request. Explicit scoped wildcard invalidation forces Redis keyspace
+        // scans on mutation paths, so this invalidator sticks to direct-key eviction here.
     }
     private async Task<string[]> ResolveLayerServiceIdsAsync(
         string? serviceId,

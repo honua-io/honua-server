@@ -52,6 +52,7 @@ internal sealed record FeatureChangeEvent
 /// </summary>
 internal sealed record FeatureChangeEventRequest
 {
+    public string? EventId { get; init; }
     public required string ServiceId { get; init; }
     public required int LayerId { get; init; }
     public required long ObjectId { get; init; }
