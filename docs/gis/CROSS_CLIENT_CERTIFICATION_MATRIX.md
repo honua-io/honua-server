@@ -68,6 +68,7 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 | OGC | OGC API Features | `ogc-features` |
 | OData | OData v4 | `odata` |
 | MVT | Vector Tiles (Mapbox Vector Tiles) | `mvt` |
+| WFS | WFS 2.0 | `wfs` |
 | WMS | WMS 1.3 | `wms` |
 | WMTS | WMTS 1.0 | `wmts` |
 | Admin API | Control-plane admin endpoints | `admin-api` |
@@ -81,7 +82,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 |---|---|---|---|
 | **JS** (Vitest) | Automated ‡‡ | All CERT-\* except CERT-RNDR (headless) | JS-EXT-01, JS-EXT-02 |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
-| **Desktop — QGIS** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
+| **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
 | **CLI / SDK** (admin SDK, pytest) | Automated | All CERT-\* except CERT-RNDR | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
 | **BI — Excel** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -145,3 +146,4 @@ All certification results must follow the standardized evidence specification in
 | 1.0.5 | 2026-03-16 | Add geometry tolerance thresholds for CERT-GEOM-01; scope JS lane to Vitest-only client evidence |
 | 1.0.6 | 2026-03-16 | Add Admin API protocol abbreviation for CLI lane extensions |
 | 1.0.7 | 2026-03-17 | Add stable HTML anchor for JS Lane heading to decouple cross-document links |
+| 1.0.8 | 2026-04-03 | Add WFS protocol abbreviation; update Desktop — QGIS lane to reflect automated PyQGIS coverage |

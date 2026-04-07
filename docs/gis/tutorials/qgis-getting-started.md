@@ -164,6 +164,19 @@ envsubst < desktop/qgis/Honua-Desktop-Smoke.qgs.template > desktop/qgis/Honua-De
 
 Open the generated `.qgs` file in QGIS, or package it as `.qgz` using the client-template runbook.
 
+## Alternative: Connect via WFS
+
+QGIS also supports WFS 2.0 connections to Honua. This is validated nightly by the automated PyQGIS compatibility suite.
+
+1. Go to **Layer > Add Layer > Add WFS / OGC API - Features Layer** (or press `Ctrl+L` and select the **WFS / OGC API Features** tab)
+2. Click **New** to create a connection:
+   - **Name:** `Honua WFS`
+   - **URL:** `http://localhost:8080/wfs`
+3. Click **Connect**
+4. Select a feature type and click **Add**
+
+WFS uses GetCapabilities for type discovery and supports attribute and spatial filtering via the QGIS WFS provider.
+
 ## Verify OGC API Features Endpoints
 
 These endpoints are used by QGIS under the hood:

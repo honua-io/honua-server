@@ -233,5 +233,5 @@ For each client entry, include:
 
 Desktop automation can reduce manual effort but should be treated as non-blocking MVP support work:
 - ArcGIS Pro: feasible with ArcPy on licensed Windows runners for scripted layer setup and project save.
-- QGIS: feasible with PyQGIS for headless connection/layer load and project save.
+- QGIS: **automated via PyQGIS** — the `pyqgis-client-compat-nightly.yml` workflow exercises OGC API Features and WFS programmatically with real QGIS providers, including headless rendering. The automated lane covers all 18 CERT-\* cases (with documented skips for TLS/auth on the anonymous seed). The manual QGIS template flow remains OGC-first unless a later ticket broadens it.
 - Power BI/Excel: query-refresh automation is feasible, but end-to-end desktop UI automation is brittle and environment-specific.
