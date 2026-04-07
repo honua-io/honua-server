@@ -1120,7 +1120,7 @@
               "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
               "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the layer's primary raster), the Honua-extension bandIds selector (1-based), and histogramParameters.size (default 256, capped at 1024). AOI clipping (geometry/mosaicRule/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full raster."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the layer's primary raster), the Honua-extension bandIds selector (1-based), and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/mosaicRule/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full raster."
           }
         ],
         "notImplemented": [
@@ -1375,7 +1375,7 @@
           {
             "name": "bandIds",
             "status": "implemented (Honua extension)",
-            "notes": "Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector."
+            "notes": "Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
           },
           {
             "name": "histogramParameters.size",

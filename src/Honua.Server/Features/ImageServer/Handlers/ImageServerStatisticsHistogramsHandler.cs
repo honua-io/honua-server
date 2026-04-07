@@ -225,9 +225,10 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
         foreach (var band in orderedBands)
         {
-            // Skip bands the store filtered out entirely (e.g. caller asked for a band the
-            // raster does not have). Emitting an empty pair would still misalign the arrays
-            // versus the caller's expectation, so it is safer to drop the band on both sides.
+            // Drop bands the store filtered out from both sides (e.g. caller asked for a band
+            // the raster does not have on either pipeline). When a band is present on only one
+            // side we still emit it and zero-fill the missing side below, so the parallel
+            // statistics[]/histograms[] arrays stay index-aligned.
             var hasStats = statsByBand.TryGetValue(band, out var s);
             var hasHist = histByBand.TryGetValue(band, out var h);
             if (!hasStats && !hasHist)

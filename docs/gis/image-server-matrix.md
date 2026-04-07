@@ -191,6 +191,10 @@ Sources:
 | `renderingRule` | Not honoured. |
 | `pixelSize` | Not honoured. |
 
+#### Response shape notes
+
+The Esri `BandStatistic` and `BandHistogram` shapes do not carry a `band` field, so clients correlate the two parallel arrays positionally. Honua aligns them by band number before serialising: index `i` of `statistics[]` and index `i` of `histograms[]` always describe the same band. A band only appears in the response if at least one side returned data for it — bands the underlying store filtered out from **both** the statistics and histograms results (for example, asking for a band the raster does not have) are dropped from both arrays. When a band is present on only one side, the missing side is zero-filled (an all-zero `BandStatistic`, or a `BandHistogram` with empty `counts[]`) so the parallel arrays stay index-aligned. When multiple `rasterIds` are supplied the per-raster results are appended in the request order, with each raster's bands ordered by the caller-supplied `bandIds` (falling back to the store's natural order).
+
 ### Legend (`GET .../ImageServer/legend`)
 
 | Esri parameter | Honua status | Notes |
