@@ -7,11 +7,11 @@
 
 import '../shared/ol-node-setup.js';
 import WFS from 'ol/format/WFS.js';
-import GML from 'ol/format/GML.js';
 import { wfsUrl } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
 
 const evidence = new EvidenceCollector('wfs20');
+const wfsFormat = new WFS({ version: '2.0.0' });
 let typeName: string;
 
 beforeAll(async () => {
@@ -63,7 +63,6 @@ describe('WFS 2.0 GetFeature', () => {
     const text = await resp.text();
 
     const start = Date.now();
-    const wfsFormat = new WFS();
     const features = wfsFormat.readFeatures(text);
     const duration = Date.now() - start;
 
@@ -84,7 +83,6 @@ describe('WFS 2.0 GetFeature', () => {
     expect(resp.ok).toBe(true);
     const text = await resp.text();
 
-    const wfsFormat = new WFS();
     const features = wfsFormat.readFeatures(text);
     expect(features.length).toBeGreaterThan(0);
 
@@ -110,7 +108,6 @@ describe('WFS 2.0 GetFeature', () => {
     expect(resp.ok).toBe(true);
     const text = await resp.text();
 
-    const wfsFormat = new WFS();
     const features = wfsFormat.readFeatures(text);
     expect(features.length).toBeGreaterThan(0);
 
