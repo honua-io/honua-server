@@ -50,6 +50,25 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.StaticMap);
         categories.Should().Contain(FeatureCatalog.Categories.Styling);
         categories.Should().Contain(FeatureCatalog.Categories.Raster);
+        categories.Should().Contain(FeatureCatalog.Categories.Analytics);
+    }
+
+    [Theory]
+    [InlineData("analytics.clustering")]
+    [InlineData("analytics.spatial-join")]
+    [InlineData("analytics.buffer-aggregate")]
+    [InlineData("analytics.density")]
+    public void All_SpatialAnalyticsFeaturesAreProTier(string key)
+    {
+        // ADR-0024 + ticket #342 acceptance: every spatial analytics endpoint
+        // must be gated behind at least the Pro edition. This test is the
+        // catalog-side counterpart to the SpatialAnalyticsEditionGateTests
+        // unit tests on the request handler.
+        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
+
+        feature.Should().NotBeNull($"feature catalog must define '{key}' for ticket #342");
+        feature!.Category.Should().Be(FeatureCatalog.Categories.Analytics);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
     }
 
     [Fact]

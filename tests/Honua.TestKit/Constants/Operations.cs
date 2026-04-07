@@ -129,6 +129,12 @@ public static class Operations
     public const string QueryBins = "QueryBins";
     public const string QueryH3 = "QueryH3";
 
+    // Spatial Analytics Operations (Pro tier)
+    public const string QueryClusters = "QueryClusters";
+    public const string SpatialJoin = "SpatialJoin";
+    public const string QueryBufferAggregate = "QueryBufferAggregate";
+    public const string QueryDensity = "QueryDensity";
+
     // Streaming Operations
     public const string Streaming = "Streaming";
 

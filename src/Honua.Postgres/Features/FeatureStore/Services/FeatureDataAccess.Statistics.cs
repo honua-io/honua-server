@@ -89,6 +89,10 @@ internal sealed partial class FeatureDataAccess
             DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt,
                 dt.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dt.Kind)),
             DateTimeOffset dto => dto,
+            // Pass arrays through untouched so spatial-join carry fields
+            // (array_agg(text) → string[]) reach the JSON serializer as real
+            // collections instead of getting stringified to "System.String[]".
+            Array arr => arr,
             _ => value.ToString()
         };
     }

@@ -857,6 +857,314 @@
           }
         }
       }
+    },
+    "/collections/{collectionId}/clusters": {
+      "post": {
+        "summary": "Spatial clustering for a collection (Pro)",
+        "description": "Runs DBSCAN or K-Means clustering over the collection features and returns either per-feature cluster assignments or per-cluster convex hulls. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Clustering request payload (algorithm, parameters, optional where filter)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "enum": ["dbscan", "kmeans"]
+                  },
+                  "eps": {
+                    "type": "number",
+                    "description": "DBSCAN neighborhood distance in meters"
+                  },
+                  "minPoints": {
+                    "type": "integer",
+                    "description": "DBSCAN minimum cluster size"
+                  },
+                  "k": {
+                    "type": "integer",
+                    "description": "K-Means cluster count"
+                  },
+                  "returnHulls": {
+                    "type": "boolean",
+                    "description": "Return per-cluster convex hulls instead of per-feature assignments"
+                  },
+                  "where": {
+                    "type": "string",
+                    "description": "ArcGIS SQL filter applied before clustering"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cluster assignments or hulls as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid clustering parameters or filter syntax"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/spatial-join": {
+      "post": {
+        "summary": "Spatial join against a target collection (Pro)",
+        "description": "Joins features from the source collection against a target collection using a spatial predicate (intersects, contains, within, dwithin) and optionally aggregates carry fields and statistics. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Source collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Spatial join request payload (target collection, predicate, carry fields, outStatistics)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetCollectionId": {
+                    "type": "string"
+                  },
+                  "predicate": {
+                    "type": "string",
+                    "enum": ["intersects", "contains", "within", "dwithin"]
+                  },
+                  "distance": {
+                    "type": "number",
+                    "description": "Distance in meters for the dwithin predicate"
+                  },
+                  "carryFields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "outStatistics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "where": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Joined features as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid join parameters"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/buffer-aggregate": {
+      "post": {
+        "summary": "Buffer + aggregate for a collection (Pro)",
+        "description": "Buffers features by a radius (meters) and optionally dissolves overlapping buffers and groups by an attribute. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Buffer aggregate request payload (distance, dissolve flag, optional groupBy and outStatistics)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "distance": {
+                    "type": "number",
+                    "description": "Buffer radius in meters"
+                  },
+                  "dissolve": {
+                    "type": "boolean",
+                    "description": "Union overlapping buffers"
+                  },
+                  "groupBy": {
+                    "type": "string",
+                    "description": "Field name to group buffers by before dissolving"
+                  },
+                  "outStatistics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "where": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Buffered features as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid buffer parameters"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/density": {
+      "post": {
+        "summary": "Density binning for a collection (Pro)",
+        "description": "Bins features into a hexagonal or square grid at a configurable cell size and returns aggregate counts/statistics per cell. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Density request payload (grid type, cell size, optional outStatistics)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gridType": {
+                    "type": "string",
+                    "enum": ["hex", "square"]
+                  },
+                  "cellSize": {
+                    "type": "number",
+                    "description": "Cell size in meters"
+                  },
+                  "outStatistics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "where": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Density bins as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid density parameters"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          }
+        }
+      }
     }
   },
   "components": {

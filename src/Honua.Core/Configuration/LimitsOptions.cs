@@ -57,6 +57,11 @@ public sealed class LimitsOptions
     /// Geometry validation options for security and data quality enforcement.
     /// </summary>
     public GeometryValidationOptions Validation { get; init; } = new();
+
+    /// <summary>
+    /// Spatial analytics limits for clustering, joins, buffer aggregate and density.
+    /// </summary>
+    public AnalyticsLimits Analytics { get; init; } = new();
 }
 
 /// <summary>
@@ -450,6 +455,79 @@ public sealed class GeometryValidationOptions
     /// Only applies when Mode is Repair.
     /// </summary>
     public bool EnableAutoRepair { get; init; } = true;
+}
+
+/// <summary>
+/// Spatial analytics safety limits applied to the Pro-tier analytics endpoints
+/// (clustering, spatial join, buffer aggregate, density binning). Caps both the
+/// input subset size and the number of result groups so a single request cannot
+/// exhaust database resources.
+/// </summary>
+public sealed class AnalyticsLimits
+{
+    /// <summary>
+    /// Maximum number of input features any analytics operation will process.
+    /// Enforced via <c>LIMIT n+1</c> overflow detection in the generated SQL so
+    /// the database stops scanning as soon as the cap is exceeded. Range: 1,000-1,000,000.
+    /// </summary>
+    [Range(1000, 1000000, ErrorMessage = "MaxInputFeatures must be between 1,000 and 1,000,000.")]
+    public int MaxInputFeatures { get; init; } = 100000;
+
+    /// <summary>
+    /// Maximum number of clusters returned by a clustering query in hull-per-cluster
+    /// mode. Per-feature output is bounded by <see cref="MaxInputFeatures"/> instead.
+    /// Range: 10-100,000.
+    /// </summary>
+    [Range(10, 100000, ErrorMessage = "MaxClusters must be between 10 and 100,000.")]
+    public int MaxClusters { get; init; } = 5000;
+
+    /// <summary>
+    /// Maximum number of cells returned by a density binning query. Range: 100-1,000,000.
+    /// </summary>
+    [Range(100, 1000000, ErrorMessage = "MaxDensityCells must be between 100 and 1,000,000.")]
+    public int MaxDensityCells { get; init; } = 50000;
+
+    /// <summary>
+    /// Maximum buffer distance in meters accepted by the buffer-aggregate endpoint.
+    /// Range: 1-1,000,000 meters.
+    /// </summary>
+    [Range(1, 1000000, ErrorMessage = "MaxBufferDistanceMeters must be between 1 and 1,000,000.")]
+    public double MaxBufferDistanceMeters { get; init; } = 100000d;
+
+    /// <summary>
+    /// Maximum DWithin distance in meters accepted by the spatial join endpoint
+    /// when the predicate is <c>DWithin</c>. Range: 1-1,000,000 meters.
+    /// </summary>
+    [Range(1, 1000000, ErrorMessage = "MaxDWithinDistanceMeters must be between 1 and 1,000,000.")]
+    public double MaxDWithinDistanceMeters { get; init; } = 100000d;
+
+    /// <summary>
+    /// Minimum allowed density cell size in meters. Smaller values would generate
+    /// extremely large grids. Range: 1-1,000 meters.
+    /// </summary>
+    [Range(1, 1000, ErrorMessage = "MinDensityCellSizeMeters must be between 1 and 1,000.")]
+    public double MinDensityCellSizeMeters { get; init; } = 10d;
+
+    /// <summary>
+    /// Maximum allowed density cell size in meters. Larger values are rejected to
+    /// keep the grid generator from running unboundedly across world extents.
+    /// Range: 100-1,000,000 meters.
+    /// </summary>
+    [Range(100, 1000000, ErrorMessage = "MaxDensityCellSizeMeters must be between 100 and 1,000,000.")]
+    public double MaxDensityCellSizeMeters { get; init; } = 100000d;
+
+    /// <summary>
+    /// Maximum K parameter accepted by K-Means clustering. Larger values cost more
+    /// CPU and rarely produce useful visualisations. Range: 2-10,000.
+    /// </summary>
+    [Range(2, 10000, ErrorMessage = "MaxKMeansK must be between 2 and 10,000.")]
+    public int MaxKMeansK { get; init; } = 1000;
+
+    /// <summary>
+    /// Maximum DBSCAN <c>eps</c> distance in meters. Range: 1-1,000,000 meters.
+    /// </summary>
+    [Range(1, 1000000, ErrorMessage = "MaxDbscanEpsMeters must be between 1 and 1,000,000.")]
+    public double MaxDbscanEpsMeters { get; init; } = 100000d;
 }
 
 /// <summary>

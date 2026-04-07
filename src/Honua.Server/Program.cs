@@ -626,7 +626,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Server.Features.Export.ExportJsonContext.Default,
         Honua.Server.Features.Stac.StacJsonContext.Default,
-        Honua.Server.Features.CloudCog.CloudCogJsonContext.Default);
+        Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
+        Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation

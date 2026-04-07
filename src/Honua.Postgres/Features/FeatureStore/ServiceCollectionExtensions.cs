@@ -6,8 +6,10 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Infrastructure.Caching;
+using Honua.Postgres.Features.SpatialAnalytics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
@@ -84,6 +86,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IKmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+
+        // Spatial analytics reader (clustering, spatial join, buffer aggregate, density).
+        // Composes the existing query builder + data access pipeline so all observability
+        // (slow-query logging, metrics, telemetry) flows through the same code path as
+        // statistics, date bins and H3 aggregation.
+        services.AddScoped<ISpatialAnalyticsReader, PostgresSpatialAnalyticsReader>();
 
         return services;
     }
