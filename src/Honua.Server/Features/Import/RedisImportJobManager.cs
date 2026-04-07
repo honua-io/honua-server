@@ -1027,6 +1027,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
                 continue;
             }
 
+            // Verify job still exists in cache
             var json = await _cache!.GetStringAsync($"{_keyPrefix}{jobId}", cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(json))
             {
