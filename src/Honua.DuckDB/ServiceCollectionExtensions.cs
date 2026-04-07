@@ -37,14 +37,18 @@ internal static class ServiceCollectionExtensions
         var options = new DuckDBOptions();
         configuration.GetSection("DuckDB").Bind(options);
 
-        // Validate and strip write capabilities at startup
+        // Validate and strip unsupported capabilities at startup. The DuckDB provider is
+        // read-only in V1, so editing (Create/Update/Delete) and replica extract workflows
+        // are removed before they reach the catalog. Extract is dropped because there is
+        // no DuckDB-side replica persistence path — see ReadOnlyReplicaRepository.
         foreach (var svc in options.Services)
         {
             var originalCaps = svc.Capabilities;
             svc.Capabilities = originalCaps
                 .Where(c => !c.Equals("Create", StringComparison.OrdinalIgnoreCase) &&
                             !c.Equals("Update", StringComparison.OrdinalIgnoreCase) &&
-                            !c.Equals("Delete", StringComparison.OrdinalIgnoreCase))
+                            !c.Equals("Delete", StringComparison.OrdinalIgnoreCase) &&
+                            !c.Equals("Extract", StringComparison.OrdinalIgnoreCase))
                 .ToArray();
         }
 

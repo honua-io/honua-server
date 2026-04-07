@@ -74,8 +74,12 @@ public sealed class DuckDBServiceOptions
     /// <summary>Layer IDs included in this service.</summary>
     public int[] LayerIds { get; set; } = [];
 
-    /// <summary>Capabilities. Only "Query" and "Extract" are supported for DuckDB.</summary>
-    public string[] Capabilities { get; set; } = ["Query", "Extract"];
+    /// <summary>
+    /// Capabilities. Only "Query" is supported by the DuckDB provider in V1; any
+    /// "Create", "Update", "Delete", or "Extract" entries are stripped at startup
+    /// because the provider is read-only and has no replica persistence path.
+    /// </summary>
+    public string[] Capabilities { get; set; } = ["Query"];
 
     /// <summary>Enabled protocols (e.g. "FeatureServer", "OgcFeatures", "Grpc").</summary>
     public string[]? EnabledProtocols { get; set; }

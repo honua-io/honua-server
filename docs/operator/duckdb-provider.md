@@ -44,7 +44,7 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
         "Name": "ParcelService",
         "Description": "Parcel data service",
         "LayerIds": [0],
-        "Capabilities": ["Query", "Extract"],
+        "Capabilities": ["Query"],
         "EnabledProtocols": ["FeatureServer", "OgcFeatures", "Grpc"]
       }
     ]
@@ -79,7 +79,7 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
 |---------|---------|-------------|
 | `Name` | — | URL-safe service name. |
 | `LayerIds` | — | Array of layer IDs included in this service. |
-| `Capabilities` | `["Query", "Extract"]` | Only `Query` and `Extract` are supported. Write capabilities are rejected at startup. |
+| `Capabilities` | `["Query"]` | Only `Query` is supported in V1. `Create`, `Update`, `Delete`, and `Extract` (replica creation) are stripped at startup because the provider is read-only and has no replica persistence path. |
 | `EnabledProtocols` | all | Protocols to expose: `FeatureServer`, `OgcFeatures`, `Grpc`, `Wfs20`. |
 
 ## Preparing Data
@@ -131,6 +131,7 @@ the `GEOMETRY` type.
 | Feature streaming | Supported |
 | Extent computation | Supported |
 | **Feature editing (create, update, delete)** | **Not supported** — returns `NotSupportedException` |
+| **Replica / Extract workflows** | **Not supported** — capability stripped at startup; createReplica is a no-op on the persistence side |
 | **MVT vector tiles** | **Not supported** |
 | **H3 hexagonal aggregation** | **Not supported** |
 | **FlatGeobuf / Geobuf export** | **Not supported** — returns null (server can fall back to JSON) |
@@ -144,9 +145,10 @@ DuckDB is an embedded analytical database optimized for read-heavy OLAP workload
   provider opens a fresh connection per query to avoid connection-state conflicts.
 - **Memory**: DuckDB uses memory-mapped I/O. Memory usage scales with data size and query
   complexity, not connection count.
-- **Startup**: The spatial extension is loaded once on the first query. Subsequent connections
-  reuse the installed extension. Air-gapped deployments should set `SpatialExtensionPath` to
-  avoid network calls.
+- **Startup**: The spatial extension is installed once on the first query (persisted to
+  the extension directory) and loaded onto every freshly opened connection because
+  DuckDB's `LOAD` statement is connection-scoped. Air-gapped deployments should set
+  `SpatialExtensionPath` to avoid network calls.
 - **File locking**: DuckDB holds a file lock on the `.duckdb` file. Only one process can open
   the file at a time (even in read-only mode, a shared lock is acquired). Do not run multiple
   Honua instances against the same DuckDB file.

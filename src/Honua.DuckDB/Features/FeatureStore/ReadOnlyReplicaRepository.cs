@@ -7,15 +7,20 @@ using Honua.Core.Features.FeatureStore.Domain;
 namespace Honua.DuckDB.Features.FeatureStore;
 
 /// <summary>
-/// Replica repository that rejects all operations.
-/// Registered when the DuckDB provider is active since DuckDB is read-only in V1.
+/// Replica repository for the read-only DuckDB provider. Persistence is a no-op
+/// because the underlying database does not support write workflows; the Extract
+/// capability is also stripped from DuckDB services at startup so the createReplica
+/// endpoint should not normally be reached. The no-op upsert prevents the
+/// caching write-through path from throwing if the endpoint is invoked anyway —
+/// any replica state then lives only in the distributed replica cache for the
+/// configured TTL, which is acceptable for V1 read-only analytics workloads.
 /// </summary>
 internal sealed class ReadOnlyReplicaRepository : IReplicaRepository
 {
     /// <inheritdoc />
     public Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException("DuckDB provider is read-only. Replica registration is not supported.");
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />

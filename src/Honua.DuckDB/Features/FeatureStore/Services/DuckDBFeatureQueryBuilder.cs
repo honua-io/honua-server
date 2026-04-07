@@ -700,8 +700,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         var filter = query.SpatialFilter.Value;
         var geomCol = mapping.QuotedGeometryColumn;
-        var filterGeomParam = $"ST_GeomFromWKB(${paramIndex++})";
-        parameters.Add(filter.Geometry);
+        var filterGeomParam = BuildFilterGeometryExpression(filter, mapping, ref paramIndex, parameters);
 
         var clause = filter.SpatialRelationship switch
         {
@@ -996,6 +995,28 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         }
 
         return parts;
+    }
+
+    /// <summary>
+    /// Builds the SQL expression for a spatial filter geometry parameter, transforming
+    /// it from <see cref="SpatialFilter.Srid"/> into the layer SRID when they differ
+    /// so spatial predicates compare coordinates in the same CRS.
+    /// </summary>
+    private static string BuildFilterGeometryExpression(
+        SpatialFilter filter,
+        DuckDBLayerMapping mapping,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        var baseGeometry = $"ST_GeomFromWKB(${paramIndex++})";
+        parameters.Add(filter.Geometry);
+
+        if (filter.Srid.HasValue && filter.Srid.Value > 0 && filter.Srid.Value != mapping.Srid)
+        {
+            return $"ST_Transform({baseGeometry}, 'EPSG:{filter.Srid.Value}', 'EPSG:{mapping.Srid}')";
+        }
+
+        return baseGeometry;
     }
 
     private static string BuildWithinDistanceClause(

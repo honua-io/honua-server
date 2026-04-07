@@ -7,14 +7,17 @@ using Honua.DuckDB.Features.FeatureStore;
 namespace Honua.DuckDB.Tests;
 
 /// <summary>
-/// Verifies that the read-only replica repository rejects writes and returns empty reads.
+/// Verifies that the read-only replica repository no-ops writes and returns empty reads.
+/// Extract capability is stripped from DuckDB services at startup, so createReplica
+/// should not normally reach this repository; the no-op upsert is a defensive
+/// guarantee that the caching write-through path does not throw if it does.
 /// </summary>
 public class ReadOnlyReplicaRepositoryTests
 {
     private readonly ReadOnlyReplicaRepository _repo = new();
 
     [Fact]
-    public async Task UpsertAsync_ThrowsNotSupported()
+    public async Task UpsertAsync_NoOps()
     {
         var record = new ReplicaRecord
         {
@@ -27,8 +30,13 @@ public class ReadOnlyReplicaRepositoryTests
             LastSyncTime = DateTimeOffset.UtcNow,
             LastSyncGeneration = 0L
         };
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
-            _repo.UpsertAsync(record));
+
+        // Should not throw — the read-only provider drops the write silently.
+        await _repo.UpsertAsync(record);
+
+        // Reads still return null because nothing is persisted on the DuckDB side.
+        var roundTrip = await _repo.GetAsync(record.ReplicaId);
+        Assert.Null(roundTrip);
     }
 
     [Fact]

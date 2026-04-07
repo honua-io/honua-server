@@ -191,8 +191,46 @@ public class DuckDBFeatureQueryBuilderTests
 
         var result = _builder.BuildSelectQuery(TestLayerId, query);
 
+        // Filter SRID matches layer SRID (4326) — no transform required.
         Assert.Contains("ST_Intersects(\"geom\", ST_GeomFromWKB($", result.Sql);
+        Assert.DoesNotContain("ST_Transform(", result.Sql);
         Assert.Contains(wkb, result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SpatialFilter_DifferentSrid_TransformsToLayerSrid()
+    {
+        // Layer is 4326; client supplies a Web Mercator (3857) filter geometry.
+        // The SQL must transform the filter into the layer SRID before predicates run.
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, 3857)
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("ST_Transform(ST_GeomFromWKB($", result.Sql);
+        Assert.Contains("'EPSG:3857', 'EPSG:4326'", result.Sql);
+        Assert.Contains("ST_Intersects(\"geom\", ST_Transform(ST_GeomFromWKB($", result.Sql);
+        Assert.Contains(wkb, result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SpatialFilter_NoSrid_DoesNotTransform()
+    {
+        // When the filter SRID is unspecified the builder should not invent a transform;
+        // the geometry is assumed to already be in the layer's CRS.
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects)
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("ST_Intersects(\"geom\", ST_GeomFromWKB($", result.Sql);
+        Assert.DoesNotContain("ST_Transform(", result.Sql);
     }
 
     [Fact]
