@@ -52,9 +52,13 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
   const { styleUrl, center = [-122.42, 37.77], zoom = 14, idleTimeout = 25_000 } = options;
 
   // Derive the server origin from the style URL so that relative tile URLs
-  // (e.g. /tiles/2000/{z}/{x}/{y}.mvt) in the style JSON resolve correctly.
-  // Without a <base> tag the page origin is about:blank and MapLibre's
-  // Request constructor fails on server-relative paths.
+  // (e.g. /tiles/2000/{z}/{x}/{y}.mvt) returned in the style JSON can be
+  // absolutized via MapLibre's transformRequest before requests are dispatched
+  // to the worker. The page is loaded via setContent (about:blank origin),
+  // so neither a <base> tag nor a blob-URL worker can resolve a leading-slash
+  // path — Request construction fails inside the worker. transformRequest
+  // runs on the main thread, so prefixing with the origin here lets the
+  // worker receive a fully-qualified URL it can parse.
   const origin = new URL(styleUrl).origin;
 
   // Navigate to a minimal HTML page with a map container.
@@ -63,7 +67,6 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
     <html>
     <head>
       <meta charset="utf-8">
-      <base href="${origin}/">
       <style>
         * { margin: 0; padding: 0; }
         #map { width: 512px; height: 512px; }
@@ -81,7 +84,7 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
 
   // Create the map and wait for idle.
   await page.evaluate(
-    ({ styleUrl, center, zoom, idleTimeout }) => {
+    ({ styleUrl, center, zoom, idleTimeout, origin }) => {
       return new Promise<void>((resolve, reject) => {
         const timeoutId = setTimeout(() => reject(new Error('Map idle timeout')), idleTimeout);
         const map = new (window as any).maplibregl.Map({
@@ -91,6 +94,15 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
           zoom,
           fadeDuration: 0,
           trackResize: false,
+          // Absolutize server-relative URLs (e.g. tile templates from the
+          // style JSON) so the request URL parses inside MapLibre's worker,
+          // where the document base is unavailable.
+          transformRequest: (url: string) => {
+            if (url.startsWith('/')) {
+              return { url: origin + url };
+            }
+            return { url };
+          },
         });
         (window as any).__map = map;
         map.once('idle', () => {
@@ -103,7 +115,7 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
         });
       });
     },
-    { styleUrl, center, zoom, idleTimeout },
+    { styleUrl, center, zoom, idleTimeout, origin },
   );
 
   // Wait an additional page-level timeout for idle to propagate.
