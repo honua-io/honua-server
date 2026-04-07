@@ -26,11 +26,25 @@ const TEST_PAGE_URL = `http://localhost:${process.env.OL_TEST_PAGE_PORT ?? '9876
 
 /**
  * Visual / style slice declared colors. These mirror the styles set in
- * test-page.html — keep in sync if either side changes.
+ * test-page.html — keep in sync if either side changes. The OpenLayers
+ * canvas is transparent (test-page.html does not call `map.setBackground`),
+ * so `getImageData` returns un-premultiplied RGBA and the source channels
+ * are preserved at the rendered alpha. The alpha guard in
+ * `countMatchingPixels` filters out transparent pixels so partial-coverage
+ * AA fringes do not contribute to the count.
+ *
+ * `fill` and `symbol` carry the same RGB by design — the points-only
+ * `client-compat-v1` seed only renders marker interiors, so both
+ * CERT-RNDR-FIL-01 and CERT-RNDR-SYM-01 are substantiated through the
+ * `ol.style.Circle` fill path until the polygon fixture follow-on lands
+ * (see docs/gis/visual-style-certification-slice.md). The two declarations
+ * are kept distinct so they can diverge once a polygon fixture introduces
+ * a separate `ol.style.Fill` color claim.
  */
 const SLICE_COLORS = {
-  // ol.style.Fill rgba(30, 100, 200, 0.6) flattened over the default white
-  // canvas background. Used to substantiate CERT-RNDR-FIL-01.
+  // ol.style.Fill rgba(30, 100, 200, 0.6) — declared polygon fill color.
+  // Used to substantiate CERT-RNDR-FIL-01 via the marker interior until a
+  // polygon fixture lands.
   fill: { r: 30, g: 100, b: 200, tolerance: 40 },
   // ol.style.Stroke #1a1a2e — used for CERT-RNDR-LIN-01 (line + outline).
   stroke: { r: 26, g: 26, b: 46, tolerance: 30 },
@@ -169,9 +183,17 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
     // tests/seed/client-compat-v1.sql), so the SYM and FIL/LIN assertions
     // exercise the marker fill + outline code paths until a polygon /
     // line fixture is added per the slice spec follow-on.
-    const symbolPixels = await countMatchingPixels(page, SLICE_COLORS.symbol);
+    //
+    // SLICE_COLORS.symbol and SLICE_COLORS.fill carry the same RGB while the
+    // fixture remains points-only, so a single canvas scan substantiates both
+    // CERT-RNDR-SYM-01 and CERT-RNDR-FIL-01. When the polygon fixture follow-on
+    // gives `fill` a distinct RGB, split this back into two scans — the
+    // SLICE_COLORS structure already keeps the two declarations distinct so
+    // the call sites are the only thing that needs to change.
+    const markerInteriorPixels = await countMatchingPixels(page, SLICE_COLORS.symbol);
+    const symbolPixels = markerInteriorPixels;
+    const fillPixels = markerInteriorPixels;
     const linePixels = await countMatchingPixels(page, SLICE_COLORS.stroke);
-    const fillPixels = await countMatchingPixels(page, SLICE_COLORS.fill);
 
     if (symbolPixels >= 25) {
       evidence.record('CERT-RNDR-SYM-01', 'pass', {

@@ -889,20 +889,17 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Visual / style certification slice — OpenLayers + Esri Leaflet pixel-color sampling and PyQGIS headless render exercise the rendered-map lane",
-          "executionLane": "ci:js-integration-tests+esri-leaflet-browser-tests; nightly:pyqgis-client-compat",
+          "proofMechanism": "Browser visual/render proof for OGC API Maps clients — pending a real OGC API Maps client lane (for example ol/source/ImageWMS targeting /ogc/maps, or a QGIS WMS provider pointed at the static rendering surface). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/maps or /static/.",
+          "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
             "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/contributor/public-interface-quality-model.md",
-            "tests/js/openlayers/rendering/render.spec.ts",
-            "tests/js-browser/esri-leaflet/rendering.spec.ts",
-            "tests/python/pyqgis/test_render_path.py"
+            "docs/contributor/public-interface-quality-model.md"
           ],
           "ownerRepo": "honua-server",
-          "status": "implemented",
+          "status": "planned",
           "linkedTicket": "#478",
-          "versionCaptureRule": "Visual / style slice records the per-category CERT-RNDR-* evidence and the client version in the .cert.json envelopes emitted by the JS lanes and the PyQGIS lane."
+          "versionCaptureRule": "When the OGC API Maps client lane lands, record the exact client version, run date, and immutable .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
         }
       ]
     },

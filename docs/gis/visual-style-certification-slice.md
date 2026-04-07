@@ -210,14 +210,20 @@ CERT-* IDs:
 
 The release ledger
 [`docs/gis/data/public-interface-proof.json`](data/public-interface-proof.json)
-references this slice spec from the `ogc-api-maps-and-static-rendering`
-`linkedTicket: "#478"` proof, which is flipped from `planned` to
-`implemented` by this slice. The `wms-1.3` and `wmts-1.0` `#478` proofs
-remain `planned` because the slice lanes do not exercise
-`/ogc/services/{serviceId}/wms` or `/ogc/services/{serviceId}/wmts` —
-closing them requires a real WMS/WMTS client lane (for example
-`ol/source/TileWMS`, `ol/source/WMTS`, or the QGIS WMS/WMTS providers)
-and is a bounded follow-on to this ticket.
+references this slice spec from all three `linkedTicket: "#478"`
+real-client-certification proofs (`wms-1.3`, `wmts-1.0`, and
+`ogc-api-maps-and-static-rendering`). All three remain `planned`
+because the slice lane tests exercise adjacent surfaces — OGC API
+Features, OGC API Tiles, and FeatureServer — and do not hit
+`/ogc/services/{serviceId}/wms`, `/ogc/services/{serviceId}/wmts`,
+`/ogc/maps`, or `/static/`. Substantiating those three surfaces
+requires a real WMS / WMTS / OGC API Maps client lane (for example
+`ol/source/TileWMS`, `ol/source/WMTS`, `ol/source/ImageWMS`, or the
+QGIS WMS/WMTS providers) and is a bounded follow-on to this ticket.
+The slice spec, the cross-client matrix, and the public-interface
+quality model are listed as the proof's evidence locations so the
+release ledger points reviewers at the slice contract while the
+client lane is still pending.
 
 ## CI Posture
 
@@ -237,6 +243,22 @@ install + xvfb + render time) is significantly larger than the JS
 lanes and the lane already runs inside a dedicated nightly workflow.
 Promoting it to PR-blocking is a follow-on, captured in the design
 brief Question #3 about CI gating posture.
+
+The OpenLayers Playwright lane hard-fails on a `CERT-RNDR-SYM-01`
+regression so the PR build gates on the slice substantiation
+directly rather than deferring to the release-time evidence review.
+The 25-pixel threshold has ample margin against the points-only seed
+(radius-5 markers across nine features render hundreds of matching
+pixels), so the gate is not a flake risk and the assertion is placed
+after every slice ID has been recorded so the envelope still captures
+the full measurement set even when the assertion throws.
+`CERT-RNDR-LIN-01` and `CERT-RNDR-FIL-01` stay soft-skip in the same
+lane until their dedicated line / polygon fixtures land, because the
+points fixture only exercises them indirectly via the marker outline
+and fill code paths — a hard-fail there would gate on a
+substantiation that is not yet contractually guaranteed by the seed.
+The substantiation point lives in
+[`tests/js/openlayers/rendering/render.spec.ts`](../../tests/js/openlayers/rendering/render.spec.ts).
 
 ## How to Refresh a Baseline
 
@@ -287,3 +309,5 @@ a `Cache-Control: no-cache` override.
 | 1.1 | 2026-04-07 | Align `CERT-RNDR-URL-01` Protocols row with the matrix (FS, MVT); scope the release-ledger flip to `ogc-api-maps-and-static-rendering` only (WMS 1.3 / WMTS 1.0 remain `planned` pending a real WMS/WMTS client lane) |
 | 1.2 | 2026-04-07 | Reconcile `CERT-RNDR-FIL-01` pass criterion with the actual lane tolerances (PyQGIS `COLOR_TOLERANCE=35`, OpenLayers `30`/`40`); drop the stale `±10 RGB` pin on FIL-01 and document the lane-specific per-channel tolerance contract in `Tolerance Defaults` |
 | 1.3 | 2026-04-07 | Append PyQGIS to the `CERT-RNDR-LIN-01` and `CERT-RNDR-FIL-01` `Lanes substantiating` rows so the per-scenario rows match the lane coverage table; clarify the soft-skip behavior on threshold miss |
+| 1.4 | 2026-04-07 | Document the OpenLayers Playwright lane's `CERT-RNDR-SYM-01` hard-fail vs `CERT-RNDR-LIN-01`/`CERT-RNDR-FIL-01` soft-skip gating contract under `CI Posture` so the PR-blocking asymmetry is discoverable without reading `tests/js/openlayers/rendering/render.spec.ts` |
+| 1.5 | 2026-04-07 | Revert the `ogc-api-maps-and-static-rendering` real-client-certification proof from `implemented` back to `planned` to match the actual lane coverage. The slice tests exercise OAPIF / OGC Tiles / FeatureServer adjacent surfaces and do not hit `/ogc/maps` or `/static/`, so flipping the OGC Maps surface would have overstated coverage. All three `#478`-linked surface proofs (`wms-1.3`, `wmts-1.0`, `ogc-api-maps-and-static-rendering`) now remain `planned` pending dedicated WMS / WMTS / OGC API Maps client lanes. |
