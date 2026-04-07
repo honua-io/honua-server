@@ -304,28 +304,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             return new ParameterizedQuery($"SELECT 1 WHERE FALSE", []);
         }
 
-        var statisticColumns = new List<string>();
-        foreach (var stat in query.OutStatistics.Value)
-        {
-            ValidateFieldName(stat.OnStatisticField);
-            ValidateFieldName(stat.OutStatisticFieldName);
-            var fieldExpr = $"\"{stat.OnStatisticField}\"";
-            var alias = $"\"{stat.OutStatisticFieldName}\"";
-
-            var statExpr = stat.StatisticType switch
-            {
-                StatisticType.Count => $"COUNT({fieldExpr})",
-                StatisticType.Sum => $"SUM({fieldExpr})",
-                StatisticType.Min => $"MIN({fieldExpr})",
-                StatisticType.Max => $"MAX({fieldExpr})",
-                StatisticType.Avg => $"AVG({fieldExpr})",
-                StatisticType.Stddev => $"STDDEV({fieldExpr})",
-                StatisticType.Var => $"VAR_SAMP({fieldExpr})",
-                _ => throw new NotSupportedException($"Unsupported statistic type: {stat.StatisticType}")
-            };
-
-            statisticColumns.Add($"{statExpr} AS {alias}");
-        }
+        var statisticColumnsExpr = BuildStatisticColumns(query.OutStatistics);
 
         var groupByColumns = new List<string>();
         if (query.GroupByFields.HasValue && !query.GroupByFields.Value.IsDefaultOrEmpty)
@@ -344,7 +323,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             sb.Append(", ");
         }
 
-        sb.Append(string.Join(", ", statisticColumns));
+        sb.Append(statisticColumnsExpr);
         sb.Append(CultureInfo.InvariantCulture, $" FROM {mapping.QuotedTableName} WHERE 1=1");
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
@@ -856,12 +835,14 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             _ => throw new ArgumentException($"Unsupported calendar unit: {unit}")
         };
 
+    [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
+    private static partial Regex NamedParameterRegex();
+
     private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
         var currentIndex = paramIndex;
-        var result = System.Text.RegularExpressions.Regex.Replace(
+        var result = NamedParameterRegex().Replace(
             sql,
-            @"@p(\d+)",
             _ => $"${currentIndex++}");
         paramIndex = currentIndex;
         return result;

@@ -100,6 +100,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IChangeTracker>(_ => new ReadOnlyChangeTracker());
         services.AddScoped<IGeoJsonFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
+        services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider());
+        services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore());
 
         // Register catalog (scoped, from configuration)
         services.AddScoped<ILayerCatalog>(sp =>
