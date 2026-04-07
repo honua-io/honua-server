@@ -77,7 +77,7 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
                          └──────────────┘          (query only)
 ```
 
-The DuckDB provider serves pre-built `.duckdb` files containing data prepared offline (e.g. from GeoParquet, Shapefile, or CSV imports). It supports feature queries, spatial filters, statistics, and GeoJSON/streaming export, but not editing, MVT, or H3. See the [DuckDB Provider Guide](operator/duckdb-provider.md) for configuration and limitations.
+The DuckDB provider serves pre-built `.duckdb` files containing data prepared offline (e.g. from GeoParquet, Shapefile, or CSV imports). It supports feature queries, spatial filters, statistics, and GeoJSON/streaming export, but not editing, MVT, H3, native WFS GML output, or replica/extract workflows. See the [DuckDB Provider Guide](operator/duckdb-provider.md) for configuration and limitations.
 
 ## Key Capabilities
 

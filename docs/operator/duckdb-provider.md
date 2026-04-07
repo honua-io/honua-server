@@ -80,7 +80,7 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
 | `Name` | — | URL-safe service name. |
 | `LayerIds` | — | Array of layer IDs included in this service. |
 | `Capabilities` | `["Query"]` | Only `Query` is supported in V1. `Create`, `Update`, `Delete`, and `Extract` (replica creation) are stripped at startup because the provider is read-only and has no replica persistence path. |
-| `EnabledProtocols` | all | Protocols to expose: `FeatureServer`, `OgcFeatures`, `Grpc`, `Wfs20`. |
+| `EnabledProtocols` | all | Protocols to expose: `FeatureServer`, `OgcFeatures`, `Grpc`. `Wfs20` may be listed but WFS `GetFeature` requests that ask for GML output will return `NotSupportedException` because the DuckDB provider does not implement `IGmlFeatureStore`. |
 
 ## Preparing Data
 
@@ -131,10 +131,11 @@ the `GEOMETRY` type.
 | Feature streaming | Supported |
 | Extent computation | Supported |
 | **Feature editing (create, update, delete)** | **Not supported** — returns `NotSupportedException` |
-| **Replica / Extract workflows** | **Not supported** — capability stripped at startup; createReplica is a no-op on the persistence side |
-| **MVT vector tiles** | **Not supported** |
+| **Replica / Extract workflows** | **Not supported** — capability stripped at startup; replica repository and change tracker are no-op stubs so any cache writes do not propagate to durable storage |
+| **MVT vector tiles** | **Not supported** — tile provider stub returns `NotSupportedException` for both `GetMvtTile` and `GetH3MvtTile` |
 | **H3 hexagonal aggregation** | **Not supported** |
-| **FlatGeobuf / Geobuf export** | **Not supported** — returns null (server can fall back to JSON) |
+| **FlatGeobuf / Geobuf export** | **Not supported** — `QueryFlatGeobufAsync` returns null so the server falls back to JSON encoding when possible |
+| **Native GML output (WFS 2.0)** | **Not supported** — `IGmlFeatureStore` stub returns `NotSupportedException`, so WFS `GetFeature` requests that need GML output will fail |
 | **Relationship queries** | **Not supported** |
 
 ## Workload Profile
@@ -168,4 +169,5 @@ In air-gapped environments, download the extension file separately and set `Spat
 ### Write operations return errors
 
 This is expected. The DuckDB provider is read-only by design. Feature editing, MVT tiles,
-and H3 aggregation are not supported. Use the PostgreSQL provider for write workloads.
+H3 aggregation, native GML output, and replica/extract workflows are not supported. Use
+the PostgreSQL provider for write workloads, vector tiles, or WFS GML responses.
