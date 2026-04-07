@@ -99,6 +99,7 @@ Examples:
 - `20260316T1430Z-desktop-arcgis-featureserver.cert.json`
 - `20260316T1430Z-desktop-arcgis-mapserver.cert.json`
 - `20260316T1430Z-cli-admin-api.cert.json`
+- `20260316T1430Z-cli-odata.cert.json`
 - `20260316T1430Z-bi-powerbi-odata.cert.json`
 
 ## Storage Location
@@ -121,13 +122,14 @@ docs/gis/certification-evidence/20260316T1430Z/
 ├── 20260316T1430Z-cli-featureserver.cert.json
 ├── 20260316T1430Z-cli-ogc-features.cert.json
 ├── 20260316T1430Z-cli-admin-api.cert.json
+├── 20260316T1430Z-cli-odata.cert.json
 ├── 20260316T1430Z-bi-powerbi-odata.cert.json
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
 The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests run via Vitest but do not produce `.cert.json` evidence files until `wfs20` is formally added to the valid protocol set. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
 
-The CLI lane lists FeatureServer, OGC API Features, and Admin API evidence files. FeatureServer and OGC API Features files will be produced once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
+The CLI lane lists FeatureServer, OGC API Features, OData, and Admin API evidence files. The OData envelope (`*-cli-odata.cert.json`) is produced automatically by `tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs` (Microsoft.OData.Client 8.4.3) on every `test-all` run; FeatureServer and OGC API Features files will follow once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added to those suites; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
 The automated PyQGIS nightly lane (`pyqgis-client-compat-nightly.yml`) produces `*-desktop-qgis-ogc-features.cert.json` and `*-desktop-qgis-wfs.cert.json` envelopes under `tests/TestResults/`. These are uploaded as CI artifacts and use the `desktop-qgis` client lane value.
 
@@ -182,7 +184,7 @@ This section describes how each evidence source will map to the evidence envelop
 | Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
 | Playwright cert reporter | JS (Esri Leaflet) | Automated: custom Playwright reporter extracts `[CERT-*]` and `[EL-EXT-*]` annotations from test titles and writes per-protocol envelopes for `featureserver` and `mapserver`. Uses `client_lane: "js"`. See [Esri Leaflet evidence note](#esri-leaflet-evidence-note) below. |
 | pytest markers | CLI | Planned: add `@pytest.mark.cert("CERT-CONN-01")` markers and map to result entries |
-| xUnit attributes | CLI | Planned: add `[Trait("CertId", "CERT-CONN-01")]` alongside existing `[Protocol]` attributes |
+| xUnit attributes | CLI | Live (OData lane): each test in `tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `tests/TestResults/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
 | Manual browser verification | JS (MVT) | Fallback: operator loads MapLibre GL JS against the server, records remaining manual-only results into a `js`/`mvt` evidence file (see [MapLibre MVT workflow](#maplibre-mvt-manual-workflow) below). CERT-RNDR-01 and JS-EXT-02 are now automated via Playwright |
@@ -288,3 +290,4 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
 | 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
 | 1.0.11 | 2026-04-03 | Clarify Esri Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |
+| 1.0.12 | 2026-04-06 | Mark xUnit `[Trait("CertId", …)]` mapping as live for the CLI/OData lane; add `cli-odata.cert.json` example produced by `ODataClientCertificationTests` |

@@ -7,7 +7,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.OData.Client;
-using Microsoft.Spatial;
 
 namespace Honua.Server.Tests.Features.OData;
 
@@ -951,44 +950,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
     #region Helper Methods
 
     private static DataServiceContext CreateODataContext(HttpClient client)
-    {
-        var serviceRoot = new Uri(client.BaseAddress!, "odata/");
-        var context = new DataServiceContext(serviceRoot, ODataProtocolVersion.V4)
-        {
-            HttpClientFactory = new TestHttpClientFactory(client)
-        };
-        context.Format.UseJson();
-
-        return context;
-    }
-
-    private sealed class TestHttpClientFactory(HttpClient client) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => client;
-    }
-
-    /// <summary>
-    /// OData entity type for Layer collection.
-    /// </summary>
-    [Microsoft.OData.Client.Key("Id")]
-    private sealed class ODataLayer
-    {
-        public int Id { get; init; }
-        public string? Name { get; init; }
-        public string? Description { get; init; }
-    }
-
-    /// <summary>
-    /// OData entity type for Feature collection.
-    /// </summary>
-    [Microsoft.OData.Client.Key("ObjectId")]
-    private sealed class ODataFeature
-    {
-        public long ObjectId { get; init; }
-        public int LayerId { get; init; }
-        public Geography? Geometry { get; init; }
-        public string? Attributes { get; init; }
-    }
+        => ODataTestClient.CreateContext(client);
 
     #endregion
 }
