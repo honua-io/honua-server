@@ -8,13 +8,13 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "..",
     "noEmit": true,
     "sourceMap": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../shared/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
