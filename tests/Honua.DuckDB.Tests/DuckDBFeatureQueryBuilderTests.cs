@@ -219,6 +219,28 @@ public class DuckDBFeatureQueryBuilderTests
             _builder.BuildSelectFlatGeobufQuery(null!, TestLayerId, new FeatureQuery()));
     }
 
+    [Theory]
+    [InlineData("valid_field", "Robert'; DROP TABLE--")]
+    [InlineData("Robert'; DROP TABLE--", "valid_alias")]
+    [InlineData("valid_field", "has space")]
+    [InlineData("valid_field", "has.dot")]
+    public void BuildStatisticsQuery_InvalidFieldNames_Throws(string onField, string outField)
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = onField,
+                    OutStatisticFieldName = outField
+                })
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            _builder.BuildStatisticsQuery(TestLayerId, query));
+    }
+
     [Fact]
     public void BuildSelectQuery_UnknownLayerId_Throws()
     {
