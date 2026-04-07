@@ -228,10 +228,16 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
     { "test_case_id": "CERT-ERRH-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
     { "test_case_id": "CERT-ERRH-02", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
     { "test_case_id": "CERT-RNDR-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
-    { "test_case_id": "CERT-RNDR-02", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
+    { "test_case_id": "CERT-RNDR-02", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-SYM-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-LIN-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-FIL-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-LBL-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-SPR-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-URL-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
   ],
   "summary": {
-    "total": 18,
+    "total": 24,
     "passed": 0,
     "failed": 0,
     "skipped": 0,
@@ -241,6 +247,8 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
   "extensions": []
 }
 ```
+
+The visual / style certification slice (ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) adds the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs to the common core. They are append-only — the original 18 IDs are unchanged. See [`visual-style-certification-slice.md`](visual-style-certification-slice.md) for the per-scenario fixtures, expected colors, and lane substantiation. Lanes that do not exercise a slice category emit `skip` (or `not-applicable` for protocols where the category does not apply) so the gap is visible in the rollup.
 
 ### Esri Leaflet Evidence Note
 
@@ -253,7 +261,7 @@ Evidence files are written to `tests/js-browser/evidence/` during test runs (not
 - `<run-id>-js-featureserver.cert.json` — FeatureServer common-core results + EL-EXT-\* extensions
 - `<run-id>-js-mapserver.cert.json` — MapServer common-core results (CERT-QFLT/PAGE/GEOM/ERRH-02 recorded as `not-applicable`) + EL-EXT-02/EL-EXT-04 extensions
 
-The reporter seeds the full 18 common-core CERT-\* IDs into each envelope. FeatureServer cases that the browser suite does not currently exercise are recorded as `skip`.
+The reporter seeds the full 24 common-core CERT-\* IDs (the original 18 base IDs plus the six visual / style slice IDs `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` introduced by ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) into each envelope. FeatureServer cases that the browser suite does not currently exercise are recorded as `skip`. On the `mapserver` envelope the six slice IDs are additionally recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
 
 The reporter skips evidence emission when the run is interrupted, timed out, or when no tests passed or failed (setup abort guard).
 
@@ -291,3 +299,5 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
 | 1.0.11 | 2026-04-03 | Clarify Esri Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |
 | 1.0.12 | 2026-04-06 | Mark xUnit `[Trait("CertId", …)]` mapping as live for the CLI/OData lane; add `cli-odata.cert.json` example produced by `ODataClientCertificationTests` |
+| 1.0.13 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |
+| 1.0.14 | 2026-04-07 | Update the Esri Leaflet evidence note to reference the 24-case common-core total and document slice-ID `not-applicable` on the mapserver envelope |

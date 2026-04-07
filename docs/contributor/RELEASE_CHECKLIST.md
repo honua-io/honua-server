@@ -33,9 +33,10 @@ Use this checklist for every MVP release.
 
 - [ ] Verify the nightly `windows-client-compat-nightly.yml` workflow passes with zero `fail` results in automated `.cert.json` envelopes (FeatureServer, OGC API Features, MapServer, OData)
 - [ ] Review automated certification evidence artifacts: `certification/{timestamp}-ci-desktop-*.cert.json` and `certification/{timestamp}-ci-bi-odata.cert.json`
-- [ ] Confirm all `skip` and `not-applicable` entries have documented reasons (CERT-CONN-02 TLS, CERT-AUTH-01/02 auth, CERT-RNDR-01/02 visual)
+- [ ] Verify the [visual / style certification slice](../gis/visual-style-certification-slice.md) evidence is present on the JS OpenLayers, JS Esri Leaflet, and PyQGIS lanes. The JS collectors seed the full 24-case core and emit every `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` ID as `pass`, `skip` (with a `pending-fixture` note), or `not-applicable` (with a documented reason). The PyQGIS envelope (`tests/python/pyqgis/conftest.py:CertificationEvidenceCollector`) does not seed unexercised IDs, so confirm only the three recorded slice IDs (`CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`) are present; `CERT-RNDR-LBL-01`, `CERT-RNDR-SPR-01`, and `CERT-RNDR-URL-01` are tracked in the slice spec's pending-fixture table instead of being seeded into the PyQGIS envelope
+- [ ] Confirm all `skip` and `not-applicable` entries have documented reasons (CERT-CONN-02 TLS, CERT-AUTH-01/02 auth, CERT-RNDR-01/02 visual, visual / style slice `pending-fixture` skips)
 - [ ] Produce manual client certification evidence per the [Evidence Specification](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for desktop (ArcGIS Pro, QGIS) and BI (Power BI, Excel) lanes
-- [ ] Verify all common-core CERT-\* test cases have results for each active client lane (automated + manual)
+- [ ] Verify all 24 common-core CERT-\* test cases (18 base + 6 visual / style slice) have results for each active client lane (automated + manual)
 
 ### Tested Client Versions (Required)
 
