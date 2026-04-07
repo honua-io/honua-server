@@ -304,4 +304,50 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains("MIN(\"created_date\") AS min_value", result.Sql);
         Assert.Contains("MAX(\"created_date\") AS max_value", result.Sql);
     }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistance_GeographicSrid_UsesSpheroidDistance()
+    {
+        // Default fixture SRID is 4326 (geographic) — must use ST_Distance_Spheroid
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter(wkb, 1000.0, DistanceUnit.Meters)
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains("ST_Distance_Spheroid(", result.Sql);
+        Assert.DoesNotContain("ST_DWithin(", result.Sql);
+        Assert.Contains(1000.0, result.WhereParameters.OfType<double>());
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistance_ProjectedSrid_UsesDWithin()
+    {
+        // UTM zone 10N (SRID 32610) is a projected CRS — meters are CRS units
+        var projectedMapping = new DuckDBLayerMapping
+        {
+            LayerId = 1,
+            TableName = "parcels_utm",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 32610,
+            AttributeColumns = ["name"]
+        };
+        var registry = new DuckDBLayerRegistry([projectedMapping]);
+        var projectedBuilder = new DuckDBFeatureQueryBuilder(registry);
+
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter(wkb, 500.0, DistanceUnit.Meters)
+        };
+
+        var result = projectedBuilder.BuildSelectQuery(1, query);
+
+        Assert.Contains("ST_DWithin(", result.Sql);
+        Assert.DoesNotContain("ST_Distance_Spheroid(", result.Sql);
+        Assert.Contains(500.0, result.WhereParameters.OfType<double>());
+    }
 }

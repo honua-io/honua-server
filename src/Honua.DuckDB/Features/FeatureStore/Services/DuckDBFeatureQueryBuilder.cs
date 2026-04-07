@@ -747,7 +747,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             SpatialRelationship.Equals =>
                 $"ST_Equals({geomCol}, {filterGeomParam})",
             SpatialRelationship.WithinDistance when filter.Distance.HasValue =>
-                BuildWithinDistanceClause(geomCol, filterGeomParam, filter, ref paramIndex, parameters),
+                BuildWithinDistanceClause(geomCol, filterGeomParam, filter, mapping, ref paramIndex, parameters),
             _ => throw new NotSupportedException(
                 $"Spatial relationship '{filter.SpatialRelationship}' is not supported by the DuckDB provider.")
         };
@@ -1021,12 +1021,25 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
     private static string BuildWithinDistanceClause(
         string geomCol, string filterGeomParam,
-        SpatialFilter filter, ref int paramIndex, List<object> parameters)
+        SpatialFilter filter, DuckDBLayerMapping mapping,
+        ref int paramIndex, List<object> parameters)
     {
         var distanceInMeters = ConvertDistanceToMeters(filter.Distance!.Value, filter.DistanceUnit);
         parameters.Add(distanceInMeters);
+
+        // DuckDB ST_DWithin operates in CRS units. For geographic CRS (degrees),
+        // passing meters would be wildly incorrect. Use ST_Distance_Spheroid for
+        // geodesic distance in meters on the WGS84 spheroid instead.
+        if (IsGeographicSrid(mapping.Srid))
+        {
+            return $"ST_Distance_Spheroid({geomCol}, {filterGeomParam}) <= ${paramIndex++}";
+        }
+
         return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
     }
+
+    private static bool IsGeographicSrid(int srid) =>
+        srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
         unit switch
