@@ -103,10 +103,11 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider());
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore());
 
-        // Register catalog (scoped, from configuration)
+        // Register catalog (scoped, from configuration + discovered column types)
         services.AddScoped<ILayerCatalog>(sp =>
         {
-            var (layers, serviceDefs) = BuildCatalogEntries(options);
+            var registry = sp.GetRequiredService<DuckDBLayerRegistry>();
+            var (layers, serviceDefs) = BuildCatalogEntries(options, registry.Mappings);
             return new DuckDBLayerCatalog(layers, serviceDefs, sp.GetRequiredService<ILogger<DuckDBLayerCatalog>>());
         });
 
@@ -121,8 +122,8 @@ internal static class ServiceCollectionExtensions
 
         foreach (var layerOpt in options.Layers)
         {
-            var attributeColumns = layerOpt.Attributes is { Length: > 0 }
-                ? layerOpt.Attributes.ToList()
+            var (attributeColumns, attributeColumnTypes) = layerOpt.Attributes is { Length: > 0 }
+                ? (layerOpt.Attributes.ToList(), new Dictionary<string, string>())
                 : DiscoverAttributeColumns(connectionString, layerOpt, logger);
 
             logger.LogInformation(
@@ -136,14 +137,15 @@ internal static class ServiceCollectionExtensions
                 GeometryColumn = layerOpt.GeometryColumn,
                 ObjectIdColumn = layerOpt.ObjectIdColumn,
                 Srid = layerOpt.Srid,
-                AttributeColumns = attributeColumns
+                AttributeColumns = attributeColumns,
+                AttributeColumnTypes = attributeColumnTypes
             });
         }
 
         return mappings;
     }
 
-    private static List<string> DiscoverAttributeColumns(
+    private static (List<string> Names, Dictionary<string, string> Types) DiscoverAttributeColumns(
         string connectionString, DuckDBLayerOptions layerOpt, ILogger logger)
     {
         try
@@ -156,6 +158,7 @@ internal static class ServiceCollectionExtensions
             using var reader = cmd.ExecuteReader();
 
             var columns = new List<string>();
+            var types = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             while (reader.Read())
             {
                 var columnName = reader.GetString(1);
@@ -163,10 +166,11 @@ internal static class ServiceCollectionExtensions
                     !string.Equals(columnName, layerOpt.ObjectIdColumn, StringComparison.OrdinalIgnoreCase))
                 {
                     columns.Add(columnName);
+                    types[columnName] = reader.GetString(2);
                 }
             }
 
-            return columns;
+            return (columns, types);
         }
         catch (Exception ex)
         {
@@ -174,12 +178,14 @@ internal static class ServiceCollectionExtensions
                 "Could not discover attribute columns for DuckDB layer {LayerId} table {Table}; " +
                 "set DuckDB:Layers:N:Attributes in configuration to specify columns explicitly",
                 layerOpt.Id, layerOpt.Table);
-            return [];
+            return ([], new Dictionary<string, string>());
         }
     }
 
-    private static (List<LayerDefinition> Layers, List<ServiceDefinition> Services) BuildCatalogEntries(DuckDBOptions options)
+    private static (List<LayerDefinition> Layers, List<ServiceDefinition> Services) BuildCatalogEntries(
+        DuckDBOptions options, IEnumerable<DuckDBLayerMapping> mappings)
     {
+        var mappingsByLayerId = mappings.ToDictionary(m => m.LayerId);
         var layers = new List<LayerDefinition>(options.Layers.Length);
         var layerMap = new Dictionary<int, LayerDefinition>();
 
@@ -199,6 +205,18 @@ internal static class ServiceCollectionExtensions
             if (geometryType != GeometryType.None)
             {
                 fields.Add(new("shape", FieldType.Geometry, Nullable: false, Description: "Geometry field"));
+            }
+
+            // Add attribute column fields from discovered/configured column metadata
+            if (mappingsByLayerId.TryGetValue(layerOpt.Id, out var mapping))
+            {
+                foreach (var attrCol in mapping.AttributeColumns)
+                {
+                    var fieldType = mapping.AttributeColumnTypes.TryGetValue(attrCol, out var duckDbType)
+                        ? MapDuckDBType(duckDbType)
+                        : FieldType.String;
+                    fields.Add(new(attrCol, fieldType));
+                }
             }
 
             var layer = new LayerDefinition(
@@ -245,5 +263,47 @@ internal static class ServiceCollectionExtensions
         }
 
         return (layers, services);
+    }
+
+    /// <summary>
+    /// Maps a DuckDB column type string (from PRAGMA table_info) to a <see cref="FieldType"/>.
+    /// </summary>
+    internal static FieldType MapDuckDBType(string duckDbType)
+    {
+        // Strip precision/scale suffix, e.g. "DECIMAL(10,2)" → "DECIMAL"
+        var parenIndex = duckDbType.IndexOf('(');
+        var baseType = (parenIndex >= 0 ? duckDbType[..parenIndex] : duckDbType).Trim();
+
+        return baseType.ToUpperInvariant() switch
+        {
+            "INTEGER" or "INT" or "INT4" or "SIGNED"
+                or "SMALLINT" or "INT2" or "SHORT"
+                or "TINYINT" or "INT1"
+                or "UTINYINT" or "USMALLINT" => FieldType.Integer,
+
+            "BIGINT" or "INT8" or "LONG" or "HUGEINT"
+                or "UINTEGER" or "UBIGINT" => FieldType.BigInteger,
+
+            "FLOAT" or "REAL" or "FLOAT4" => FieldType.Float,
+            "DOUBLE" or "FLOAT8" or "DECIMAL" or "NUMERIC" => FieldType.Double,
+            "BOOLEAN" or "BOOL" or "LOGICAL" => FieldType.Boolean,
+
+            "VARCHAR" or "TEXT" or "STRING"
+                or "CHAR" or "BPCHAR" or "NVARCHAR" => FieldType.String,
+
+            "DATE" => FieldType.Date,
+            "TIME" or "TIMETZ" or "TIME WITH TIME ZONE" => FieldType.Time,
+
+            "TIMESTAMP" or "TIMESTAMPTZ" or "TIMESTAMP WITH TIME ZONE"
+                or "TIMESTAMP_S" or "TIMESTAMP_MS" or "TIMESTAMP_NS"
+                or "DATETIME" => FieldType.DateTime,
+
+            "UUID" => FieldType.Uuid,
+            "BLOB" or "BYTEA" or "VARBINARY" => FieldType.Binary,
+            "JSON" => FieldType.Json,
+            "GEOMETRY" => FieldType.Geometry,
+
+            _ => FieldType.String,
+        };
     }
 }

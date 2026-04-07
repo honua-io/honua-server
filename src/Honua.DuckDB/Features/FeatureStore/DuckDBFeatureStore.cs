@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.DuckDB.Features.FeatureStore.Services;
 
 namespace Honua.DuckDB.Features.FeatureStore;
 
@@ -24,8 +25,6 @@ internal sealed class DuckDBFeatureStore :
     IStreamingFeatureStore,
     IPagedFeatureReader
 {
-    private const string InternalTotalCountColumn = "__honua_total_count";
-
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
@@ -304,7 +303,7 @@ internal sealed class DuckDBFeatureStore :
         {
             features.Add(feature);
             if (!hasCountColumn &&
-                feature.Attributes.TryGetValue(InternalTotalCountColumn, out var totalCountValue) &&
+                feature.Attributes.TryGetValue(DuckDBQueryEncoding.InternalTotalCountColumn, out var totalCountValue) &&
                 totalCountValue is not null)
             {
                 totalCount = Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
@@ -355,27 +354,27 @@ internal sealed class DuckDBFeatureStore :
 
     private static Feature RemoveInternalAttributes(Feature feature)
     {
-        if (!feature.Attributes.ContainsKey(InternalTotalCountColumn))
+        if (!feature.Attributes.ContainsKey(DuckDBQueryEncoding.InternalTotalCountColumn))
         {
             return feature;
         }
 
-        return feature with { Attributes = feature.Attributes.Remove(InternalTotalCountColumn) };
+        return feature with { Attributes = feature.Attributes.Remove(DuckDBQueryEncoding.InternalTotalCountColumn) };
     }
 
     private static EncodedGeoJsonFeature RemoveInternalAttributes(EncodedGeoJsonFeature feature)
     {
-        if (!feature.Attributes.ContainsKey(InternalTotalCountColumn))
+        if (!feature.Attributes.ContainsKey(DuckDBQueryEncoding.InternalTotalCountColumn))
         {
             return feature;
         }
 
-        return feature with { Attributes = feature.Attributes.Remove(InternalTotalCountColumn) };
+        return feature with { Attributes = feature.Attributes.Remove(DuckDBQueryEncoding.InternalTotalCountColumn) };
     }
 
     private static long ExtractTotalCount(ImmutableDictionary<string, object?> attributes, int fallbackCount)
     {
-        if (attributes.TryGetValue(InternalTotalCountColumn, out var value) && value is not null)
+        if (attributes.TryGetValue(DuckDBQueryEncoding.InternalTotalCountColumn, out var value) && value is not null)
         {
             return Convert.ToInt64(value, CultureInfo.InvariantCulture);
         }

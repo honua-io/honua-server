@@ -27,6 +27,10 @@ internal sealed class DuckDBLayerMapping
     /// <summary>Attribute column names (excludes geometry and object ID columns).</summary>
     public required IReadOnlyList<string> AttributeColumns { get; init; }
 
+    /// <summary>Maps attribute column names to their DuckDB data types (for catalog field type mapping).</summary>
+    public IReadOnlyDictionary<string, string> AttributeColumnTypes { get; init; } =
+        new Dictionary<string, string>();
+
     /// <summary>Gets the double-quoted table name for safe SQL interpolation.</summary>
     public string QuotedTableName => $"\"{TableName}\"";
 

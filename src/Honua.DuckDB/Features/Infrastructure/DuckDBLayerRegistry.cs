@@ -35,4 +35,7 @@ internal sealed class DuckDBLayerRegistry
 
     /// <summary>All configured layer IDs.</summary>
     public IEnumerable<int> LayerIds => _layers.Keys;
+
+    /// <summary>All configured layer mappings.</summary>
+    public IEnumerable<DuckDBLayerMapping> Mappings => _layers.Values;
 }

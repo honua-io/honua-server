@@ -22,8 +22,6 @@ namespace Honua.DuckDB.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
 {
-    private const string InternalTotalCountColumn = "__honua_total_count";
-
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly DuckDBLayerRegistry _layerRegistry;
     private readonly IPerformanceMonitor? _performanceMonitor;
@@ -405,9 +403,9 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         {
             var fieldName = reader.GetName(i);
 
-            if (fieldName.Equals(InternalTotalCountColumn, StringComparison.OrdinalIgnoreCase))
+            if (fieldName.Equals(DuckDBQueryEncoding.InternalTotalCountColumn, StringComparison.OrdinalIgnoreCase))
             {
-                builder[InternalTotalCountColumn] = reader.IsDBNull(i) ? null : Convert.ToInt64(reader.GetValue(i), CultureInfo.InvariantCulture);
+                builder[DuckDBQueryEncoding.InternalTotalCountColumn] = reader.IsDBNull(i) ? null : Convert.ToInt64(reader.GetValue(i), CultureInfo.InvariantCulture);
                 continue;
             }
 

@@ -19,8 +19,6 @@ namespace Honua.DuckDB.Features.FeatureStore.Services;
 /// </summary>
 internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 {
-    private const string InternalTotalCountColumn = "__honua_total_count";
-
     private readonly DuckDBLayerRegistry _layerRegistry;
 
     public DuckDBFeatureQueryBuilder(DuckDBLayerRegistry layerRegistry)
@@ -197,7 +195,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         }
 
         sb.Append(CultureInfo.InvariantCulture,
-            $", COUNT(*) OVER() AS {InternalTotalCountColumn}");
+            $", COUNT(*) OVER() AS {DuckDBQueryEncoding.InternalTotalCountColumn}");
 
         sb.Append(CultureInfo.InvariantCulture, $" FROM {mapping.QuotedTableName} WHERE 1=1");
 
@@ -597,7 +595,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         }
 
         sb.Append(CultureInfo.InvariantCulture,
-            $", COUNT(*) OVER() AS {InternalTotalCountColumn}");
+            $", COUNT(*) OVER() AS {DuckDBQueryEncoding.InternalTotalCountColumn}");
         sb.Append(CultureInfo.InvariantCulture, $" FROM {mapping.QuotedTableName} WHERE 1=1");
 
         AppendWhereClause(sb, mapping, query, ref paramIndex, parameters);
