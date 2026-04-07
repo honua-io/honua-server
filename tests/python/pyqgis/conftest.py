@@ -18,7 +18,6 @@ import datetime
 import json
 import os
 import subprocess
-import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
