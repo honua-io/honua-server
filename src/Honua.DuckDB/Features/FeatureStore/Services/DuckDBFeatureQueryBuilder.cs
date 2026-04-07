@@ -1017,8 +1017,20 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         return $"ST_DWithin({geomCol}, {filterGeomParam}, ${paramIndex++})";
     }
 
+    /// <summary>
+    /// Returns <c>true</c> for SRIDs known to be geographic (lat/lon degree-based) CRSs.
+    /// Uses an explicit enumeration rather than the 4000-4999 range because that range
+    /// includes non-geographic SRIDs (e.g. EPSG:4978 WGS 84 geocentric in meters) which
+    /// would cause incorrect distance function selection.
+    /// </summary>
     private static bool IsGeographicSrid(int srid) =>
-        srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+        srid is 4326    // WGS 84
+            or 4269     // NAD83
+            or 4267     // NAD27
+            or 4258     // ETRS89
+            or 4283     // GDA94
+            or 4617     // NAD83(CSRS)
+            or 4759;    // NAD83(NSRS2007)
 
     private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
         unit switch

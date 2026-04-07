@@ -385,9 +385,12 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
 
         if (value is Stream stream)
         {
-            using var ms = new MemoryStream();
-            stream.CopyTo(ms);
-            return ms.ToArray();
+            using (stream)
+            {
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                return ms.ToArray();
+            }
         }
 
         return (byte[])value;
