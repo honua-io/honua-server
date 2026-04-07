@@ -94,4 +94,16 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Warning,
         Message = "COG GDAL driver not available for layer {LayerId}, raster {RasterId}. Falling back to GTiff with COG-compatible options (TILED=YES, COMPRESS=DEFLATE)")]
     public static partial void CogDriverFallback(ILogger logger, int layerId, long rasterId);
+
+    [LoggerMessage(
+        EventId = 7814,
+        Level = LogLevel.Warning,
+        Message = "Histogram computation failed for layer {LayerId}, raster {RasterId}, band {Band}")]
+    public static partial void HistogramFailed(ILogger logger, Exception ex, int layerId, long rasterId, int band);
+
+    [LoggerMessage(
+        EventId = 7815,
+        Level = LogLevel.Debug,
+        Message = "Catalog query for layer {LayerId}: returned={ReturnedCount}, total={TotalCount}, exceededTransferLimit={ExceededTransferLimit}")]
+    public static partial void CatalogQueried(ILogger logger, int layerId, int returnedCount, long totalCount, bool exceededTransferLimit);
 }

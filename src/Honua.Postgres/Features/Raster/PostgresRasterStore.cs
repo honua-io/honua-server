@@ -533,6 +533,143 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterHistogram[]> GetHistogramsAsync(
+        int layerId,
+        long rasterId,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default)
+    {
+        // Clamp the bin count to a sensible range so abusive callers can't
+        // request 100 000-bucket histograms. 256 matches ArcGIS Pro defaults.
+        if (binCount <= 0)
+        {
+            binCount = 256;
+        }
+        else if (binCount > 1024)
+        {
+            binCount = 1024;
+        }
+
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Resolve band list (defer to ST_NumBands when caller supplied none).
+        int[] effectiveBands;
+        if (bands is { Length: > 0 })
+        {
+            effectiveBands = bands;
+        }
+        else
+        {
+            await using var bandsCommand = connection.CreateCommand();
+            bandsCommand.CommandText = $"""
+                SELECT ST_NumBands(raster) AS band_count
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+                """;
+            AddParameter(bandsCommand, "@layerId", layerId);
+            AddParameter(bandsCommand, "@rasterId", rasterId);
+            var bandCountResult = await bandsCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (bandCountResult is null or DBNull)
+            {
+                return Array.Empty<RasterHistogram>();
+            }
+
+            var totalBands = Convert.ToInt32(bandCountResult, System.Globalization.CultureInfo.InvariantCulture);
+            effectiveBands = new int[totalBands];
+            for (var i = 0; i < totalBands; i++)
+            {
+                effectiveBands[i] = i + 1;
+            }
+        }
+
+        var results = new List<RasterHistogram>(effectiveBands.Length);
+        foreach (var band in effectiveBands)
+        {
+            await using var histogramCommand = connection.CreateCommand();
+            histogramCommand.CommandText = $"""
+                SELECT (h).min AS bin_min,
+                       (h).max AS bin_max,
+                       (h).count AS bin_count
+                FROM (
+                    SELECT ST_Histogram(raster, @band, @binCount, false) AS h
+                    FROM {_rasterDataTable}
+                    WHERE layer_id = @layerId AND id = @rasterId
+                ) sub
+                """;
+            AddParameter(histogramCommand, "@layerId", layerId);
+            AddParameter(histogramCommand, "@rasterId", rasterId);
+            AddParameter(histogramCommand, "@band", band);
+            AddParameter(histogramCommand, "@binCount", binCount);
+
+            var counts = new long[binCount];
+            double overallMin = double.NaN;
+            double overallMax = double.NaN;
+            var index = 0;
+
+            try
+            {
+                await using var histogramReader = await histogramCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await histogramReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var binMin = histogramReader.IsDBNull(0) ? double.NaN : histogramReader.GetDouble(0);
+                    var binMax = histogramReader.IsDBNull(1) ? double.NaN : histogramReader.GetDouble(1);
+                    var count = histogramReader.IsDBNull(2) ? 0L : Convert.ToInt64(histogramReader.GetValue(2), System.Globalization.CultureInfo.InvariantCulture);
+
+                    if (index < counts.Length)
+                    {
+                        counts[index] = count;
+                    }
+
+                    if (index == 0)
+                    {
+                        overallMin = binMin;
+                    }
+
+                    if (!double.IsNaN(binMax))
+                    {
+                        overallMax = binMax;
+                    }
+
+                    index++;
+                }
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // PostGIS ST_Histogram fails on uniform-value rasters; surface an empty
+                // histogram so the endpoint stays well-shaped instead of 500ing.
+                PostgresRasterLog.HistogramFailed(_logger, ex, layerId, rasterId, band);
+                results.Add(new RasterHistogram
+                {
+                    Band = band,
+                    BinCount = 0,
+                    Min = 0,
+                    Max = 0,
+                    Counts = Array.Empty<long>()
+                });
+                continue;
+            }
+
+            // Trim trailing slots if PostGIS produced fewer bins than requested.
+            if (index < binCount)
+            {
+                Array.Resize(ref counts, index);
+            }
+
+            results.Add(new RasterHistogram
+            {
+                Band = band,
+                BinCount = counts.Length,
+                Min = double.IsNaN(overallMin) ? 0 : overallMin,
+                Max = double.IsNaN(overallMax) ? 0 : overallMax,
+                Counts = counts
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    /// <inheritdoc />
     public async Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

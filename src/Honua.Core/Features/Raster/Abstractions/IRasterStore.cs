@@ -109,4 +109,20 @@ public interface IRasterStore
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Array of raster metadata</returns>
     Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes histograms for the requested bands of a raster.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the raster.</param>
+    /// <param name="rasterId">Raster identifier to analyze.</param>
+    /// <param name="bands">Optional 1-based band selection. <c>null</c> requests every band.</param>
+    /// <param name="binCount">Number of bins per band; clamped at the implementation level.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One histogram per requested band.</returns>
+    Task<RasterHistogram[]> GetHistogramsAsync(
+        int layerId,
+        long rasterId,
+        int[]? bands = null,
+        int binCount = 256,
+        CancellationToken cancellationToken = default);
 }

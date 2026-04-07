@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.ImageServer.Handlers;
+using Honua.Server.Features.ImageServer.Services;
 
 namespace Honua.Server.Features.ImageServer;
 
@@ -22,6 +23,16 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerExportHandler>();
         services.AddScoped<ImageServerIdentifyHandler>();
         services.AddScoped<ImageServerTileHandler>();
+        services.AddScoped<ImageServerCatalogQueryHandler>();
+        services.AddScoped<ImageServerStatisticsHistogramsHandler>();
+        services.AddScoped<ImageServerLegendHandler>();
+        services.AddScoped<ImageServerAnalyzeHandler>();
+
+        // Register supporting services
+        services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
+        services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();
+        services.AddSingleton<IImageServerLegendSwatchBuilder, ImageServerLegendSwatchBuilder>();
+        services.AddSingleton<IImageServerRasterFunctionPlanner, ImageServerRasterFunctionPlanner>();
 
         return services;
     }
