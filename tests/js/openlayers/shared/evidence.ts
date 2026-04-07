@@ -75,6 +75,19 @@ const CORE_TEST_IDS = [
 ] as const;
 
 /**
+ * Visual / style certification slice IDs (ticket #478). When one of these IDs
+ * is applicable to a protocol but no test attempts/records it, the collector
+ * emits a `pending-fixture` skip note rather than the generic
+ * "Not covered by this test suite" message. This keeps the release-checklist
+ * audit promise (RELEASE_CHECKLIST.md cross-client certification section)
+ * verifiable in the .cert.json envelope text.
+ */
+const SLICE_TEST_IDS: ReadonlySet<string> = new Set([
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
+]);
+
+/**
  * Per-protocol applicability derived from CROSS_CLIENT_CERTIFICATION_MATRIX.md.
  * IDs present are applicable; unrecorded applicable IDs emit 'skip'.
  * IDs absent from the set emit 'not-applicable'.
@@ -406,9 +419,17 @@ export class EvidenceCollector {
       const status: CertStatus = isApplicable
         ? (wasAttempted ? 'fail' : 'skip')
         : 'not-applicable';
+      // Slice IDs (CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01) get a
+      // `pending-fixture` marker on the unattempted skip path so the release
+      // checklist promise is verifiable in the envelope text. See ticket #478
+      // and docs/gis/visual-style-certification-slice.md.
       const notes = wasAttempted
         ? 'Test attempted but assertion failed before evidence was recorded'
-        : isApplicable ? 'Not covered by this test suite' : '';
+        : isApplicable
+          ? (SLICE_TEST_IDS.has(id)
+              ? 'pending-fixture: visual / style slice ID not yet substantiated by this lane; tracked in visual-style-certification-slice.md'
+              : 'Not covered by this test suite')
+          : '';
       return {
         test_case_id: id,
         status,

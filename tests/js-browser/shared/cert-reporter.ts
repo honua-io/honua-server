@@ -44,6 +44,17 @@ const MAPSERVER_NOT_APPLICABLE: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Visual / style certification slice IDs (ticket #478). Unsubstantiated slice
+ * IDs emit a `pending-fixture` skip note so the release-checklist audit promise
+ * is verifiable in the envelope text. Generic unexercised core IDs continue to
+ * use the "Not exercised by esri-leaflet browser suite" note.
+ */
+const SLICE_TEST_IDS: ReadonlySet<string> = new Set([
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
+]);
+
+/**
  * Extract CERT IDs from test title, e.g. "[CERT-CONN-01]", "[EL-EXT-01]",
  * or the 4-part visual / style slice IDs like "[CERT-RNDR-SYM-01]".
  *
@@ -173,6 +184,11 @@ export default class CertReporter implements Reporter {
           });
         } else if (protocol === 'mapserver' && MAPSERVER_NOT_APPLICABLE.has(certId)) {
           results.push(notApplicable(certId, 'Not applicable to MapServer rendering-only lane'));
+        } else if (SLICE_TEST_IDS.has(certId)) {
+          results.push(skipResult(
+            certId,
+            'pending-fixture: visual / style slice ID not yet substantiated by this lane; tracked in visual-style-certification-slice.md',
+          ));
         } else {
           results.push(skipResult(certId, 'Not exercised by esri-leaflet browser suite'));
         }

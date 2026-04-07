@@ -83,7 +83,14 @@ Lane-specific overrides are recorded in the per-scenario rows below.
 When pixel-color sampling is used, the lane records the
 `measured_count` on the evidence envelope as the count of matching
 pixels, so reviewers can spot a sudden drop without re-running the
-suite.
+suite. The per-channel RGB tolerance is chosen per lane to match the
+rasterization and anti-aliasing characteristics of that renderer, so
+the slice spec deliberately does not pin a single number: PyQGIS uses
+`COLOR_TOLERANCE = 35` in
+[`tests/python/pyqgis/test_render_path.py`](../../tests/python/pyqgis/test_render_path.py),
+and the OpenLayers browser lane uses per-target tolerances (`30` for
+the stroke target, `40` for the symbol and fill targets) in
+[`tests/js/openlayers/rendering/render.spec.ts`](../../tests/js/openlayers/rendering/render.spec.ts).
 
 ## Scenario Catalogue
 
@@ -135,7 +142,7 @@ scenario, and the evidence path that shows up in the per-lane
 | Fixture | _Pending polygon fixture_ — slice contract |
 | Style source | drawingInfo (FS) / ol.style.Fill (OGC vector tiles) / QgsFillSymbol (PyQGIS) |
 | Expected color | `rgba(30, 100, 200, 0.6)` |
-| Pass criterion | At least 50 pixels within ±10 RGB of the declared fill color |
+| Pass criterion | At least 50 pixels matching the declared fill color within the lane-specific per-channel tolerance |
 | Lanes substantiating | OpenLayers records the marker fill color from the existing fixture (point markers carry a fill that exercises the fill assertion path); a real polygon fixture is the closing follow-on |
 
 ### CERT-RNDR-LBL-01 — Label / text
@@ -278,3 +285,4 @@ a `Cache-Control: no-cache` override.
 |---|---|---|
 | 1.0 | 2026-04-06 | Initial slice — six visual / style scenarios, lane-coverage table, geodesy lock, evidence path |
 | 1.1 | 2026-04-07 | Align `CERT-RNDR-URL-01` Protocols row with the matrix (FS, MVT); scope the release-ledger flip to `ogc-api-maps-and-static-rendering` only (WMS 1.3 / WMTS 1.0 remain `planned` pending a real WMS/WMTS client lane) |
+| 1.2 | 2026-04-07 | Reconcile `CERT-RNDR-FIL-01` pass criterion with the actual lane tolerances (PyQGIS `COLOR_TOLERANCE=35`, OpenLayers `30`/`40`); drop the stale `±10 RGB` pin on FIL-01 and document the lane-specific per-channel tolerance contract in `Tolerance Defaults` |

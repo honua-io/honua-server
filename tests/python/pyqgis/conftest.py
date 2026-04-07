@@ -609,18 +609,12 @@ def render_layer_headless_with_symbol(
         Marker size in millimeters when ``geometry_kind == "point"``.
     """
     from qgis.core import (
-        QgsCoordinateReferenceSystem,
-        QgsCoordinateTransform,
         QgsFillSymbol,
         QgsLineSymbol,
-        QgsMapRendererSequentialJob,
-        QgsMapSettings,
         QgsMarkerSymbol,
-        QgsProject,
         QgsSingleSymbolRenderer,
     )
-    from qgis.PyQt.QtCore import QBuffer, QIODevice, QSize
-    from qgis.PyQt.QtGui import QColor, QImage
+    from qgis.PyQt.QtGui import QColor
 
     fill_qcolor = QColor(*fill_color)
     stroke_qcolor = QColor(*stroke_color)
@@ -658,35 +652,10 @@ def render_layer_headless_with_symbol(
     layer.setRenderer(QgsSingleSymbolRenderer(symbol))
     layer.triggerRepaint()
 
-    project = QgsProject.instance()
-    project.addMapLayer(layer, False)
-
-    # Visual / style slice geodesy lock — same EPSG:3857 reproject + extent
-    # transform pattern as render_layer_headless. See the longer comment
-    # there for why both setDestinationCrs and a transformed extent are
-    # required for the rendered region to match the projected feature
-    # footprint.
-    target_crs = QgsCoordinateReferenceSystem("EPSG:3857")
-    extent_xform = QgsCoordinateTransform(layer.crs(), target_crs, project)
-    extent_in_target = extent_xform.transformBoundingBox(layer.extent())
-
-    settings = QgsMapSettings()
-    settings.setDestinationCrs(target_crs)
-    settings.setLayers([layer])
-    settings.setOutputSize(QSize(width, height))
-    settings.setExtent(extent_in_target)
-
-    job = QgsMapRendererSequentialJob(settings)
-    job.start()
-    job.waitForFinished()
-
-    image: QImage = job.renderedImage()
-    project.removeMapLayer(layer.id())
-
-    buf = QBuffer()
-    buf.open(QIODevice.WriteOnly)
-    image.save(buf, "PNG")
-    return bytes(buf.data())
+    # Delegate to render_layer_headless so the EPSG:3857 reproject + extent
+    # transform live in exactly one place. The slice tests only differ from
+    # the base render path by the renderer assignment above.
+    return render_layer_headless(layer, width=width, height=height)
 
 
 # ---------------------------------------------------------------------------
