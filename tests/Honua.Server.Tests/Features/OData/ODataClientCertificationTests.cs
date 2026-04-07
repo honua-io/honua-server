@@ -32,12 +32,13 @@ namespace Honua.Server.Tests.Features.OData;
 /// deserialization that protocol-only smokes cannot.
 /// </para>
 /// <para>
-/// Failure classification is split between the
-/// <see cref="CertificationEvidenceCollector"/>'s automatic
-/// <c>[client-incompat]</c>/<c>[server-regression]</c> tagging and a few
-/// places where the test pre-probes via <see cref="HttpClient"/> and calls
-/// <see cref="CertificationEvidenceCollector.Fail(string,string,string?,long?)"/>
-/// directly to disambiguate.
+/// Every test routes through
+/// <see cref="CertificationEvidenceCollector.RecordAsync(string, Func{CertContext, Task})"/>,
+/// which auto-classifies failures: <see cref="Xunit.Sdk.XunitException"/>
+/// (i.e. an assertion miss after the client successfully round-trips) is
+/// tagged <c>[server-regression]</c>; any other exception type — typically a
+/// transport or parser fault from <see cref="DataServiceContext"/> — is
+/// tagged <c>[client-incompat]</c>.
 /// </para>
 /// <para>
 /// All read-only cases use a per-class <see cref="WebAppFixture"/> seeded with
@@ -265,46 +266,26 @@ public sealed class ODataClientCertificationTests : IClassFixture<ODataClientCer
     [Trait("CertId", "CERT-ERRH-01")]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/DoesNotExist")]
-    public async Task CertErrh01_InvalidEndpointReturnsStructuredError()
-    {
-        // Pre-probe the malformed endpoint via raw HttpClient so we can
-        // attribute failures cleanly to server (wrong status) vs client
-        // (transport/parser exception). The "structured error envelope"
-        // promise is verified end-to-end by CERT-ERRH-02 — for an unrouted
-        // path the bare 4xx from the routing layer is the canonical
-        // response and may carry an empty body.
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
+    public Task CertErrh01_InvalidEndpointReturnsStructuredError()
+        => Evidence.RecordAsync("CERT-ERRH-01", async _ =>
         {
+            // Probe the unrouted path with raw HttpClient — the "structured
+            // error envelope" promise is verified end-to-end by CERT-ERRH-02;
+            // for an unrouted path the bare 4xx from the routing layer is
+            // the canonical response and may carry an empty body. RecordAsync
+            // takes care of attributing failures to server-regression
+            // (XunitException) vs client-incompat (any other exception).
             var response = await AdminClient.GetAsync("/odata/DoesNotExist");
             ((int)response.StatusCode).Should().BeInRange(400, 499,
                 "an unknown OData entity set must surface a 4xx status");
-
-            sw.Stop();
-            Evidence.Pass("CERT-ERRH-01", durationMs: sw.ElapsedMilliseconds);
-        }
-        catch (Xunit.Sdk.XunitException ex)
-        {
-            sw.Stop();
-            Evidence.Fail("CERT-ERRH-01", CertificationEvidenceCollector.ServerRegressionPrefix, ex.Message, sw.ElapsedMilliseconds);
-            throw new Xunit.Sdk.XunitException($"{CertificationEvidenceCollector.ServerRegressionPrefix} CERT-ERRH-01: {ex.Message}", ex);
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            Evidence.Fail("CERT-ERRH-01", CertificationEvidenceCollector.ClientIncompatPrefix, $"{ex.GetType().Name}: {ex.Message}", sw.ElapsedMilliseconds);
-            throw new Xunit.Sdk.XunitException($"{CertificationEvidenceCollector.ClientIncompatPrefix} CERT-ERRH-01: {ex.GetType().Name}: {ex.Message}", ex);
-        }
-    }
+        });
 
     [IntegrationTest]
     [Trait("CertId", "CERT-ERRH-02")]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /odata/Features({layerId})?$filter=invalid")]
-    public async Task CertErrh02_MalformedFilterReturnsStructuredError()
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
+    public Task CertErrh02_MalformedFilterReturnsStructuredError()
+        => Evidence.RecordAsync("CERT-ERRH-02", async _ =>
         {
             // A blatantly malformed $filter clause must be rejected with a
             // 4xx and an error envelope. Use raw HttpClient so we can verify
@@ -318,23 +299,7 @@ public sealed class ODataClientCertificationTests : IClassFixture<ODataClientCer
             var content = await response.Content.ReadAsStringAsync();
             content.Should().NotBeNullOrWhiteSpace(
                 "OData errors must include a structured response body");
-
-            sw.Stop();
-            Evidence.Pass("CERT-ERRH-02", durationMs: sw.ElapsedMilliseconds);
-        }
-        catch (Xunit.Sdk.XunitException ex)
-        {
-            sw.Stop();
-            Evidence.Fail("CERT-ERRH-02", CertificationEvidenceCollector.ServerRegressionPrefix, ex.Message, sw.ElapsedMilliseconds);
-            throw new Xunit.Sdk.XunitException($"{CertificationEvidenceCollector.ServerRegressionPrefix} CERT-ERRH-02: {ex.Message}", ex);
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            Evidence.Fail("CERT-ERRH-02", CertificationEvidenceCollector.ClientIncompatPrefix, $"{ex.GetType().Name}: {ex.Message}", sw.ElapsedMilliseconds);
-            throw new Xunit.Sdk.XunitException($"{CertificationEvidenceCollector.ClientIncompatPrefix} CERT-ERRH-02: {ex.GetType().Name}: {ex.Message}", ex);
-        }
-    }
+        });
 
     private const int TestLayerId = 0;
 }
@@ -353,10 +318,6 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
     private const string ClientLane = "cli";
     private const string Protocol = "odata";
 
-    // Must match WebAppFixture.SharedAdminPassword so CreateAdminClient()'s
-    // X-API-Key header validates against the configured admin password.
-    private const string AdminPasswordForTests = "test-admin-password";
-
     private HttpClient? _adminClient;
 
     public ODataClientCertificationFixture()
@@ -367,10 +328,12 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
                 // Disable the dev-auth bypass so the CERT-AUTH-01 probe sees
                 // a real 401 response from unauthenticated requests. The
                 // non-shared WebAppFixture path does not auto-configure
-                // HONUA_ADMIN_PASSWORD, so set it here to the same value
-                // CreateAdminClient() places in the X-API-Key header.
+                // HONUA_ADMIN_PASSWORD, so set it here to the canonical
+                // TestKit constant that CreateAdminClient() places in the
+                // X-API-Key header — keeping the two ends in lockstep
+                // without re-declaring the literal.
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPasswordForTests);
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             });
 
         Evidence = new CertificationEvidenceCollector(
