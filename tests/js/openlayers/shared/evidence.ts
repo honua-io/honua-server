@@ -68,6 +68,10 @@ const CORE_TEST_IDS = [
   'CERT-GEOM-01', 'CERT-GEOM-02',
   'CERT-ERRH-01', 'CERT-ERRH-02',
   'CERT-RNDR-01', 'CERT-RNDR-02',
+  // Visual / style certification slice (ticket #478) — append-only.
+  // See docs/gis/visual-style-certification-slice.md.
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
 ] as const;
 
 /**
@@ -82,10 +86,16 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
     'CERT-QFLT-01', 'CERT-QFLT-02', 'CERT-PAGE-01', 'CERT-PAGE-02',
     'CERT-GEOM-01', 'CERT-GEOM-02', 'CERT-ERRH-01', 'CERT-ERRH-02',
     'CERT-RNDR-01', 'CERT-RNDR-02',
+    // Visual / style slice — applicable to all geometry-capable protocols.
+    'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+    'CERT-RNDR-LBL-01',
   ]),
   mvt: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
     'CERT-ERRH-01', 'CERT-RNDR-01',
+    // Visual / style slice — MVT covers symbol/line/fill/sprite/style URL.
+    'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+    'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
   ]),
   featureserver: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
@@ -93,6 +103,9 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
     'CERT-QFLT-01', 'CERT-QFLT-02', 'CERT-PAGE-01', 'CERT-PAGE-02',
     'CERT-GEOM-01', 'CERT-GEOM-02', 'CERT-ERRH-01', 'CERT-ERRH-02',
     'CERT-RNDR-01', 'CERT-RNDR-02',
+    // Visual / style slice — drawingInfo covers all categories except sprite.
+    'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+    'CERT-RNDR-LBL-01', 'CERT-RNDR-URL-01',
   ]),
   mapserver: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',

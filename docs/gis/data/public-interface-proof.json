@@ -440,17 +440,21 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification",
-          "executionLane": "release:manual-follow-through",
+          "proofMechanism": "Visual / style certification slice exercises drawingInfo and rendered tile output through OpenLayers, Esri Leaflet, and PyQGIS lanes",
+          "executionLane": "ci:js-integration-tests+esri-leaflet-browser-tests; nightly:pyqgis-client-compat",
           "evidenceLocations": [
+            "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/contributor/public-interface-quality-model.md"
+            "docs/contributor/public-interface-quality-model.md",
+            "tests/js/openlayers/rendering/render.spec.ts",
+            "tests/js-browser/esri-leaflet/rendering.spec.ts",
+            "tests/python/pyqgis/test_render_path.py"
           ],
           "ownerRepo": "honua-server",
-          "status": "planned",
+          "status": "implemented",
           "linkedTicket": "#478",
-          "versionCaptureRule": "When the desktop visual lane lands, record the exact client version plus immutable WMS evidence link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
+          "versionCaptureRule": "Visual / style slice records pixel-color sampling evidence and the client version in the .cert.json envelopes for the JS lanes (tests/js-browser/evidence/, tests/js/certification-evidence/) and the PyQGIS lane (tests/TestResults/)."
         }
       ]
     },
@@ -499,17 +503,20 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification",
-          "executionLane": "release:manual-follow-through",
+          "proofMechanism": "Visual / style certification slice exercises tile rendering through OpenLayers (OGC vector tiles) and PyQGIS (headless OAPIF render)",
+          "executionLane": "ci:js-integration-tests; nightly:pyqgis-client-compat",
           "evidenceLocations": [
+            "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/contributor/public-interface-quality-model.md"
+            "docs/contributor/public-interface-quality-model.md",
+            "tests/js/openlayers/rendering/render.spec.ts",
+            "tests/python/pyqgis/test_render_path.py"
           ],
           "ownerRepo": "honua-server",
-          "status": "planned",
+          "status": "implemented",
           "linkedTicket": "#478",
-          "versionCaptureRule": "When the desktop visual lane lands, record the exact client version plus immutable WMTS evidence link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
+          "versionCaptureRule": "Visual / style slice records pixel-color sampling evidence and the client version in the .cert.json envelopes for the JS lanes (tests/js/certification-evidence/) and the PyQGIS lane (tests/TestResults/)."
         }
       ]
     },
@@ -889,16 +896,20 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Browser visual/render proof for map rendering clients",
-          "executionLane": "release:manual-follow-through",
+          "proofMechanism": "Visual / style certification slice — OpenLayers + Esri Leaflet pixel-color sampling and PyQGIS headless render exercise the rendered-map lane",
+          "executionLane": "ci:js-integration-tests+esri-leaflet-browser-tests; nightly:pyqgis-client-compat",
           "evidenceLocations": [
+            "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
-            "docs/contributor/public-interface-quality-model.md"
+            "docs/contributor/public-interface-quality-model.md",
+            "tests/js/openlayers/rendering/render.spec.ts",
+            "tests/js-browser/esri-leaflet/rendering.spec.ts",
+            "tests/python/pyqgis/test_render_path.py"
           ],
           "ownerRepo": "honua-server",
-          "status": "planned",
+          "status": "implemented",
           "linkedTicket": "#478",
-          "versionCaptureRule": "When browser visual certification lands, record the exact client version plus immutable evidence link in the release ledger for the rendered-map lane."
+          "versionCaptureRule": "Visual / style slice records the per-category CERT-RNDR-* evidence and the client version in the .cert.json envelopes emitted by the JS lanes and the PyQGIS lane."
         }
       ]
     },

@@ -527,6 +527,7 @@ def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
     Returns empty bytes if rendering fails. The caller asserts on the result.
     """
     from qgis.core import (
+        QgsCoordinateReferenceSystem,
         QgsMapRendererSequentialJob,
         QgsMapSettings,
         QgsProject,
@@ -541,6 +542,118 @@ def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
     settings.setLayers([layer])
     settings.setOutputSize(QSize(width, height))
     settings.setExtent(layer.extent())
+    # Visual / style slice geodesy lock — render in EPSG:3857 so the slice
+    # scenarios match the JS lanes that use Web Mercator. The OAPIF
+    # provider sources EPSG:4326 features and QGIS reprojects on the fly.
+    settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+
+    job = QgsMapRendererSequentialJob(settings)
+    job.start()
+    job.waitForFinished()
+
+    image: QImage = job.renderedImage()
+    project.removeMapLayer(layer.id())
+
+    buf = QBuffer()
+    buf.open(QIODevice.WriteOnly)
+    image.save(buf, "PNG")
+    return bytes(buf.data())
+
+
+def render_layer_headless_with_symbol(
+    layer,
+    *,
+    geometry_kind: str,
+    fill_color: tuple[int, int, int],
+    stroke_color: tuple[int, int, int],
+    stroke_width: float = 1.0,
+    marker_size: float = 6.0,
+    width: int = 256,
+    height: int = 256,
+) -> bytes:
+    """Render a QGIS vector layer with an explicit per-category symbol.
+
+    Used by the visual / style certification slice (ticket #478) to
+    substantiate `CERT-RNDR-{SYM,LIN,FIL}-01`. The slice declares known
+    RGB constants per category; the lane test then asserts that color
+    appears in the rendered PNG above a configured pixel-count
+    threshold. This avoids the QGIS-LTR-version-pinned baseline
+    diffing trap that the design brief flagged.
+
+    Parameters
+    ----------
+    layer : QgsVectorLayer
+        The vector layer to render. Must be valid before this call.
+    geometry_kind : str
+        One of ``"point"``, ``"line"``, ``"polygon"``. Selects which
+        QgsSymbol subclass to construct. The current `client-compat-v1`
+        seed only ships point geometries; the other branches are kept
+        ready for the slice's polygon / line fixture follow-on.
+    fill_color, stroke_color : tuple[int, int, int]
+        RGB triples (0-255) for the symbol's fill and stroke. The
+        rendered canvas is sampled for these by the lane test.
+    stroke_width : float
+        Stroke width in millimeters (QGIS unit default).
+    marker_size : float
+        Marker size in millimeters when ``geometry_kind == "point"``.
+    """
+    from qgis.core import (
+        QgsCoordinateReferenceSystem,
+        QgsFillSymbol,
+        QgsLineSymbol,
+        QgsMapRendererSequentialJob,
+        QgsMapSettings,
+        QgsMarkerSymbol,
+        QgsProject,
+        QgsSingleSymbolRenderer,
+    )
+    from qgis.PyQt.QtCore import QBuffer, QIODevice, QSize
+    from qgis.PyQt.QtGui import QColor, QImage
+
+    fill_qcolor = QColor(*fill_color)
+    stroke_qcolor = QColor(*stroke_color)
+
+    if geometry_kind == "point":
+        symbol = QgsMarkerSymbol.createSimple(
+            {
+                "name": "circle",
+                "color": fill_qcolor.name(),
+                "outline_color": stroke_qcolor.name(),
+                "outline_width": str(stroke_width),
+                "size": str(marker_size),
+            }
+        )
+    elif geometry_kind == "line":
+        symbol = QgsLineSymbol.createSimple(
+            {
+                "color": stroke_qcolor.name(),
+                "width": str(stroke_width),
+            }
+        )
+    elif geometry_kind == "polygon":
+        symbol = QgsFillSymbol.createSimple(
+            {
+                "color": fill_qcolor.name(),
+                "outline_color": stroke_qcolor.name(),
+                "outline_width": str(stroke_width),
+            }
+        )
+    else:
+        raise ValueError(
+            f"Unknown geometry_kind={geometry_kind!r}; expected point/line/polygon."
+        )
+
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+    layer.triggerRepaint()
+
+    project = QgsProject.instance()
+    project.addMapLayer(layer, False)
+
+    settings = QgsMapSettings()
+    settings.setLayers([layer])
+    settings.setOutputSize(QSize(width, height))
+    settings.setExtent(layer.extent())
+    settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
 
     job = QgsMapRendererSequentialJob(settings)
     job.start()

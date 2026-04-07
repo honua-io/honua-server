@@ -44,8 +44,16 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-ERRH-02 | ERRH | Malformed filter returns structured error | FS, OGC, OData | pass/fail |
 | CERT-RNDR-01 | RNDR | Map/table renders without client error | FS, OGC, OData, MVT ‡ | pass/fail |
 | CERT-RNDR-02 | RNDR | Data refresh preserves state | FS, OGC, OData | pass/fail |
+| CERT-RNDR-SYM-01 | RNDR | Point symbol renders with declared color/size | FS, OGC, MVT | screenshot+pass/fail |
+| CERT-RNDR-LIN-01 | RNDR | Line renders with declared stroke + width | FS, OGC, MVT | screenshot+pass/fail |
+| CERT-RNDR-FIL-01 | RNDR | Polygon fill renders with declared color | FS, OGC, MVT | screenshot+pass/fail |
+| CERT-RNDR-LBL-01 | RNDR | Label/text renders where supported | FS, OGC | screenshot+pass/fail |
+| CERT-RNDR-SPR-01 | RNDR | Sprite/icon resolves and draws | MVT | screenshot+pass/fail |
+| CERT-RNDR-URL-01 | RNDR | Style URL/metadata is consumed | FS, MVT | pass/fail |
 
-‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS). The manual smoke runbook does not yet include an MVT lane; MVT render certification is tracked via the JS lane extensions (JS-EXT-01, JS-EXT-02) until a dedicated visual lane is added.
+‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS, OpenLayers `OGCVectorTile`). The manual smoke runbook does not yet include an MapLibre lane; MVT render certification is tracked via the JS lane extensions (JS-EXT-01, JS-EXT-02) and the visual / style certification slice ([`visual-style-certification-slice.md`](visual-style-certification-slice.md)) until a dedicated MapLibre lane is added.
+
+The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
 § **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is exercised as a rendering-only connection (e.g., ArcGIS Pro smoke test), the query-focused categories — CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 — are recorded as `not-applicable` in the `mapserver` evidence file. If the client also exercises MapServer's layer query endpoint (`/{layer-id}/query`), record those results normally. See the [runbook per-protocol evidence section](CLIENT_TEMPLATE_RUNBOOK.md#per-protocol-evidence-files) for the exact split.
 
@@ -171,3 +179,4 @@ All certification results must follow the standardized evidence specification in
 | 1.0.10 | 2026-04-03 | Register Esri Leaflet browser sub-lane (EL-EXT-01 … EL-EXT-04) |
 | 1.0.11 | 2026-04-03 | Clarify Esri Leaflet automated scope and evidence skip/not-applicable behavior |
 | 1.0.12 | 2026-04-06 | Note CLI/SDK OData automation via Microsoft.OData.Client xUnit suite; close OData automation gap for the CLI lane |
+| 1.1.0 | 2026-04-06 | Add visual / style certification slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) per ticket #478; link slice spec |

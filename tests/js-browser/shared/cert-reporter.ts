@@ -1,7 +1,15 @@
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from '@playwright/test/reporter';
 import { buildEnvelope, writeEvidence, type CertResult } from './evidence.js';
 
-/** The 18 common-core CERT-* IDs from the certification matrix. */
+/**
+ * Common-core CERT-* IDs from the certification matrix.
+ *
+ * The base set is the original 18 IDs (CERT-{CONN,AUTH,DISC,SCHM,QFLT,PAGE,
+ * GEOM,ERRH,RNDR}-0{1,2}). The visual / style certification slice (ticket
+ * #478) appends the six per-category CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01
+ * IDs. See docs/gis/visual-style-certification-slice.md for the slice
+ * contract.
+ */
 const COMMON_CORE_IDS = [
   'CERT-CONN-01', 'CERT-CONN-02',
   'CERT-AUTH-01', 'CERT-AUTH-02',
@@ -12,18 +20,27 @@ const COMMON_CORE_IDS = [
   'CERT-GEOM-01', 'CERT-GEOM-02',
   'CERT-ERRH-01', 'CERT-ERRH-02',
   'CERT-RNDR-01', 'CERT-RNDR-02',
+  // Visual / style certification slice (ticket #478) — append-only.
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
 ] as const;
 
 /**
  * Per the matrix footnote §, mapserver evidence files record query-focused
  * categories as not-applicable when the client only exercises the rendering
  * path (export/identify). These are the IDs that do not apply.
+ *
+ * The visual / style slice IDs are also not applicable to the mapserver
+ * rendering-only lane: drawingInfo per-category style assertions live on
+ * FeatureServer, not the MapServer export endpoint.
  */
 const MAPSERVER_NOT_APPLICABLE: ReadonlySet<string> = new Set([
   'CERT-QFLT-01', 'CERT-QFLT-02',
   'CERT-PAGE-01', 'CERT-PAGE-02',
   'CERT-GEOM-01', 'CERT-GEOM-02',
   'CERT-ERRH-02',
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
 ]);
 
 /** Extract CERT IDs from test title, e.g. "[CERT-CONN-01]" or "[EL-EXT-01]". */

@@ -228,10 +228,16 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
     { "test_case_id": "CERT-ERRH-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
     { "test_case_id": "CERT-ERRH-02", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
     { "test_case_id": "CERT-RNDR-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
-    { "test_case_id": "CERT-RNDR-02", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
+    { "test_case_id": "CERT-RNDR-02", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-SYM-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-LIN-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-FIL-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-LBL-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-SPR-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-URL-01", "status": "", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
   ],
   "summary": {
-    "total": 18,
+    "total": 24,
     "passed": 0,
     "failed": 0,
     "skipped": 0,
@@ -241,6 +247,8 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
   "extensions": []
 }
 ```
+
+The visual / style certification slice (ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) adds the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs to the common core. They are append-only — the original 18 IDs are unchanged. See [`visual-style-certification-slice.md`](visual-style-certification-slice.md) for the per-scenario fixtures, expected colors, and lane substantiation. Lanes that do not exercise a slice category emit `skip` (or `not-applicable` for protocols where the category does not apply) so the gap is visible in the rollup.
 
 ### Esri Leaflet Evidence Note
 
@@ -279,6 +287,7 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-03-16 | Initial evidence envelope specification |
+| 1.0.1 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |
 | 1.0.1 | 2026-03-16 | Relabel example directory as common-core; add MapLibre MVT manual workflow |
 | 1.0.2 | 2026-03-16 | Add `measured_count` and `measured_delta` fields; make nullable types explicit; add nullable field convention note |
 | 1.0.3 | 2026-03-16 | Clarify `measured_delta` unit convention and link to matrix geometry tolerance thresholds |
