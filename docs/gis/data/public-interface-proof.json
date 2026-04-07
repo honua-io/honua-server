@@ -603,6 +603,24 @@
         },
         {
           "proofClass": "real-client-certification",
+          "proofMechanism": "Microsoft.OData.Client 8.4.3 xUnit certification suite producing schema v1.0 cli-odata.cert.json envelopes per docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs",
+            "tests/Honua.Server.Tests/Features/OData/ODataClientModels.cs",
+            "tests/Honua.TestKit/Infrastructure/CertificationEvidenceCollector.cs",
+            "tests/Honua.TestKit/Infrastructure/CertEnvelope.cs",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Pin Microsoft.OData.Client in tests/Honua.Server.Tests/Honua.Server.Tests.csproj; ODataClientCertificationFixture reads the loaded assembly version into the cert envelope's client_version field on every CI run, and the envelope's server_version field is sourced from GITHUB_SHA or the Honua.Server informational version."
+        },
+        {
+          "proofClass": "real-client-certification",
           "proofMechanism": "Power BI Desktop and Excel manual certification evidence",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [

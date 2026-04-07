@@ -67,7 +67,15 @@ public sealed class WebAppFixture : IAsyncLifetime
     private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
     private const string TestSecureConnectionName = "test";
     private const string TestSecureConnectionCreatedBy = "test-fixture";
-    private const string SharedAdminPassword = "test-admin-password";
+
+    /// <summary>
+    /// Admin password used by <see cref="CreateAdminClient"/> and configured into the
+    /// shared test server's <c>HONUA_ADMIN_PASSWORD</c> setting. Exposed so tests that
+    /// build their own non-shared <see cref="WebAppFixture"/> (e.g. cross-client
+    /// certification fixtures) can wire the same value into their custom web host
+    /// configuration without re-declaring a string literal that must stay in lockstep.
+    /// </summary>
+    public const string SharedAdminPassword = "test-admin-password";
     private static readonly TimeSpan _defaultTestClientTimeout = TimeSpan.FromMinutes(5);
 
     public WebAppFixture()

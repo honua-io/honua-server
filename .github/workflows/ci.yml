@@ -460,6 +460,15 @@ jobs:
             tests/python/stac-client-compat-results*.md
           retention-days: 7
 
+      - name: Upload OData CLI certification evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: cli-odata
+          path: tests/TestResults/*-cli-odata.cert.json
+          tier: pr
+
   js-integration-tests:
     name: JavaScript Integration Tests
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
