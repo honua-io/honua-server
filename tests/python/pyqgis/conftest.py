@@ -131,7 +131,14 @@ class CertificationEvidenceCollector:
         notes: str = "",
         evidence_ref: str = "",
     ) -> None:
-        self._results[test_case_id] = _CertResult(
+        # Status precedence: fail > pass > skip = not-applicable. For an
+        # equal status, prefer whichever record carries richer metadata so
+        # post-run hooks (e.g. ``pytest_runtest_makereport``) cannot erase
+        # explanatory data the test body already recorded. The PR #702
+        # reviewer (discussion r3037619224) flagged that the previous
+        # implementation overwrote richer skip evidence with bare longrepr
+        # text from the report hook.
+        new_record = _CertResult(
             test_case_id=test_case_id,
             status=status,
             duration_ms=duration_ms,
@@ -140,6 +147,35 @@ class CertificationEvidenceCollector:
             notes=notes,
             evidence_ref=evidence_ref,
         )
+        existing = self._results.get(test_case_id)
+        if existing is None:
+            self._results[test_case_id] = new_record
+            return
+        rank = {"fail": 3, "pass": 2, "skip": 1, "not-applicable": 1}
+        new_rank = rank.get(status, 0)
+        existing_rank = rank.get(existing.status, 0)
+        if new_rank > existing_rank:
+            self._results[test_case_id] = new_record
+            return
+        if new_rank < existing_rank:
+            return
+
+        def _richness(result: _CertResult) -> int:
+            score = 0
+            if result.measured_count is not None:
+                score += 4
+            if result.measured_delta is not None:
+                score += 2
+            if result.evidence_ref:
+                score += 2
+            if result.notes:
+                score += 1
+            if result.duration_ms is not None:
+                score += 1
+            return score
+
+        if _richness(new_record) > _richness(existing):
+            self._results[test_case_id] = new_record
 
     def write_envelope(self, path: Path) -> None:
         results = list(self._results.values())
@@ -417,11 +453,47 @@ def wfs_evidence(
 
 @pytest.fixture(scope="session")
 def wfs_typename(base_url: str) -> str:
-    """Discover and cache the first WFS type name from GetCapabilities."""
+    """Discover and cache the first WFS type name from GetCapabilities.
+
+    Default behavior is to skip WFS-dependent tests when the endpoint cannot
+    be reached or returns no FeatureType entries — this lets dev environments
+    that have no WFS surface deployed still run the OAPIF subset of the
+    suite.
+
+    Set ``HONUA_PYQGIS_REQUIRE_WFS=1`` (used by nightly CI lanes that have a
+    real WFS endpoint deployed) to convert that skip into a hard failure.
+    The PR #702 reviewer (discussion r3037619223) correctly flagged that
+    silently skipping a broken WFS endpoint hides regressions in
+    certification runs, so any environment that promises WFS coverage must
+    set this flag to fail loudly when WFS goes dark.
+    """
     name = _discover_wfs_typename(base_url)
-    if name is None:
-        pytest.skip("WFS GetCapabilities did not return any FeatureType entries.")
-    return name
+    if name is not None:
+        return name
+    caps_url = (
+        f"{base_url}/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities"
+    )
+    require_wfs = os.getenv("HONUA_PYQGIS_REQUIRE_WFS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    base_message = (
+        f"WFS GetCapabilities at {caps_url} returned no FeatureType entries "
+        "(endpoint missing, unreachable, or empty)."
+    )
+    if require_wfs:
+        pytest.fail(
+            base_message
+            + " HONUA_PYQGIS_REQUIRE_WFS is set, so this is treated as a "
+            "hard failure rather than a skip."
+        )
+    pytest.skip(
+        base_message
+        + " Set HONUA_PYQGIS_REQUIRE_WFS=1 in environments that promise WFS "
+        "coverage so this becomes a hard failure instead of a silent skip."
+    )
 
 
 # ---------------------------------------------------------------------------
