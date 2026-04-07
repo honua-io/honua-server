@@ -132,7 +132,7 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                Capabilities = "Catalog,Image,Metadata,Pixels,Tilemap",
+                Capabilities = "Catalog,Image,Metadata,Mensuration,Pixels,Statistics,Tilemap",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,

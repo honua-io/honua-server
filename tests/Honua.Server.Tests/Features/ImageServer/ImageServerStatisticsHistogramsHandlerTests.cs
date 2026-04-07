@@ -225,13 +225,87 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public async Task ComputeAsync_RasterIdsCsv_PassesBandsToStore()
+    public async Task ComputeAsync_RasterIdsCsv_LooksUpCatalogRastersAndComputesStatistics()
+    {
+        SetupSuccessfulCompute();
+        // rasterIds in Esri spec are catalog object IDs - not band indices.
+        var rasterA = CreateTestRasterInfo() with { Id = 100 };
+        var rasterB = CreateTestRasterInfo() with { Id = 200 };
+        _rasterStore.GetRasterInfoAsync(1, 100, Arg.Any<CancellationToken>()).Returns(rasterA);
+        _rasterStore.GetRasterInfoAsync(1, 200, Arg.Any<CancellationToken>()).Returns(rasterB);
+        _rasterStore.GetStatisticsAsync(1, 200, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterStatistics
+                {
+                    Band = 1,
+                    MinValue = 0,
+                    MaxValue = 255,
+                    MeanValue = 128,
+                    StandardDeviation = 45,
+                    ValidPixelCount = 1024,
+                    NoDataPixelCount = 0,
+                }
+            });
+        _rasterStore.GetHistogramsAsync(1, 200, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterHistogram
+                {
+                    Band = 1,
+                    BinCount = 4,
+                    Min = 0,
+                    Max = 255,
+                    Counts = [10, 20, 30, 40],
+                }
+            });
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["rasterIds"] = "100,200",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
+        // Primary raster fallback must NOT be used when rasterIds is supplied.
+        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>());
+        // Both catalog rasters should be analysed (no band filter when bandIds omitted).
+        await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).GetStatisticsAsync(1, 200, null, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_RasterIdsJsonArray_LooksUpCatalogRastersAndComputesStatistics()
+    {
+        SetupSuccessfulCompute();
+        var rasterA = CreateTestRasterInfo() with { Id = 100 };
+        _rasterStore.GetRasterInfoAsync(1, 100, Arg.Any<CancellationToken>()).Returns(rasterA);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["rasterIds"] = "[100]",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
+        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_BandIdsCsv_PassesBandsToStore()
     {
         SetupSuccessfulCompute();
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
-            ["rasterIds"] = "1,3",
+            ["bandIds"] = "1,3",
         };
 
         var context = CreateImageServerContext();
@@ -247,13 +321,13 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public async Task ComputeAsync_RasterIdsJsonArray_PassesBandsToStore()
+    public async Task ComputeAsync_BandIdsJsonArray_PassesBandsToStore()
     {
         SetupSuccessfulCompute();
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
-            ["rasterIds"] = "[2,4]",
+            ["bandIds"] = "[2,4]",
         };
 
         var context = CreateImageServerContext();
@@ -269,6 +343,27 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task ComputeAsync_RasterIdsNotInCatalog_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.GetRasterInfoAsync(1, 999, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)null);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["rasterIds"] = "999",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task ComputeAsync_RasterIdsNonPositive_ReturnsBadRequest()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -277,6 +372,25 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
             ["rasterIds"] = "0,1",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_BandIdsNonPositive_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["bandIds"] = "0,1",
         };
 
         var context = CreateImageServerContext();

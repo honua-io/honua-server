@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
@@ -79,44 +80,93 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return StandardErrorHelpers.CreateBadRequest(context, binError ?? "Invalid histogramParameters.");
             }
 
-            if (!TryParseBands(GetString(values, "rasterIds"), out var bands, out var bandsError))
+            // Per Esri spec, rasterIds selects raster catalog object IDs (long).
+            // Band selection (1-based) is done via the optional bandIds extension parameter.
+            if (!TryParseRasterIds(GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
             {
-                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, bandsError ?? "Invalid rasterIds");
-                return StandardErrorHelpers.CreateBadRequest(context, bandsError ?? "Invalid rasterIds.");
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
+                return StandardErrorHelpers.CreateBadRequest(context, rasterIdsError ?? "Invalid rasterIds.");
             }
 
-            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-            if (primaryRaster is null)
+            if (!TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
             {
-                ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, bandIdsError ?? "Invalid bandIds");
+                return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
-            var primary = primaryRaster.Value;
 
-            var statistics = await _rasterStore.GetStatisticsAsync(layerId, primary.Id, bands, cancellationToken);
-            var histograms = await _rasterStore.GetHistogramsAsync(layerId, primary.Id, bands, binCount, cancellationToken);
+            // Resolve the catalog rasters to analyse. When rasterIds is omitted we fall back to the
+            // layer's primary raster, matching ArcGIS Server's default behaviour.
+            var targetRasters = new List<RasterInfo>();
+            if (rasterIds is { Length: > 0 })
+            {
+                foreach (var id in rasterIds)
+                {
+                    var info = await _rasterStore.GetRasterInfoAsync(layerId, id, cancellationToken);
+                    if (info is null)
+                    {
+                        ImageServerLog.InvalidStatisticsHistogramsParameters(
+                            _logger,
+                            layerId,
+                            $"rasterId {id} not found");
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            $"rasterId '{id}' not found in layer.");
+                    }
+
+                    targetRasters.Add(info.Value);
+                }
+            }
+            else
+            {
+                var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
+                if (primaryRaster is null)
+                {
+                    ImageServerLog.NoRastersFound(_logger, layerId);
+                    return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                }
+
+                targetRasters.Add(primaryRaster.Value);
+            }
+
+            var statisticsList = new List<BandStatistic>();
+            var histogramsList = new List<BandHistogram>();
+            foreach (var raster in targetRasters)
+            {
+                var statistics = await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
+                var histograms = await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
+
+                foreach (var s in statistics)
+                {
+                    statisticsList.Add(new BandStatistic
+                    {
+                        Min = s.MinValue ?? 0,
+                        Max = s.MaxValue ?? 0,
+                        Mean = s.MeanValue ?? 0,
+                        StandardDeviation = s.StandardDeviation ?? 0,
+                        Count = s.ValidPixelCount,
+                    });
+                }
+
+                foreach (var h in histograms)
+                {
+                    histogramsList.Add(new BandHistogram
+                    {
+                        Size = h.BinCount,
+                        Min = h.Min,
+                        Max = h.Max,
+                        Counts = h.Counts,
+                    });
+                }
+            }
 
             var response = new ComputeStatisticsHistogramsResponse
             {
-                Statistics = statistics.Select(s => new BandStatistic
-                {
-                    Min = s.MinValue ?? 0,
-                    Max = s.MaxValue ?? 0,
-                    Mean = s.MeanValue ?? 0,
-                    StandardDeviation = s.StandardDeviation ?? 0,
-                    Count = s.ValidPixelCount,
-                }).ToArray(),
-                Histograms = histograms.Select(h => new BandHistogram
-                {
-                    Size = h.BinCount,
-                    Min = h.Min,
-                    Max = h.Max,
-                    Counts = h.Counts,
-                }).ToArray(),
+                Statistics = statisticsList.ToArray(),
+                Histograms = histogramsList.ToArray(),
             };
 
-            ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, statistics.Length);
-            scope.SetSuccess(statistics.Length);
+            ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, statisticsList.Count);
+            scope.SetSuccess(statisticsList.Count);
 
             return Results.Json(response, ImageServerJsonContext.Default.ComputeStatisticsHistogramsResponse);
         }
@@ -181,7 +231,72 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         }
     }
 
-    private static bool TryParseBands(string? raw, out int[]? bands, out string? error)
+    /// <summary>
+    /// Parses the Esri <c>rasterIds</c> parameter as a list of raster catalog object IDs (long).
+    /// Accepts CSV (e.g. <c>1,3</c>) or JSON array (e.g. <c>[1,3]</c>) form.
+    /// </summary>
+    private static bool TryParseRasterIds(string? raw, out long[]? rasterIds, out string? error)
+    {
+        rasterIds = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        var trimmed = raw.Trim();
+        if (trimmed.StartsWith('['))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
+                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    error = "rasterIds must be a JSON array of catalog object IDs.";
+                    return false;
+                }
+
+                var values = new List<long>(doc.RootElement.GetArrayLength());
+                foreach (var element in doc.RootElement.EnumerateArray())
+                {
+                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt64(out var id) || id <= 0)
+                    {
+                        error = "rasterIds entries must be positive catalog object IDs.";
+                        return false;
+                    }
+                    values.Add(id);
+                }
+                rasterIds = values.Count == 0 ? null : values.ToArray();
+                return true;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                error = "rasterIds must be valid JSON.";
+                return false;
+            }
+        }
+
+        var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parsed = new List<long>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (!long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id <= 0)
+            {
+                error = "rasterIds entries must be positive catalog object IDs.";
+                return false;
+            }
+            parsed.Add(id);
+        }
+        rasterIds = parsed.Count == 0 ? null : parsed.ToArray();
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the optional <c>bandIds</c> extension parameter as a list of 1-based band indices.
+    /// Accepts CSV or JSON array form.
+    /// </summary>
+    private static bool TryParseBandIds(string? raw, out int[]? bands, out string? error)
     {
         bands = null;
         error = null;
@@ -199,7 +314,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
                 if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
                 {
-                    error = "rasterIds must be a JSON array of band numbers.";
+                    error = "bandIds must be a JSON array of 1-based band indices.";
                     return false;
                 }
 
@@ -208,7 +323,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 {
                     if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band <= 0)
                     {
-                        error = "rasterIds entries must be positive integers.";
+                        error = "bandIds entries must be positive integers.";
                         return false;
                     }
                     values.Add(band);
@@ -218,7 +333,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             }
             catch (System.Text.Json.JsonException)
             {
-                error = "rasterIds must be valid JSON.";
+                error = "bandIds must be valid JSON.";
                 return false;
             }
         }
@@ -229,7 +344,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         {
             if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band <= 0)
             {
-                error = "rasterIds entries must be positive integers.";
+                error = "bandIds entries must be positive integers.";
                 return false;
             }
             parsed.Add(band);

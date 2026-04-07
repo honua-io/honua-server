@@ -27,6 +27,8 @@ Sources:
 | --- | --- | --- | --- | --- | --- |
 | Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Returns a JSON envelope with a temporary `href` to the rendered image. Only a subset of Esri export parameters are applied, and `f=image` byte streaming is not supported. |
 | Identify | `/rest/services/{serviceName}/ImageServer/identify` | GET | Partial | `GET /rest/services/{id}/ImageServer/identify` | Supports point-only identify requests and JSON responses. Several Esri response-shaping and raster-processing parameters are currently ignored. |
+| Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/query` | Returns the layer's raster catalog as Esri-compatible features with `OBJECTID`, footprint geometry, and pixel-size attributes. Supports `where`, `objectIds`, `outSR`, `resultOffset`, `resultRecordCount`, and the `returnGeometry`/`returnIdsOnly`/`returnCountOnly`/`returnExtentOnly` shaping flags. The MVP applies WHERE filters via the GeoServices SQL parser in-memory and does not reproject footprint geometry — `outSR` is honoured for the response envelope only. |
+| Compute Statistics and Histograms | `/rest/services/{serviceName}/ImageServer/computeStatisticsHistograms` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/computeStatisticsHistograms` | Returns per-band statistics and histograms for one or more rasters in the catalog. Supports `rasterIds` (catalog object IDs), the Honua-specific `bandIds` selector, and `histogramParameters.size` for bin count. AOI clipping (`geometry`/`mosaicRule`/`renderingRule`) is not yet honoured — analysis always covers the full raster. |
 
 ### Not implemented
 
@@ -39,7 +41,6 @@ Sources:
 | Compute Histograms | `/rest/services/{serviceName}/ImageServer/computeHistograms` | GET, POST | Not implemented | |
 | Compute Multidimensional Info | `/rest/services/{serviceName}/ImageServer/computeMultidimensionalInfo` | GET, POST | Not implemented | |
 | Compute Pixel Location | `/rest/services/{serviceName}/ImageServer/computePixelLocation` | GET, POST | Not implemented | |
-| Compute Statistics and Histograms | `/rest/services/{serviceName}/ImageServer/computeStatisticsHistograms` | GET, POST | Not implemented | |
 | Compute Tie Points | `/rest/services/{serviceName}/ImageServer/computeTiePoints` | GET, POST | Not implemented | |
 | Delete Rasters | `/rest/services/{serviceName}/ImageServer/deleteRasters` | POST | Not implemented | |
 | Download Rasters | `/rest/services/{serviceName}/ImageServer/downloadRasters` | GET, POST | Not implemented | |
@@ -49,12 +50,17 @@ Sources:
 | Measure | `/rest/services/{serviceName}/ImageServer/measure` | GET, POST | Not implemented | |
 | Project | `/rest/services/{serviceName}/ImageServer/project` | GET, POST | Not implemented | |
 | Query Boundary | `/rest/services/{serviceName}/ImageServer/queryBoundary` | GET, POST | Not implemented | |
-| Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Not implemented | |
 | Update Raster | `/rest/services/{serviceName}/ImageServer/updateRaster` | POST | Not implemented | |
 | Uploads | `/rest/services/{serviceName}/ImageServer/uploads` | GET, POST | Not implemented | |
 | Validate | `/rest/services/{serviceName}/ImageServer/validate` | GET, POST | Not implemented | |
 
 ## Image Service child resources
+
+### Partial
+
+| Esri child resource | Esri path | Honua status | Notes |
+| --- | --- | --- | --- |
+| Legend | `.../ImageServer/legend` | Partial | `GET /rest/services/{id}/ImageServer/legend` returns Esri-shaped `layers[].legend[]` swatches generated from the layer's primary raster renderer. Only `f=json`/`f=pjson` is accepted; classification overrides via `renderingRule` are not yet honoured. |
 
 ### Not implemented
 
@@ -66,7 +72,6 @@ Sources:
 | Image Support Data | `.../ImageServer/imageSupportData` | Not implemented | |
 | Key Properties | `.../ImageServer/keyProperties` | Not implemented | |
 | KML Image | `.../ImageServer/kml` | Not implemented | |
-| Legend | `.../ImageServer/legend` | Not implemented | |
 | Multidimensional Info | `.../ImageServer/multiDimensionalInfo` | Not implemented | |
 | Raster Attribute Table | `.../ImageServer/rasterAttributeTable` | Not implemented | |
 | Raster Catalog Item and nested raster resources | `.../ImageServer/{rasterId}/*` | Not implemented | |
@@ -140,6 +145,67 @@ Sources:
 | `format` | Implemented | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`; defaults to `png`. |
 | `{level}` / `{row}` / `{col}` | Implemented | Validated as Web Mercator tile coordinates with zoom levels `0-28`. |
 
+### Query (`GET|POST .../ImageServer/query`)
+
+#### Implemented
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `f` | Partial | Only `json` and `pjson` are supported. |
+| `where` | Partial | Parsed via the shared GeoServices SQL filter parser and applied in-memory against catalog metadata fields (`OBJECTID`, `Name`, `MinPS`, `MaxPS`, `LowPS`, `HighPS`, `CenterX`, `CenterY`, `ZOrder`, `Shape_Length`, `Shape_Area`, `AcquisitionDate`). Limited to 2000 characters. |
+| `objectIds` | Implemented | Accepts CSV (`1,3,5`) or JSON array (`[1,3,5]`) form. |
+| `outSR` | Partial | Stamped onto the response `spatialReference`. Footprint geometry is NOT reprojected — clients must inspect each feature's geometry-level `spatialReference` to detect that the rings remain in the raster's native SRID. |
+| `resultOffset` | Implemented | Non-negative integer offset, defaults to `0`. |
+| `resultRecordCount` | Implemented | Defaults to `100`, capped at `1000`. |
+| `returnGeometry` | Implemented | When `false`, suppresses the `geometry` envelope on each feature. |
+| `returnIdsOnly` | Implemented | Returns `objectIdFieldName` + `objectIds[]` shape. |
+| `returnCountOnly` | Implemented | Returns `count`-only response. |
+| `returnExtentOnly` | Implemented | Returns the aggregate extent (computed after `where`/`objectIds` filters but before pagination). |
+
+#### Ignored or not implemented
+
+| Esri parameter | Notes |
+| --- | --- |
+| `geometry` / `geometryType` / `inSR` / `spatialRel` | Spatial filtering against arbitrary client geometries is not yet supported by the catalog reader. |
+| `outFields` | Catalog responses always include the full attribute set; per-field projection is not yet honoured. |
+| `orderByFields` | Ordering is currently the catalog's natural order. |
+| `time` | Temporal filtering is not yet honoured. |
+| `pixelSize` | Not honoured. |
+
+### Compute Statistics and Histograms (`GET|POST .../ImageServer/computeStatisticsHistograms`)
+
+#### Implemented
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `f` | Partial | Only `json` and `pjson` are supported. |
+| `rasterIds` | Implemented | Accepts CSV (`1,3`) or JSON array (`[1,3]`) of catalog object IDs. When omitted, defaults to the layer's primary raster. Unknown IDs return `400 Bad Request`. |
+| `bandIds` | Implemented (Honua extension) | Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector. |
+| `histogramParameters.size` | Implemented | Bin count, capped at `1024`. Default is `256` when omitted. |
+
+#### Ignored or not implemented
+
+| Esri parameter | Notes |
+| --- | --- |
+| `geometry` / `geometryType` / `mosaicRule` | AOI clipping is not yet honoured — analysis always covers the full raster. |
+| `renderingRule` | Not honoured. |
+| `pixelSize` | Not honoured. |
+
+### Legend (`GET .../ImageServer/legend`)
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `f` | Partial | Only `json` and `pjson` are supported. Other formats return `400 Bad Request`. |
+| `renderingRule` | Not honoured | Classification overrides through a custom rendering rule are ignored — swatches are always derived from the layer's primary raster renderer. |
+
+## Honua extensions
+
+These endpoints are exposed under the ImageServer route prefix for parity with Esri client SDKs but do not have an exact Esri counterpart.
+
+| Honua endpoint | Methods | Notes |
+| --- | --- | --- |
+| `/rest/services/{id}/ImageServer/computeClass` | GET, POST | Validates a raster function chain document supplied via `renderingRule` (or the legacy `rasterFunction` alias) and returns the planned execution metadata (`rasterFunction`, `chainDepth`, `executedFunctions`, `outputPixelType`, `status`). Closest in spirit to Esri's `validate` operation; the route name aligns with the Esri `computeClass`/analyze contract used by ArcGIS Pro. |
+
 ## Metadata response coverage (`GET .../ImageServer`)
 
 ### Implemented
@@ -152,7 +218,7 @@ Sources:
 | `pixelSizeX`, `pixelSizeY` | Implemented | Calculated from primary raster dimensions and extent. |
 | `bandCount`, `pixelType` | Implemented | Derived from the primary raster. |
 | `minValues`, `maxValues`, `meanValues`, `stdvValues` | Implemented | Derived from raster statistics for the primary raster. |
-| `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Pixels`. |
+| `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Mensuration,Pixels,Statistics`. |
 | `maxImageHeight`, `maxImageWidth`, `maxRecordCount` | Implemented | Static Honua metadata limits. |
 
 ### Not implemented or currently omitted
@@ -179,5 +245,10 @@ Sources:
 - Export implementation: [ImageServerExportHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerExportHandler.cs)
 - Identify implementation: [ImageServerIdentifyHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerIdentifyHandler.cs)
 - Tile implementation: [ImageServerTileHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerTileHandler.cs)
+- Catalog query implementation: [ImageServerCatalogQueryHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs), [ImageServerCatalogReader](../../src/Honua.Server/Features/ImageServer/Services/ImageServerCatalogReader.cs)
+- Statistics/histograms implementation: [ImageServerStatisticsHistogramsHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs)
+- Legend implementation: [ImageServerLegendHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerLegendHandler.cs)
+- Raster function chain analysis (`computeClass`): [ImageServerAnalyzeHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerAnalyzeHandler.cs), [ImageServerRasterFunctionPlanner](../../src/Honua.Server/Features/ImageServer/Services/ImageServerRasterFunctionPlanner.cs)
 - Request/response models: [ImageServerModels](../../src/Honua.Server/Features/ImageServer/Models/ImageServerModels.cs)
-- Integration tests: [ImageServerBasicTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs), [ImageServerParameterValidationTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs), [ImageServerErrorHandlingTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs)
+- Integration tests: [ImageServerBasicTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs), [ImageServerParameterValidationTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs), [ImageServerErrorHandlingTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs), [ImageServerEndpointsTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerEndpointsTests.cs)
+- Handler unit tests: [ImageServerCatalogQueryHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerCatalogQueryHandlerTests.cs), [ImageServerStatisticsHistogramsHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs)

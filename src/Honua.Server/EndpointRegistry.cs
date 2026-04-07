@@ -313,6 +313,13 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{id}/ImageServer/exportImage"),
         new("GET", "/rest/services/{id}/ImageServer/identify"),
         new("GET", "/rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"),
+        new("GET", "/rest/services/{id}/ImageServer/query"),
+        new("POST", "/rest/services/{id}/ImageServer/query"),
+        new("GET", "/rest/services/{id}/ImageServer/computeStatisticsHistograms"),
+        new("POST", "/rest/services/{id}/ImageServer/computeStatisticsHistograms"),
+        new("GET", "/rest/services/{id}/ImageServer/legend"),
+        new("GET", "/rest/services/{id}/ImageServer/computeClass"),
+        new("POST", "/rest/services/{id}/ImageServer/computeClass"),
 
         new("GET", "/odata"),
         new("GET", "/odata/$metadata"),

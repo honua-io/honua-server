@@ -102,6 +102,12 @@ internal static partial class PostgresRasterLog
     public static partial void HistogramFailed(ILogger logger, Exception ex, int layerId, long rasterId, int band);
 
     [LoggerMessage(
+        EventId = 7816,
+        Level = LogLevel.Debug,
+        Message = "Batched histogram query failed for layer {LayerId}, raster {RasterId}; falling back to per-band loop")]
+    public static partial void HistogramBatchFallback(ILogger logger, Exception ex, int layerId, long rasterId);
+
+    [LoggerMessage(
         EventId = 7815,
         Level = LogLevel.Debug,
         Message = "Catalog query for layer {LayerId}: returned={ReturnedCount}, total={TotalCount}, exceededTransferLimit={ExceededTransferLimit}")]

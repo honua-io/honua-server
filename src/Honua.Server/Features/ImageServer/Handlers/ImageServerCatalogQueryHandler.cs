@@ -266,13 +266,17 @@ internal sealed class ImageServerCatalogQueryHandler
         CatalogQueryGeometry? geometry = null;
         if (query.ReturnGeometry && item.FootprintRings is { Length: > 0 })
         {
+            // Stamp the geometry with the actual coordinate SRID. The MVP does not
+            // reproject footprints, so the rings are still in the raster's native SRID
+            // even when the caller passes outSR.
+            var geometrySrid = item.FootprintSrid ?? query.OutputSrid ?? 4326;
             geometry = new CatalogQueryGeometry
             {
                 Rings = item.FootprintRings,
                 SpatialReference = new SpatialReference
                 {
-                    Wkid = query.OutputSrid ?? 4326,
-                    LatestWkid = query.OutputSrid ?? 4326,
+                    Wkid = geometrySrid,
+                    LatestWkid = geometrySrid,
                 },
             };
         }

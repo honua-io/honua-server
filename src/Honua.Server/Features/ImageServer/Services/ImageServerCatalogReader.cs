@@ -65,10 +65,17 @@ internal sealed class ImageServerCatalogItem
     public DateTimeOffset? AcquisitionDate { get; init; }
 
     /// <summary>
-    /// Footprint expressed as ring coordinates already transformed into the requested SRID.
+    /// Footprint expressed as ring coordinates in the raster's native SRID. The MVP does
+    /// not reproject; clients that supply <c>outSR</c> must inspect the geometry's
+    /// <c>spatialReference</c> in the response to detect that no reprojection occurred.
     /// First ring is the outer boundary; subsequent rings are interior holes.
     /// </summary>
     public double[][][]? FootprintRings { get; init; }
+
+    /// <summary>
+    /// SRID of the footprint coordinates. Equal to the source raster extent SRID.
+    /// </summary>
+    public int? FootprintSrid { get; init; }
 }
 
 /// <summary>
@@ -135,34 +142,40 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         }
 
         // Project each raster row into the catalog item shape Esri expects.
-        var projected = new List<ImageServerCatalogItem>(rasters.Length);
+        // We need to retain the source raster reference so the aggregate extent uses the
+        // same filtered set as the returned features.
+        var projected = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(rasters.Length);
         foreach (var raster in rasters)
         {
-            projected.Add(ProjectRaster(raster, query));
+            projected.Add((ProjectRaster(raster, query), raster));
         }
 
         // Apply objectIds filter (cheap; usually provided alongside or instead of where).
         if (query.ObjectIds is { Count: > 0 })
         {
             var idSet = new HashSet<long>(query.ObjectIds);
-            projected = projected.Where(item => idSet.Contains(item.ObjectId)).ToList();
+            projected = projected.Where(p => idSet.Contains(p.Item.ObjectId)).ToList();
         }
 
         // Apply WHERE filter via the shared GeoServices SQL parser.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
-            projected = _filterEvaluator.Apply(projected, query.Where).ToList();
+            var filteredItems = _filterEvaluator.Apply(projected.Select(p => p.Item), query.Where).ToList();
+            var filteredObjectIds = new HashSet<long>(filteredItems.Select(i => i.ObjectId));
+            projected = projected.Where(p => filteredObjectIds.Contains(p.Item.ObjectId)).ToList();
         }
 
-        // Compute aggregate extent BEFORE pagination (Esri returnExtentOnly semantics).
+        // Compute aggregate extent BEFORE pagination but AFTER filtering, so returnExtentOnly
+        // honours objectIds/where filters per Esri spec.
         RasterExtent? aggregateExtent = null;
         if (projected.Count > 0)
         {
             double xMin = double.MaxValue, yMin = double.MaxValue;
             double xMax = double.MinValue, yMax = double.MinValue;
-            foreach (var raster in rasters)
+            int? extentSrid = null;
+            foreach (var (_, source) in projected)
             {
-                if (raster.Extent is not { } extent)
+                if (source.Extent is not { } extent)
                 {
                     continue;
                 }
@@ -171,6 +184,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
                 if (extent.YMin < yMin) yMin = extent.YMin;
                 if (extent.XMax > xMax) xMax = extent.XMax;
                 if (extent.YMax > yMax) yMax = extent.YMax;
+                extentSrid ??= extent.Srid;
             }
 
             if (xMin <= xMax)
@@ -181,7 +195,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
                     YMin = yMin,
                     XMax = xMax,
                     YMax = yMax,
-                    Srid = rasters[0].Extent?.Srid
+                    Srid = extentSrid
                 };
             }
         }
@@ -193,7 +207,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         var limit = query.Limit > 0 ? query.Limit : totalMatched;
         var pageEnd = Math.Min(totalMatched, offset + limit);
         var pageItems = offset < pageEnd
-            ? projected.GetRange(offset, pageEnd - offset)
+            ? projected.GetRange(offset, pageEnd - offset).Select(p => p.Item).ToList()
             : new List<ImageServerCatalogItem>();
 
         var exceeded = pageEnd < totalMatched;
@@ -258,7 +272,8 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             ShapeLength = shapeLength,
             ShapeArea = shapeArea,
             AcquisitionDate = raster.CreatedAt,
-            FootprintRings = rings
+            FootprintRings = rings,
+            FootprintSrid = extent?.Srid
         };
     }
 }

@@ -583,6 +583,18 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
         }
 
+        // Fast path: compute every band's histogram in a single SQL round-trip via
+        // a LATERAL join over unnest(@bands). For an N-band raster this collapses N
+        // network round-trips into 1. PostGIS ST_Histogram can fail on uniform-value
+        // rasters, so on any error we fall back to the per-band loop below which
+        // preserves the original partial-failure behaviour.
+        var batched = await TryGetHistogramsBatchedAsync(
+            connection, layerId, rasterId, effectiveBands, binCount, cancellationToken).ConfigureAwait(false);
+        if (batched is not null)
+        {
+            return batched;
+        }
+
         var results = new List<RasterHistogram>(effectiveBands.Length);
         foreach (var band in effectiveBands)
         {
@@ -667,6 +679,104 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         return results.ToArray();
+    }
+
+    /// <summary>
+    /// Computes per-band histograms in a single SQL statement using a LATERAL join over
+    /// <c>unnest(@bands)</c>. Returns <c>null</c> when the batched query fails (e.g. PostGIS
+    /// rejects ST_Histogram on a uniform-value band) so the caller can fall back to the
+    /// per-band loop that preserves partial-failure semantics.
+    /// </summary>
+    private async Task<RasterHistogram[]?> TryGetHistogramsBatchedAsync(
+        DbConnection connection,
+        int layerId,
+        long rasterId,
+        int[] effectiveBands,
+        int binCount,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var batchCommand = connection.CreateCommand();
+            batchCommand.CommandText = $"""
+                SELECT b.band,
+                       (h).min   AS bin_min,
+                       (h).max   AS bin_max,
+                       (h).count AS bin_count
+                FROM (
+                    SELECT raster
+                    FROM {_rasterDataTable}
+                    WHERE layer_id = @layerId AND id = @rasterId
+                ) r
+                CROSS JOIN unnest(@bands) WITH ORDINALITY AS b(band, ord)
+                CROSS JOIN LATERAL ST_Histogram(r.raster, b.band, @binCount, false) AS h
+                ORDER BY b.ord
+                """;
+            AddParameter(batchCommand, "@layerId", layerId);
+            AddParameter(batchCommand, "@rasterId", rasterId);
+            AddParameter(batchCommand, "@bands", effectiveBands);
+            AddParameter(batchCommand, "@binCount", binCount);
+
+            // Each band collects its bins as it streams from the reader. We key by band
+            // so we cope with PostGIS returning rows in the LATERAL-join order.
+            var bandBuckets = new Dictionary<int, (List<long> Counts, double Min, double Max)>(effectiveBands.Length);
+
+            await using var batchReader = await batchCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await batchReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var band = batchReader.GetInt32(0);
+                var binMin = batchReader.IsDBNull(1) ? double.NaN : batchReader.GetDouble(1);
+                var binMax = batchReader.IsDBNull(2) ? double.NaN : batchReader.GetDouble(2);
+                var count = batchReader.IsDBNull(3) ? 0L : Convert.ToInt64(batchReader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture);
+
+                if (!bandBuckets.TryGetValue(band, out var bucket))
+                {
+                    bucket = (new List<long>(binCount), double.IsNaN(binMin) ? 0 : binMin, 0);
+                }
+
+                bucket.Counts.Add(count);
+                if (!double.IsNaN(binMax))
+                {
+                    bucket = (bucket.Counts, bucket.Min, binMax);
+                }
+                bandBuckets[band] = bucket;
+            }
+
+            var results = new RasterHistogram[effectiveBands.Length];
+            for (var i = 0; i < effectiveBands.Length; i++)
+            {
+                var band = effectiveBands[i];
+                if (bandBuckets.TryGetValue(band, out var bucket) && bucket.Counts.Count > 0)
+                {
+                    results[i] = new RasterHistogram
+                    {
+                        Band = band,
+                        BinCount = bucket.Counts.Count,
+                        Min = bucket.Min,
+                        Max = bucket.Max,
+                        Counts = bucket.Counts.ToArray(),
+                    };
+                }
+                else
+                {
+                    results[i] = new RasterHistogram
+                    {
+                        Band = band,
+                        BinCount = 0,
+                        Min = 0,
+                        Max = 0,
+                        Counts = Array.Empty<long>(),
+                    };
+                }
+            }
+
+            return results;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            PostgresRasterLog.HistogramBatchFallback(_logger, ex, layerId, rasterId);
+            return null;
+        }
     }
 
     /// <inheritdoc />

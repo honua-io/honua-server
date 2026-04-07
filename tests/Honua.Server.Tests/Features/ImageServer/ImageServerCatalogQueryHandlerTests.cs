@@ -386,6 +386,82 @@ public class ImageServerCatalogQueryHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_FeatureGeometrySpatialReference_MatchesRasterNativeSrid()
+    {
+        // Regression: previously the geometry SR was stamped with outSR even though the
+        // MVP does not reproject. The geometry SR must match the actual ring coordinates,
+        // which come straight from the raster's native SRID (3857 here).
+        SetupLayerWithRasters([CreateRaster(100, "first", srid: 3857)]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outSR"] = "4326",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        var feature = jsonResult!.Value!.Features[0];
+        feature.Geometry.Should().NotBeNull();
+        feature.Geometry!.SpatialReference.Wkid.Should().Be(3857);
+        feature.Geometry.SpatialReference.LatestWkid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnlyWithObjectIdsFilter_ShrinksAggregateExtent()
+    {
+        // Regression: aggregate extent previously iterated the unfiltered raster set,
+        // returning the full layer extent regardless of objectIds/where filters.
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: 0, yMax: 5),
+            CreateRaster(200, "east", xMin: 0, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["objectIds"] = "200",
+            ["returnExtentOnly"] = "true",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
+        jsonResult.Should().NotBeNull();
+        // Only the eastern raster should contribute - aggregate XMin must be 0, not -10.
+        jsonResult!.Value!.Extent.XMin.Should().Be(0);
+        jsonResult.Value.Extent.XMax.Should().Be(10);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_ReturnExtentOnlyWithWhereFilter_ShrinksAggregateExtent()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: 0, yMax: 5),
+            CreateRaster(200, "east", xMin: 0, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["where"] = "OBJECTID = 100",
+            ["returnExtentOnly"] = "true",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Extent.XMin.Should().Be(-10);
+        jsonResult.Value.Extent.XMax.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_RasterStoreThrows_ReturnsServerError()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -432,7 +508,8 @@ public class ImageServerCatalogQueryHandlerTests
         double xMin = -1,
         double yMin = -1,
         double xMax = 1,
-        double yMax = 1) => new()
+        double yMax = 1,
+        int srid = 4326) => new()
         {
             Id = id,
             LayerId = 1,
@@ -441,9 +518,9 @@ public class ImageServerCatalogQueryHandlerTests
             Height = 256,
             BandCount = 1,
             PixelType = "8BUI",
-            Srid = 4326,
+            Srid = srid,
             GeoTransform = [xMin, (xMax - xMin) / 256, 0, yMax, 0, -(yMax - yMin) / 256],
-            Extent = new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = 4326 },
+            Extent = new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
         };
 }
