@@ -39,6 +39,39 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains("allows plaintext fallback", exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("Host=replica.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require", "resolved host does not match configured host")]
+    [InlineData("Host=db.example.com;Port=6432;Database=analytics;Username=app;Password=secret;SslMode=Require", "resolved port does not match configured port")]
+    public async Task ResolveConnectionStringAsyncSecretReferenceRejectsHostOrPortMismatch(
+        string resolvedConnectionString,
+        string expectedMessage)
+    {
+        var connection = DataConnection.CreateWithSecretReference(
+            name: "production-analytics",
+            host: "db.example.com",
+            port: 5432,
+            databaseName: "analytics",
+            username: "app",
+            secretRef: "env:PROD_DB_CONNECTION",
+            secretType: "EnvironmentVariable",
+            createdBy: "test",
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+        var resolver = new SecureConnectionResolver(
+            new StubRegistry(connection),
+            new StubEncryptionService("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require"),
+            new StubSecretResolver(resolvedConnectionString),
+            NullLogger<SecureConnectionResolver>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveConnectionStringAsync(connection.Name));
+
+        Assert.Equal("Failed to resolve connection string for 'production-analytics'.", exception.Message);
+        Assert.NotNull(exception.InnerException);
+        Assert.Contains(expectedMessage, exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class StubRegistry(DataConnection connection) : ISecureConnectionRegistry
     {
         private readonly DataConnection _connection = connection;
@@ -95,5 +128,18 @@ public sealed class SecureConnectionResolverSslModeTests
             => Task.FromResult(false);
 
         public string[] GetSupportedProviders() => [];
+    }
+
+    private sealed class StubSecretResolver(string resolvedConnectionString) : IConnectionSecretResolver
+    {
+        private readonly string _resolvedConnectionString = resolvedConnectionString;
+
+        public Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
+            => Task.FromResult(_resolvedConnectionString);
+
+        public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public string[] GetSupportedProviders() => ["EnvironmentVariable"];
     }
 }

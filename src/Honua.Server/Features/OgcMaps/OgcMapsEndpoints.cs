@@ -75,7 +75,15 @@ public static partial class OgcMapsEndpoints
             .WithName("GetCollectionMapTileSets")
             .WithSummary("Get available map tile sets for a collection")
             .WithDescription("Returns the tile set metadata for maps generated from the specified collection")
-            .Produces<TileSet[]>()
+            .Produces<TileSetsList>()
+            .Produces(404);
+
+        group.MapGet("/collections/{collectionId}/map/tiles/{tileMatrixSetId}", GetCollectionMapTileSet)
+            .WithDisplayName("Get Collection Map TileSet")
+            .WithName("GetCollectionMapTileSet")
+            .WithSummary("Get map tile set metadata for a collection and tile matrix set")
+            .WithDescription("Returns the tile set metadata for maps generated from the specified collection and tile matrix set")
+            .Produces<TileSet>()
             .Produces(404);
 
         // Dataset-wide maps - multiple collections
@@ -97,22 +105,19 @@ public static partial class OgcMapsEndpoints
     /// </summary>
     private static IResult GetLandingPage(HttpContext context, string? f)
     {
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, MetadataQueryParameters);
-        if (validationError is not null)
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                MetadataQueryParameters,
+                out var outputFormat,
+                out var errorResult))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return errorResult!;
         }
 
-        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
-        {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
-        }
-
-        var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/maps";
-        var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
-            .ToBuilder();
+        var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, basePath, outputFormat);
 
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/maps/openapi.json",
@@ -175,7 +180,7 @@ public static partial class OgcMapsEndpoints
         }
         """;
 
-        return await OgcOpenApiSpecUtilities.GetOpenApiSpecAsync(
+        return await OgcCoreMetadataUtilities.GetOpenApiSpecAsync(
             context,
             f,
             environment,
@@ -284,6 +289,22 @@ public static partial class OgcMapsEndpoints
 
         return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);
     }
+
+    private static async Task<IResult> GetCollectionMapTileSet(
+        string collectionId,
+        string tileMatrixSetId,
+        HttpContext context,
+        OgcMapsTileSetHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
+        }
+
+        return await handler.GetMapTileSetAsync(layerId, tileMatrixSetId, context: context, cancellationToken);
+    }
+
     private static bool TryParseNonNegativeCollectionId(string value, out int layerId)
     {
         var parsed = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);

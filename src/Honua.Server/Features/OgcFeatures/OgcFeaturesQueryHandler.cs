@@ -246,6 +246,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             layer,
                             query,
                             totalCount,
+                            estimatedReturned,
                             filterResult.CrsDefinition.Uri,
                             streamLinks,
                             cancellationToken);
@@ -400,7 +401,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
-                var gml = BuildGmlFeatureCollection(features);
+                var gml = BuildGmlFeatureCollection(features, queryTotalCount, features.Length, DateTimeOffset.UtcNow);
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
@@ -1031,9 +1032,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";
 
-    private static string BuildGmlFeatureCollection(IEnumerable<GeoJsonFeature> features)
+    private static string BuildGmlFeatureCollection(
+        IEnumerable<GeoJsonFeature> features,
+        long? numberMatched = null,
+        int? numberReturned = null,
+        DateTimeOffset? timeStamp = null)
     {
-        return OgcResponseFormatter.BuildGmlFeatureCollection(features);
+        return OgcResponseFormatter.BuildGmlFeatureCollection(features, numberMatched, numberReturned, timeStamp);
     }
 
     private static string BuildGmlSingleFeature(GeoJsonFeature feature)
@@ -1199,6 +1204,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly LayerDefinition _layer;
         private readonly FeatureQuery _query;
         private readonly long _numberMatched;
+        private readonly int _numberReturned;
         private readonly string _crsUri;
         private readonly ImmutableArray<Link> _links;
         private readonly CancellationToken _requestCancellationToken;
@@ -1208,6 +1214,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             LayerDefinition layer,
             FeatureQuery query,
             long numberMatched,
+            int numberReturned,
             string crsUri,
             ImmutableArray<Link> links,
             CancellationToken requestCancellationToken)
@@ -1216,6 +1223,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _layer = layer;
             _query = query;
             _numberMatched = numberMatched;
+            _numberReturned = numberReturned;
             _crsUri = crsUri;
             _links = links;
             _requestCancellationToken = requestCancellationToken;
@@ -1251,6 +1259,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
             await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
                 stream,
                 httpContext.Response.BodyWriter,
+                _numberMatched,
+                _numberReturned,
+                DateTimeOffset.UtcNow,
                 cancellationToken);
 
             await httpContext.Response.BodyWriter.CompleteAsync();

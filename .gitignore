@@ -292,6 +292,14 @@ tmp/
 src/Honua.Server/tmp/
 src/Honua.Server/attachments/
 
+# Certification evidence test output
+tests/js/js-*.cert.json
+tests/js/certification-evidence/
+tests/js/.cert-run-id
+
+# Playwright test results
+tests/js/test-results/
+
 # Local audit artifacts
 .audit/runs/
 .claude/worktrees/

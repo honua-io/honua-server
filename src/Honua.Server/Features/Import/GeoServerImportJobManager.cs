@@ -13,14 +13,9 @@ namespace Honua.Server.Features.Import;
 /// <summary>
 /// Redis-backed coordination for GeoServer import jobs with in-memory fallback in development and tests.
 /// </summary>
-internal sealed class GeoServerImportJobManager : IImportCoordinationHealth, IDisposable
+internal sealed class GeoServerImportJobManager : IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>, IDisposable
 {
-    private readonly RedisJobQueue _jobQueue;
-    private readonly RedisLeaderElection _leaderElection;
-    private readonly IUniversalProgressStore _universalProgressStore;
-    private readonly IDistributedProgressStore<GeoServerImportProgress> _progressStore;
-    private readonly RedisProgressStore<GeoServerImportRequest> _requestStore;
-    private readonly bool _requiresStrictDistributedMode;
+    private readonly ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress> _state;
 
     public GeoServerImportJobManager(
         IUniversalProgressStore universalProgressStore,
@@ -29,39 +24,36 @@ internal sealed class GeoServerImportJobManager : IImportCoordinationHealth, IDi
         IHostEnvironment hostEnvironment,
         IConnectionMultiplexer? redis = null)
     {
-        ArgumentNullException.ThrowIfNull(universalProgressStore);
-        ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(hostEnvironment);
-
-        var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
-
-        _requiresStrictDistributedMode = RedisImportJobManager.RequiresStrictDistributedMode(hostEnvironment);
-        _jobQueue = new RedisJobQueue(redis, logger, "geoserver:import:queue", allowFallback: !_requiresStrictDistributedMode);
-        _leaderElection = new RedisLeaderElection(redis, logger, "geoserver:import:leader", instanceId);
-        _universalProgressStore = universalProgressStore;
-        _progressStore = new DistributedProgressStoreAdapter<GeoServerImportProgress>(universalProgressStore);
-        _requestStore = new RedisProgressStore<GeoServerImportRequest>(
+        _state = new ImportJobManagerState<GeoServerImportRequest, GeoServerImportProgress>(
+            universalProgressStore,
             distributedCache,
             logger,
+            hostEnvironment,
+            redis,
+            "geoserver:import:queue",
+            "geoserver:import:leader",
             "geoserver:import:request:",
-            GeoServerImportApiJsonContext.Default.GeoServerImportRequest,
-            redis);
+            GeoServerImportApiJsonContext.Default.GeoServerImportRequest);
     }
 
-    public bool CanAcceptNewJobs => IsClusterDurable || !_requiresStrictDistributedMode;
+    public bool CanAcceptNewJobs => _state.CanAcceptNewJobs;
 
-    internal IDistributedJobQueueService JobQueue => _jobQueue;
-    internal IDistributedLeaderElection LeaderElection => _leaderElection;
-    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStore => _progressStore;
-    internal IDistributedProgressStore<GeoServerImportRequest> RequestStore => _requestStore;
-    internal bool IsClusterDurable =>
-        !_jobQueue.IsUsingFallback &&
-        !_leaderElection.IsUsingFallback &&
-        !_requestStore.IsUsingFallback &&
-        _universalProgressStore is not UniversalProgressStore { IsUsingFallback: true };
+    internal IDistributedJobQueueService JobQueue => _state.JobQueue;
+    internal IDistributedLeaderElection LeaderElection => _state.LeaderElection;
+    internal IDistributedProgressStore<GeoServerImportProgress> ProgressStore => _state.ProgressStore;
+    internal IDistributedProgressStore<GeoServerImportRequest> RequestStore => _state.RequestStore;
+    internal bool IsClusterDurable => _state.IsClusterDurable;
+
+    IDistributedJobQueueService IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.JobQueue => JobQueue;
+    IDistributedLeaderElection IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.LeaderElection => LeaderElection;
+    IDistributedProgressStore<GeoServerImportProgress> IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.ProgressStore => ProgressStore;
+    IDistributedProgressStore<GeoServerImportRequest> IImportWorkerJobManager<GeoServerImportRequest, GeoServerImportProgress>.RequestStore => RequestStore;
 
     public void Dispose()
     {
-        _leaderElection.Dispose();
+        if (_state.LeaderElection is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 }

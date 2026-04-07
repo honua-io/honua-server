@@ -8,6 +8,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
@@ -65,79 +66,38 @@ internal sealed class OgcMapsTileSetHandler
                 }
             }
 
-            var relativeTilesBasePath = $"/ogc/maps/collections/{layerId}/map/tiles";
-            var tilesBasePath = relativeTilesBasePath;
-            if (context is not null &&
-                BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
-                !string.IsNullOrWhiteSpace(configuredBaseUrl))
-            {
-                tilesBasePath = $"{configuredBaseUrl}{relativeTilesBasePath}";
-            }
-            var tileMatrixSetBasePath = context is not null && BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var baseUrl) &&
-                !string.IsNullOrWhiteSpace(baseUrl)
-                ? $"{baseUrl}/ogc/tiles/tileMatrixSets"
-                : "/ogc/tiles/tileMatrixSets";
+            var basePathPrefix = ResolveBasePathPrefix(context);
+            var relativeTilesListPath = $"/ogc/maps/collections/{layerId}/map/tiles";
+            var tilesListPath = BuildPath(basePathPrefix, relativeTilesListPath);
+            var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
+            var tileSets = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath);
 
-            // Create tile set definitions for common tile matrix sets
-            var tileSets = new[]
+            var response = new TileSetsList
             {
-                // Web Mercator tile set
-                new TileSet
-                {
-                    Title = $"Map tiles for {layer.Name} in Web Mercator",
-                    Description = $"Map tiles generated from {layer.Name} using Web Mercator projection",
-                    Crs = "http://www.opengis.net/def/crs/EPSG/0/3857",
-                    TileMatrixSetId = "WebMercatorQuad",
-                    TileMatrixSetUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad",
-                    Links = [
-                        new OgcLink
-                        {
-                            Href = tilesBasePath,
-                            Rel = "self",
-                            Type = "application/json",
-                            Title = "This tileset list"
-                        },
-                        new OgcLink
-                        {
-                            Href = $"{tileMatrixSetBasePath}/WebMercatorQuad",
-                            Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
-                            Type = "application/json",
-                            Title = "Web Mercator tile matrix set definition"
-                        }
-                    ]
-                },
-
-                // WGS84 tile set
-                new TileSet
-                {
-                    Title = $"Map tiles for {layer.Name} in WGS84",
-                    Description = $"Map tiles generated from {layer.Name} using WGS84 projection",
-                    Crs = "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
-                    TileMatrixSetId = "WorldCRS84Quad",
-                    TileMatrixSetUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WorldCRS84Quad",
-                    Links = [
-                        new OgcLink
-                        {
-                            Href = tilesBasePath,
-                            Rel = "self",
-                            Type = "application/json",
-                            Title = "This tileset list"
-                        },
-                        new OgcLink
-                        {
-                            Href = $"{tileMatrixSetBasePath}/WorldCRS84Quad",
-                            Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
-                            Type = "application/json",
-                            Title = "WGS84 tile matrix set definition"
-                        }
-                    ]
-                }
+                Tilesets = tileSets,
+                Links =
+                [
+                    new OgcLink
+                    {
+                        Href = tilesListPath,
+                        Rel = "self",
+                        Type = MediaTypes.Json,
+                        Title = "This tileset list"
+                    },
+                    new OgcLink
+                    {
+                        Href = BuildPath(basePathPrefix, $"/ogc/maps/collections/{layerId}/map"),
+                        Rel = "parent",
+                        Type = MediaTypes.Png,
+                        Title = "Collection map"
+                    }
+                ]
             };
 
-            OgcMapsLog.TileSetsRetrieved(_logger, layerId, tileSets.Length);
-            scope.SetSuccess(tileSets.Length);
+            OgcMapsLog.TileSetsRetrieved(_logger, layerId, response.Tilesets.Length);
+            scope.SetSuccess(response.Tilesets.Length);
 
-            return Results.Ok(tileSets);
+            return Results.Ok(response);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -151,6 +111,69 @@ internal sealed class OgcMapsTileSetHandler
         }
     }
 
+    /// <summary>
+    /// Gets map tile set metadata for a single tile matrix set.
+    /// </summary>
+    public async Task<IResult> GetMapTileSetAsync(
+        int layerId,
+        string tileMatrixSetId,
+        HttpContext? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "metadata",
+            HonuaTelemetry.Protocols.OgcMaps,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.Operation, "get-map-tile-set")
+             .WithTag("honua.tile_matrix_set_id", tileMatrixSetId);
+
+        try
+        {
+            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            if (layer == null)
+            {
+                OgcMapsLog.CollectionNotFound(_logger, layerId);
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+            }
+
+            if (context is not null)
+            {
+                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                if (accessError != null)
+                {
+                    return accessError;
+                }
+            }
+
+            var basePathPrefix = ResolveBasePathPrefix(context);
+            var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
+            var tileSet = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath)
+                .FirstOrDefault(candidate => string.Equals(
+                    candidate.TileMatrixSetId,
+                    tileMatrixSetId,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (tileSet == null)
+            {
+                return CreateNotFoundResult(context, $"Tile matrix set '{tileMatrixSetId}' not found");
+            }
+
+            scope.SetSuccess(1);
+            return Results.Ok(tileSet);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            OgcMapsLog.TileSetRetrievalFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return CreateErrorResult(context, "An error occurred while retrieving map tile set metadata.");
+        }
+    }
+
     private static IResult CreateNotFoundResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateNotFound(context, message)
@@ -160,6 +183,92 @@ internal sealed class OgcMapsTileSetHandler
         => context is not null
             ? StandardErrorHelpers.CreateInternalServerError(context, message)
             : Results.Problem(message, statusCode: 500);
+
+    private static TileSet[] BuildTileSets(
+        int layerId,
+        string? layerName,
+        string basePathPrefix,
+        string tileMatrixSetBasePath)
+    {
+        var displayName = string.IsNullOrWhiteSpace(layerName)
+            ? $"Layer {layerId}"
+            : layerName;
+
+        return OgcTileMatrixSetDescriptors.Supported
+            .Select(descriptor => BuildTileSet(
+                layerId,
+                displayName,
+                basePathPrefix,
+                tileMatrixSetBasePath,
+                descriptor))
+            .ToArray();
+    }
+
+    private static TileSet BuildTileSet(
+        int layerId,
+        string displayName,
+        string basePathPrefix,
+        string tileMatrixSetBasePath,
+        OgcTileMatrixSetDescriptor descriptor)
+    {
+        var tileSetPath = BuildPath(
+            basePathPrefix,
+            $"/ogc/maps/collections/{layerId}/map/tiles/{descriptor.Id}");
+        var tileTemplate = BuildPath(
+            basePathPrefix,
+            $"/ogc/tiles/collections/{layerId}/tiles/{descriptor.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?f=png");
+
+        return new TileSet
+        {
+            Title = $"Map tiles for {displayName} in {descriptor.ProjectionName}",
+            Description = $"Map tiles generated from {displayName} using {descriptor.ProjectionName} projection",
+            Crs = descriptor.Crs,
+            TileMatrixSetId = descriptor.Id,
+            TileMatrixSetUri = descriptor.Uri,
+            Links =
+            [
+                new OgcLink
+                {
+                    Href = tileSetPath,
+                    Rel = "self",
+                    Type = MediaTypes.Json,
+                    Title = "This tileset"
+                },
+                new OgcLink
+                {
+                    Href = tileTemplate,
+                    Rel = "item",
+                    Type = MediaTypes.Png,
+                    Title = "PNG map tiles",
+                    Templated = true
+                },
+                new OgcLink
+                {
+                    Href = $"{tileMatrixSetBasePath}/{descriptor.Id}",
+                    Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
+                    Type = MediaTypes.Json,
+                    Title = $"{descriptor.ProjectionName} tile matrix set definition"
+                }
+            ]
+        };
+    }
+
+    private static string ResolveBasePathPrefix(HttpContext? context)
+    {
+        if (context is not null &&
+            BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
+            !string.IsNullOrWhiteSpace(configuredBaseUrl))
+        {
+            return configuredBaseUrl;
+        }
+
+        return string.Empty;
+    }
+
+    private static string BuildPath(string basePathPrefix, string relativePath)
+        => string.IsNullOrWhiteSpace(basePathPrefix)
+            ? relativePath
+            : $"{basePathPrefix}{relativePath}";
 
     private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
     {

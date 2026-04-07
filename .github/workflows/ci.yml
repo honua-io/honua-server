@@ -499,6 +499,10 @@ jobs:
         run: npm ci
         working-directory: tests/js
 
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: tests/js
+
       - name: Run JavaScript Integration Tests
         run: npm test
         working-directory: tests/js
@@ -507,6 +511,25 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
           HONUA_API_KEY: "ci-admin-password"
+
+      - name: Run OpenLayers Rendering Test
+        run: npx playwright test --config openlayers/rendering/playwright.config.ts
+        working-directory: tests/js
+        env:
+          HONUA_BASE_URL: http://localhost:5000
+          HONUA_SERVICE_ID: test_service
+          HONUA_LAYER_ID: '0'
+          HONUA_API_KEY: "ci-admin-password"
+
+      - name: Upload OpenLayers Evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openlayers-compat-results
+          path: |
+            tests/js/js-*.cert.json
+            tests/js/certification-evidence/*.cert.json
+          retention-days: 7
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests

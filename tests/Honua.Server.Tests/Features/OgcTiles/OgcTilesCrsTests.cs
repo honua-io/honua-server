@@ -114,10 +114,12 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
         tileset.Should().NotBeNull();
         tileset!.TileMatrixSetId.Should().Be("WorldCRS84Quad");
         tileset.Crs.Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        tileset.DataType.Should().Be("vector");
         tileset.MediaTypes.Should().NotBeNull();
         tileset.MediaTypes!.Value.Should().Contain(MediaTypes.Mvt);
         tileset.MediaTypes!.Value.Should().Contain(MediaTypes.Png);
-        tileset.Links.Should().Contain(link => link.Rel == "item" && link.Type == MediaTypes.Png);
+        tileset.Links.Should().Contain(link => link.Rel == "item" && link.Type == MediaTypes.Mvt);
+        tileset.Links.Should().NotContain(link => link.Rel == "item" && link.Type == MediaTypes.Png);
     }
 
     [IntegrationTest]

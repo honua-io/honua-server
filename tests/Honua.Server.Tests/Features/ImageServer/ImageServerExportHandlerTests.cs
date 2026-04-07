@@ -8,6 +8,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Handlers;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -161,6 +162,87 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBbox_UsesRequestedExtentAspectRatio()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -10, YMin = -10, XMax = 10, YMax = 30, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(bbox: "-10,-10,10,30", size: 256);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputWidth.Should().Be(256);
+        capturedQuery.Value.OutputHeight.Should().Be(512);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithMixedCrsBbox_UsesAspectRatioInOutputCrs()
+    {
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            bbox: "-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244",
+            size: 256,
+            bboxSr: "3857",
+            imageSr: "4326");
+
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+
+        var transformedExtent = CoordinateTransformer.TransformExtent(
+            new SkiaMapRenderer.RenderExtent(
+                -20037508.342789244,
+                -20037508.342789244,
+                20037508.342789244,
+                20037508.342789244),
+            fromSrid: 3857,
+            toSrid: 4326);
+        var expectedAspectRatio = (transformedExtent.MaxY - transformedExtent.MinY) / (transformedExtent.MaxX - transformedExtent.MinX);
+        var expectedHeight = (int)Math.Round(256 * expectedAspectRatio, MidpointRounding.AwayFromZero);
+
+        capturedQuery!.Value.OutputWidth.Should().Be(256);
+        capturedQuery.Value.OutputHeight.Should().Be(expectedHeight);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithExtremeAspectRatio_ClampsOutputDimensions()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -193,6 +275,34 @@ public class ImageServerExportHandlerTests
         capturedQuery.Should().NotBeNull();
         capturedQuery!.Value.OutputWidth.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
         capturedQuery.Value.OutputHeight.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithImageFormat_ReturnsInlineBytesWithoutTemporaryStorage()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult());
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.ContentType.Should().Be("image/png");
+        context.Response.Body.Position = 0;
+        using var reader = new BinaryReader(context.Response.Body);
+        reader.ReadBytes((int)context.Response.Body.Length).Should().Equal(CreateTestRasterResult().Data);
+
+        await _temporaryFileService.DidNotReceive()
+            .StoreTemporaryFileAsync(
+                Arg.Any<byte[]>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<ClaimsPrincipal?>(),
+                Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -461,14 +571,16 @@ public class ImageServerExportHandlerTests
         string? format = null,
         string? interpolation = null,
         string? imageSr = null,
-        string? bboxSr = null) => new()
+        string? bboxSr = null,
+        string? responseFormat = null) => new()
         {
             Bbox = bbox,
             Size = size,
             Format = format ?? "png",
             Interpolation = interpolation,
             ImageSr = imageSr,
-            BboxSr = bboxSr
+            BboxSr = bboxSr,
+            F = responseFormat ?? "json"
         };
 
     private static LayerDefinition CreateTestLayer()

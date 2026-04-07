@@ -2,14 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IdentityModel.Tokens.Jwt;
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
@@ -18,6 +20,8 @@ namespace Honua.Server.Features.Infrastructure.Authentication;
 /// </summary>
 public static class OidcAuthenticationExtensions
 {
+    private static readonly ConcurrentDictionary<string, ReplayLockState> TokenReplayLocks = new(StringComparer.Ordinal);
+
     /// <summary>
     /// Authentication scheme name for Azure AD.
     /// </summary>
@@ -54,6 +58,11 @@ public static class OidcAuthenticationExtensions
     public const string CompositeScheme = "Composite";
 
     /// <summary>
+    /// Authentication scheme name for the server-managed admin session cookie.
+    /// </summary>
+    public const string AdminSessionScheme = "AdminSession";
+
+    /// <summary>
     /// Adds OIDC authentication services with multi-provider support.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -82,6 +91,10 @@ public static class OidcAuthenticationExtensions
             options.DefaultScheme = CompositeScheme;
             options.DefaultChallengeScheme = CompositeScheme;
         });
+
+        authBuilder.AddScheme<AuthenticationSchemeOptions, AdminAuthSessionAuthenticationHandler>(
+            AdminSessionScheme,
+            static _ => { });
 
         // Add JWT Bearer authentication for API access
         if (HasAnyProviderEnabled(oidcOptions))
@@ -132,6 +145,11 @@ public static class OidcAuthenticationExtensions
                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
                     return JwtBearerScheme;
+                }
+
+                if (context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName))
+                {
+                    return AdminSessionScheme;
                 }
 
                 // Fall back to API key authentication
@@ -431,52 +449,135 @@ public static class OidcAuthenticationExtensions
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
                     OidcAuthenticationLog.JwtTokenValidated(logger);
 
-                    if (oidcOptions.TokenValidation.EnableTokenReplayProtection)
+                    if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&
+                        !context.HttpContext.IsAdminAuthSessionBridged())
                     {
-                        var distributedCache = context.HttpContext.RequestServices.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>();
+                        var redis = context.HttpContext.RequestServices.GetService<IConnectionMultiplexer>();
                         var memoryCache = context.HttpContext.RequestServices.GetService<IMemoryCache>();
                         var tokenKey = TryGetTokenReplayKey(context.SecurityToken);
-                        if (!string.IsNullOrWhiteSpace(tokenKey) && context.SecurityToken is JwtSecurityToken jwtToken)
+                        if (!string.IsNullOrWhiteSpace(tokenKey))
                         {
-                            var expiresOn = GetReplayCacheExpiration(jwtToken, oidcOptions.TokenValidation);
+                            var expiresOn = GetReplayCacheExpiration(context.SecurityToken, oidcOptions.TokenValidation);
+                            var registrationResult = await TryRegisterTokenReplayAsync(
+                                tokenKey,
+                                expiresOn,
+                                redis,
+                                memoryCache,
+                                logger,
+                                context.HttpContext.RequestAborted).ConfigureAwait(false);
 
-                            // Prefer distributed cache for multi-instance deployments
-                            if (distributedCache != null)
+                            if (registrationResult == TokenReplayRegistrationResult.ReplayDetected)
                             {
-                                var existing = await distributedCache.GetStringAsync(tokenKey);
-                                if (existing != null)
-                                {
-                                    OidcAuthenticationLog.TokenReplayDetected(logger);
-                                    context.Fail("Token replay detected");
-                                    return;
-                                }
-
-                                await distributedCache.SetStringAsync(tokenKey, "1",
-                                    new Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions
-                                    {
-                                        AbsoluteExpiration = expiresOn
-                                    });
-                            }
-                            else if (memoryCache != null)
-                            {
-                                // Fall back to in-memory cache for single-instance deployments
-                                if (memoryCache.TryGetValue(tokenKey, out _))
-                                {
-                                    OidcAuthenticationLog.TokenReplayDetected(logger);
-                                    context.Fail("Token replay detected");
-                                    return;
-                                }
-
-                                memoryCache.Set(tokenKey, true, new MemoryCacheEntryOptions
-                                {
-                                    AbsoluteExpiration = expiresOn
-                                });
+                                OidcAuthenticationLog.TokenReplayDetected(logger);
+                                context.Fail("Token replay detected");
+                                return;
                             }
                         }
                     }
                 }
             };
         });
+    }
+
+    private static async Task<TokenReplayRegistrationResult> TryRegisterTokenReplayAsync(
+        string tokenKey,
+        DateTime expiresOn,
+        IConnectionMultiplexer? redis,
+        IMemoryCache? memoryCache,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var expiresIn = expiresOn - DateTime.UtcNow;
+        if (expiresIn <= TimeSpan.Zero)
+        {
+            expiresIn = TimeSpan.FromMinutes(5);
+        }
+
+        if (redis is not null)
+        {
+            try
+            {
+                if (redis.IsConnected)
+                {
+                    var registered = await redis.GetDatabase().StringSetAsync(
+                        tokenKey,
+                        "1",
+                        expiresIn,
+                        when: When.NotExists).ConfigureAwait(false);
+
+                    return registered
+                        ? TokenReplayRegistrationResult.Registered
+                        : TokenReplayRegistrationResult.ReplayDetected;
+                }
+
+                logger.LogWarning("OIDC token replay protection could not use Redis because the multiplexer is disconnected. Falling back to in-memory protection.");
+            }
+            catch (RedisException ex)
+            {
+                logger.LogWarning(ex, "OIDC token replay protection failed while accessing Redis. Falling back to in-memory protection.");
+            }
+        }
+
+        if (memoryCache is not null)
+        {
+            return await TryRegisterTokenReplayInMemoryAsync(
+                tokenKey,
+                expiresOn,
+                memoryCache,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        logger.LogWarning("OIDC token replay protection is enabled but no replay cache is available. Allowing token to avoid permanent lockout.");
+        return TokenReplayRegistrationResult.Skipped;
+    }
+
+    private static async Task<TokenReplayRegistrationResult> TryRegisterTokenReplayInMemoryAsync(
+        string tokenKey,
+        DateTime expiresOn,
+        IMemoryCache memoryCache,
+        CancellationToken cancellationToken)
+    {
+        if (memoryCache.TryGetValue(tokenKey, out _))
+        {
+            return TokenReplayRegistrationResult.ReplayDetected;
+        }
+
+        var replayLock = TokenReplayLocks.GetOrAdd(tokenKey, static _ => new ReplayLockState());
+        Interlocked.Increment(ref replayLock.ReferenceCount);
+
+        try
+        {
+            await replayLock.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (memoryCache.TryGetValue(tokenKey, out _))
+                {
+                    return TokenReplayRegistrationResult.ReplayDetected;
+                }
+
+                memoryCache.Set(tokenKey, true, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpiration = new DateTimeOffset(expiresOn)
+                });
+
+                return TokenReplayRegistrationResult.Registered;
+            }
+            finally
+            {
+                replayLock.Semaphore.Release();
+            }
+        }
+        finally
+        {
+            if (Interlocked.Decrement(ref replayLock.ReferenceCount) == 0 &&
+                TokenReplayLocks.TryGetValue(tokenKey, out var currentLock) &&
+                ReferenceEquals(currentLock, replayLock) &&
+                TokenReplayLocks.TryRemove(tokenKey, out var removedLock) &&
+                ReferenceEquals(removedLock, replayLock))
+            {
+                replayLock.Semaphore.Dispose();
+            }
+        }
     }
 
     private static void ResolveOidcSecrets(OidcAuthenticationOptions options)
@@ -531,16 +632,33 @@ public static class OidcAuthenticationExtensions
                 return $"raw:{Convert.ToHexStringLower(hash)}";
             }
         }
+        else if (token is JsonWebToken jsonWebToken)
+        {
+            if (!string.IsNullOrWhiteSpace(jsonWebToken.Id))
+            {
+                return $"jti:{jsonWebToken.Id}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(jsonWebToken.EncodedToken))
+            {
+                var hash = System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(jsonWebToken.EncodedToken));
+                return $"raw:{Convert.ToHexStringLower(hash)}";
+            }
+        }
 
         return null;
     }
 
-    private static DateTime GetReplayCacheExpiration(JwtSecurityToken token, TokenValidationOptions options)
+    private static DateTime GetReplayCacheExpiration(SecurityToken token, TokenValidationOptions options)
     {
         var now = DateTime.UtcNow;
-        var expires = token.ValidTo == DateTime.MinValue
-            ? now
-            : token.ValidTo.ToUniversalTime();
+        var expires = token switch
+        {
+            JwtSecurityToken jwtToken when jwtToken.ValidTo != DateTime.MinValue => jwtToken.ValidTo.ToUniversalTime(),
+            JsonWebToken jsonWebToken when jsonWebToken.ValidTo != DateTime.MinValue => jsonWebToken.ValidTo.ToUniversalTime(),
+            _ => now
+        };
 
         if (options.TokenReplayCacheDuration > TimeSpan.Zero)
         {
@@ -557,6 +675,20 @@ public static class OidcAuthenticationExtensions
         }
 
         return expires;
+    }
+
+    private enum TokenReplayRegistrationResult
+    {
+        Registered,
+        ReplayDetected,
+        Skipped
+    }
+
+    private sealed class ReplayLockState
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+        public int ReferenceCount;
     }
 
     private static void ConfigureAzureAdAuthentication(

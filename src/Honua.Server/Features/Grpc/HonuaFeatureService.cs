@@ -33,7 +33,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly ICommonQueryValidator _queryValidator;
     private readonly SpatialReferenceResolver _spatialReferenceResolver;
-    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher;
+    private readonly FeatureMutationEventService _mutationEventService;
     private readonly ILogger<HonuaFeatureService> _logger;
     private readonly GeometryLimits _geometryLimits;
     private readonly int _streamBatchSize;
@@ -49,6 +49,31 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger)
+        : this(
+            resourceValidator,
+            featureReader,
+            featureWriter,
+            streamingFeatureStore,
+            queryValidator,
+            spatialReferenceResolver,
+            new FeatureMutationEventService(featureChangeEventPublisher),
+            limitsOptions,
+            grpcOptions,
+            logger)
+    {
+    }
+
+    public HonuaFeatureService(
+        IResourceValidator resourceValidator,
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        IStreamingFeatureStore streamingFeatureStore,
+        ICommonQueryValidator queryValidator,
+        SpatialReferenceResolver spatialReferenceResolver,
+        FeatureMutationEventService mutationEventService,
+        IOptions<LimitsOptions> limitsOptions,
+        IOptions<GrpcOptions> grpcOptions,
+        ILogger<HonuaFeatureService> logger)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
@@ -56,7 +81,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _streamingFeatureStore = streamingFeatureStore;
         _queryValidator = queryValidator;
         _spatialReferenceResolver = spatialReferenceResolver;
-        _featureChangeEventPublisher = featureChangeEventPublisher;
+        _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
@@ -290,18 +315,16 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             if (r.IsSuccess && r.ObjectId.HasValue)
             {
                 var hasGeometry = i < editBatch.Creates.Length && editBatch.Creates[i].Geometry != null;
-                await _featureChangeEventPublisher.PublishAsync(
-                    new FeatureChangeEventRequest
-                    {
-                        ServiceId = serviceId,
-                        LayerId = layerId,
-                        ObjectId = r.ObjectId.Value,
-                        Operation = "create",
-                        Protocol = HonuaTelemetry.Protocols.Grpc,
-                        RequestId = requestId,
-                        GeometryChanged = hasGeometry
-                    },
-                    context.CancellationToken).ConfigureAwait(false);
+                await _mutationEventService.PublishAsync(
+                    context.GetHttpContext(),
+                    layerId,
+                    r.ObjectId.Value,
+                    "create",
+                    HonuaTelemetry.Protocols.Grpc,
+                    CancellationToken.None,
+                    serviceId: serviceId,
+                    requestId: requestId,
+                    geometryChanged: hasGeometry).ConfigureAwait(false);
             }
         }
 
@@ -311,18 +334,16 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             if (r.IsSuccess && r.ObjectId.HasValue)
             {
                 var hasGeometry = i < editBatch.Updates.Length && editBatch.Updates[i].Geometry != null;
-                await _featureChangeEventPublisher.PublishAsync(
-                    new FeatureChangeEventRequest
-                    {
-                        ServiceId = serviceId,
-                        LayerId = layerId,
-                        ObjectId = r.ObjectId.Value,
-                        Operation = "update",
-                        Protocol = HonuaTelemetry.Protocols.Grpc,
-                        RequestId = requestId,
-                        GeometryChanged = hasGeometry
-                    },
-                    context.CancellationToken).ConfigureAwait(false);
+                await _mutationEventService.PublishAsync(
+                    context.GetHttpContext(),
+                    layerId,
+                    r.ObjectId.Value,
+                    "update",
+                    HonuaTelemetry.Protocols.Grpc,
+                    CancellationToken.None,
+                    serviceId: serviceId,
+                    requestId: requestId,
+                    geometryChanged: hasGeometry).ConfigureAwait(false);
             }
         }
 
@@ -330,17 +351,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         {
             if (r.IsSuccess && r.ObjectId.HasValue)
             {
-                await _featureChangeEventPublisher.PublishAsync(
-                    new FeatureChangeEventRequest
-                    {
-                        ServiceId = serviceId,
-                        LayerId = layerId,
-                        ObjectId = r.ObjectId.Value,
-                        Operation = "delete",
-                        Protocol = HonuaTelemetry.Protocols.Grpc,
-                        RequestId = requestId
-                    },
-                    context.CancellationToken).ConfigureAwait(false);
+                await _mutationEventService.PublishAsync(
+                    context.GetHttpContext(),
+                    layerId,
+                    r.ObjectId.Value,
+                    "delete",
+                    HonuaTelemetry.Protocols.Grpc,
+                    CancellationToken.None,
+                    serviceId: serviceId,
+                    requestId: requestId).ConfigureAwait(false);
             }
         }
     }

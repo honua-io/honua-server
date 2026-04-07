@@ -24,6 +24,8 @@ public static class EndpointRegistry
 
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/auth/config"),
+        new("POST", "/api/v1/admin/auth/logout"),
+        new("GET", "/api/v1/admin/auth/session"),
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/authorize-url"),
         new("POST", "/api/v1/admin/auth/providers/{providerKey}/token"),
         new("GET", "/api/v1/admin/auth/providers/{providerKey}/logout-url"),
@@ -394,6 +396,7 @@ public static class EndpointRegistry
         new("GET", "/ogc/maps/openapi.json"),
         new("GET", "/ogc/maps/collections/{collectionId}/map"),
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),
+        new("GET", "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}"),
         new("GET", "/ogc/maps/map"),
 
         // Static Map

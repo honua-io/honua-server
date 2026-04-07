@@ -80,6 +80,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
 
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
+    private const int ExtentSampleSegmentsPerEdge = 4;
 
     private static bool TryTransformExtentInMemory(
         double minX, double minY, double maxX, double maxY,
@@ -156,14 +157,23 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 .ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                WITH points AS (
-                    SELECT ST_SetSRID(ST_MakePoint(@minX, @minY), @fromSrid) AS geom
-                    UNION ALL
-                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @minY), @fromSrid) AS geom
-                    UNION ALL
-                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @maxY), @fromSrid) AS geom
-                    UNION ALL
-                    SELECT ST_SetSRID(ST_MakePoint(@minX, @maxY), @fromSrid) AS geom
+                WITH fractions AS (
+                    SELECT generate_series(0, @sampleSegments)::double precision / @sampleSegments AS t
+                ),
+                points AS (
+                    SELECT ST_SetSRID(ST_MakePoint(@minX + ((@maxX - @minX) * t), @minY), @fromSrid) AS geom
+                    FROM fractions
+                    UNION
+                    SELECT ST_SetSRID(ST_MakePoint(@minX + ((@maxX - @minX) * t), @maxY), @fromSrid) AS geom
+                    FROM fractions
+                    UNION
+                    SELECT ST_SetSRID(ST_MakePoint(@minX, @minY + ((@maxY - @minY) * t)), @fromSrid) AS geom
+                    FROM fractions
+                    UNION
+                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @minY + ((@maxY - @minY) * t)), @fromSrid) AS geom
+                    FROM fractions
+                    UNION
+                    SELECT ST_SetSRID(ST_MakePoint((@minX + @maxX) / 2.0, (@minY + @maxY) / 2.0), @fromSrid) AS geom
                 ),
                 transformed AS (
                     SELECT ST_Transform(geom, @toSrid) AS geom
@@ -182,6 +192,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@maxY", maxY);
             AddParameter(command, "@fromSrid", fromSrid);
             AddParameter(command, "@toSrid", toSrid);
+            AddParameter(command, "@sampleSegments", ExtentSampleSegmentsPerEdge);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

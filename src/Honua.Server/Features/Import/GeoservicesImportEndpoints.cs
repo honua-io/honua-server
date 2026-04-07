@@ -198,9 +198,13 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
+        string? jobId = null;
+        IDistributedImportJobManager? jobManager = null;
+        var jobQueued = false;
+
         try
         {
-            var jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
+            jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
             if (jobManager is IImportCoordinationHealth { CanAcceptNewJobs: false })
             {
                 await AdminResponseWriter.WriteErrorAsync(
@@ -211,7 +215,7 @@ internal static partial class GeoservicesImportEndpoints
             }
 
             // Generate job ID
-            var jobId = Guid.NewGuid().ToString("N")[..12];
+            jobId = Guid.NewGuid().ToString("N")[..12];
 
             // Create import request
             var importRequest = new GeoservicesImportRequest
@@ -230,30 +234,30 @@ internal static partial class GeoservicesImportEndpoints
                 AutoPublish = request.AutoPublish ?? true
             };
 
-            // Store the request
-            await jobManager.RequestStore.SetProgressAsync(jobId, importRequest,
-                TimeSpan.FromHours(24), cancellationToken);
-            if (!await EnsureImportCoordinationStillDurableAsync(context, jobManager, jobId, cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            // Create initial progress
             var progress = GeoservicesImportProgress.CreateInitial(
                 jobId,
                 request.ServiceUrl,
                 request.LayerId,
                 request.TableName);
 
-            await jobManager.ProgressStore.SetProgressAsync(jobId, progress,
-                TimeSpan.FromHours(24), cancellationToken);
-            if (!await EnsureImportCoordinationStillDurableAsync(context, jobManager, jobId, cancellationToken).ConfigureAwait(false))
+            if (!await ImportEndpointCoordinationHelper.PersistQueuedJobStateAsync(
+                    context,
+                    jobManager is not IImportCoordinationHealth { CanAcceptNewJobs: false },
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    importRequest,
+                    progress,
+                    TimeSpan.FromHours(24),
+                    "Distributed import coordination became unavailable while the job was being enqueued. Retry when Redis is healthy.",
+                    cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
 
             // Queue the job
             await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken);
+            jobQueued = true;
 
             Log.ImportJobQueued(GetLogger(context), jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
@@ -271,6 +275,15 @@ internal static partial class GeoservicesImportEndpoints
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import queue is unavailable", StringComparison.OrdinalIgnoreCase))
         {
+            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
+            {
+                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(
                 context,
@@ -279,29 +292,18 @@ internal static partial class GeoservicesImportEndpoints
         }
         catch (Exception ex)
         {
+            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
+            {
+                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                    jobManager.RequestStore,
+                    jobManager.ProgressStore,
+                    jobId,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
         }
-    }
-
-    private static async Task<bool> EnsureImportCoordinationStillDurableAsync(
-        HttpContext context,
-        IDistributedImportJobManager jobManager,
-        string jobId,
-        CancellationToken cancellationToken)
-    {
-        if (jobManager is not IImportCoordinationHealth { CanAcceptNewJobs: false })
-        {
-            return true;
-        }
-
-        await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        await jobManager.ProgressStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        await AdminResponseWriter.WriteErrorAsync(
-            context,
-            "Distributed import coordination became unavailable while the job was being enqueued. Retry when Redis is healthy.",
-            StatusCodes.Status503ServiceUnavailable);
-        return false;
     }
 
     /// <summary>

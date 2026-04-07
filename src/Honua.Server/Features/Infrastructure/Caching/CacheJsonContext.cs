@@ -28,6 +28,7 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 [JsonSerializable(typeof(CachedExistenceResult))]
 [JsonSerializable(typeof(CachedLayerList))]
 [JsonSerializable(typeof(CachedServiceList))]
+[JsonSerializable(typeof(CachedCacheKeyIndex))]
 [JsonSerializable(typeof(CachedResponse))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
@@ -50,3 +51,8 @@ internal sealed record CachedServiceList(ServiceDefinition[] Services);
 /// Wrapper for cached existence checks.
 /// </summary>
 internal sealed record CachedExistenceResult(bool Exists);
+
+/// <summary>
+/// Wrapper for tracked cache-key indexes used to avoid full keyspace scans.
+/// </summary>
+internal sealed record CachedCacheKeyIndex(string[] Keys);

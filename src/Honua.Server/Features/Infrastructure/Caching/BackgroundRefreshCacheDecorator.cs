@@ -64,7 +64,11 @@ internal sealed partial class BackgroundRefreshCacheDecorator : ILayerCatalog
     /// <inheritdoc />
     public async Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        string cacheKey = $"{CachingLayerCatalog.LayerKeyPrefix}{layerId}";
+        string cacheKey = await CachingLayerCatalog.ScopeKeyAsync(
+            _cacheService,
+            $"{CachingLayerCatalog.LayerKeyPrefix}{layerId}",
+            _schemaContext?.CurrentSchema,
+            cancellationToken).ConfigureAwait(false);
 
         var entry = await _cacheService.GetWithMetadataAsync<LayerDefinition>(cacheKey, cancellationToken).ConfigureAwait(false);
 
@@ -72,10 +76,15 @@ internal sealed partial class BackgroundRefreshCacheDecorator : ILayerCatalog
         {
             if (IsNearExpiry(entry.RemainingTtl, _options.LayerTtl))
             {
+                string existenceKey = await CachingLayerCatalog.ScopeKeyAsync(
+                    _cacheService,
+                    $"{CachingLayerCatalog.LayerExistsKeyPrefix}{layerId}",
+                    _schemaContext?.CurrentSchema,
+                    cancellationToken).ConfigureAwait(false);
                 EnqueueWriteThroughRefresh(cacheKey,
                     async (catalog, ct) => await catalog.GetLayerAsync(layerId, ct).ConfigureAwait(false),
                     () => _options.GetLayerTtlWithJitter(),
-                    existenceKey: $"{CachingLayerCatalog.LayerExistsKeyPrefix}{layerId}");
+                    existenceKey: existenceKey);
             }
 
             return entry.Value;
@@ -88,13 +97,18 @@ internal sealed partial class BackgroundRefreshCacheDecorator : ILayerCatalog
     /// <inheritdoc />
     public async Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
     {
-        var entry = await _cacheService.GetWithMetadataAsync<CachedLayerList>(CachingLayerCatalog.LayerListKey, cancellationToken).ConfigureAwait(false);
+        string listKey = await CachingLayerCatalog.ScopeKeyAsync(
+            _cacheService,
+            CachingLayerCatalog.LayerListKey,
+            _schemaContext?.CurrentSchema,
+            cancellationToken).ConfigureAwait(false);
+        var entry = await _cacheService.GetWithMetadataAsync<CachedLayerList>(listKey, cancellationToken).ConfigureAwait(false);
 
         if (entry.HasValue)
         {
             if (IsNearExpiry(entry.RemainingTtl, _options.LayerTtl))
             {
-                EnqueueWriteThroughRefresh<CachedLayerList>(CachingLayerCatalog.LayerListKey,
+                EnqueueWriteThroughRefresh<CachedLayerList>(listKey,
                     async (catalog, ct) =>
                     {
                         var layers = await catalog.ListLayersAsync(ct).ConfigureAwait(false);
@@ -114,7 +128,11 @@ internal sealed partial class BackgroundRefreshCacheDecorator : ILayerCatalog
     public async Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
     {
         string normalizedName = serviceName.ToLowerInvariant();
-        string cacheKey = $"{CachingLayerCatalog.ServiceKeyPrefix}{normalizedName}";
+        string cacheKey = await CachingLayerCatalog.ScopeKeyAsync(
+            _cacheService,
+            $"{CachingLayerCatalog.ServiceKeyPrefix}{normalizedName}",
+            _schemaContext?.CurrentSchema,
+            cancellationToken).ConfigureAwait(false);
 
         var entry = await _cacheService.GetWithMetadataAsync<ServiceDefinition>(cacheKey, cancellationToken).ConfigureAwait(false);
 
@@ -122,10 +140,15 @@ internal sealed partial class BackgroundRefreshCacheDecorator : ILayerCatalog
         {
             if (IsNearExpiry(entry.RemainingTtl, _options.ServiceTtl))
             {
+                string existenceKey = await CachingLayerCatalog.ScopeKeyAsync(
+                    _cacheService,
+                    $"{CachingLayerCatalog.ServiceExistsKeyPrefix}{normalizedName}",
+                    _schemaContext?.CurrentSchema,
+                    cancellationToken).ConfigureAwait(false);
                 EnqueueWriteThroughRefresh(cacheKey,
                     async (catalog, ct) => await catalog.GetServiceAsync(serviceName, ct).ConfigureAwait(false),
                     () => _options.GetServiceTtlWithJitter(),
-                    existenceKey: $"{CachingLayerCatalog.ServiceExistsKeyPrefix}{normalizedName}");
+                    existenceKey: existenceKey);
             }
 
             return entry.Value;
@@ -138,13 +161,18 @@ internal sealed partial class BackgroundRefreshCacheDecorator : ILayerCatalog
     /// <inheritdoc />
     public async Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
     {
-        var entry = await _cacheService.GetWithMetadataAsync<CachedServiceList>(CachingLayerCatalog.ServiceListKey, cancellationToken).ConfigureAwait(false);
+        string listKey = await CachingLayerCatalog.ScopeKeyAsync(
+            _cacheService,
+            CachingLayerCatalog.ServiceListKey,
+            _schemaContext?.CurrentSchema,
+            cancellationToken).ConfigureAwait(false);
+        var entry = await _cacheService.GetWithMetadataAsync<CachedServiceList>(listKey, cancellationToken).ConfigureAwait(false);
 
         if (entry.HasValue)
         {
             if (IsNearExpiry(entry.RemainingTtl, _options.ServiceTtl))
             {
-                EnqueueWriteThroughRefresh<CachedServiceList>(CachingLayerCatalog.ServiceListKey,
+                EnqueueWriteThroughRefresh<CachedServiceList>(listKey,
                     async (catalog, ct) =>
                     {
                         var services = await catalog.ListServicesAsync(ct).ConfigureAwait(false);

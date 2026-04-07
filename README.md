@@ -72,11 +72,11 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
 | STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |
-| OGC API Features | `/ogc/features` | QGIS, MapLibre, any OGC client |
+| OGC API Features | `/ogc/features` | QGIS, OpenLayers, MapLibre, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients, custom web apps |
-| OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre |
+| OGC API Tiles | `/ogc/tiles` | QGIS, OpenLayers, MapLibre |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
-| Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet, Mapbox GL |
+| Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, OpenLayers, Leaflet, Mapbox GL |
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Admin UI, automation scripts |

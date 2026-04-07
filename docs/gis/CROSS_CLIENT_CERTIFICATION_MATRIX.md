@@ -80,7 +80,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 
 | Lane | Automation | Core Coverage | Extensions |
 |---|---|---|---|
-| **JS** (Vitest) | Automated ‡‡ | All CERT-\* except CERT-RNDR (headless) | JS-EXT-01, JS-EXT-02 |
+| **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
@@ -91,7 +91,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 
 † **BI lanes (OData-only):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply — these require geometry-capable protocols (FS, OGC). Record as `not-applicable` in the evidence envelope.
 
-‡‡ **JS lane current automated scope:** Vitest covers FeatureServer protocol via JavaScript/TypeScript client tests. The Python pytest suite (FeatureServer + OGC API Features) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. OData and MapServer protocol automation is planned but not yet implemented. Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
+‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer, OGC API Features, and OGC Tiles protocols via JavaScript/TypeScript client tests (`*.test.ts`). WFS 2.0 tests also run via Vitest but do not yet produce `.cert.json` evidence files — `wfs20` is pending formal addition to the certification evidence spec's valid protocol set. Playwright (headless Chromium) covers CERT-RNDR rendering tests via browser-based OpenLayers map assertions (`*.spec.ts`); currently MVT only. The Python pytest suite (FeatureServer + OGC API Features) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. OData and MapServer protocol automation is planned but not yet implemented. Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
 
 §§ **Esri Leaflet sub-lane scope:** The Playwright suite currently exercises the browser-visible FeatureServer and MapServer subset: connection, metadata, schema, query/filter, paging, geometry fidelity, error handling, rendering, MapServer identify, and refresh. The reporter still emits a full 18-case evidence envelope by recording unexercised CERT-\* IDs as `skip` and the MapServer query-focused IDs as `not-applicable`.
 
@@ -105,6 +105,14 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 |---|---|---|---|
 | JS-EXT-01 | Binary format fidelity (PBF/MVT decode) | MVT | pass/fail |
 | JS-EXT-02 | Streaming/MVT tile load pipeline | MVT | pass/fail |
+| JS-EXT-OL-COLL-01 | Collections list discovery | OGC Features | pass/fail+count |
+| JS-EXT-OL-ITEMTYPE-01 | itemType field presence in collection metadata | OGC Features | pass/fail |
+| JS-EXT-OL-ITEMS-01 | Feature items list and count | OGC Features | pass/fail+count |
+| JS-EXT-OL-GEOJSON-01 | ol/format/GeoJSON feature parsing | OGC Features | pass/fail |
+| JS-EXT-OL-GEOJSON-02 | ol/format/GeoJSON single-item parsing | OGC Features | pass/fail |
+| JS-EXT-TILES-DISC-01 | OGC Tiles landing page | MVT | pass/fail |
+| JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
+| JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |
 
 #### Esri Leaflet Browser Sub-Lane
 
@@ -159,5 +167,6 @@ All certification results must follow the standardized evidence specification in
 | 1.0.6 | 2026-03-16 | Add Admin API protocol abbreviation for CLI lane extensions |
 | 1.0.7 | 2026-03-17 | Add stable HTML anchor for JS Lane heading to decouple cross-document links |
 | 1.0.8 | 2026-04-03 | Add WFS protocol abbreviation; update Desktop — QGIS lane to reflect automated PyQGIS coverage |
-| 1.0.9 | 2026-04-03 | Register Esri Leaflet browser sub-lane (EL-EXT-01 … EL-EXT-04) |
-| 1.0.10 | 2026-04-03 | Clarify Esri Leaflet automated scope and evidence skip/not-applicable behavior |
+| 1.0.9 | 2026-04-05 | Update JS lane to reflect hybrid Vitest + Playwright execution model and expanded protocol scope |
+| 1.0.10 | 2026-04-03 | Register Esri Leaflet browser sub-lane (EL-EXT-01 … EL-EXT-04) |
+| 1.0.11 | 2026-04-03 | Clarify Esri Leaflet automated scope and evidence skip/not-applicable behavior |

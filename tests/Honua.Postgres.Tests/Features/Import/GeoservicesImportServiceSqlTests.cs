@@ -47,6 +47,7 @@ public sealed class GeoservicesImportServiceSqlTests
         lines[^1].Trim().Should().Be(");");
         lines[^2].TrimEnd('\r').TrimEnd().Should().NotEndWith(",");
 
+        sql.Should().Contain("objectid BIGSERIAL PRIMARY KEY");
         sql.Should().Contain("geom geometry(POINT, 4326)");
         sql.Should().Contain("\"name\"");
     }

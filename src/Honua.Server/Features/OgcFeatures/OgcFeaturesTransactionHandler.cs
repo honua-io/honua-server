@@ -34,7 +34,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
-    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = dependencies.FeatureChangeEventPublisher;
+    private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -129,7 +129,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     }
                 }
 
-                var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
                 for (var index = 0; index < results.Count && index < batchRequest.Operations.Count; index++)
                 {
                     var operation = batchRequest.Operations[index];
@@ -140,19 +139,19 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     }
 
                     var (geometryEnvelope, propertiesJson) = GetBatchEventEnrichment(preparedOperationsByIndex?[index]);
-                    await _featureChangeEventPublisher.PublishAsync(
-                        new FeatureChangeEventRequest
-                        {
-                            ServiceId = serviceId,
-                            LayerId = layerId,
-                            ObjectId = objectId,
-                            Operation = eventOperation,
-                            Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                            RequestId = $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
-                            GeometryEnvelope = geometryEnvelope,
-                            PropertiesJson = propertiesJson
-                        },
-                        cancellationToken).ConfigureAwait(false);
+                    await _mutationEventService.PublishAsync(
+                        context,
+                        layerId,
+                        objectId,
+                        eventOperation,
+                        HonuaTelemetry.Protocols.OgcFeatures,
+                        CancellationToken.None,
+                        serviceProtocol: ServiceProtocols.OgcFeatures,
+                        requestId: $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
+                        mutationFeature: null,
+                        geometryChanged: false,
+                        geometryEnvelope: geometryEnvelope,
+                        propertiesJson: propertiesJson).ConfigureAwait(false);
                 }
             }
 
@@ -167,7 +166,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var statusCode = hasErrors ? 207 : 200; // 207 Multi-Status for partial success
             if (results.Any(result => result.IsSuccess))
             {
-                await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
             }
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
             HonuaTelemetry.SetSuccess(activity, response.SuccessCount);
@@ -276,22 +275,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
-                await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
-                var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
-                var (replaceEnv, replaceProps) = FeatureChangeEventEnrichment.FromFeature(updated);
-                await _featureChangeEventPublisher.PublishAsync(
-                    new FeatureChangeEventRequest
-                    {
-                        ServiceId = serviceId,
-                        LayerId = layerId,
-                        ObjectId = updated.Id,
-                        Operation = "update",
-                        Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                        RequestId = context.TraceIdentifier,
-                        GeometryEnvelope = replaceEnv,
-                        PropertiesJson = replaceProps
-                    },
-                    cancellationToken).ConfigureAwait(false);
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    layerId,
+                    updated.Id,
+                    "update",
+                    HonuaTelemetry.Protocols.OgcFeatures,
+                    CancellationToken.None,
+                    mutationFeature: updated,
+                    serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -491,22 +484,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
-                await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
-                var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
-                var (patchEnv, patchProps) = FeatureChangeEventEnrichment.FromFeature(updated);
-                await _featureChangeEventPublisher.PublishAsync(
-                    new FeatureChangeEventRequest
-                    {
-                        ServiceId = serviceId,
-                        LayerId = layerId,
-                        ObjectId = updated.Id,
-                        Operation = "update",
-                        Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                        RequestId = context.TraceIdentifier,
-                        GeometryEnvelope = patchEnv,
-                        PropertiesJson = patchProps
-                    },
-                    cancellationToken).ConfigureAwait(false);
+                await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    layerId,
+                    updated.Id,
+                    "update",
+                    HonuaTelemetry.Protocols.OgcFeatures,
+                    CancellationToken.None,
+                    mutationFeature: updated,
+                    serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -1207,20 +1194,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
-    }
-
-    private static async Task<string> ResolveServiceIdAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
-            context,
-            layerId,
-            ServiceProtocols.OgcFeatures,
-            cancellationToken);
-
-        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     private static string GenerateETag(Feature feature)

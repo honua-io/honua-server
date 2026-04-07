@@ -2,23 +2,20 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Honua.Admin.Features.Auth.Services;
 using Honua.Admin.Features.GitOps.Models;
+using Microsoft.AspNetCore.Components.WebAssembly.Http;
 
 namespace Honua.Admin.Features.GitOps.Services;
 
 internal sealed class GitOpsAdminClient
 {
     private readonly HttpClient _httpClient;
-    private readonly AuthStateStore _authStateStore;
 
-    public GitOpsAdminClient(HttpClient httpClient, AuthStateStore authStateStore)
+    public GitOpsAdminClient(HttpClient httpClient)
     {
         _httpClient = httpClient;
-        _authStateStore = authStateStore;
     }
 
     public async Task<GitOpsWatchConfigModel?> GetWatchAsync(CancellationToken cancellationToken = default)
@@ -158,18 +155,12 @@ internal sealed class GitOpsAdminClient
         return envelope.Data ?? throw new InvalidOperationException($"Approval response for '{pendingId}' did not include updated change data.");
     }
 
-    private async Task<HttpRequestMessage> CreateRequestAsync(HttpMethod method, string uri, CancellationToken cancellationToken)
+    private static Task<HttpRequestMessage> CreateRequestAsync(HttpMethod method, string uri, CancellationToken cancellationToken)
     {
         var request = new HttpRequestMessage(method, uri);
-        var token = await _authStateStore.GetAccessTokenAsync().ConfigureAwait(false);
+        request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (!string.IsNullOrWhiteSpace(token))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
-
-        return request;
+        return Task.FromResult(request);
     }
 
     private static async Task<ApiEnvelope<T>> ReadAsync<T>(

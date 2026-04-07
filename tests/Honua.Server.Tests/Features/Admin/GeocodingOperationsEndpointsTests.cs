@@ -4,9 +4,13 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -66,5 +70,37 @@ public sealed class GeocodingOperationsEndpointsTests : IAsyncLifetime
         data.TryGetProperty("enableCaching", out _).Should().BeTrue();
         data.TryGetProperty("cacheExpirationMinutes", out _).Should().BeTrue();
         data.TryGetProperty("defaultTimeoutSeconds", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/geocoding/providers")]
+    public async Task GetProviders_WhenCoordinatorThrows_ReturnsSanitizedError()
+    {
+        var coordinator = Substitute.For<IGeocodeProviderCoordinator>();
+        coordinator.CheckAllProvidersHealthAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<Honua.Core.Features.Geocoding.Domain.GeocodeProviderHealth>>>(_ =>
+                throw new InvalidOperationException("provider secret connection string"));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeocodeProviderCoordinator>();
+                services.AddSingleton(coordinator);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.CreateAdminClient().GetAsync("/api/v1/admin/operations/geocoding/providers");
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Geocoding provider health check failed.");
+            body.Should().NotContain("provider secret connection string");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 }

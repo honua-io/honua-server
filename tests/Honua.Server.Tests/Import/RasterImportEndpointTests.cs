@@ -4,10 +4,15 @@
 using System.Net;
 using System.Net.Http.Headers;
 using FluentAssertions;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
@@ -298,6 +303,51 @@ public class RasterImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("tileZoomLevels");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/raster")]
+    public async Task ImportRaster_WhenImportServiceThrows_ReturnsSanitizedError()
+    {
+        var rasterImportService = Substitute.For<IRasterImportService>();
+        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
+        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
+        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RasterImportResult>>(_ => throw new InvalidDataException("sensitive raster parser detail"));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRasterImportService>();
+                services.AddSingleton(rasterImportService);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var content = new MultipartFormDataContent();
+            var fileBytes = CreateMinimalGeoTiffBytes();
+            var fileContent = new ByteArrayContent(fileBytes);
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "file",
+                FileName = "test.tif"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent("1"), "layerId");
+            content.Add(new StringContent("test-raster"), "name");
+
+            var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Raster import request is invalid.");
+            body.Should().NotContain("sensitive raster parser detail");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     // =============================================================================

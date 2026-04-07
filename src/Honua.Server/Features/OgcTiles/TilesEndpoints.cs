@@ -119,7 +119,8 @@ internal static class TilesEndpoints
         var tileLimits = limitsOptions.Value.Tiles;
         var titleBase = BuildDatasetTitleBase(selectedLayers!);
         var querySuffix = BuildCollectionsQuerySuffix(collections, selectedLayers!);
-        var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix).ToImmutableArray();
+        var advertiseVectorTiles = selectedLayers!.Length == 1;
+        var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/tiles{querySuffix}",
@@ -188,7 +189,8 @@ internal static class TilesEndpoints
             geodataTitle,
             description,
             tileLimits,
-            tileMatrixSetId);
+            tileMatrixSetId,
+            advertiseVectorTiles: layers.Length == 1);
 
         return OgcCommonUtilities.FormatMetadataResponse(tileset, OgcTilesJsonContext.Default.TileSet, outputFormat, "Tileset");
     }
@@ -625,6 +627,13 @@ internal static class TilesEndpoints
         Activity? activity,
         CancellationToken cancellationToken)
     {
+        if (layers.Length > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Dataset vector tiles currently support only a single collection selection. Request one collection or use PNG tiles.");
+        }
+
         var mergedTile = await MergeVectorTileAsync(
             tileProvider,
             layers,
@@ -783,54 +792,43 @@ internal static class TilesEndpoints
     private static SpatialFilter CreateBboxSpatialFilter(TileBounds bounds, int srid)
         => SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
 
-    private static IEnumerable<TileSetItem> BuildDatasetTileSetItems(string titleBase, string baseUrl, TileLimits tileLimits, string querySuffix)
+    private static IEnumerable<TileSetItem> BuildDatasetTileSetItems(
+        string titleBase,
+        string baseUrl,
+        TileLimits tileLimits,
+        string querySuffix,
+        bool advertiseVectorTiles)
     {
-        // WebMercatorQuad
-        yield return BuildTileSetItemCore(
-            $"{titleBase} ({OgcTilesUtilities.WebMercatorQuadId})",
-            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}{querySuffix}",
-            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WebMercatorQuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}",
-            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}",
-            "Dataset tileset metadata",
-            tileLimits,
-            OgcTilesUtilities.WebMercatorQuadId);
-
-        // WorldCRS84Quad
-        yield return BuildTileSetItemCore(
-            $"{titleBase} ({OgcTilesUtilities.WorldCrs84QuadId})",
-            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WorldCrs84QuadId}{querySuffix}",
-            $"{baseUrl}/ogc/tiles/tiles/{OgcTilesUtilities.WorldCrs84QuadId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}",
-            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WorldCrs84QuadId}",
-            "Dataset tileset metadata",
-            tileLimits,
-            OgcTilesUtilities.WorldCrs84QuadId);
+        foreach (var descriptor in OgcTileMatrixSetDescriptors.Supported)
+        {
+            yield return BuildTileSetItemCore(
+                $"{titleBase} ({descriptor.Id})",
+                $"{baseUrl}/ogc/tiles/tiles/{descriptor.Id}{querySuffix}",
+                $"{baseUrl}/ogc/tiles/tiles/{descriptor.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}",
+                $"{baseUrl}/ogc/tiles/tileMatrixSets/{descriptor.Id}",
+                "Dataset tileset metadata",
+                tileLimits,
+                descriptor,
+                advertiseVectorTiles);
+        }
     }
 
     private static IEnumerable<TileSetItem> BuildTileSetItems(int layerId, string? layerName, string baseUrl, TileLimits tileLimits)
     {
         var collectionId = layerId.ToString(CultureInfo.InvariantCulture);
 
-        // WebMercatorQuad
-        var wmHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{OgcTilesUtilities.WebMercatorQuadId}";
-        yield return BuildTileSetItemCore(
-            string.IsNullOrWhiteSpace(layerName) ? $"Layer {layerId}" : $"{layerName} ({OgcTilesUtilities.WebMercatorQuadId})",
-            wmHref,
-            $"{wmHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
-            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WebMercatorQuadId}",
-            "Tileset metadata",
-            tileLimits,
-            OgcTilesUtilities.WebMercatorQuadId);
-
-        // WorldCRS84Quad
-        var geoHref = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{OgcTilesUtilities.WorldCrs84QuadId}";
-        yield return BuildTileSetItemCore(
-            string.IsNullOrWhiteSpace(layerName) ? $"Layer {layerId}" : $"{layerName} ({OgcTilesUtilities.WorldCrs84QuadId})",
-            geoHref,
-            $"{geoHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
-            $"{baseUrl}/ogc/tiles/tileMatrixSets/{OgcTilesUtilities.WorldCrs84QuadId}",
-            "Tileset metadata",
-            tileLimits,
-            OgcTilesUtilities.WorldCrs84QuadId);
+        foreach (var descriptor in OgcTileMatrixSetDescriptors.Supported)
+        {
+            var href = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{descriptor.Id}";
+            yield return BuildTileSetItemCore(
+                string.IsNullOrWhiteSpace(layerName) ? $"Layer {layerId}" : $"{layerName} ({descriptor.Id})",
+                href,
+                $"{href}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
+                $"{baseUrl}/ogc/tiles/tileMatrixSets/{descriptor.Id}",
+                "Tileset metadata",
+                tileLimits,
+                descriptor);
+        }
     }
 
     private static TileSetItem BuildTileSetItemCore(
@@ -840,14 +838,18 @@ internal static class TilesEndpoints
         string tileMatrixSetHref,
         string selfLinkTitle,
         TileLimits tileLimits,
-        string tileMatrixSetId)
+        OgcTileMatrixSetDescriptor descriptor,
+        bool advertiseVectorTiles = true)
     {
-        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
-        var crs = isGeographic ? OgcTilesUtilities.Crs84 : OgcTilesUtilities.WebMercatorCrs;
-        var uri = isGeographic ? OgcTilesUtilities.WorldCrs84QuadUri : OgcTilesUtilities.WebMercatorQuadUri;
+        var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(descriptor.Id);
         var matrixLimits = isGeographic
             ? OgcTilesUtilities.BuildWorldCrs84QuadLimits(tileLimits)
             : BuildTileMatrixSetLimits(tileLimits);
+        var itemMediaType = advertiseVectorTiles ? MediaTypes.Mvt : MediaTypes.Png;
+        var itemTitle = advertiseVectorTiles ? "Vector tiles" : "PNG tiles";
+        var itemHref = advertiseVectorTiles
+            ? tileTemplate
+            : $"{tileTemplate}{(tileTemplate.Contains('?', StringComparison.Ordinal) ? "&" : "?")}f=png";
 
         var links = ImmutableArray.Create(
             Link.Create(
@@ -857,18 +859,10 @@ internal static class TilesEndpoints
                 title: selfLinkTitle),
             new Link
             {
-                Href = tileTemplate,
+                Href = itemHref,
                 Rel = "item",
-                Type = MediaTypes.Mvt,
-                Title = "Vector tiles",
-                Templated = true
-            },
-            new Link
-            {
-                Href = tileTemplate,
-                Rel = "item",
-                Type = MediaTypes.Png,
-                Title = "Raster tiles",
+                Type = itemMediaType,
+                Title = itemTitle,
                 Templated = true
             },
             Link.Create(
@@ -880,10 +874,10 @@ internal static class TilesEndpoints
         return new TileSetItem
         {
             Title = title,
-            DataType = "map",
-            Crs = crs,
-            TileMatrixSetId = tileMatrixSetId,
-            TileMatrixSetUri = uri,
+            DataType = advertiseVectorTiles ? "vector" : "map",
+            Crs = descriptor.Crs,
+            TileMatrixSetId = descriptor.Id,
+            TileMatrixSetUri = descriptor.Uri,
             TileMatrixSetLimits = matrixLimits,
             Links = links
         };
@@ -898,14 +892,23 @@ internal static class TilesEndpoints
         string geodataTitle,
         string? description,
         TileLimits tileLimits,
-        string tileMatrixSetId)
+        string tileMatrixSetId,
+        bool advertiseVectorTiles = true)
     {
+        if (!OgcTileMatrixSetDescriptors.TryGet(tileMatrixSetId, out var descriptor))
+        {
+            throw new InvalidOperationException($"Unsupported tile matrix set '{tileMatrixSetId}'.");
+        }
+
         var isGeographic = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId);
-        var crs = isGeographic ? OgcTilesUtilities.Crs84 : OgcTilesUtilities.WebMercatorCrs;
-        var uri = isGeographic ? OgcTilesUtilities.WorldCrs84QuadUri : OgcTilesUtilities.WebMercatorQuadUri;
         var matrixLimits = isGeographic
             ? OgcTilesUtilities.BuildWorldCrs84QuadLimits(tileLimits)
             : BuildTileMatrixSetLimits(tileLimits);
+        var itemMediaType = advertiseVectorTiles ? MediaTypes.Mvt : MediaTypes.Png;
+        var itemTitle = advertiseVectorTiles ? "Vector tiles" : "PNG tiles";
+        var itemHref = advertiseVectorTiles
+            ? tileTemplate
+            : $"{tileTemplate}{(tileTemplate.Contains('?', StringComparison.Ordinal) ? "&" : "?")}f=png";
 
         var links = ImmutableArray.Create(
             Link.Create(
@@ -915,18 +918,10 @@ internal static class TilesEndpoints
                 title: $"{titleBase} tileset"),
             new Link
             {
-                Href = tileTemplate,
+                Href = itemHref,
                 Rel = "item",
-                Type = MediaTypes.Mvt,
-                Title = "Vector tiles",
-                Templated = true
-            },
-            new Link
-            {
-                Href = tileTemplate,
-                Rel = "item",
-                Type = MediaTypes.Png,
-                Title = "Raster tiles",
+                Type = itemMediaType,
+                Title = itemTitle,
                 Templated = true
             },
             Link.Create(
@@ -945,13 +940,15 @@ internal static class TilesEndpoints
         {
             Title = $"{titleBase} ({tileMatrixSetId})",
             Description = description,
-            DataType = "map",
-            Crs = crs,
+            DataType = advertiseVectorTiles ? "vector" : "map",
+            Crs = descriptor.Crs,
             TileMatrixSetId = tileMatrixSetId,
-            TileMatrixSetUri = uri,
+            TileMatrixSetUri = descriptor.Uri,
             TileMatrixSetLimits = matrixLimits,
             Links = links,
-            MediaTypes = ImmutableArray.Create(MediaTypes.Mvt, MediaTypes.Png)
+            MediaTypes = advertiseVectorTiles
+                ? ImmutableArray.Create(MediaTypes.Mvt, MediaTypes.Png)
+                : ImmutableArray.Create(MediaTypes.Png)
         };
     }
 

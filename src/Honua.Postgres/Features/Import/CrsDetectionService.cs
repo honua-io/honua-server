@@ -270,22 +270,16 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         {
             await using var connection = await OpenConnectionAsync();
 
-            // Try to find exact or similar WKT match
-            // Note: This is a simplified approach - full WKT comparison is complex
+            // Fail closed on WKT matching. Compare normalized WKT text only; do not use
+            // prefix/substring heuristics that can map one projected CRS to another.
             using var command = new NpgsqlCommand(@"
                 SELECT srid
                 FROM spatial_ref_sys
-                WHERE srtext = @wkt OR srtext ILIKE @pattern
-                ORDER BY CASE
-                    WHEN srtext = @wkt THEN 1
-                    ELSE 2
-                END
+                WHERE lower(regexp_replace(srtext, '\s+', '', 'g')) =
+                      lower(regexp_replace(@wkt, '\s+', '', 'g'))
                 LIMIT 1", connection);
 
-            // Create a simplified search pattern
-            var pattern = $"%{wktContent.Substring(0, Math.Min(50, wktContent.Length))}%";
             command.Parameters.AddWithValue("@wkt", wktContent);
-            command.Parameters.AddWithValue("@pattern", pattern);
 
             var result = await command.ExecuteScalarAsync();
             return result as int?;

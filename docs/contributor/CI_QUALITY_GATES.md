@@ -21,7 +21,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## CI Gate (Required Status Check)
 
-The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`changes`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`, `llm-architecture-review`, `architecture-gate`). Configure it as a required status check in branch protection to gate PRs on a single job.
+The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`, `llm-architecture-review`, `architecture-gate`). Configure it as a required status check in branch protection to gate PRs on a single job.
 
 ## Quality Gates
 

@@ -7,11 +7,19 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Import;
 
@@ -292,6 +300,58 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState()
+    {
+        var distributedCache = new TrackingDistributedCache();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        database.ListLeftPushAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            .Returns(_ => Task.FromException<long>(new RedisConnectionException(ConnectionFailureType.UnableToResolvePhysicalConnection, "queue unavailable")));
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>())
+            .Returns(database);
+
+        var isolatedFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDistributedCache>();
+                services.AddSingleton<IDistributedCache>(distributedCache);
+                services.RemoveAll<IDistributedImportJobManager>();
+                services.AddSingleton<IDistributedImportJobManager>(sp => new RedisImportJobManager(
+                    sp.GetRequiredService<IUniversalProgressStore>(),
+                    distributedCache,
+                    sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
+                    new StaticHostEnvironment("Production"),
+                    redis));
+            });
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var response = await isolatedFixture.Client.PostAsJsonAsync(
+                "/api/v1/admin/import/geoservices/start",
+                new
+                {
+                    ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                    LayerId = 0,
+                    TableName = "test_geoservices_queue_rollback"
+                });
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Distributed import queue is temporarily unavailable");
+
+            distributedCache.Keys.Should().NotContain(key => key.StartsWith("geoservices:import:request:", StringComparison.Ordinal));
+            distributedCache.Keys.Should().NotContain(key => key.StartsWith("universal:progress:", StringComparison.Ordinal));
+            distributedCache.Keys.Should().NotContain(key => key.StartsWith("universal:type:", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Start_WithUnresolvableHost_ReturnsBadRequest()
     {
         var request = new
@@ -502,4 +562,75 @@ internal sealed class NoopProgressStore<T> : IDistributedProgressStore<T> where 
     public Task DeleteProgressAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<IReadOnlyList<string>> GetActiveJobIdsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+}
+
+internal sealed class TrackingDistributedCache : IDistributedCache
+{
+    private readonly Dictionary<string, byte[]> _entries = new(StringComparer.Ordinal);
+    private readonly object _gate = new();
+
+    public IReadOnlyCollection<string> Keys
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _entries.Keys.ToArray();
+            }
+        }
+    }
+
+    public byte[]? Get(string key)
+    {
+        lock (_gate)
+        {
+            return _entries.TryGetValue(key, out var value) ? value.ToArray() : null;
+        }
+    }
+
+    public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        => Task.FromResult(Get(key));
+
+    public void Refresh(string key)
+    {
+    }
+
+    public Task RefreshAsync(string key, CancellationToken token = default)
+        => Task.CompletedTask;
+
+    public void Remove(string key)
+    {
+        lock (_gate)
+        {
+            _entries.Remove(key);
+        }
+    }
+
+    public Task RemoveAsync(string key, CancellationToken token = default)
+    {
+        Remove(key);
+        return Task.CompletedTask;
+    }
+
+    public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+    {
+        lock (_gate)
+        {
+            _entries[key] = value.ToArray();
+        }
+    }
+
+    public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+    {
+        Set(key, value, options);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class StaticHostEnvironment(string environmentName) : IHostEnvironment
+{
+    public string EnvironmentName { get; set; } = environmentName;
+    public string ApplicationName { get; set; } = nameof(GeoservicesImportEndpointTests);
+    public string ContentRootPath { get; set; } = Directory.GetCurrentDirectory();
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
 }

@@ -57,7 +57,7 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await _handler.GetMapTileSetsAsync(1);
 
-        result.Should().BeOfType<Ok<TileSet[]>>();
+        result.Should().BeOfType<Ok<TileSetsList>>();
     }
 
     [UnitTest]
@@ -69,9 +69,9 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await _handler.GetMapTileSetsAsync(1);
 
-        var okResult = result as Ok<TileSet[]>;
+        var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
-        okResult!.Value.Should().HaveCount(2);
+        okResult!.Value!.Tilesets.Should().HaveCount(2);
     }
 
     [UnitTest]
@@ -83,8 +83,8 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await _handler.GetMapTileSetsAsync(1);
 
-        var okResult = result as Ok<TileSet[]>;
-        okResult!.Value.Should().Contain(ts =>
+        var okResult = result as Ok<TileSetsList>;
+        okResult!.Value!.Tilesets.Should().Contain(ts =>
             ts.Crs == "http://www.opengis.net/def/crs/EPSG/0/3857");
     }
 
@@ -97,8 +97,8 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await _handler.GetMapTileSetsAsync(1);
 
-        var okResult = result as Ok<TileSet[]>;
-        okResult!.Value.Should().Contain(ts =>
+        var okResult = result as Ok<TileSetsList>;
+        okResult!.Value!.Tilesets.Should().Contain(ts =>
             ts.Crs == "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
     }
 
@@ -111,9 +111,9 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await _handler.GetMapTileSetsAsync(1);
 
-        var okResult = result as Ok<TileSet[]>;
-        okResult!.Value.Should().Contain(ts => ts.TileMatrixSetId == "WebMercatorQuad");
-        okResult!.Value.Should().Contain(ts => ts.TileMatrixSetId == "WorldCRS84Quad");
+        var okResult = result as Ok<TileSetsList>;
+        okResult!.Value!.Tilesets.Should().Contain(ts => ts.TileMatrixSetId == "WebMercatorQuad");
+        okResult!.Value!.Tilesets.Should().Contain(ts => ts.TileMatrixSetId == "WorldCRS84Quad");
     }
 
     [UnitTest]
@@ -126,9 +126,10 @@ public class OgcMapsTileSetHandlerTests
         var context = CreateOgcMapsContext();
         var result = await _handler.GetMapTileSetsAsync(1, context: context);
 
-        var okResult = result as Ok<TileSet[]>;
+        var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
-        foreach (var tileSet in okResult!.Value!)
+        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
+        foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
             {
@@ -147,14 +148,46 @@ public class OgcMapsTileSetHandlerTests
         var context = CreateOgcMapsContext();
         var result = await _handler.GetMapTileSetsAsync(1, context: context);
 
-        var okResult = result as Ok<TileSet[]>;
+        var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
-        foreach (var tileSet in okResult!.Value!)
+        foreach (var tileSet in okResult!.Value!.Tilesets)
         {
             tileSet.Links.Should().Contain(link =>
                 link.Rel == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
                 "each tileset should include a tiling-scheme link");
         }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetAsync_ValidLayer_ReturnsIndividualTileset()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var result = await _handler.GetMapTileSetAsync(1, "WebMercatorQuad");
+
+        var okResult = result as Ok<TileSet>;
+        okResult.Should().NotBeNull();
+        okResult!.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        okResult.Value.Links.Should().Contain(link => link.Rel == "self");
+        okResult.Value.Links.Should().Contain(link => link.Rel == "item");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetAsync_ValidLayer_ItemLinkIsMarkedTemplated()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var result = await _handler.GetMapTileSetAsync(1, "WebMercatorQuad");
+
+        var okResult = result as Ok<TileSet>;
+        okResult.Should().NotBeNull();
+        okResult!.Value!.Links.Should().ContainSingle(link =>
+            link.Rel == "item" &&
+            link.Templated == true);
     }
 
     [UnitTest]

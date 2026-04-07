@@ -49,7 +49,7 @@ internal static class ODataServiceCollectionExtensions
                 limitsOptions.Edits,
                 sp.GetRequiredService<ODataValidationService>(),
                 sp.GetRequiredService<IETagService>(),
-                sp.GetRequiredService<IFeatureChangeEventPublisher>());
+                sp.GetRequiredService<FeatureMutationEventService>());
         });
 
         services.AddScoped<ODataMetadataHandler>();

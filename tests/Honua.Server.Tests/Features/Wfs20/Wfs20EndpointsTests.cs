@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -45,6 +46,10 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain(">TRUE<");
         content.Should().Contain("SpatialOperator name=\"Intersects\"");
         content.Should().Contain("SpatialOperator name=\"DWithin\"");
+        Regex.IsMatch(
+            content,
+            "name=\"ImplementsResultPaging\"[\\s\\S]*?<[^>]*DefaultValue>TRUE</",
+            RegexOptions.CultureInvariant).Should().BeTrue(content);
     }
 
     [IntegrationTest]
@@ -323,10 +328,10 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             "/wfs?SERVICE=WFS&REQUEST=ListStoredQueries&VERSION=2.0.0");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ExceptionReport");
-        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
     }
 
     [IntegrationTest]
@@ -390,6 +395,50 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var responseBody = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         responseBody.Should().Contain("WFS_Capabilities");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    public async Task Wfs_Post_InvalidXmlBody_ReturnsSanitizedExceptionReport()
+    {
+        const string requestBody = """
+            <wfs:GetCapabilities service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0">
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        responseBody.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        responseBody.Should().Contain("Invalid WFS XML request body.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_Post_GetFeature_WithMultipleQueries_ReturnsOperationNotSupported()
+    {
+        const string requestBody = """
+            <wfs:GetFeature service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0">
+              <wfs:Query typeNames="test_layer" />
+              <wfs:Query typeNames="test_layer" />
+            </wfs:GetFeature>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        responseBody.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+        responseBody.Should().Contain("locator=\"Query\"");
     }
 
     [IntegrationTest]

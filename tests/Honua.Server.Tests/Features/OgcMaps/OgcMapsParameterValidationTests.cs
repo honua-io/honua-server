@@ -320,9 +320,11 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
         {
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
             var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            json.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+            json.RootElement.TryGetProperty("tilesets", out var tileSetsElement).Should().BeTrue();
+            tileSetsElement.ValueKind.Should().Be(JsonValueKind.Array);
 
-            var tileSets = json.RootElement.EnumerateArray().ToArray();
+            var tileSets = tileSetsElement.EnumerateArray().ToArray();
             tileSets.Should().HaveCountGreaterOrEqualTo(1);
 
             foreach (var tileSet in tileSets)
@@ -349,7 +351,8 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
         if (response.StatusCode == HttpStatusCode.OK)
         {
             var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var tileSets = json.RootElement.EnumerateArray().ToArray();
+            json.RootElement.TryGetProperty("tilesets", out var tileSetsElement).Should().BeTrue();
+            var tileSets = tileSetsElement.EnumerateArray().ToArray();
 
             var crsValues = tileSets.Select(ts => ts.GetProperty("crs").GetString()).ToArray();
 

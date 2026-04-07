@@ -25,6 +25,7 @@ namespace Honua.Server.Features.OgcMaps.Models;
 [JsonSerializable(typeof(MapCollectionInfo))]
 [JsonSerializable(typeof(MapStyle))]
 [JsonSerializable(typeof(DatasetMap))]
+[JsonSerializable(typeof(TileSetsList))]
 [JsonSerializable(typeof(TileSet))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(double[][]))]

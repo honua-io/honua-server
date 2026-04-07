@@ -429,6 +429,47 @@ internal static partial class FeatureServerEndpoints
                 Deletes = entry.Deletes
             };
 
+            if (!TryApplyEditOptionsFromQuery(request, context.Request.Query, out var queryError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid service applyEdits request",
+                    [queryError ?? "Invalid query parameters."]);
+            }
+
+            if (!TryValidateOutputFormat(request.F, JsonOnlyFormats, out var normalizedFormat, out var formatError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid service applyEdits request",
+                    [formatError ?? "Output format is not supported."]);
+            }
+
+            request.F = normalizedFormat;
+
+            if (request.UseGlobalIds)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "useGlobalIds is not supported",
+                    ["Set useGlobalIds to false and supply objectIds in attributes."]);
+            }
+
+            if (request.ReturnEditMoment)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "returnEditMoment is not supported");
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.GdbVersion))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "gdbVersion is not supported");
+            }
+
+            if (request.Attachments is { Length: > 0 })
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "attachments edits are not supported");
+            }
+
             var layerResult = await editsHandler.HandleApplyEditsAsync(
                 serviceId,
                 entry.Id,

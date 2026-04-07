@@ -383,6 +383,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 expand,
                 useSkipToken,
                 compute,
+                format,
                 totalCount,
                 ODataUtilityService.ShouldIncludeContext(context.Request, format),
                 computeExpressions,
@@ -435,6 +436,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         string? expand,
         bool useSkipToken,
         string? compute,
+        string? format,
         long? totalCount,
         bool includeContext,
         System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
@@ -514,7 +516,8 @@ internal sealed partial class ODataStreamingQueryHandler(
                 count,
                 expand,
                 useSkipToken,
-                compute);
+                compute,
+                format);
             writer.WriteString("@odata.nextLink", nextLink);
         }
         else

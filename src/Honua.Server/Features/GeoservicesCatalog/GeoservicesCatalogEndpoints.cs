@@ -92,13 +92,14 @@ internal static class GeoservicesCatalogEndpoints
 
             try
             {
-                if (await ServiceContainsRastersAsync(visibleLayers, rasterStore, cancellationToken))
+                var imageServerLayerId = await GetImageServerLayerIdAsync(visibleLayers, rasterStore, cancellationToken);
+                if (imageServerLayerId.HasValue)
                 {
                     entries.Add(new ServiceDirectoryEntry
                     {
                         Name = service.Name,
                         Type = "ImageServer",
-                        Url = $"{baseUrl}/rest/services/{escapedName}/ImageServer"
+                        Url = $"{baseUrl}/rest/services/{imageServerLayerId.Value}/ImageServer"
                     });
                 }
             }
@@ -140,7 +141,7 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }
 
-    private static async Task<bool> ServiceContainsRastersAsync(
+    private static async Task<int?> GetImageServerLayerIdAsync(
         IReadOnlyList<LayerDefinition> layers,
         IRasterStore rasterStore,
         CancellationToken cancellationToken)
@@ -150,11 +151,11 @@ internal static class GeoservicesCatalogEndpoints
             var rasters = await rasterStore.ListRastersAsync(layer.Id, cancellationToken);
             if (rasters.Length > 0)
             {
-                return true;
+                return layer.Id;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static bool IsSupportedFormat(string? format)

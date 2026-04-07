@@ -685,6 +685,32 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_PostRequest_HonorsQueryStringParameters()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("where", "1=1"),
+            new KeyValuePair<string, string>("f", "json")
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?returnGeometry=false",
+            payload);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            responseContent,
+            FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().AllSatisfy(feature => feature.Geometry.Should().BeNull());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
     public async Task ServiceQueryFeatures_GetWithMalformedLayersDelimiter_ReturnsBadRequest()
     {
@@ -2243,6 +2269,34 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("Unsupported Media Type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_WithUseGlobalIdsEnabled_ReturnsBadRequest()
+    {
+        var request = """
+            [
+              {
+                "id": 0,
+                "adds": [
+                  {
+                    "attributes": { "name": "Global id test" }
+                  }
+                ]
+              }
+            ]
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true",
+            new StringContent(request, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("useGlobalIds is not supported");
     }
 
     [IntegrationTest]

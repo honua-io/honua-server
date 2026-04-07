@@ -58,7 +58,7 @@ public sealed class DistributedReplicaStoreTests
 
     [UnitTest]
     [Operation(Operations.ExtractChanges)]
-    public async Task GetAsync_WhenDistributedCacheThrows_ReturnsFallbackReplica()
+    public async Task GetAsync_WhenDistributedCacheThrows_DoesNotReturnNodeLocalFallback()
     {
         var cache = new ThrowingDistributedCache(
             throwOnGetAsync: true,
@@ -72,14 +72,12 @@ public sealed class DistributedReplicaStoreTests
         await store.SetAsync(replica);
         var result = await store.GetAsync(replica.ReplicaId);
 
-        result.Should().NotBeNull();
-        result!.ReplicaId.Should().Be(replica.ReplicaId);
-        result.ServiceId.Should().Be("svc-c");
+        result.Should().BeNull();
     }
 
     [UnitTest]
     [Operation(Operations.UnRegisterReplica)]
-    public async Task RemoveAsync_WhenDistributedCacheThrows_RemovesFallbackAndReturnsTrue()
+    public async Task RemoveAsync_WhenDistributedCacheThrows_ReturnsFalseWithoutNodeLocalFallback()
     {
         var cache = new ThrowingDistributedCache(
             throwOnGetAsync: true,
@@ -93,7 +91,7 @@ public sealed class DistributedReplicaStoreTests
         await store.SetAsync(replica);
 
         var removed = await store.RemoveAsync(replica.ReplicaId);
-        removed.Should().BeTrue();
+        removed.Should().BeFalse();
 
         var shouldBeMissing = await store.GetAsync(replica.ReplicaId);
         shouldBeMissing.Should().BeNull();

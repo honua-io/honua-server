@@ -20,9 +20,11 @@ namespace Honua.Server.Tests.Features.Caching;
 [Protocol(Protocols.TestQuality)]
 public sealed class OutputCacheInvalidationServiceTests
 {
+    private static string ScopedKey(string key) => CacheScopeKeys.EnsureScoped(key, null);
+
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateServiceCatalogAsync_RemovesMetadataKeysAndPatterns()
+    public async Task InvalidateServiceCatalogAsync_RemovesMetadataKeysWithoutWildcardScans()
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
@@ -41,22 +43,13 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received().EvictByTagAsync("ogc-maps", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("stac-metadata", Arg.Any<CancellationToken>());
 
-        await metadataCache.Received().RemoveAsync("services:all", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveAsync("layers:all", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveAsync("service:testservice", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveAsync("service:exists:testservice", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveAsync("layer:1", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveAsync("layer:2", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("relationship:1:*", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("relationship:2:*", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:services:all", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:layers:all", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:service:testservice", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:service:exists:testservice", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:layer:1", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:layer:2", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:relationship:1:*", Arg.Any<CancellationToken>());
-        await metadataCache.Received().RemoveByPatternAsync("scope:*:relationship:2:*", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveAsync(ScopedKey("services:all"), Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveAsync(ScopedKey("layers:all"), Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveAsync(ScopedKey("service:testservice"), Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveAsync(ScopedKey("service:exists:testservice"), Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveAsync(ScopedKey("layer:1"), Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveAsync(ScopedKey("layer:2"), Arg.Any<CancellationToken>());
+        await metadataCache.DidNotReceive().RemoveByPatternAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:testservice:*", Arg.Any<CancellationToken>());

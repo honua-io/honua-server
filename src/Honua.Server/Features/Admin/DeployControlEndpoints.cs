@@ -20,6 +20,9 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class DeployControlEndpoints
 {
+    private const string DeployControlUnavailableMessage = "Deploy control is temporarily unavailable.";
+    private const string DeployConflictMessage = "The requested deploy action conflicts with the current operation state.";
+
     public static void MapDeployControlEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/deploy")
@@ -201,19 +204,18 @@ internal static class DeployControlEndpoints
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse, statusCode: StatusCodes.Status201Created);
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceConflictException)
         {
-            if (ex is ResourceConflictException)
-            {
-                return ProblemDetailsHelpers.CreateAdminProblem(
-                    StatusCodes.Status409Conflict,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
-                    ex.Message);
-            }
-
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                DeployConflictMessage);
+        }
+        catch (InvalidOperationException)
+        {
             return Results.Problem(
                 title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                detail: ex.Message,
+                detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -247,11 +249,11 @@ internal static class DeployControlEndpoints
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Problem(
                 title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                detail: ex.Message,
+                detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -281,18 +283,18 @@ internal static class DeployControlEndpoints
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
         }
-        catch (ResourceConflictException ex)
+        catch (ResourceConflictException)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status409Conflict,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
-                ex.Message);
+                DeployConflictMessage);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Problem(
                 title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                detail: ex.Message,
+                detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -322,11 +324,11 @@ internal static class DeployControlEndpoints
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             return Results.Problem(
                 title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                detail: ex.Message,
+                detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }

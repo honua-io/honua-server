@@ -3,11 +3,23 @@
 
 using System.IO.Compression;
 using System.Net;
+using System.Threading.Channels;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.Export;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Export;
@@ -226,5 +238,58 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             "/api/v1/admin/services/test/layers/999/export?format=csv");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    public async Task Export_AsyncProgressPersistenceFails_DoesNotQueueHeadlessBackgroundJob()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader
+            .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(50_001L);
+
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        progressStore
+            .When(store => store.SetProgressAsync(
+                Arg.Any<string>(),
+                Arg.Any<IOperationProgress>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("Simulated progress-store failure."));
+
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        var exportChannel = Channel.CreateUnbounded<string>();
+        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureReader>();
+                services.AddSingleton(featureReader);
+                services.RemoveAll<IUniversalProgressStore>();
+                services.AddSingleton(progressStore);
+                services.RemoveAll<ICloudFileStorage>();
+                services.AddSingleton(cloudStorage);
+                services.RemoveAll<IDistributedCache>();
+                services.AddSingleton<IDistributedCache>(requestCache);
+                services.RemoveAll<Channel<string>>();
+                services.AddSingleton(exportChannel);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                "/api/v1/admin/services/test/layers/0/export?format=csv");
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            exportChannel.Reader.TryRead(out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 }
