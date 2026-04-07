@@ -131,7 +131,7 @@ scenario, and the evidence path that shows up in the per-lane
 | Style source | drawingInfo (FS) / inline ol.style.Stroke (OGC vector tiles) / QgsLineSymbol (PyQGIS) |
 | Expected color | `#1a1a2e` (declared dark stroke) |
 | Pass criterion | At least 12 pixels of the declared stroke color along the line geometry |
-| Lanes substantiating | OpenLayers records the marker stroke color from the existing fixture (point markers carry an outline that exercises the same code path); a real line fixture is the closing follow-on |
+| Lanes substantiating | OpenLayers and PyQGIS record the marker outline color from the existing fixture (point markers carry an outline that exercises the same code path). Both lanes record `skip` when the measured pixel count falls below threshold so a missing line fixture is visible in the rollup. A real line fixture is the closing follow-on. |
 
 ### CERT-RNDR-FIL-01 — Polygon fill
 
@@ -143,7 +143,7 @@ scenario, and the evidence path that shows up in the per-lane
 | Style source | drawingInfo (FS) / ol.style.Fill (OGC vector tiles) / QgsFillSymbol (PyQGIS) |
 | Expected color | `rgba(30, 100, 200, 0.6)` |
 | Pass criterion | At least 50 pixels matching the declared fill color within the lane-specific per-channel tolerance |
-| Lanes substantiating | OpenLayers records the marker fill color from the existing fixture (point markers carry a fill that exercises the fill assertion path); a real polygon fixture is the closing follow-on |
+| Lanes substantiating | OpenLayers and PyQGIS record the marker fill color from the existing fixture (point markers carry a fill that exercises the fill assertion path). Both lanes record `skip` when the measured pixel count falls below threshold so a missing polygon fixture is visible in the rollup. A real polygon fixture is the closing follow-on. |
 
 ### CERT-RNDR-LBL-01 — Label / text
 
@@ -286,3 +286,4 @@ a `Cache-Control: no-cache` override.
 | 1.0 | 2026-04-06 | Initial slice — six visual / style scenarios, lane-coverage table, geodesy lock, evidence path |
 | 1.1 | 2026-04-07 | Align `CERT-RNDR-URL-01` Protocols row with the matrix (FS, MVT); scope the release-ledger flip to `ogc-api-maps-and-static-rendering` only (WMS 1.3 / WMTS 1.0 remain `planned` pending a real WMS/WMTS client lane) |
 | 1.2 | 2026-04-07 | Reconcile `CERT-RNDR-FIL-01` pass criterion with the actual lane tolerances (PyQGIS `COLOR_TOLERANCE=35`, OpenLayers `30`/`40`); drop the stale `±10 RGB` pin on FIL-01 and document the lane-specific per-channel tolerance contract in `Tolerance Defaults` |
+| 1.3 | 2026-04-07 | Append PyQGIS to the `CERT-RNDR-LIN-01` and `CERT-RNDR-FIL-01` `Lanes substantiating` rows so the per-scenario rows match the lane coverage table; clarify the soft-skip behavior on threshold miss |

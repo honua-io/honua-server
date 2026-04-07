@@ -303,6 +303,12 @@ def _count_matching_pixels(
     dependency just for the visual / style slice. PyQt is already a
     transitive of qgis.PyQt and is therefore available wherever this test
     can run.
+
+    Pulls a row at a time via ``constScanLine`` so each pixel is just a
+    Python ``bytes`` lookup rather than a Python↔Qt round trip through
+    ``QImage.pixelColor``. The image is converted to ``Format_RGBA8888``
+    so the in-memory byte order is the documented R, G, B, A regardless
+    of the platform's native QImage format.
     """
     from qgis.PyQt.QtCore import QByteArray
     from qgis.PyQt.QtGui import QImage
@@ -311,19 +317,23 @@ def _count_matching_pixels(
     image.loadFromData(QByteArray(png_bytes), "PNG")
     if image.isNull():
         return 0
+    image = image.convertToFormat(QImage.Format_RGBA8888)
     width = image.width()
     height = image.height()
     target_r, target_g, target_b = target_rgb
     matched = 0
     for y in range(height):
+        scan_line = image.constScanLine(y)
+        scan_line.setsize(width * 4)
+        row = bytes(scan_line)
         for x in range(width):
-            color = image.pixelColor(x, y)
-            if color.alpha() < 32:
+            offset = x * 4
+            if row[offset + 3] < 32:
                 continue
             if (
-                abs(color.red() - target_r) <= tolerance
-                and abs(color.green() - target_g) <= tolerance
-                and abs(color.blue() - target_b) <= tolerance
+                abs(row[offset] - target_r) <= tolerance
+                and abs(row[offset + 1] - target_g) <= tolerance
+                and abs(row[offset + 2] - target_b) <= tolerance
             ):
                 matched += 1
     return matched

@@ -1,4 +1,4 @@
-import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from '@playwright/test/reporter';
+import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import { buildEnvelope, writeEvidence, type CertResult } from './evidence.js';
 
 /**

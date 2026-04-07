@@ -226,6 +226,19 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
         'OGC TileSetMetadata fetched and consumed by ol/source/OGCVectorTile; metadata document parsed successfully',
       evidenceRef: 'openlayers/rendering/render.spec.ts',
     });
+
+    // Hard-fail the Playwright test on a CERT-RNDR-SYM-01 regression so PR
+    // builds gate on the slice substantiation, not just the .cert.json
+    // envelope review at release time. The points-only seed reliably renders
+    // hundreds of marker fill pixels (radius=5 markers across 9 features),
+    // so the 25-pixel threshold has ample margin and is not a flake risk.
+    // The assertion runs after every slice ID has been recorded so the
+    // envelope captures the full measurement set even when this throws.
+    // CERT-RNDR-LIN-01 and CERT-RNDR-FIL-01 stay soft because the points
+    // fixture only substantiates them indirectly (marker outline / fill);
+    // they will become hard assertions once the slice's line / polygon
+    // fixture follow-on lands.
+    expect(symbolPixels).toBeGreaterThanOrEqual(25);
   } finally {
     evidence.write();
   }
