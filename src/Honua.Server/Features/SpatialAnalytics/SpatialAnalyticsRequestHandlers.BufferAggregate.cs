@@ -121,7 +121,9 @@ internal static partial class SpatialAnalyticsRequestHandlers
         var analyticsLimits = context.RequestServices
             .GetRequiredService<IOptions<LimitsOptions>>().Value.Analytics;
 
-        // distance (required, in meters by default).
+        // distance (required). Parsed as a non-negative number; the per-unit
+        // upper bound is enforced after we know the unit so callers cannot
+        // bypass MaxBufferDistanceMeters by switching to a larger unit.
         var distanceStr = GetValueString(values, SpatialAnalyticsParameters.BufferDistance);
         if (string.IsNullOrWhiteSpace(distanceStr) ||
             !double.TryParse(distanceStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance) ||
@@ -131,15 +133,6 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 "distance parameter is required",
                 [$"distance must be a non-negative number ≥ {BufferAggregateQuery.MinDistanceMeters}."]);
         }
-
-        if (distance > analyticsLimits.MaxBufferDistanceMeters)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid distance",
-                [$"distance must not exceed {analyticsLimits.MaxBufferDistanceMeters} meters."]);
-        }
-
-        activity?.SetTag("buffer.distance", distance);
 
         // unit (default: meters).
         var unitStr = GetValueString(values, SpatialAnalyticsParameters.BufferUnit);
@@ -178,6 +171,19 @@ internal static partial class SpatialAnalyticsRequestHandlers
                         ["unit must be one of: meters, kilometers, feet, miles."]);
             }
         }
+
+        // Cap the buffer in meters so non-meter units cannot bypass the limit
+        // (e.g. distance=80 unit=miles → ~128.7 km vs a 100 km cap).
+        var distanceInMeters = ConvertDistanceToMeters(distance, unit);
+        if (distanceInMeters > analyticsLimits.MaxBufferDistanceMeters)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid distance",
+                [$"distance must not exceed {analyticsLimits.MaxBufferDistanceMeters} meters (in the supplied unit)."]);
+        }
+
+        activity?.SetTag("buffer.distance", distance);
+        activity?.SetTag("buffer.distance_meters", distanceInMeters);
 
         // dissolve (default: true — one dissolved polygon per group).
         var dissolve = true;
@@ -283,4 +289,19 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
         return WriteAnalyticsResponse(response);
     }
+
+    /// <summary>
+    /// Converts a distance value to meters using the same factors the
+    /// PostgreSQL <c>GeometryProcessor.ConvertDistanceToMeters</c> uses, so the
+    /// server-side cap check stays in sync with what the SQL builder will
+    /// actually emit. Inlined to avoid a Postgres dependency from the slice.
+    /// </summary>
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) => unit switch
+    {
+        DistanceUnit.Meters => distance,
+        DistanceUnit.Feet => distance * 0.3048d,
+        DistanceUnit.Kilometers => distance * 1000d,
+        DistanceUnit.Miles => distance * 1609.344d,
+        _ => distance
+    };
 }

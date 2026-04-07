@@ -610,6 +610,30 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         content.Should().Contain("unit");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task QueryBufferAggregate_DistanceCapBypassByMiles_ReturnsBadRequest()
+    {
+        // 80 miles ≈ 128.7 km, which exceeds the default 100 km MaxBufferDistanceMeters
+        // cap. The cap must be enforced after unit conversion so non-meter units cannot
+        // be used to slip past the operator-configured limit.
+        var payload = JsonSerializer.Serialize(new
+        {
+            distance = 80,
+            unit = "miles",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("distance");
+    }
+
     // ---------- Density Binning ----------
 
     [IntegrationTest]

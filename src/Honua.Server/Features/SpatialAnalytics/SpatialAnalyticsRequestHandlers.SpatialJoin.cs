@@ -6,12 +6,12 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.SpatialAnalytics.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
@@ -64,6 +64,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             targetLayer!,
             serviceId,
             HonuaTelemetry.Protocols.FeatureServer,
+            ServiceProtocols.FeatureServer,
             logger,
             cancellationToken);
     }
@@ -100,6 +101,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             targetLayer!,
             serviceId: null,
             HonuaTelemetry.Protocols.OgcFeatures,
+            ServiceProtocols.OgcFeatures,
             logger,
             cancellationToken);
     }
@@ -110,6 +112,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         LayerDefinition targetLayer,
         string? serviceId,
         string protocol,
+        string catalogProtocol,
         ILogger? logger,
         CancellationToken cancellationToken)
     {
@@ -143,21 +146,23 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
         activity?.SetTag("spatialJoin.joinLayerId", joinLayerId);
 
-        // Resolve and authorize the join layer. The target layer was already
-        // validated by the REST/OGC entry point; here we check the join side too.
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var joinLayerValidation = await resourceValidator.ValidateLayerAsync(joinLayerId, cancellationToken);
+        // Resolve and authorize the join layer through the same shared pipeline
+        // used by the target. This pulls in the join layer's parent service so
+        // both the layer + service access policy AND the protocol-enabled gate
+        // are evaluated, matching design.md Q4 ("resolve the join layer through
+        // IResourceValidator exactly like the target"). Without this the caller
+        // could read any layer in the catalog as a join input, even when its
+        // parent service is disabled or has stricter access policy than the
+        // target.
+        var joinLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            joinLayerId,
+            scope: AccessScope.Read,
+            requiredProtocol: catalogProtocol,
+            cancellationToken: cancellationToken);
         if (!joinLayerValidation.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                joinLayerValidation.ErrorMessage ?? $"Join layer {joinLayerId} not found.");
-        }
-
-        var joinLayer = joinLayerValidation.Resource!;
-        var joinAccessError = AccessPolicyHelpers.RequireLayerAccess(context, joinLayer, service: null);
-        if (joinAccessError != null)
-        {
-            return joinAccessError;
+            return joinLayerValidation.ErrorResult!;
         }
 
         // Predicate (default: intersects).
