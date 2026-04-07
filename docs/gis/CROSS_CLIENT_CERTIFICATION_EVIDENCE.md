@@ -125,7 +125,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
-The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests run via Vitest but do not produce `.cert.json` evidence files until `wfs20` is formally added to the valid protocol set. Additional protocols (OData, MapServer) will produce evidence files once automated suites are added.
+The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests run via Vitest but do not produce `.cert.json` evidence files until `wfs20` is formally added to the valid protocol set. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, and Admin API evidence files. FeatureServer and OGC API Features files will be produced once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
@@ -180,6 +180,7 @@ This section describes how each evidence source will map to the evidence envelop
 |---|---|---|
 | Vitest JSON reporter | JS | Automated: map `describe`/`it` blocks to CERT-\* IDs via test name convention |
 | Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
+| Playwright cert reporter | JS (Esri Leaflet) | Automated: custom Playwright reporter extracts `[CERT-*]` and `[EL-EXT-*]` annotations from test titles and writes per-protocol envelopes for `featureserver` and `mapserver`. Uses `client_lane: "js"`. See [Esri Leaflet evidence note](#esri-leaflet-evidence-note) below. |
 | pytest markers | CLI | Planned: add `@pytest.mark.cert("CERT-CONN-01")` markers and map to result entries |
 | xUnit attributes | CLI | Planned: add `[Trait("CertId", "CERT-CONN-01")]` alongside existing `[Protocol]` attributes |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
@@ -239,6 +240,23 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
 }
 ```
 
+### Esri Leaflet Evidence Note
+
+The Esri Leaflet Playwright suite (`tests/js-browser/`) emits `client_lane: "js"` evidence envelopes — the same lane value as the Vitest JS suite. This is intentional: Esri Leaflet is a sub-lane of the JS lane in the [Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#esri-leaflet-browser-sub-lane), not a separate client tool.
+
+The reporter resolves `client_version` from the installed `esri-leaflet` package in `node_modules` and falls back to the semver range in `tests/js-browser/package.json` only when dependencies have not yet been installed.
+
+Evidence files are written to `tests/js-browser/evidence/` during test runs (not to the curated `docs/gis/certification-evidence/` directory). The Playwright cert reporter produces one envelope per protocol exercised:
+
+- `<run-id>-js-featureserver.cert.json` — FeatureServer common-core results + EL-EXT-\* extensions
+- `<run-id>-js-mapserver.cert.json` — MapServer common-core results (CERT-QFLT/PAGE/GEOM/ERRH-02 recorded as `not-applicable`) + EL-EXT-02/EL-EXT-04 extensions
+
+The reporter seeds the full 18 common-core CERT-\* IDs into each envelope. FeatureServer cases that the browser suite does not currently exercise are recorded as `skip`.
+
+The reporter skips evidence emission when the run is interrupted, timed out, or when no tests passed or failed (setup abort guard).
+
+To distinguish Esri Leaflet evidence from Vitest JS evidence in a shared evidence directory, check for the presence of `EL-EXT-*` entries in the `extensions` array. A future follow-on may introduce a dedicated `js-esri-leaflet` client lane value if disambiguation at the envelope level becomes necessary.
+
 ### MapLibre MVT Manual Workflow
 
 MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT-02 are covered by the Playwright headless browser test (`render.spec.ts`), and MVT tile metadata/discovery tests run via Vitest. This manual workflow remains useful for JS-EXT-01 (PBF decode fidelity) and any visual verification beyond pixel-diff assertions.
@@ -268,3 +286,5 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
+| 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
+| 1.0.11 | 2026-04-03 | Clarify Esri Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |

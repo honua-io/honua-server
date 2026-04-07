@@ -24,7 +24,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [Theory]
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
     [InlineData("returnExceededLimitFeatures=true", "returnExceededLimitFeatures")]
-    [InlineData("resultType=tile", "resultType")]
     [InlineData("having=1=1", "having")]
     [InlineData("sqlFormat=standard", "sqlFormat")]
     [InlineData("gdbVersion=sde.DEFAULT", "gdbVersion")]
@@ -40,6 +39,22 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported query parameters").And.Contain(expectedToken);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithTileResultType_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&where=1%3D1&resultType=tile");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
     }
 
     [IntegrationTest]

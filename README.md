@@ -67,8 +67,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Protocol | Endpoint | Clients |
 |---|---|---|
 | GeoServices REST Catalog | `/rest/services` and `/rest/info` | ArcGIS clients, service discovery tooling |
-| GeoServices REST FeatureServer | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri SDKs, ArcGIS Online |
-| GeoServices REST MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri map clients |
+| GeoServices REST FeatureServer | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri Leaflet, Esri SDKs, ArcGIS Online |
+| GeoServices REST MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri Leaflet, Esri map clients |
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
 | STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |

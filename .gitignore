@@ -283,6 +283,10 @@ benchmarks/**/BenchmarkDotNet.Artifacts/
 # Coverage
 coverage*/
 
+# Esri Leaflet browser test artifacts (CI uploads these)
+tests/js-browser/evidence/
+tests/js-browser/test-results/
+
 # Local runtime/test artifacts
 tmp/
 src/Honua.Server/tmp/

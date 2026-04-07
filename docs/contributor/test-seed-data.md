@@ -75,7 +75,7 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 
 | File | Purpose | Applied by |
 |------|---------|------------|
-| `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and deterministic `test_service` + layer 0 feature seed data | All CI integration-test jobs (`js-integration-tests`, `mcp-certification`, `mcp-llm-smoke`) |
+| `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and deterministic `test_service` + layer 0 feature seed data | All CI integration-test jobs (`js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `mcp-llm-smoke`) |
 | `tests/seed/client-compat-v1.sql` | Versioned client compatibility certification seed snapshot; canonical source for desktop/BI smoke evidence and the Python STAC client compatibility lane | `windows-client-compat-nightly.yml`, `tests/python/stac_client` |
 | `tests/seed/mcp.yaml` | MCP certification data (second service, polygon layer, deterministic features) | CI `mcp-certification` and `mcp-llm-smoke` jobs |
 | `tests/seed/apply-yaml-seed.sh` | Extracts SQL from a YAML seed file with a top-level `sql:` key and applies via `psql` | CI `mcp-certification` and `mcp-llm-smoke` jobs |
