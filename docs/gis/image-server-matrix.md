@@ -218,14 +218,17 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 | `pixelSizeX`, `pixelSizeY` | Implemented | Calculated from primary raster dimensions and extent. |
 | `bandCount`, `pixelType` | Implemented | Derived from the primary raster. |
 | `minValues`, `maxValues`, `meanValues`, `stdvValues` | Implemented | Derived from raster statistics for the primary raster. |
-| `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Mensuration,Pixels,Statistics`. |
+| `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Mensuration,Pixels,Statistics,Tilemap`. |
 | `maxImageHeight`, `maxImageWidth`, `maxRecordCount` | Implemented | Static Honua metadata limits. |
+| `singleFusedMapCache`, `cacheType` | Implemented | Always reports `true` / `Map` to advertise the rendered tile cache surface. |
+| `tileInfo` | Implemented | Generated from a fixed Web Mercator (EPSG:3857) LOD grid (256×256 tiles, 96 DPI, PNG) sized for `MaxTileZoom`. |
+| `hasHistograms` | Implemented | Always `true`; ImageServer exposes `computeStatisticsHistograms` for the catalog. |
+| `timeInfo` | Partial | Surfaced only when the layer metadata declares any of `startTimeField`/`endTimeField`/`trackIdField`. The temporal extent is intentionally omitted because raster catalog items do not yet carry per-item timestamps. |
 
 ### Not implemented or currently omitted
 
 | Property or resource family | Notes |
 | --- | --- |
-| `tileInfo`, `cacheType` | Not currently populated in the metadata response. |
 | `objectIdField`, `fields` | Not currently populated. |
 | `rasterFunctionInfos`, `rasterTypeInfos`, `mensurationCapabilities` | Not currently populated. |
 | Root links to child resources such as legend, metadata, raster catalog items, and WMTS | Not surfaced because the corresponding child resources are not implemented. |
