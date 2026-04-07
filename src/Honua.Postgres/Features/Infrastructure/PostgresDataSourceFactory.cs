@@ -57,7 +57,12 @@ internal static class PostgresDataSourceFactory
         // per-physical-connection and unsafe with multiplexing).
         var useMultiplexing = ResolveMultiplexing(limits.Multiplexing, schemaHeadersEnabled);
         connectionStringBuilder.Multiplexing = useMultiplexing;
-        connectionStringBuilder.NoResetOnClose = useMultiplexing;
+        // Keep NoResetOnClose=true when schema headers are off so that RESET ALL
+        // is NOT sent on pool return — otherwise Npgsql clears the search_path set
+        // via the Options parameter, breaking schema-qualified queries on reused
+        // connections.  When schema headers are enabled (test isolation), we need
+        // the reset so per-test SET search_path overrides are cleared.
+        connectionStringBuilder.NoResetOnClose = !schemaHeadersEnabled;
 
         if (useMultiplexing)
         {
