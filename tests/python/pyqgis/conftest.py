@@ -528,6 +528,7 @@ def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
     """
     from qgis.core import (
         QgsCoordinateReferenceSystem,
+        QgsCoordinateTransform,
         QgsMapRendererSequentialJob,
         QgsMapSettings,
         QgsProject,
@@ -538,14 +539,24 @@ def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
     project = QgsProject.instance()
     project.addMapLayer(layer, False)
 
+    # Visual / style slice geodesy lock — render in EPSG:3857 so the slice
+    # scenarios match the JS lanes that use Web Mercator. The OAPIF provider
+    # sources EPSG:4326 features and QGIS reprojects them on the fly.
+    # QgsMapSettings.setExtent stores its argument as-is and the renderer
+    # interprets the values in the destination CRS, so the layer extent must
+    # be projected into EPSG:3857 before it is handed to setExtent — without
+    # the transform, a 4326 lon/lat rectangle would collapse to a sub-meter
+    # strip near the prime meridian and the features would render outside
+    # the visible region.
+    target_crs = QgsCoordinateReferenceSystem("EPSG:3857")
+    extent_xform = QgsCoordinateTransform(layer.crs(), target_crs, project)
+    extent_in_target = extent_xform.transformBoundingBox(layer.extent())
+
     settings = QgsMapSettings()
+    settings.setDestinationCrs(target_crs)
     settings.setLayers([layer])
     settings.setOutputSize(QSize(width, height))
-    settings.setExtent(layer.extent())
-    # Visual / style slice geodesy lock — render in EPSG:3857 so the slice
-    # scenarios match the JS lanes that use Web Mercator. The OAPIF
-    # provider sources EPSG:4326 features and QGIS reprojects on the fly.
-    settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+    settings.setExtent(extent_in_target)
 
     job = QgsMapRendererSequentialJob(settings)
     job.start()
@@ -599,6 +610,7 @@ def render_layer_headless_with_symbol(
     """
     from qgis.core import (
         QgsCoordinateReferenceSystem,
+        QgsCoordinateTransform,
         QgsFillSymbol,
         QgsLineSymbol,
         QgsMapRendererSequentialJob,
@@ -649,11 +661,20 @@ def render_layer_headless_with_symbol(
     project = QgsProject.instance()
     project.addMapLayer(layer, False)
 
+    # Visual / style slice geodesy lock — same EPSG:3857 reproject + extent
+    # transform pattern as render_layer_headless. See the longer comment
+    # there for why both setDestinationCrs and a transformed extent are
+    # required for the rendered region to match the projected feature
+    # footprint.
+    target_crs = QgsCoordinateReferenceSystem("EPSG:3857")
+    extent_xform = QgsCoordinateTransform(layer.crs(), target_crs, project)
+    extent_in_target = extent_xform.transformBoundingBox(layer.extent())
+
     settings = QgsMapSettings()
+    settings.setDestinationCrs(target_crs)
     settings.setLayers([layer])
     settings.setOutputSize(QSize(width, height))
-    settings.setExtent(layer.extent())
-    settings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+    settings.setExtent(extent_in_target)
 
     job = QgsMapRendererSequentialJob(settings)
     job.start()

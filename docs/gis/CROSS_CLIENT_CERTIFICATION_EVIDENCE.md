@@ -287,7 +287,6 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-03-16 | Initial evidence envelope specification |
-| 1.0.1 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |
 | 1.0.1 | 2026-03-16 | Relabel example directory as common-core; add MapLibre MVT manual workflow |
 | 1.0.2 | 2026-03-16 | Add `measured_count` and `measured_delta` fields; make nullable types explicit; add nullable field convention note |
 | 1.0.3 | 2026-03-16 | Clarify `measured_delta` unit convention and link to matrix geometry tolerance thresholds |
@@ -300,3 +299,4 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
 | 1.0.11 | 2026-04-03 | Clarify Esri Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |
 | 1.0.12 | 2026-04-06 | Mark xUnit `[Trait("CertId", …)]` mapping as live for the CLI/OData lane; add `cli-odata.cert.json` example produced by `ODataClientCertificationTests` |
+| 1.0.13 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |

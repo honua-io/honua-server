@@ -49,9 +49,18 @@ defaults differ:
 - OpenLayers — `ol.proj.fromLonLat()` projects view center to 3857
 - Esri Leaflet — Leaflet defaults to `L.CRS.EPSG3857`
 - PyQGIS — `QgsMapSettings.setDestinationCrs(QgsCoordinateReferenceSystem("EPSG:3857"))`
+  combined with a `QgsCoordinateTransform` that projects
+  `layer.extent()` from the OAPIF source CRS into EPSG:3857 before it
+  is handed to `QgsMapSettings.setExtent`. The transform is required
+  because `setExtent` stores its argument as-is and the renderer
+  interprets the values in the destination CRS.
 
-Per-scenario fixed extents are listed in the scenario table below so
-that renders are deterministic across CI nodes.
+Each lane derives its render extent deterministically from the seed
+fixture (`tests/seed/client-compat-v1.sql`): the JS lanes pin the view
+center via `ol.proj.fromLonLat`/`L.CRS.EPSG3857`, and the PyQGIS lane
+projects the layer's reported extent into EPSG:3857 so the rendered
+region matches the projected feature footprint rather than collapsing
+to a degenerate strip near the prime meridian.
 
 ## Tolerance Defaults
 
