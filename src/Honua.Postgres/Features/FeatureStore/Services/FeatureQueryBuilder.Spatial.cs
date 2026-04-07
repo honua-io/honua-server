@@ -63,15 +63,17 @@ internal sealed partial class FeatureQueryBuilder
                 break;
 
             case SpatialRelationship.Within:
-                // PERFORMANCE OPTIMIZATION: Pre-filter with bbox before expensive ST_Within
+                // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry.
+                // PostGIS: ST_Within(filter, feature) = filter is within feature.
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Within({geometryOperand}, {filterGeometry})";
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Within({filterGeometry}, {geometryOperand})";
                 break;
 
             case SpatialRelationship.Contains:
-                // PERFORMANCE OPTIMIZATION: Use spatial index hint for containment queries
+                // Esri semantics: esriSpatialRelContains = filter geometry contains feature geometry.
+                // PostGIS: ST_Contains(filter, feature) = filter contains feature.
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})";
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({filterGeometry}, {geometryOperand})";
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:
