@@ -94,6 +94,12 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
           zoom,
           fadeDuration: 0,
           trackResize: false,
+          // Preserve the WebGL drawing buffer so gl.readPixels() can read
+          // rendered pixels after the frame is presented. Without this,
+          // MapLibre clears the back buffer after each frame and pixel
+          // assertions (e.g. countNonBackgroundPixels) see all zeros even
+          // though Playwright screenshots show the rendered features.
+          preserveDrawingBuffer: true,
           // Absolutize server-relative URLs (e.g. tile templates from the
           // style JSON) so the request URL parses inside MapLibre's worker,
           // where the document base is unavailable.

@@ -28,16 +28,25 @@ test.describe('Tile Rendering', () => {
       zoom: 14,
     });
 
-    // Verify at least one tile was requested and returned 200.
+    // Verify at least one tile was requested.
     expect(tileRequests.length).toBeGreaterThan(0);
+
+    // Tiles must be either 200 (with MVT body) or 204 (empty tile — legitimate
+    // for tile coordinates that fall outside the layer's data extent). At
+    // least one 200 response is required to prove the decode pipeline works.
+    let okCount = 0;
     for (const req of tileRequests) {
-      expect(req.status).toBe(200);
-      // MVT tiles should return application/vnd.mapbox-vector-tile or application/x-protobuf.
-      expect(
-        req.contentType.includes('application/vnd.mapbox-vector-tile') ||
-        req.contentType.includes('application/x-protobuf'),
-      ).toBe(true);
+      expect([200, 204]).toContain(req.status);
+      if (req.status === 200) {
+        okCount++;
+        // MVT tiles should return application/vnd.mapbox-vector-tile or application/x-protobuf.
+        expect(
+          req.contentType.includes('application/vnd.mapbox-vector-tile') ||
+          req.contentType.includes('application/x-protobuf'),
+        ).toBe(true);
+      }
     }
+    expect(okCount).toBeGreaterThan(0);
   });
 
   test('[JS-EXT-01] canvas is not blank after tile render', async ({ page }) => {
