@@ -22,7 +22,6 @@ from .conftest import (
     EXPECTED_ALPHA_Y,
     EXPECTED_CRS_EPSG,
     EXPECTED_FIELD_NAMES,
-    EXPECTED_GEOMETRY_FEATURES,
     EXPECTED_TOTAL_FEATURES,
     GEO_TOLERANCE,
     make_oapif_layer,
