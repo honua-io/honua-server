@@ -308,6 +308,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         foreach (var stat in query.OutStatistics.Value)
         {
             ValidateFieldName(stat.OnStatisticField);
+            ValidateFieldName(stat.OutStatisticFieldName);
             var fieldExpr = $"\"{stat.OnStatisticField}\"";
             var alias = $"\"{stat.OutStatisticFieldName}\"";
 
@@ -807,6 +808,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         foreach (var stat in statistics.Value)
         {
             ValidateFieldName(stat.OnStatisticField);
+            ValidateFieldName(stat.OutStatisticFieldName);
             var fieldExpr = $"\"{stat.OnStatisticField}\"";
             var alias = $"\"{stat.OutStatisticFieldName}\"";
             var statExpr = stat.StatisticType switch
