@@ -49,7 +49,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         sw.Stop();
 
-        _performanceMonitor?.RecordDatabaseQuery("count", layerId.ToString(CultureInfo.InvariantCulture), sw.Elapsed, 1);
+        RecordQueryMetrics("count", layerId, sw.Elapsed, 1);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
@@ -70,7 +70,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         }
 
         sw.Stop();
-        _performanceMonitor?.RecordDatabaseQuery("select", layerId.ToString(CultureInfo.InvariantCulture), sw.Elapsed, features.Count);
+        RecordQueryMetrics("select", layerId, sw.Elapsed, features.Count);
         return features.ToImmutable();
     }
 
@@ -78,6 +78,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
+        var sw = Stopwatch.StartNew();
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = CreateCommand(connection, query);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -90,6 +91,8 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             points.Add(new ProjectedPoint { X = x, Y = y });
         }
 
+        sw.Stop();
+        RecordQueryMetrics("select_points", layerId, sw.Elapsed, points.Count);
         return points.ToImmutable();
     }
 
@@ -98,7 +101,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         return await ExecuteEncodedGeometryQueryAsync<GmlFeature>(
-            query, layerId, cancellationToken,
+            query, layerId, "select_gml", cancellationToken,
             (reader, mapping) =>
             {
                 var id = reader.GetInt64(0);
@@ -113,7 +116,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         return await ExecuteEncodedGeometryQueryAsync<EncodedGeoJsonFeature>(
-            query, layerId, cancellationToken,
+            query, layerId, "select_geojson", cancellationToken,
             (reader, mapping) =>
             {
                 var id = reader.GetInt64(0);
@@ -128,7 +131,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         return await ExecuteEncodedGeometryQueryAsync<KmlFeature>(
-            query, layerId, cancellationToken,
+            query, layerId, "select_kml", cancellationToken,
             (reader, mapping) =>
             {
                 var id = reader.GetInt64(0);
@@ -158,6 +161,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
+        var sw = Stopwatch.StartNew();
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = CreateCommand(connection, query);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -168,6 +172,8 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             ids.Add(reader.GetInt64(0));
         }
 
+        sw.Stop();
+        RecordQueryMetrics("select_objectids", layerId, sw.Elapsed, ids.Count);
         return ids.ToImmutable();
     }
 
@@ -280,6 +286,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
+        var sw = Stopwatch.StartNew();
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = CreateCommand(connection, query);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -296,6 +303,8 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             results.Add(row);
         }
 
+        sw.Stop();
+        RecordQueryMetrics("statistics", layerId, sw.Elapsed, results.Count);
         return results.ToImmutable();
     }
 
@@ -433,10 +442,12 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     private async Task<ImmutableArray<T>> ExecuteEncodedGeometryQueryAsync<T>(
         ParameterizedQuery query,
         int layerId,
+        string operationType,
         CancellationToken cancellationToken,
         Func<DbDataReader, DuckDBLayerMapping, T> readRow)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
+        var sw = Stopwatch.StartNew();
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var cmd = CreateCommand(connection, query);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -447,7 +458,18 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             results.Add(readRow(reader, mapping));
         }
 
+        sw.Stop();
+        RecordQueryMetrics(operationType, layerId, sw.Elapsed, results.Count);
         return results.ToImmutable();
+    }
+
+    private void RecordQueryMetrics(string operationType, int layerId, TimeSpan elapsed, int recordCount)
+    {
+        _performanceMonitor?.RecordDatabaseQuery(
+            operationType,
+            layerId.ToString(CultureInfo.InvariantCulture),
+            elapsed,
+            recordCount);
     }
 
     #endregion
