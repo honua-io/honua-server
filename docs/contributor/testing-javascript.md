@@ -178,6 +178,7 @@ tests/js/
     ├── shared/
     │   ├── config.ts          # Env-driven base URL, service/layer IDs
     │   ├── evidence.ts        # EvidenceCollector (cert.json output)
+    │   ├── evidence.test.ts   # Unit tests for EvidenceCollector
     │   └── ol-node-setup.ts   # JSDOM polyfill for WFS/GML parsing
     ├── oapif/                 # OGC API Features
     │   ├── oapif-discovery.test.ts

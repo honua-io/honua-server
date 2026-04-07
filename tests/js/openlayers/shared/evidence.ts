@@ -214,8 +214,8 @@ function specFilename(runId: string, protocol: string): string {
 export class EvidenceCollector {
   private readonly results = new Map<string, CertResult>();
   private readonly extensionMap = new Map<string, CertResult>();
-  private readonly attempted = new Set<string>();
-  private readonly attemptedExtensions = new Set<string>();
+  private readonly pendingAttempts = new Map<string, number>();
+  private readonly pendingExtAttempts = new Map<string, number>();
   readonly protocol: string;
 
   constructor(protocol: string) {
@@ -228,7 +228,7 @@ export class EvidenceCollector {
    * instead of 'skip'.
    */
   attempt(testCaseId: string): void {
-    this.attempted.add(testCaseId);
+    this.pendingAttempts.set(testCaseId, (this.pendingAttempts.get(testCaseId) ?? 0) + 1);
   }
 
   /**
@@ -248,6 +248,12 @@ export class EvidenceCollector {
       evidenceRef?: string;
     } = {},
   ): void {
+    // Close one pending attempt regardless of whether the result is accepted
+    // (the test reached record(), so the attempt is no longer "in flight").
+    const pending = this.pendingAttempts.get(testCaseId);
+    if (pending !== undefined && pending > 0) {
+      this.pendingAttempts.set(testCaseId, pending - 1);
+    }
     const existing = this.results.get(testCaseId);
     if (existing?.status === 'fail' && status !== 'fail') return;
     this.results.set(testCaseId, {
@@ -267,7 +273,7 @@ export class EvidenceCollector {
    * 'fail' instead of preserving a stale 'pass' from an earlier test.
    */
   attemptExtension(testCaseId: string): void {
-    this.attemptedExtensions.add(testCaseId);
+    this.pendingExtAttempts.set(testCaseId, (this.pendingExtAttempts.get(testCaseId) ?? 0) + 1);
   }
 
   /**
@@ -285,6 +291,11 @@ export class EvidenceCollector {
       notes?: string;
     } = {},
   ): void {
+    // Close one pending attempt (mirrors record() logic).
+    const pendingExt = this.pendingExtAttempts.get(testCaseId);
+    if (pendingExt !== undefined && pendingExt > 0) {
+      this.pendingExtAttempts.set(testCaseId, pendingExt - 1);
+    }
     const existing = this.extensionMap.get(testCaseId);
     if (existing) {
       // fail > pass > skip > not-applicable
@@ -353,8 +364,8 @@ export class EvidenceCollector {
     // Attempted-but-not-recorded extensions → fail (mirrors core CERT logic).
     // If a test called attemptExtension() but threw before recordExtension(),
     // override any prior 'pass' so a stale result cannot mask a failure.
-    for (const id of this.attemptedExtensions) {
-      if (!this.extensionMap.has(id)) {
+    for (const [id, pending] of this.pendingExtAttempts) {
+      if (pending > 0) {
         mergedExt.set(id, {
           test_case_id: id,
           status: 'fail',
@@ -372,10 +383,10 @@ export class EvidenceCollector {
       const recorded = merged.get(id);
       // If current run attempted this ID but didn't record it, a test threw
       // before record() was reached — treat as fail even if a prior pass exists.
-      const attemptedNotRecorded = this.attempted.has(id) && !this.results.has(id);
+      const attemptedNotRecorded = (this.pendingAttempts.get(id) ?? 0) > 0;
       if (recorded && isApplicable && !attemptedNotRecorded) return recorded;
       // Attempted but not recorded means the test threw before record() — emit fail
-      const wasAttempted = this.attempted.has(id);
+      const wasAttempted = this.pendingAttempts.has(id);
       const status: CertStatus = isApplicable
         ? (wasAttempted ? 'fail' : 'skip')
         : 'not-applicable';
