@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { test, expect } from '../shared/test-fixtures.js';
 import { initFeatureLayer, initDynamicMapLayer, waitForLayerLoad, waitForMapIdle, assertMapNotBlank } from '../shared/map-harness.js';
 
@@ -31,6 +32,12 @@ test.describe('Visual Rendering Assertions', () => {
     // Skip if the export endpoint didn't render — don't false-pass on a blank map
     test.skip(!notBlank,
       'DynamicMapLayer rendered a blank map — MapServer export endpoint may not be implemented');
+
+    // In CI (updateSnapshots:'none'), skip if no baseline is committed yet.
+    // Locally, updateSnapshots:'missing' auto-generates the baseline on first run.
+    const snapshotFile = test.info().snapshotPath('dynamic-map-layer-export.png');
+    test.skip(!!process.env.CI && !existsSync(snapshotFile),
+      'No committed DynamicMapLayer baseline — generate locally: npx playwright test --update-snapshots');
 
     const mapContainer = page.locator('#map');
     await expect(mapContainer).toHaveScreenshot('dynamic-map-layer-export.png', {
