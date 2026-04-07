@@ -27,7 +27,7 @@
     <!-- gRPC and protocol buffer support -->
     <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
     <PackageReference Include="Google.Protobuf" Version="3.34.1" />
-    <PackageReference Include="Grpc.Tools" Version="2.78.0" PrivateAssets="All" />
+    <PackageReference Include="Grpc.Tools" Version="2.80.0" PrivateAssets="All" />
 
     <!-- Geocoding provider dependencies -->
     <PackageReference Include="AWSSDK.LocationService" Version="4.0.3.20" />
