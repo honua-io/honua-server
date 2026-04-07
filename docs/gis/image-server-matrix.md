@@ -60,7 +60,7 @@ Sources:
 
 | Esri child resource | Esri path | Honua status | Notes |
 | --- | --- | --- | --- |
-| Legend | `.../ImageServer/legend` | Partial | `GET /rest/services/{id}/ImageServer/legend` returns Esri-shaped `layers[].legend[]` swatches generated from the layer's primary raster renderer. Only `f=json`/`f=pjson` is accepted; classification overrides via `renderingRule` are not yet honoured. |
+| Legend | `.../ImageServer/legend` | Partial | `GET /rest/services/{id}/ImageServer/legend` returns Esri-shaped `layers[].legend[]` swatches as base64 PNGs (`image/png`). The MVP renders a fixed 5-class equal-interval ramp keyed off the primary raster's band-1 statistics (`min`, `max`); per-layer renderer persistence and classification overrides via `renderingRule` are not yet honoured. Only `f=json`/`f=pjson` is accepted. |
 
 ### Not implemented
 
@@ -196,7 +196,7 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `f` | Partial | Only `json` and `pjson` are supported. Other formats return `400 Bad Request`. |
-| `renderingRule` | Not honoured | Classification overrides through a custom rendering rule are ignored — swatches are always derived from the layer's primary raster renderer. |
+| `renderingRule` | Not honoured | Classification overrides through a custom rendering rule are ignored — swatches are always rendered from a fixed 5-class equal-interval viridis ramp keyed off the primary raster's band-1 statistics (`min`, `max`). |
 
 ## Honua extensions
 
@@ -204,7 +204,14 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 
 | Honua endpoint | Methods | Notes |
 | --- | --- | --- |
-| `/rest/services/{id}/ImageServer/computeClass` | GET, POST | Validates a raster function chain document supplied via `renderingRule` (or the legacy `rasterFunction` alias) and returns the planned execution metadata (`rasterFunction`, `chainDepth`, `executedFunctions`, `outputPixelType`, `status`). Closest in spirit to Esri's `validate` operation; the route name aligns with the Esri `computeClass`/analyze contract used by ArcGIS Pro. |
+| `/rest/services/{id}/ImageServer/computeClass` | GET, POST | Validates a raster function chain document supplied via `renderingRule` (or the legacy `rasterFunction` alias) and returns the planned execution metadata (`rasterFunction`, `chainDepth`, `executedFunctions`, `outputPixelType`, `status`). Closest in spirit to Esri's `validate` operation; the route name aligns with the Esri `computeClass`/analyze contract used by ArcGIS Pro. The MVP planner walks the canonical ArcGIS Pro stretch-and-clip chain — `Identity`, `Stretch`, and `Clip` — with a maximum chain depth of `8` and rejects unknown function names with a `400` naming the offending node. `Stretch` requires an integer `StretchType` (Esri `esriRasterStretchType`); `Clip` requires either `ClippingGeometry` or `Extent`. The output pixel type defaults to `U8` when the chain includes `Stretch` and `F32` otherwise unless the document overrides `outputPixelType`. The endpoint currently validates and plans the chain only — the executor is not yet wired into `exportImage` / `computeStatisticsHistograms`. |
+
+### Computed parameter coverage (`POST .../ImageServer/computeClass`)
+
+| Esri/Honua parameter | Honua status | Notes |
+| --- | --- | --- |
+| `renderingRule` (or `rasterFunction` alias) | Implemented | JSON-encoded raster function chain document. Required. |
+| `f` | Partial | Only `json` and `pjson` are supported. |
 
 ## Metadata response coverage (`GET .../ImageServer`)
 
@@ -218,12 +225,14 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 | `pixelSizeX`, `pixelSizeY` | Implemented | Calculated from primary raster dimensions and extent. |
 | `bandCount`, `pixelType` | Implemented | Derived from the primary raster. |
 | `minValues`, `maxValues`, `meanValues`, `stdvValues` | Implemented | Derived from raster statistics for the primary raster. |
-| `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Mensuration,Pixels,Statistics,Tilemap`. |
+| `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Pixels,Statistics,Tilemap`. `Mensuration` is intentionally omitted until the `/measure` endpoint ships so the capability list stays in lockstep with routed operations. |
 | `maxImageHeight`, `maxImageWidth`, `maxRecordCount` | Implemented | Static Honua metadata limits. |
 | `singleFusedMapCache`, `cacheType` | Implemented | Always reports `true` / `Map` to advertise the rendered tile cache surface. |
 | `tileInfo` | Implemented | Generated from a fixed Web Mercator (EPSG:3857) LOD grid (256×256 tiles, 96 DPI, PNG) sized for `MaxTileZoom`. |
 | `hasHistograms` | Implemented | Always `true`; ImageServer exposes `computeStatisticsHistograms` for the catalog. |
 | `timeInfo` | Partial | Surfaced only when the layer metadata declares any of `startTimeField`/`endTimeField`/`trackIdField`. The temporal extent is intentionally omitted because raster catalog items do not yet carry per-item timestamps. |
+| `hasMultidimensions` | Implemented | Always emitted; defaults to `false` until cube ingestion ships. |
+| `multidimensionalInfo` | Partial | Skeleton type exists in the response model but is omitted (`JsonIgnoreCondition.WhenWritingNull`) until multidimensional ingestion lands. |
 
 ### Not implemented or currently omitted
 
@@ -254,4 +263,4 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 - Raster function chain analysis (`computeClass`): [ImageServerAnalyzeHandler](../../src/Honua.Server/Features/ImageServer/Handlers/ImageServerAnalyzeHandler.cs), [ImageServerRasterFunctionPlanner](../../src/Honua.Server/Features/ImageServer/Services/ImageServerRasterFunctionPlanner.cs)
 - Request/response models: [ImageServerModels](../../src/Honua.Server/Features/ImageServer/Models/ImageServerModels.cs)
 - Integration tests: [ImageServerBasicTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs), [ImageServerParameterValidationTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs), [ImageServerErrorHandlingTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs), [ImageServerEndpointsTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerEndpointsTests.cs)
-- Handler unit tests: [ImageServerCatalogQueryHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerCatalogQueryHandlerTests.cs), [ImageServerStatisticsHistogramsHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs)
+- Handler unit tests: [ImageServerCatalogQueryHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerCatalogQueryHandlerTests.cs), [ImageServerStatisticsHistogramsHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs), [ImageServerLegendHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerLegendHandlerTests.cs), [ImageServerAnalyzeHandlerTests](../../tests/Honua.Server.Tests/Features/ImageServer/ImageServerAnalyzeHandlerTests.cs)

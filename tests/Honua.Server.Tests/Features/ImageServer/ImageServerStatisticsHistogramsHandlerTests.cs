@@ -343,6 +343,100 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task ComputeAsync_BandIdsNonAscending_AlignsStatisticsWithHistogramsByBand()
+    {
+        // Regression: GetStatisticsAsync streams cached rows in DB-ascending band order,
+        // while GetHistogramsAsync preserves caller-supplied order. When the caller asks
+        // for bandIds=3,1 the parallel statistics/histograms arrays would silently
+        // misalign — the handler must reorder both to a single canonical order so that
+        // statistics[i] and histograms[i] always describe the same band.
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
+
+        // Stats: returned in DB ascending order (band 1, then band 3) — mimics the
+        // PostgresRasterStore behaviour where the SQL ORDER BY band_number wins.
+        _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterStatistics
+                {
+                    Band = 1,
+                    MinValue = 10,
+                    MaxValue = 110,
+                    MeanValue = 60,
+                    StandardDeviation = 5,
+                    ValidPixelCount = 100,
+                },
+                new RasterStatistics
+                {
+                    Band = 3,
+                    MinValue = 30,
+                    MaxValue = 330,
+                    MeanValue = 180,
+                    StandardDeviation = 15,
+                    ValidPixelCount = 300,
+                },
+            });
+
+        // Histograms: returned in caller-supplied order (band 3, then band 1).
+        _rasterStore.GetHistogramsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new[]
+            {
+                new RasterHistogram
+                {
+                    Band = 3,
+                    BinCount = 2,
+                    Min = 30,
+                    Max = 330,
+                    Counts = [3, 33],
+                },
+                new RasterHistogram
+                {
+                    Band = 1,
+                    BinCount = 2,
+                    Min = 10,
+                    Max = 110,
+                    Counts = [1, 11],
+                },
+            });
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["bandIds"] = "3,1",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<ComputeStatisticsHistogramsResponse>;
+        jsonResult.Should().NotBeNull();
+        var response = jsonResult!.Value!;
+
+        response.Statistics.Should().HaveCount(2);
+        response.Histograms.Should().HaveCount(2);
+
+        // Caller-supplied order (3, 1) wins as the canonical order.
+        // Position 0 must describe band 3 on both sides.
+        response.Statistics[0].Min.Should().Be(30);
+        response.Statistics[0].Max.Should().Be(330);
+        response.Statistics[0].Count.Should().Be(300);
+        response.Histograms[0].Min.Should().Be(30);
+        response.Histograms[0].Max.Should().Be(330);
+        response.Histograms[0].Counts.Should().Equal(3L, 33L);
+
+        // Position 1 must describe band 1 on both sides.
+        response.Statistics[1].Min.Should().Be(10);
+        response.Statistics[1].Max.Should().Be(110);
+        response.Statistics[1].Count.Should().Be(100);
+        response.Histograms[1].Min.Should().Be(10);
+        response.Histograms[1].Max.Should().Be(110);
+        response.Histograms[1].Counts.Should().Equal(1L, 11L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task ComputeAsync_RasterIdsNotInCatalog_ReturnsBadRequest()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())

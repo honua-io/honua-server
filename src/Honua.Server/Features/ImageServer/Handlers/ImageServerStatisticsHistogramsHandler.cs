@@ -135,28 +135,12 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 var statistics = await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
                 var histograms = await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
 
-                foreach (var s in statistics)
-                {
-                    statisticsList.Add(new BandStatistic
-                    {
-                        Min = s.MinValue ?? 0,
-                        Max = s.MaxValue ?? 0,
-                        Mean = s.MeanValue ?? 0,
-                        StandardDeviation = s.StandardDeviation ?? 0,
-                        Count = s.ValidPixelCount,
-                    });
-                }
-
-                foreach (var h in histograms)
-                {
-                    histogramsList.Add(new BandHistogram
-                    {
-                        Size = h.BinCount,
-                        Min = h.Min,
-                        Max = h.Max,
-                        Counts = h.Counts,
-                    });
-                }
+                // The store implementations do not guarantee a shared band order:
+                // GetStatisticsAsync streams cached rows in DB ascending order while
+                // GetHistogramsAsync preserves the caller-supplied band order. Index both
+                // sets by band number and emit them in a single canonical order so the
+                // parallel statistics/histograms arrays in the response stay aligned.
+                AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
             }
 
             var response = new ComputeStatisticsHistogramsResponse
@@ -181,6 +165,96 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "An error occurred while computing statistics and histograms.");
+        }
+    }
+
+    /// <summary>
+    /// Appends band statistics and histograms in a canonical, mutually-aligned order so the
+    /// response's parallel arrays describe the same band at each index. Order preference:
+    /// (1) the caller-supplied band list, (2) the statistics order, then any remaining
+    /// histogram-only bands. Bands missing from one side are zero-filled on that side.
+    /// </summary>
+    private static void AppendAlignedBandResults(
+        List<BandStatistic> statisticsList,
+        List<BandHistogram> histogramsList,
+        int[]? requestedBands,
+        RasterStatistics[] statistics,
+        RasterHistogram[] histograms)
+    {
+        var statsByBand = new Dictionary<int, RasterStatistics>(statistics.Length);
+        foreach (var s in statistics)
+        {
+            statsByBand[s.Band] = s;
+        }
+
+        var histByBand = new Dictionary<int, RasterHistogram>(histograms.Length);
+        foreach (var h in histograms)
+        {
+            histByBand[h.Band] = h;
+        }
+
+        var orderedBands = new List<int>(Math.Max(requestedBands?.Length ?? 0, statistics.Length + histograms.Length));
+        var seen = new HashSet<int>();
+
+        if (requestedBands is { Length: > 0 })
+        {
+            foreach (var band in requestedBands)
+            {
+                if (seen.Add(band))
+                {
+                    orderedBands.Add(band);
+                }
+            }
+        }
+
+        foreach (var s in statistics)
+        {
+            if (seen.Add(s.Band))
+            {
+                orderedBands.Add(s.Band);
+            }
+        }
+
+        foreach (var h in histograms)
+        {
+            if (seen.Add(h.Band))
+            {
+                orderedBands.Add(h.Band);
+            }
+        }
+
+        foreach (var band in orderedBands)
+        {
+            // Skip bands the store filtered out entirely (e.g. caller asked for a band the
+            // raster does not have). Emitting an empty pair would still misalign the arrays
+            // versus the caller's expectation, so it is safer to drop the band on both sides.
+            var hasStats = statsByBand.TryGetValue(band, out var s);
+            var hasHist = histByBand.TryGetValue(band, out var h);
+            if (!hasStats && !hasHist)
+            {
+                continue;
+            }
+
+            statisticsList.Add(hasStats
+                ? new BandStatistic
+                {
+                    Min = s.MinValue ?? 0,
+                    Max = s.MaxValue ?? 0,
+                    Mean = s.MeanValue ?? 0,
+                    StandardDeviation = s.StandardDeviation ?? 0,
+                    Count = s.ValidPixelCount,
+                }
+                : new BandStatistic());
+
+            histogramsList.Add(hasHist
+                ? new BandHistogram
+                {
+                    Size = h.BinCount,
+                    Min = h.Min,
+                    Max = h.Max,
+                    Counts = h.Counts,
+                }
+                : new BandHistogram { Counts = Array.Empty<long>() });
         }
     }
 
