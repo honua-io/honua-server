@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -198,11 +200,13 @@ public class PreparedStatementCacheTests : IDisposable
 public class CachingDatabaseConnectionProviderTests : IDisposable
 {
     private readonly CachingDatabaseConnectionProvider _provider;
+    private readonly NpgsqlDataSource _dataSource;
 
     public CachingDatabaseConnectionProviderTests(PostgresFixture fixture)
     {
+        _dataSource = fixture.DataSource;
         _provider = new CachingDatabaseConnectionProvider(
-            fixture.DataSource,
+            _dataSource,
             NullLogger<CachingDatabaseConnectionProvider>.Instance);
     }
 
@@ -232,6 +236,54 @@ public class CachingDatabaseConnectionProviderTests : IDisposable
         command.Should().NotBeNull();
         command.Should().BeOfType<NpgsqlCommand>();
         command.CommandText.Should().Be("SELECT 1");
+    }
+
+    [Fact]
+    public async Task OpenConnectionAsync_WithConcurrencyGate_ReturnsNpgsqlConnection()
+    {
+        // Arrange — gate active (production default)
+        var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 10 });
+        using var provider = new CachingDatabaseConnectionProvider(
+            _dataSource,
+            NullLogger<CachingDatabaseConnectionProvider>.Instance,
+            concurrencyGate: gate);
+
+        // Act
+        await using var connection = await provider.OpenConnectionAsync();
+
+        // Assert — must be castable to NpgsqlConnection (no wrapper)
+        connection.Should().NotBeNull();
+        connection.Should().BeOfType<NpgsqlConnection>();
+        var npgsql = (NpgsqlConnection)connection;
+        npgsql.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task OpenConnectionAsync_WithConcurrencyGate_ReleasesSlotOnProviderDispose()
+    {
+        // Arrange
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 2,
+            ConnectionAcquisitionTimeoutSeconds = 1
+        });
+        var provider = new CachingDatabaseConnectionProvider(
+            _dataSource,
+            NullLogger<CachingDatabaseConnectionProvider>.Instance,
+            concurrencyGate: gate);
+
+        // Act — acquire both slots via the provider
+        var conn1 = await provider.OpenConnectionAsync();
+        var conn2 = await provider.OpenConnectionAsync();
+        gate.AvailableSlots.Should().Be(0);
+
+        // Dispose the provider (simulates DI scope end) — should release both slots
+        provider.Dispose();
+        gate.AvailableSlots.Should().Be(2);
+
+        // Cleanup
+        await conn1.DisposeAsync();
+        await conn2.DisposeAsync();
     }
 
     public void Dispose()

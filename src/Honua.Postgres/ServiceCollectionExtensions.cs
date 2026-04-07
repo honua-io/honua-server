@@ -69,8 +69,9 @@ internal static class ServiceCollectionExtensions
 
         var defaultSchema = configuration["Database:Schema"];
 
-        // Register concurrency gate as singleton — shared across all scoped providers
-        services.TryAddSingleton(new QueryConcurrencyGate(connectionLimits));
+        // Register concurrency gate as singleton — shared across all scoped providers.
+        // Factory form so the DI container tracks the IDisposable for shutdown disposal.
+        services.TryAddSingleton(_ => new QueryConcurrencyGate(connectionLimits));
 
         // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>

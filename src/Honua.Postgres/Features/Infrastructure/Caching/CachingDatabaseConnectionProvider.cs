@@ -36,13 +36,14 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// The caching layer only optimizes execution, not query construction.
 /// </para>
 /// </remarks>
-internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider
+internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider, IDisposable
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
     private readonly QueryConcurrencyGate? _concurrencyGate;
+    private int _acquiredSlots;
 
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -75,25 +76,31 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
                 ConnectionAcquisitionTimedOut(_logger, null);
                 throw new ServiceUnavailableException("Connection acquisition timed out — server is under heavy load.");
             }
+
+            Interlocked.Increment(ref _acquiredSlots);
         }
 
+        NpgsqlConnection? connection = null;
         try
         {
             // Use the resilience extension method with logging callback
-            var connection = await _dataSource.OpenConnectionWithRetryAsync(
+            connection = await _dataSource.OpenConnectionWithRetryAsync(
                 onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return _concurrencyGate is not null
-                ? new SemaphoreReleasingConnection(connection, () => _concurrencyGate.Release())
-                : connection;
+            return connection;
         }
         catch
         {
-            _concurrencyGate?.Release();
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+
+            ReleaseOneSlot();
             throw;
         }
     }
@@ -192,6 +199,32 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
                 DatabaseDeadlockRetry(_logger, attempt, ex.Message, ex);
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Releases all acquired gate slots. Called by the DI container when
+    /// the scoped provider is disposed at the end of the HTTP request.
+    /// </summary>
+    public void Dispose()
+    {
+        var slots = Interlocked.Exchange(ref _acquiredSlots, 0);
+        if (slots > 0)
+        {
+            _concurrencyGate?.Release(slots);
+        }
+    }
+
+    private void ReleaseOneSlot()
+    {
+        if (Interlocked.Decrement(ref _acquiredSlots) >= 0)
+        {
+            _concurrencyGate?.Release();
+        }
+        else
+        {
+            // Underflow guard — restore count if no slot was actually held.
+            Interlocked.Increment(ref _acquiredSlots);
+        }
     }
 
     [LoggerMessage(1, LogLevel.Warning, "Database connection retry attempt {Attempt}: {ErrorMessage}")]
