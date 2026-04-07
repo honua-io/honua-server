@@ -440,21 +440,17 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Visual / style certification slice exercises drawingInfo and rendered tile output through OpenLayers, Esri Leaflet, and PyQGIS lanes",
-          "executionLane": "ci:js-integration-tests+esri-leaflet-browser-tests; nightly:pyqgis-client-compat",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification — pending a real WMS 1.3 client lane (OpenLayers ol/source/TileWMS, QGIS WMS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/services/{serviceId}/wms.",
+          "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/contributor/public-interface-quality-model.md",
-            "tests/js/openlayers/rendering/render.spec.ts",
-            "tests/js-browser/esri-leaflet/rendering.spec.ts",
-            "tests/python/pyqgis/test_render_path.py"
+            "docs/contributor/public-interface-quality-model.md"
           ],
           "ownerRepo": "honua-server",
-          "status": "implemented",
+          "status": "planned",
           "linkedTicket": "#478",
-          "versionCaptureRule": "Visual / style slice records pixel-color sampling evidence and the client version in the .cert.json envelopes for the JS lanes (tests/js-browser/evidence/, tests/js/certification-evidence/) and the PyQGIS lane (tests/TestResults/)."
+          "versionCaptureRule": "When the desktop visual lane lands, record the exact client version plus immutable WMS evidence link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
         }
       ]
     },
@@ -503,20 +499,17 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Visual / style certification slice exercises tile rendering through OpenLayers (OGC vector tiles) and PyQGIS (headless OAPIF render)",
-          "executionLane": "ci:js-integration-tests; nightly:pyqgis-client-compat",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification — pending a real WMTS 1.0 client lane (ol/source/WMTS, QGIS WMTS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Tiles render paths (ol/source/OGCVectorTile) and does not exercise /ogc/services/{serviceId}/wmts.",
+          "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
             "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
-            "docs/contributor/public-interface-quality-model.md",
-            "tests/js/openlayers/rendering/render.spec.ts",
-            "tests/python/pyqgis/test_render_path.py"
+            "docs/contributor/public-interface-quality-model.md"
           ],
           "ownerRepo": "honua-server",
-          "status": "implemented",
+          "status": "planned",
           "linkedTicket": "#478",
-          "versionCaptureRule": "Visual / style slice records pixel-color sampling evidence and the client version in the .cert.json envelopes for the JS lanes (tests/js/certification-evidence/) and the PyQGIS lane (tests/TestResults/)."
+          "versionCaptureRule": "When the desktop visual lane lands, record the exact client version plus immutable WMTS evidence link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
         }
       ]
     },

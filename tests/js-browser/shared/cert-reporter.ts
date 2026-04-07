@@ -43,9 +43,18 @@ const MAPSERVER_NOT_APPLICABLE: ReadonlySet<string> = new Set([
   'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
 ]);
 
-/** Extract CERT IDs from test title, e.g. "[CERT-CONN-01]" or "[EL-EXT-01]". */
+/**
+ * Extract CERT IDs from test title, e.g. "[CERT-CONN-01]", "[EL-EXT-01]",
+ * or the 4-part visual / style slice IDs like "[CERT-RNDR-SYM-01]".
+ *
+ * The regex accepts any number of uppercase letter segments before the
+ * trailing numeric suffix so 3-part IDs (`CERT-CONN-01`) and 4-part slice
+ * IDs (`CERT-RNDR-SYM-01`, `CERT-RNDR-URL-01`) both match. A stricter
+ * 3-part shape silently dropped the slice IDs from the Esri Leaflet
+ * evidence envelope even though the tests were substantiating them.
+ */
 function extractCertIds(title: string): string[] {
-  const matches = title.match(/\[([A-Z]+-[A-Z]+-\d+)\]/g);
+  const matches = title.match(/\[((?:[A-Z]+-)+\d+)\]/g);
   if (!matches) return [];
   return matches.map(m => m.slice(1, -1));
 }
@@ -70,9 +79,13 @@ function skipResult(certId: string, notes: string): CertResult {
  * Custom Playwright reporter that collects test results and writes
  * certification evidence envelopes (.cert.json) after the suite completes.
  *
- * Seeds the full 18-ID common-core matrix per the evidence spec so every
- * protocol envelope contains all CERT-* entries even when the browser suite
- * does not exercise them.
+ * Seeds the full 24-ID common-core matrix (18 base CERT-* IDs plus the six
+ * visual / style slice IDs CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01 introduced
+ * by ticket #478) per the evidence spec so every protocol envelope contains
+ * all CERT-* entries even when the browser suite does not exercise them.
+ * On mapserver envelopes the slice IDs are recorded as not-applicable
+ * alongside the query-focused IDs because drawingInfo per-category style
+ * assertions live on FeatureServer, not the MapServer export endpoint.
  */
 export default class CertReporter implements Reporter {
   private results: Map<string, { certIds: string[]; status: 'pass' | 'fail' | 'skip'; duration: number; protocol: 'featureserver' | 'mapserver'; notes: string; measuredCount: number | null; measuredDelta: number | null }> = new Map();

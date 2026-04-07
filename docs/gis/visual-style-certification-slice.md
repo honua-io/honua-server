@@ -165,11 +165,13 @@ scenario, and the evidence path that shows up in the per-lane
 | Attribute | Value |
 |---|---|
 | Category | Style URL |
-| Protocols | FeatureServer, OGC API Features, MVT |
+| Protocols | FeatureServer, MVT |
 | Fixture | `client-compat-v1` — drawingInfo on the FeatureServer layer; OGC tileset metadata on the vector tile collection |
 | Style source | `/rest/services/{id}/FeatureServer/{layerId}?f=json` (drawingInfo) and `/ogc/tiles/collections/{id}/tiles/WebMercatorQuad` (TileSetMetadata) |
 | Pass criterion | Client successfully fetches the style/metadata document and uses it to drive the layer |
 | Lanes substantiating | Esri Leaflet (drawingInfo via FeatureServer metadata), OpenLayers (OGC TileSetMetadata via OGCVectorTile source) |
+
+> Protocol applicability aligns with [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md) row `CERT-RNDR-URL-01` (FS, MVT). OGC API Features does not ship a style URL / metadata document today; the SCHM/DISC IDs already cover its collection-metadata discovery path, so `CERT-RNDR-URL-01` is recorded as `not-applicable` on `ogc-features` envelopes per the applicability sets in [`tests/js/openlayers/shared/evidence.ts`](../../tests/js/openlayers/shared/evidence.ts).
 
 ## Lane Coverage
 
@@ -201,8 +203,14 @@ CERT-* IDs:
 
 The release ledger
 [`docs/gis/data/public-interface-proof.json`](data/public-interface-proof.json)
-references this slice spec from the three `linkedTicket: "#478"`
-proofs (`wms-1.3`, `wmts-1.0`, `ogc-api-maps-and-static-rendering`).
+references this slice spec from the `ogc-api-maps-and-static-rendering`
+`linkedTicket: "#478"` proof, which is flipped from `planned` to
+`implemented` by this slice. The `wms-1.3` and `wmts-1.0` `#478` proofs
+remain `planned` because the slice lanes do not exercise
+`/ogc/services/{serviceId}/wms` or `/ogc/services/{serviceId}/wmts` —
+closing them requires a real WMS/WMTS client lane (for example
+`ol/source/TileWMS`, `ol/source/WMTS`, or the QGIS WMS/WMTS providers)
+and is a bounded follow-on to this ticket.
 
 ## CI Posture
 
@@ -269,3 +277,4 @@ a `Cache-Control: no-cache` override.
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-04-06 | Initial slice — six visual / style scenarios, lane-coverage table, geodesy lock, evidence path |
+| 1.1 | 2026-04-07 | Align `CERT-RNDR-URL-01` Protocols row with the matrix (FS, MVT); scope the release-ledger flip to `ogc-api-maps-and-static-rendering` only (WMS 1.3 / WMTS 1.0 remain `planned` pending a real WMS/WMTS client lane) |
