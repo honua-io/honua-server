@@ -861,7 +861,7 @@
     "/collections/{collectionId}/clusters": {
       "post": {
         "summary": "Spatial clustering for a collection (Pro)",
-        "description": "Runs DBSCAN or K-Means clustering over the collection features and returns either per-feature cluster assignments or per-cluster convex hulls. Pro-tier feature gated by ADR-0024.",
+        "description": "Runs DBSCAN or K-Means clustering over the collection features and returns either per-feature cluster assignments or per-cluster convex hulls. `outStatistics` requires `returnHullPerCluster=true` (the aggregate columns only exist in the GROUP BY cluster-hull path); supplying both `returnHullPerCluster=false` and `outStatistics` returns HTTP 400. Pro-tier feature gated by ADR-0024.",
         "tags": [
           "OGC API Features",
           "Spatial Analytics"
@@ -906,11 +906,11 @@
                   "returnHullPerCluster": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Return per-cluster convex hulls instead of per-feature assignments."
+                    "description": "Return per-cluster convex hulls instead of per-feature assignments. Must be true when outStatistics is supplied — aggregate columns are only emitted in the hull-per-cluster GROUP BY path."
                   },
                   "outStatistics": {
                     "type": "array",
-                    "description": "Optional statistic definitions evaluated per cluster when returnHullPerCluster is true.",
+                    "description": "Optional statistic definitions evaluated per cluster. Only honored when returnHullPerCluster=true; supplying outStatistics with returnHullPerCluster=false returns HTTP 400.",
                     "items": {
                       "type": "object"
                     }
@@ -1032,7 +1032,7 @@
     "/collections/{collectionId}/buffer-aggregate": {
       "post": {
         "summary": "Buffer + aggregate for a collection (Pro)",
-        "description": "Buffers features by a configurable radius and optionally dissolves overlapping buffers, groups by attributes, and emits aggregate statistics. Pro-tier feature gated by ADR-0024.",
+        "description": "Buffers features by a configurable radius and optionally dissolves overlapping buffers, groups by attributes, and emits aggregate statistics. `outStatistics` requires `dissolve=true` (the aggregate columns only exist in the dissolved group-by path); supplying both `dissolve=false` and `outStatistics` returns HTTP 400. Pro-tier feature gated by ADR-0024.",
         "tags": [
           "OGC API Features",
           "Spatial Analytics"
@@ -1070,7 +1070,7 @@
                   "dissolve": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Union overlapping buffers within each group."
+                    "description": "Union overlapping buffers within each group. Must be true when outStatistics is supplied — the aggregate columns are only emitted in the dissolved GROUP BY path."
                   },
                   "groupByFields": {
                     "type": "string",

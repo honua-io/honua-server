@@ -254,6 +254,19 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return outStatsError!;
         }
 
+        // Mirror the buffer-aggregate guard: outStatistics only make sense in the
+        // hull-per-cluster path, which is the branch that emits GROUP BY + aggregate
+        // columns in BuildClusterQuery. The per-feature path writes one row per
+        // source feature with no aggregation, so silently discarding outStatistics
+        // there would hide a contract mismatch from callers. Reject it at the
+        // handler so the behavior stays consistent with queryBufferAggregate.
+        if (!returnHull && outStatistics.HasValue && !outStatistics.Value.IsDefaultOrEmpty)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid outStatistics",
+                ["outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate statistics."]);
+        }
+
         // Feature query (where + SQL filter).
         if (!TryBuildFeatureQuery(context, values, layer, out var featureQuery, out var filterError))
         {

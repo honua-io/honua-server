@@ -107,7 +107,7 @@ These limits apply across protocols:
 
 ### Spatial Analytics Limits (Pro)
 
-The Pro-tier spatial analytics endpoints (`queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` and their OGC mirrors) bound input/output size and parameter ranges via `Limits__Analytics__*`. All caps are enforced server-side; the buffer-distance and DBSCAN-eps caps are applied in meters after unit conversion so they cannot be bypassed by switching units.
+The Pro-tier spatial analytics endpoints (`queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` and their OGC mirrors) bound input/output size and parameter ranges via `Limits__Analytics__*`. All caps are enforced server-side. The `queryBufferAggregate` `distance` parameter accepts a `unit` (meters/kilometers/feet/miles); its cap is applied in meters **after** unit conversion so non-meter units cannot be used to bypass the limit. DBSCAN `eps`, `dwithin` `distance`, and density `cellSize` are always meters on the wire and are capped directly.
 
 - `Limits__Analytics__MaxInputFeatures` — input row cap (SQL `LIMIT n+1` overflow probe)
 - `Limits__Analytics__MaxClusters` — per-result cap for clustering when `returnHullPerCluster=true`

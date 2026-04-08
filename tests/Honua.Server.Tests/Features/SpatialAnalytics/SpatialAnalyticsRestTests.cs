@@ -206,6 +206,35 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryClusters)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_PerFeatureWithOutStatistics_ReturnsBadRequest()
+    {
+        // outStatistics only make sense in hull-per-cluster mode (the GROUP BY branch
+        // in BuildClusterQuery). Per-feature mode returns one row per source feature
+        // with no aggregation, so the handler must reject the combination instead of
+        // silently discarding the statistics — mirrors the buffer-aggregate guard.
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            returnHullPerCluster = false,
+            outStatistics = "[{\"statisticType\":\"count\",\"onStatisticField\":\"objectid\",\"outStatisticFieldName\":\"cnt\"}]",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("outStatistics");
+        content.Should().Contain("returnHullPerCluster");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
     public async Task QueryClusters_WithWhereFilter_AppliesFilter()
     {
         var payload = JsonSerializer.Serialize(new

@@ -169,5 +169,9 @@ In air-gapped environments, download the extension file separately and set `Spat
 ### Write operations return errors
 
 This is expected. The DuckDB provider is read-only by design. Feature editing, MVT tiles,
-H3 aggregation, native GML output, and replica/extract workflows are not supported. Use
-the PostgreSQL provider for write workloads, vector tiles, or WFS GML responses.
+H3 aggregation, native GML output, replica/extract workflows, and the Pro-tier spatial
+analytics endpoints (`queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity`
+and their OGC mirrors) are not supported — the analytics endpoints require PostGIS
+primitives (`ST_ClusterDBSCAN`/`ST_ClusterKMeans`, `ST_Buffer`/`ST_Union`, hex/square grid
+generators) that DuckDB Spatial does not provide. Use the PostgreSQL provider for write
+workloads, vector tiles, WFS GML responses, or spatial analytics.
