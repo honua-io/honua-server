@@ -151,7 +151,7 @@ internal sealed class StreamingFileUploadService : IDisposable
 
             return FileUploadResult.Success(stagedFile);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Clean up temp file on failure
             try

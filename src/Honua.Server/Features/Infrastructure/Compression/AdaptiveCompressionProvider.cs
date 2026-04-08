@@ -74,7 +74,6 @@ internal sealed class AdaptiveBrotliStream : Stream
     private readonly AdaptiveCompressionOptions _options;
     private readonly MemoryStream _buffer;
     private BrotliStream? _compressionStream;
-    private bool _headerWritten;
 
     public AdaptiveBrotliStream(Stream outputStream, AdaptiveCompressionOptions options)
     {
