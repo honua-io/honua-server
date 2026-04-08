@@ -394,6 +394,60 @@ public class CachingDatabaseConnectionProviderTests : IDisposable
             "wrapper must relay inner StateChange so telemetry decrements on close");
     }
 
+    [Fact]
+    public void SemaphoreReleasingConnection_OverridesBeginDbTransactionAsync()
+    {
+        // Regression — DbConnection.BeginDbTransactionAsync has a default
+        // implementation that falls back to the synchronous BeginDbTransaction.
+        // Without an explicit override, every gated OpenTransactionAsync call
+        // would block the request thread on sync database I/O. This check
+        // proves the override is declared on the wrapper itself.
+        var method = typeof(SemaphoreReleasingConnection).GetMethod(
+            "BeginDbTransactionAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+            binder: null,
+            types: new[] { typeof(System.Data.IsolationLevel), typeof(CancellationToken) },
+            modifiers: null);
+
+        method.Should().NotBeNull(
+            "the wrapper must override BeginDbTransactionAsync to avoid sync fallback");
+        method!.DeclaringType.Should().Be<SemaphoreReleasingConnection>(
+            "the override must be declared on the wrapper, not inherited from DbConnection");
+    }
+
+    [Fact]
+    public async Task SemaphoreReleasingConnection_BeginTransactionAsync_ReturnsUsableTransaction()
+    {
+        // Regression — verify the async transaction path through a gated
+        // provider returns a working transaction wrapped around the inner
+        // NpgsqlConnection. Calling commit/rollback exercises the async path
+        // end-to-end, proving the override forwards correctly.
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1
+        });
+        using var provider = new CachingDatabaseConnectionProvider(
+            _dataSource,
+            NullLogger<CachingDatabaseConnectionProvider>.Instance,
+            concurrencyGate: gate);
+
+        await using var connection = await provider.OpenConnectionAsync();
+        connection.Should().BeOfType<SemaphoreReleasingConnection>();
+        var inner = connection.RequireNpgsqlConnection();
+
+        // Act — open a transaction via the async API the wrapper must support.
+        await using var transaction = await connection.BeginTransactionAsync(
+            System.Data.IsolationLevel.ReadCommitted);
+
+        // Assert — transaction is bound to the inner Npgsql connection (the
+        // wrapper delegates to it) and can be rolled back without throwing.
+        transaction.Should().NotBeNull();
+        transaction.Connection.Should().BeSameAs(inner,
+            "the async override must forward to the inner NpgsqlConnection");
+        await transaction.RollbackAsync();
+    }
+
     public void Dispose()
     {
         GC.SuppressFinalize(this);

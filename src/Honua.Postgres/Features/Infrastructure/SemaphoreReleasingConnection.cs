@@ -63,6 +63,15 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
         => _inner.BeginTransaction(isolationLevel);
 
+    // Without this override, DbConnection.BeginTransactionAsync falls back to
+    // calling the synchronous BeginDbTransaction above, turning every gated
+    // OpenTransactionAsync into blocking I/O on the request thread. Forwarding
+    // to NpgsqlConnection.BeginTransactionAsync preserves the async path.
+    protected override async ValueTask<DbTransaction> BeginDbTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken)
+        => await _inner.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+
     protected override DbCommand CreateDbCommand()
     {
         var cmd = _inner.CreateCommand();
