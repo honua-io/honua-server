@@ -432,7 +432,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         Log.AdaptiveSamplerDisposed(_logger);
     }
 
-    private static partial class Log
+    internal static partial class Log
     {
         [LoggerMessage(
             EventId = 1,
@@ -915,7 +915,7 @@ internal sealed class MLSamplingDecisionEngine : IDisposable
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
-            Log.MLLearningTriggered(_logger, patterns.Count, avgSuccessRate, _globalConfidence);
+            AdaptiveSampler.Log.MLLearningTriggered(_logger, patterns.Count, avgSuccessRate, _globalConfidence);
         }
     }
 
