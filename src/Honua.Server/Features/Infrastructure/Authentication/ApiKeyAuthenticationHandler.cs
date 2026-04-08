@@ -200,11 +200,24 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// </summary>
     private bool IsDevelopmentBypassEnabled()
     {
+        // SECURITY: Never allow bypass in production, regardless of configuration
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+        {
+            AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
+            return false;
+        }
+
         // Check if HONUA_DEV_AUTH is explicitly set to true
         string? devAuthBypass = _authOptions.DevAuthBypass;
         if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
-            return _authOptions.IsTestMode;
+            // Only allow in Test environment, not just any non-production environment
+            if (_authOptions.IsTestMode)
+            {
+                AuthenticationLog.DevelopmentBypassEnabled(Logger);
+                return true;
+            }
         }
 
         return false;
