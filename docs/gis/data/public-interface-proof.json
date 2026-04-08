@@ -302,6 +302,20 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final FeatureServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
+          "executionLane": "ci:esri-leaflet-browser-tests",
+          "evidenceLocations": [
+            "tests/js-browser/esri-leaflet/feature-layer-load.spec.ts",
+            "tests/js-browser/shared/cert-reporter.ts",
+            "tests/js-browser/playwright.config.ts"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#463",
+          "versionCaptureRule": "Reporter resolves client_version from the installed esri-leaflet package in node_modules."
         }
       ]
     },
@@ -364,6 +378,20 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final MapServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving MapServer consumption through leaflet + esri-leaflet DynamicMapLayer",
+          "executionLane": "ci:esri-leaflet-browser-tests",
+          "evidenceLocations": [
+            "tests/js-browser/esri-leaflet/dynamic-map-layer.spec.ts",
+            "tests/js-browser/shared/cert-reporter.ts",
+            "tests/js-browser/playwright.config.ts"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#463",
+          "versionCaptureRule": "Reporter resolves client_version from the installed esri-leaflet package in node_modules."
         }
       ]
     },
@@ -412,7 +440,7 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification — pending a real WMS 1.3 client lane (OpenLayers ol/source/TileWMS, QGIS WMS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/services/{serviceId}/wms.",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -471,7 +499,7 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification — pending a real WMTS 1.0 client lane (ol/source/WMTS, QGIS WMTS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Tiles render paths (ol/source/OGCVectorTile) and does not exercise /ogc/services/{serviceId}/wmts.",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -572,6 +600,24 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Pin the Microsoft.OData.Client package version in tests/Honua.Server.Tests/Honua.Server.Tests.csproj and report that exact version in the release evidence notes for the OData lane."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Microsoft.OData.Client 8.4.3 xUnit certification suite producing schema v1.0 cli-odata.cert.json envelopes per docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs",
+            "tests/Honua.Server.Tests/Features/OData/ODataClientModels.cs",
+            "tests/Honua.TestKit/Infrastructure/CertificationEvidenceCollector.cs",
+            "tests/Honua.TestKit/Infrastructure/CertEnvelope.cs",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Pin Microsoft.OData.Client in tests/Honua.Server.Tests/Honua.Server.Tests.csproj; ODataClientCertificationFixture reads the loaded assembly version into the cert envelope's client_version field on every CI run, and the envelope's server_version field is sourced from GITHUB_SHA or the Honua.Server informational version."
         },
         {
           "proofClass": "real-client-certification",
@@ -843,16 +889,17 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Browser visual/render proof for map rendering clients",
+          "proofMechanism": "Browser visual/render proof for OGC API Maps clients — pending a real OGC API Maps client lane (for example ol/source/ImageWMS targeting /ogc/maps, or a QGIS WMS provider pointed at the static rendering surface). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/maps or /static/.",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
+            "docs/gis/visual-style-certification-slice.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
             "docs/contributor/public-interface-quality-model.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",
           "linkedTicket": "#478",
-          "versionCaptureRule": "When browser visual certification lands, record the exact client version plus immutable evidence link in the release ledger for the rendered-map lane."
+          "versionCaptureRule": "When the OGC API Maps client lane lands, record the exact client version, run date, and immutable .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
         }
       ]
     },

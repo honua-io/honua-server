@@ -44,8 +44,16 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-ERRH-02 | ERRH | Malformed filter returns structured error | FS, OGC, OData | pass/fail |
 | CERT-RNDR-01 | RNDR | Map/table renders without client error | FS, OGC, OData, MVT ‡ | pass/fail |
 | CERT-RNDR-02 | RNDR | Data refresh preserves state | FS, OGC, OData | pass/fail |
+| CERT-RNDR-SYM-01 | RNDR | Point symbol renders with declared color/size | FS, OGC, MVT | screenshot+pass/fail |
+| CERT-RNDR-LIN-01 | RNDR | Line renders with declared stroke + width | FS, OGC, MVT | screenshot+pass/fail |
+| CERT-RNDR-FIL-01 | RNDR | Polygon fill renders with declared color | FS, OGC, MVT | screenshot+pass/fail |
+| CERT-RNDR-LBL-01 | RNDR | Label/text renders where supported | FS, OGC | screenshot+pass/fail |
+| CERT-RNDR-SPR-01 | RNDR | Sprite/icon resolves and draws | MVT | screenshot+pass/fail |
+| CERT-RNDR-URL-01 | RNDR | Style URL/metadata is consumed | FS, MVT | pass/fail |
 
-‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS). Automated browser evidence now comes from the JS — MapLibre (Playwright) lane for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02. The manual smoke runbook still has no separate MVT lane for the remaining client-level gaps.
+‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS, OpenLayers `OGCVectorTile`). Automated browser evidence now comes from the JS — MapLibre (Playwright) lane for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02 (#464). The visual / style certification slice ([`visual-style-certification-slice.md`](visual-style-certification-slice.md)) tracks the additional `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs.
+
+The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
 § **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is exercised as a rendering-only connection (e.g., ArcGIS Pro smoke test), the query-focused categories — CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 — are recorded as `not-applicable` in the `mapserver` evidence file. If the client also exercises MapServer's layer query endpoint (`/{layer-id}/query`), record those results normally. See the [runbook per-protocol evidence section](CLIENT_TEMPLATE_RUNBOOK.md#per-protocol-evidence-files) for the exact split.
 
@@ -82,16 +90,19 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 |---|---|---|---|
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
 | **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
+| **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
-| **CLI / SDK** (admin SDK, pytest) | Automated | All CERT-\* except CERT-RNDR | CLI-EXT-01, CLI-EXT-02 |
+| **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
 | **BI — Excel** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
 | **Licensed** (future) | Placeholder | TBD | TBD |
 
 † **BI lanes (OData-only):** CERT-GEOM-01, CERT-GEOM-02, CERT-SCHM-02, and CERT-QFLT-02 do not apply — these require geometry-capable protocols (FS, OGC). Record as `not-applicable` in the evidence envelope.
 
-‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer, OGC API Features, and OGC Tiles protocols via JavaScript/TypeScript client tests (`*.test.ts`). WFS 2.0 tests also run via Vitest but do not yet produce `.cert.json` evidence files — `wfs20` is pending formal addition to the certification evidence spec's valid protocol set. Playwright (headless Chromium) covers CERT-RNDR rendering tests via browser-based OpenLayers map assertions (`*.spec.ts`); currently MVT only. The Python pytest suite (FeatureServer + OGC API Features) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. OData and MapServer protocol automation is planned but not yet implemented. Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
+‡‡ **JS lane current automated scope:** Vitest (Node.js) covers FeatureServer, OGC API Features, and OGC Tiles protocols via JavaScript/TypeScript client tests (`*.test.ts`). WFS 2.0 tests also run via Vitest but do not yet produce `.cert.json` evidence files — `wfs20` is pending formal addition to the certification evidence spec's valid protocol set. Playwright (headless Chromium) covers CERT-RNDR rendering tests via browser-based OpenLayers map assertions (`*.spec.ts`); currently MVT only. The Python pytest suite (FeatureServer + OGC API Features) provides independent server-side protocol validation; its results may inform certification confidence but are not JS-lane client evidence. JS-lane OData and MapServer protocol automation is planned but not yet implemented; CLI-lane OData automation is now closed via the Microsoft.OData.Client xUnit certification suite (`tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs`). Until automated JS suites are added for those protocols, their CERT-\* results require manual evidence or are recorded as `skip` with a note referencing this gap.
+
+§§ **Esri Leaflet sub-lane scope:** The Playwright suite currently exercises the browser-visible FeatureServer and MapServer subset: connection, metadata, schema, query/filter, paging, geometry fidelity, error handling, rendering, MapServer identify, and refresh. After the visual / style slice lands (ticket #478), the suite also substantiates `CERT-RNDR-SYM-01` and `CERT-RNDR-URL-01` on the FeatureServer surface via drawingInfo metadata and per-category style assertions, and the reporter emits a 24-case common-core envelope (18 base + 6 slice) by recording unexercised CERT-\* IDs as `skip` and the MapServer query-focused IDs as `not-applicable`. On the `mapserver` envelope the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs are also recorded as `not-applicable` because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint.
 
 ### Lane-Specific Extensions
 
@@ -111,6 +122,15 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | JS-EXT-TILES-DISC-01 | OGC Tiles landing page | MVT | pass/fail |
 | JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
 | JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |
+
+#### Esri Leaflet Browser Sub-Lane
+
+| Extension ID | Description | Protocol(s) | Evidence |
+|---|---|---|---|
+| EL-EXT-01 | FeatureLayer symbology renders with drawingInfo | FS | pass/fail |
+| EL-EXT-02 | DynamicMapLayer export image renders | FS (mapserver) | pass/fail |
+| EL-EXT-03 | Feature attributes accessible via eachFeature | FS | pass/fail |
+| EL-EXT-04 | MapServer identify returns attributes at point | FS (mapserver) | pass/fail |
 
 #### Desktop Lane
 
@@ -157,4 +177,9 @@ All certification results must follow the standardized evidence specification in
 | 1.0.7 | 2026-03-17 | Add stable HTML anchor for JS Lane heading to decouple cross-document links |
 | 1.0.8 | 2026-04-03 | Add WFS protocol abbreviation; update Desktop — QGIS lane to reflect automated PyQGIS coverage |
 | 1.0.9 | 2026-04-05 | Update JS lane to reflect hybrid Vitest + Playwright execution model and expanded protocol scope |
-| 1.1.0 | 2026-04-06 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification |
+| 1.0.10 | 2026-04-03 | Register Esri Leaflet browser sub-lane (EL-EXT-01 … EL-EXT-04) |
+| 1.0.11 | 2026-04-03 | Clarify Esri Leaflet automated scope and evidence skip/not-applicable behavior |
+| 1.0.12 | 2026-04-06 | Note CLI/SDK OData automation via Microsoft.OData.Client xUnit suite; close OData automation gap for the CLI lane |
+| 1.1.0 | 2026-04-06 | Add visual / style certification slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) per ticket #478; link slice spec |
+| 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
+| 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |

@@ -4,9 +4,9 @@ This document describes the current Honua Server architecture and the constraint
 
 ## Goals
 
-- **PostGIS-native**: treat PostgreSQL/PostGIS as the source of truth with no ETL.
+- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads.
 - **Open standards**: serve multiple GIS and data protocols from one dataset.
-- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` <- `Honua.Server`.
+- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` <- `Honua.Server`.
 - **Minimal API surface**: endpoints are defined with Minimal APIs, not MVC controllers.
 - **AOT-friendly**: avoid reflection in hot paths and use source-generated JSON/logging.
 
@@ -16,14 +16,16 @@ This document describes the current Honua Server architecture and the constraint
 src/
 ├── Honua.Server/     # ASP.NET Core host + Minimal API endpoints
 ├── Honua.Core/       # Domain models + abstractions
-├── Honua.Postgres/   # PostgreSQL/PostGIS implementation
+├── Honua.Postgres/   # PostgreSQL/PostGIS implementation (read/write)
+├── Honua.DuckDB/     # DuckDB implementation (read-only)
 └── Honua.Admin/      # Blazor WASM admin UI
 ```
 
 Key points:
 - **Honua.Core** defines domain models, protocol DTOs, and abstractions.
 - **Honua.Postgres** implements Core interfaces using raw Npgsql and PostGIS.
-- **Honua.Server** composes endpoints and handlers, using Core + Postgres.
+- **Honua.DuckDB** implements Core read interfaces (`IFeatureReader`, `IStreamingFeatureStore`, etc.) for embedded DuckDB databases. Write operations are rejected at startup via capability stripping.
+- **Honua.Server** composes endpoints and handlers, selecting the active provider via `DataSource:Provider` configuration.
 - **Honua.Admin** is a standalone UI that talks to the Admin API.
 
 ## Feature Slices (Server)
@@ -39,7 +41,9 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **Admin**: connections, publishing, metadata, styles, imports, operations, observability.
 - **Import**: file import pipeline + Esri service import.
 
-## Data Access (Postgres)
+## Data Access
+
+### Postgres Provider
 
 - **Raw Npgsql**: no ORM.
 - **QueryBuilder + DataAccess** split:
@@ -47,6 +51,14 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
   - `FeatureDataAccess` executes queries and maps results.
 - **Prepared statement cache** is optional and uses safe parameter binding.
 - **JSONB attributes** are accessed via validated field names and parameterized values.
+
+### DuckDB Provider
+
+- **DuckDB.NET.Data**: embedded database, no external server.
+- Same **QueryBuilder + DataAccess** split as Postgres, with DuckDB-compatible spatial SQL (PostGIS-compatible function names).
+- **Read-only by design**: write interfaces are wired to `ReadOnlyFeatureWriter` which rejects all mutations.
+- **Configuration-driven catalog**: layers and services are defined in `appsettings.json`, not in an admin database.
+- See the [DuckDB Provider Guide](../operator/duckdb-provider.md) for operator configuration.
 
 ## Configuration and Limits
 
@@ -77,7 +89,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 ## Architectural Constraints (Enforced)
 
 - **No controllers**: Minimal APIs only.
-- **Dependency flow**: Core <- Postgres <- Server.
+- **Dependency flow**: Core <- Postgres / DuckDB <- Server.
 - **Public API docs**: all public types require XML documentation.
 - **AOT compatibility**: reflection avoided in hot paths; source-gen JSON.
 

@@ -142,6 +142,145 @@ public sealed class ImageServerServiceInfo
 
     [JsonPropertyName("spatialReferenceServiceUrl")]
     public string? SpatialReferenceServiceUrl { get; init; }
+
+    /// <summary>
+    /// Temporal metadata describing the layer's time-aware fields and extent.
+    /// Emitted only when the catalog metadata declares time information.
+    /// </summary>
+    [JsonPropertyName("timeInfo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageServerTimeInfo? TimeInfo { get; init; }
+
+    /// <summary>
+    /// Indicates that the layer represents a multidimensional raster (cube).
+    /// Always emitted; defaults to <c>false</c> until cube ingestion ships.
+    /// </summary>
+    [JsonPropertyName("hasMultidimensions")]
+    public bool HasMultidimensions { get; init; } = false;
+
+    /// <summary>
+    /// Multidimensional metadata when the layer is a cube.
+    /// Emitted only when populated; remains null until cube ingestion lands.
+    /// </summary>
+    [JsonPropertyName("multidimensionalInfo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImageServerMultidimensionalInfo? MultidimensionalInfo { get; init; }
+}
+
+/// <summary>
+/// Esri-compatible time info for an Image Server layer.
+/// </summary>
+public sealed class ImageServerTimeInfo
+{
+    /// <summary>
+    /// Field carrying the start time for raster catalog items, when present.
+    /// </summary>
+    [JsonPropertyName("startTimeField")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StartTimeField { get; init; }
+
+    /// <summary>
+    /// Field carrying the end time for raster catalog items, when present.
+    /// </summary>
+    [JsonPropertyName("endTimeField")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EndTimeField { get; init; }
+
+    /// <summary>
+    /// Optional track identifier field used for temporal visualisation.
+    /// </summary>
+    [JsonPropertyName("trackIdField")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TrackIdField { get; init; }
+
+    /// <summary>
+    /// Inclusive [start, end] temporal extent in milliseconds since epoch when known.
+    /// Null entries are emitted when only one bound is known; the array itself is
+    /// omitted entirely when no extent is known so probing clients see a stable shape.
+    /// </summary>
+    [JsonPropertyName("timeExtent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long?[]? TimeExtent { get; init; }
+
+    /// <summary>
+    /// Time reference (zone + DST handling) used by Esri clients.
+    /// </summary>
+    [JsonPropertyName("timeReference")]
+    public ImageServerTimeReference TimeReference { get; init; } = new();
+
+    /// <summary>
+    /// Default time interval used when the client does not specify one.
+    /// </summary>
+    [JsonPropertyName("defaultTimeInterval")]
+    public int DefaultTimeInterval { get; init; }
+
+    /// <summary>
+    /// Units for <see cref="DefaultTimeInterval"/>.
+    /// </summary>
+    [JsonPropertyName("defaultTimeIntervalUnits")]
+    public string DefaultTimeIntervalUnits { get; init; } = "esriTimeUnitsUnknown";
+
+    /// <summary>
+    /// Indicates whether the layer streams live observations.
+    /// </summary>
+    [JsonPropertyName("hasLiveData")]
+    public bool HasLiveData { get; init; }
+}
+
+/// <summary>
+/// Esri-compatible time reference describing the timezone semantics of a temporal layer.
+/// </summary>
+public sealed class ImageServerTimeReference
+{
+    /// <summary>
+    /// IANA-compatible timezone identifier. Defaults to UTC.
+    /// </summary>
+    [JsonPropertyName("timeZone")]
+    public string TimeZone { get; init; } = "UTC";
+
+    /// <summary>
+    /// Whether the layer's timestamps observe daylight saving transitions.
+    /// </summary>
+    [JsonPropertyName("respectsDaylightSaving")]
+    public bool RespectsDaylightSaving { get; init; }
+}
+
+/// <summary>
+/// Skeleton for Esri-compatible multidimensional info; populated when cube ingestion lands.
+/// </summary>
+public sealed class ImageServerMultidimensionalInfo
+{
+    /// <summary>
+    /// Variables (dimensional axes) declared by the cube.
+    /// </summary>
+    [JsonPropertyName("variables")]
+    public ImageServerMultidimensionalVariable[] Variables { get; init; } = [];
+}
+
+/// <summary>
+/// Single variable inside an Image Server multidimensional info document.
+/// </summary>
+public sealed class ImageServerMultidimensionalVariable
+{
+    /// <summary>
+    /// Variable name (e.g. "temperature").
+    /// </summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Optional description of the variable.
+    /// </summary>
+    [JsonPropertyName("description")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; init; }
+
+    /// <summary>
+    /// Unit of measurement for the variable's values.
+    /// </summary>
+    [JsonPropertyName("unit")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Unit { get; init; }
 }
 
 /// <summary>

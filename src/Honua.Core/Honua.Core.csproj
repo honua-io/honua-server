@@ -46,6 +46,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.DuckDB" />
   </ItemGroup>
 
 </Project>

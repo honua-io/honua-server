@@ -1,24 +1,25 @@
 import { defineConfig, devices } from '@playwright/test';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const isCI = !!process.env.CI;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const baseURL = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
 
 export default defineConfig({
-  testDir: './specs',
+  testDir: './esri-leaflet',
   fullyParallel: false,
-  forbidOnly: isCI,
-  retries: isCI ? 1 : 0,
   workers: 1,
+  retries: 1,
   reporter: [
     ['list'],
-    ['html', { outputFolder: './playwright-report', open: 'never' }],
-    ['./helpers/cert-reporter.ts'],
+    ['./shared/cert-reporter.ts'],
   ],
-  globalSetup: './global-setup.ts',
+  globalSetup: resolve(__dirname, 'global-setup.ts'),
   use: {
-    baseURL: process.env.HONUA_BASE_URL ?? 'http://localhost:5000',
+    baseURL,
     screenshot: 'only-on-failure',
-    trace: 'on-first-retry',
-    ...devices['Desktop Chrome'],
+    trace: 'retain-on-failure',
+    video: 'off',
   },
   projects: [
     {
@@ -26,6 +27,14 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  timeout: 30_000,
+  // Snapshot policy: CI rejects missing baselines so visual regressions are caught;
+  // locally, generate missing baselines on first run for developer convenience.
+  updateSnapshots: process.env.CI ? 'none' : 'missing',
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.02,
+      threshold: 0.3,
+    },
+  },
   outputDir: './test-results',
 });

@@ -6,7 +6,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## Core Workflows
 
-- `ci.yml`: build, formatting verification, full test suite, MapLibre GL JS browser compatibility (Playwright + Chromium), and MCP certification (see [MCP Certification](mcp-certification.md)).
+- `ci.yml`: build, formatting verification, full test suite, merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
 - `pr-validation.yml`: PR template compliance validation.
 - `performance-benchmarks.yml`: performance benchmarks (`quick` mode on PR, `full` mode on nightly/manual).
 - `load-soak-nightly.yml`: nightly load/soak testing.
@@ -21,7 +21,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## CI Gate (Required Status Check)
 
-The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `maplibre-compat`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`, `llm-architecture-review`, `architecture-gate`). Configure it as a required status check in branch protection to gate PRs on a single job.
+The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`pr-readiness`, `changes`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `esri-leaflet-browser-tests`, `mcp-certification`, `core-package-compatibility`, `postgres-compat`, `docker-build`, `llm-architecture-review`, `architecture-gate`). Configure it as a required status check in branch protection to gate PRs on a single job.
 
 ## Quality Gates
 

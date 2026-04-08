@@ -1,21 +1,27 @@
 {
-  "name": "honua-maplibre-browser-tests",
+  "name": "honua-esri-leaflet-tests",
   "version": "1.0.0",
-  "description": "MapLibre GL JS browser compatibility suite for Honua Server",
+  "private": true,
   "type": "module",
+  "description": "Esri Leaflet browser compatibility tests for Honua Server",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "test": "npx playwright test",
+    "test:update-snapshots": "npx playwright test --update-snapshots",
     "test:headed": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug",
-    "typecheck": "tsc --noEmit"
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "esri-leaflet": "^3.0.14",
+    "esri-leaflet-renderers": "^3.0.1"
   },
   "devDependencies": {
-    "@playwright/test": "~1.50.0",
+    "@playwright/test": "^1.52.0",
     "@types/node": "^20.10.0",
-    "maplibre-gl": "~5.0.0",
     "typescript": "^5.3.0"
-  },
-  "engines": {
-    "node": ">=20.11.0"
   }
 }

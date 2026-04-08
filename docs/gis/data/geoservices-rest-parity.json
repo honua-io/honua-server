@@ -583,7 +583,8 @@
           },
           {
             "name": "resultType",
-            "status": "rejected"
+            "status": "partial",
+            "notes": "Accepts standard and tile for GeoServices parity and browser-client compatibility; other values are rejected and current behavior matches the standard query path."
           },
           {
             "name": "sqlFormat",
@@ -996,19 +997,27 @@
       "parity": "partial",
       "drillDownDoc": "docs/gis/image-server-matrix.md",
       "implementedSurface": [
-        "service metadata",
+        "service metadata (with timeInfo when temporal)",
         "exportImage",
         "identify",
-        "tile"
+        "tile",
+        "query (raster catalog features)",
+        "computeStatisticsHistograms",
+        "legend",
+        "computeClass (raster function chain validation)"
       ],
       "knownGaps": [
-        "query",
         "queryBoundary",
         "find",
         "measure",
         "project",
         "exportTiles",
         "catalog mutation",
+        "AOI clipping for computeStatisticsHistograms",
+        "spatial WHERE pushdown for query",
+        "renderingRule honoured by exportImage/identify/legend",
+        "raster function executor (computeClass currently validates only)",
+        "multidimensional cube ingestion",
         "WMTS",
         "richer image child resources"
       ],
@@ -1018,12 +1027,25 @@
           "src/Honua.Server/Features/ImageServer/Handlers/ImageServerMetadataHandler.cs",
           "src/Honua.Server/Features/ImageServer/Handlers/ImageServerExportHandler.cs",
           "src/Honua.Server/Features/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
-          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerTileHandler.cs"
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerTileHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerLegendHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Services/ImageServerCatalogReader.cs",
+          "src/Honua.Server/Features/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
+          "src/Honua.Server/Features/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
+          "src/Honua.Server/Features/ImageServer/Services/ImageServerRasterFunctionPlanner.cs"
         ],
         "tests": [
           "tests/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs",
           "tests/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs"
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerEndpointsTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerLegendHandlerTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerAnalyzeHandlerTests.cs"
         ]
       },
       "operations": {
@@ -1073,6 +1095,32 @@
               "GET /rest/services/{id}/ImageServer/identify"
             ],
             "notes": "Point-only identify with JSON responses."
+          },
+          {
+            "name": "Query",
+            "esriPath": "/rest/services/{id}/ImageServer/query",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/query",
+              "POST /rest/services/{id}/ImageServer/query"
+            ],
+            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/AcquisitionDate). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, time, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
+          },
+          {
+            "name": "Compute Statistics and Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/computeStatisticsHistograms",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
+              "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
+            ],
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the layer's primary raster), the Honua-extension bandIds selector (1-based), and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/mosaicRule/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full raster."
           }
         ],
         "notImplemented": [
@@ -1176,18 +1224,30 @@
               "GET",
               "POST"
             ]
-          },
-          {
-            "name": "Query",
-            "esriPath": "/rest/services/{id}/ImageServer/query",
-            "methods": [
-              "GET",
-              "POST"
-            ]
           }
         ]
       },
+      "honuaExtensions": [
+        {
+          "name": "Compute Class (raster function chain validator)",
+          "honuaEndpoints": [
+            "GET /rest/services/{id}/ImageServer/computeClass",
+            "POST /rest/services/{id}/ImageServer/computeClass"
+          ],
+          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400; full executor wiring into exportImage / computeStatisticsHistograms is tracked as a follow-on."
+        }
+      ],
       "childResources": {
+        "partial": [
+          {
+            "name": "Legend",
+            "esriPath": "/rest/services/{id}/ImageServer/legend",
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/legend"
+            ],
+            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the primary raster's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
+          }
+        ],
         "notImplemented": [
           "colormap",
           "histograms",
@@ -1195,7 +1255,6 @@
           "imageSupportData",
           "keyProperties",
           "kml",
-          "legend",
           "multiDimensionalInfo",
           "rasterAttributeTable",
           "{rasterId}/*",
@@ -1269,12 +1328,106 @@
             "name": "format, level, row, col",
             "status": "implemented"
           }
+        ],
+        "query": [
+          {
+            "name": "where",
+            "status": "partial",
+            "notes": "Parsed via the shared GeoServices SQL filter parser and applied in-memory against catalog metadata fields (OBJECTID, Name, MinPS, MaxPS, LowPS, HighPS, CenterX, CenterY, ZOrder, Shape_Length, Shape_Area, AcquisitionDate). Limited to 2000 characters; spatial WHERE pushdown is not yet supported."
+          },
+          {
+            "name": "objectIds",
+            "status": "implemented",
+            "notes": "Accepts CSV (1,3,5) or JSON array ([1,3,5]) form."
+          },
+          {
+            "name": "outSR",
+            "status": "partial",
+            "notes": "Stamped onto the response spatialReference. Footprint geometry is NOT reprojected — clients must inspect each feature's geometry-level spatialReference to detect that the rings remain in the raster's native SRID."
+          },
+          {
+            "name": "resultOffset, resultRecordCount",
+            "status": "implemented",
+            "notes": "resultOffset defaults to 0; resultRecordCount defaults to 100 and is capped at 1000. Sets exceededTransferLimit when the page is truncated."
+          },
+          {
+            "name": "returnGeometry, returnIdsOnly, returnCountOnly, returnExtentOnly",
+            "status": "implemented",
+            "notes": "returnExtentOnly emits the aggregate extent computed after where/objectIds filtering and before pagination."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          },
+          {
+            "name": "geometry, geometryType, inSR, spatialRel, outFields, orderByFields, time, pixelSize",
+            "status": "ignored",
+            "notes": "Spatial filtering against arbitrary client geometries, per-field projection, ordering, temporal filtering, and pixel-size hints are not yet honoured."
+          }
+        ],
+        "computeStatisticsHistograms": [
+          {
+            "name": "rasterIds",
+            "status": "implemented",
+            "notes": "Accepts CSV (1,3) or JSON array ([1,3]) of catalog object IDs. When omitted, defaults to the layer's primary raster. Unknown IDs return 400 Bad Request."
+          },
+          {
+            "name": "bandIds",
+            "status": "implemented (Honua extension)",
+            "notes": "Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
+          },
+          {
+            "name": "histogramParameters.size",
+            "status": "implemented",
+            "notes": "Bin count, capped at 1024. Default is 256 when omitted."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          },
+          {
+            "name": "geometry, geometryType, mosaicRule, renderingRule, pixelSize",
+            "status": "ignored",
+            "notes": "AOI clipping is not yet honoured — analysis always covers the full raster."
+          }
+        ],
+        "legend": [
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported. Other formats return 400 Bad Request."
+          },
+          {
+            "name": "renderingRule",
+            "status": "ignored",
+            "notes": "Classification overrides through a custom rendering rule are not honoured — swatches are always derived from a fixed 5-class equal-interval ramp keyed off the layer's primary raster band-1 statistics."
+          }
+        ],
+        "computeClass": [
+          {
+            "name": "renderingRule (or rasterFunction alias)",
+            "status": "implemented",
+            "notes": "JSON-encoded raster function chain document. The MVP planner walks Identity / Stretch / Clip nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise unless the document overrides outputPixelType."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          }
         ]
       },
       "knownLimitations": [
         "The route shape is layer-scoped: /rest/services/{id}/ImageServer.",
         "Metadata, export, and identify operate on the layer's primary raster.",
         "Export responses always return JSON with a temporary file URL.",
+        "The query catalog reader applies WHERE/objectIds filters in-memory and does not reproject footprint geometry to outSR.",
+        "computeStatisticsHistograms always analyses the full raster — geometry/mosaicRule/renderingRule are not yet honoured.",
+        "computeClass currently only validates and plans the raster function chain; it does not yet execute the chain into exportImage / computeStatisticsHistograms.",
+        "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
+        "Service info exposes timeInfo only when the layer metadata declares startTimeField/endTimeField/trackIdField; the temporal extent is intentionally omitted because raster catalog items do not yet carry per-item timestamps.",
+        "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "Honua does not currently expose ImageServer WMTS or offline tile export."
       ]
     },

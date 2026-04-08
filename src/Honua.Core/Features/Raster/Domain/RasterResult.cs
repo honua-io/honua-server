@@ -88,6 +88,37 @@ public readonly record struct PixelValueResult
 }
 
 /// <summary>
+/// Histogram of pixel value distribution for a single raster band.
+/// </summary>
+public readonly record struct RasterHistogram
+{
+    /// <summary>
+    /// Band number (1-based).
+    /// </summary>
+    public required int Band { get; init; }
+
+    /// <summary>
+    /// Number of bins.
+    /// </summary>
+    public required int BinCount { get; init; }
+
+    /// <summary>
+    /// Lower bound of the value range.
+    /// </summary>
+    public required double Min { get; init; }
+
+    /// <summary>
+    /// Upper bound of the value range.
+    /// </summary>
+    public required double Max { get; init; }
+
+    /// <summary>
+    /// Counts per bin, ordered from <see cref="Min"/> to <see cref="Max"/>.
+    /// </summary>
+    public required long[] Counts { get; init; }
+}
+
+/// <summary>
 /// Statistical information about raster data.
 /// </summary>
 public readonly record struct RasterStatistics

@@ -1,6 +1,6 @@
 # Honua Platform Overview
 
-Honua is a cloud-native geospatial feature server. It publishes, queries, edits, and renders spatial data from PostGIS through industry-standard protocols — enabling ArcGIS Pro, QGIS, MapLibre, Power BI, Excel, and custom applications to connect to the same data source simultaneously.
+Honua is a cloud-native geospatial feature server. It publishes, queries, edits, and renders spatial data through industry-standard protocols — enabling ArcGIS Pro, QGIS, MapLibre, Power BI, Excel, and custom applications to connect to the same data source simultaneously. The primary provider is PostgreSQL/PostGIS (full read/write). An embedded DuckDB provider supports read-only analytical and reference workloads without external database infrastructure.
 
 ## Architecture
 
@@ -28,22 +28,25 @@ Honua is a cloud-native geospatial feature server. It publishes, queries, edits,
                     |  Geometry Service       |
                     |  Admin API              |
                     |  gRPC (internal)        |
-                    +------------+------------+
-                                 |
-                    +------------+------------+
-                    |   PostgreSQL + PostGIS   |
-                    +-------------------------+
+                    +------+-----+------------+
+                           |     |
+              +------------+     +------------+
+              |                               |
+ +------------+------------+   +--------------+-----------+
+ |   PostgreSQL + PostGIS   |   |  DuckDB (read-only,     |
+ |   (full read/write)      |   |  analytics & reference)  |
+ +-------------------------+   +--------------------------+
 ```
 
 ## Protocols at a Glance
 
-Honua serves multiple protocols from a single PostGIS dataset. No ETL, no data duplication.
+Honua serves multiple protocols from a single dataset. No ETL, no data duplication. Both the PostGIS and DuckDB providers expose the same protocol surface for read operations.
 
 | Protocol | Primary Clients | Use Case |
 |---|---|---|
 | **GeoServices REST FeatureServer** | ArcGIS Pro, Esri SDKs, ArcGIS Online | Feature query, editing, attachments, related records |
 | **GeoServices REST MapServer** | ArcGIS Pro, Esri map clients | Server-rendered map images, identify, legends |
-| **GeoServices REST ImageServer** | ArcGIS raster workflows | Raster/image export and identify |
+| **GeoServices REST ImageServer** | ArcGIS raster workflows | Raster/image export, identify, tiles, raster catalog query, per-band statistics & histograms, legend swatches, raster function chain validation |
 | **GeoServices Geometry Service** | Esri geometry operations | Buffer, project, intersect, union, clip, difference |
 | **OGC API Features** | QGIS, MapLibre, any OGC client | Feature CRUD with CQL2 filtering |
 | **OGC API Maps** | OGC map clients | Standards-based rendered map images |
@@ -68,10 +71,13 @@ Honua serves multiple protocols from a single PostGIS dataset. No ETL, no data d
   FlatGeobuf ┤          │              │          ├── Tableau
   GeoParquet ┤          └──────────────┘          ├── Leaflet
   GPX ───────┤                                    ├── Custom apps
-  WKT/CSV ───┤                                    └── Mobile SDKs
-  Esri REST ─┤
-  GeoServer ─┘
+  WKT/CSV ───┤          ┌──────────────┐          └── Mobile SDKs
+  Esri REST ─┤          │   DuckDB     │
+  GeoServer ─┘          │  (read-only) ├──Serve──▶ Same clients
+                         └──────────────┘          (query only)
 ```
+
+The DuckDB provider serves pre-built `.duckdb` files containing data prepared offline (e.g. from GeoParquet, Shapefile, or CSV imports). It supports feature queries, spatial filters, statistics, and GeoJSON/streaming export, but not editing, MVT, H3, native WFS GML output, or replica/extract workflows. See the [DuckDB Provider Guide](operator/duckdb-provider.md) for configuration and limitations.
 
 ## Key Capabilities
 
@@ -108,15 +114,15 @@ REST API and GitOps-ready management:
 
 ## Deployment
 
-Honua runs as a single container backed by PostgreSQL/PostGIS.
+Honua runs as a single container. The default PostgreSQL provider requires an external PostGIS database; the DuckDB provider is fully embedded and needs no external infrastructure.
 
 ```
-  Minimum:                Production:
-  --------                -----------
-  1x Honua container      N x Honua containers (stateless)
-  1x PostgreSQL/PostGIS   Managed PostgreSQL (RDS, Cloud SQL, etc.)
-                          Redis (optional, for caching)
-                          Reverse proxy (TLS, rate limiting)
+  PostgreSQL (default):         DuckDB (embedded):
+  ---------------------         ------------------
+  1x Honua container            1x Honua container
+  1x PostgreSQL/PostGIS         .duckdb file (bundled or mounted)
+  Redis (optional)
+  Reverse proxy (TLS)           Reverse proxy (TLS)
 ```
 
 **Deployment options:**

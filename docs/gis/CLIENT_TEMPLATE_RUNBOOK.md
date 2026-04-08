@@ -143,8 +143,8 @@ ArcGIS Pro exercises two protocols. Produce one `.cert.json` evidence file for e
 
 | Evidence file protocol | Connection used | Applicable smoke steps | CERT-\* scope |
 |---|---|---|---|
-| `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 18 common-core CERT-\* IDs |
-| `mapserver` | `…/MapServer` | 1 (connect), 2 (discovery), 4 (render), 5 (refresh), cross-cutting | CERT-CONN, CERT-AUTH, CERT-DISC, CERT-SCHM, CERT-ERRH, CERT-RNDR |
+| `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 24 common-core CERT-\* IDs (18 base + the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` visual / style slice IDs from ticket `#478`). The slice IDs are substantiated by the automated OpenLayers, Esri Leaflet, and PyQGIS lanes; record them as `skip` with a `pending-slice-substantiation-in-another-lane` note in the manual ArcGIS Pro envelope unless the operator exercises per-category drawingInfo styling directly. See [`visual-style-certification-slice.md`](visual-style-certification-slice.md). |
+| `mapserver` | `…/MapServer` | 1 (connect), 2 (discovery), 4 (render), 5 (refresh), cross-cutting | CERT-CONN, CERT-AUTH, CERT-DISC, CERT-SCHM, CERT-ERRH, CERT-RNDR. The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` slice IDs are `not-applicable` on `mapserver` evidence because drawingInfo per-category style assertions live on FeatureServer, not the MapServer export endpoint. |
 
 Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.
 
@@ -233,5 +233,5 @@ For each client entry, include:
 
 Desktop automation can reduce manual effort but should be treated as non-blocking MVP support work:
 - ArcGIS Pro: feasible with ArcPy on licensed Windows runners for scripted layer setup and project save.
-- QGIS: **automated via PyQGIS** — the `pyqgis-client-compat-nightly.yml` workflow exercises OGC API Features and WFS programmatically with real QGIS providers, including headless rendering. The automated lane covers all 18 CERT-\* cases (with documented skips for TLS/auth on the anonymous seed). The manual QGIS template flow remains OGC-first unless a later ticket broadens it.
+- QGIS: **automated via PyQGIS** — the `pyqgis-client-compat-nightly.yml` workflow exercises OGC API Features and WFS programmatically with real QGIS providers, including headless rendering. The automated lane covers the 18 base CERT-\* cases (with documented skips for TLS/auth on the anonymous seed) plus the three substantiated visual / style slice IDs from ticket `#478` (`CERT-RNDR-SYM-01`, `CERT-RNDR-LIN-01`, `CERT-RNDR-FIL-01`) via [`tests/python/pyqgis/test_render_path.py`](../../tests/python/pyqgis/test_render_path.py). The `CERT-RNDR-{LBL,SPR,URL}-01` slice IDs ride the pending-fixture follow-on and are tracked in the slice spec rather than seeded into the PyQGIS envelope. The manual QGIS template flow remains OGC-first unless a later ticket broadens it.
 - Power BI/Excel: query-refresh automation is feasible, but end-to-end desktop UI automation is brittle and environment-specific.
