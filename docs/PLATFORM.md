@@ -46,7 +46,7 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
 |---|---|---|
 | **GeoServices REST FeatureServer** | ArcGIS Pro, Esri SDKs, ArcGIS Online | Feature query, editing, attachments, related records |
 | **GeoServices REST MapServer** | ArcGIS Pro, Esri map clients | Server-rendered map images, identify, legends |
-| **GeoServices REST ImageServer** | ArcGIS raster workflows | Raster/image export and identify |
+| **GeoServices REST ImageServer** | ArcGIS raster workflows | Raster/image export, identify, tiles, raster catalog query, per-band statistics & histograms, legend swatches, raster function chain validation |
 | **GeoServices Geometry Service** | Esri geometry operations | Buffer, project, intersect, union, clip, difference |
 | **OGC API Features** | QGIS, MapLibre, any OGC client | Feature CRUD with CQL2 filtering |
 | **OGC API Maps** | OGC map clients | Standards-based rendered map images |

@@ -118,4 +118,70 @@ internal static partial class ImageServerLog
         Level = LogLevel.Warning,
         Message = "Temporary export storage limit reached for layer {LayerId}: {ErrorMessage}")]
     public static partial void ExportStorageLimitReached(ILogger logger, int layerId, string errorMessage);
+
+    [LoggerMessage(
+        EventId = 5818,
+        Level = LogLevel.Warning,
+        Message = "Invalid catalog query parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidCatalogQueryParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5819,
+        Level = LogLevel.Information,
+        Message = "Catalog query for layer {LayerId} returned {ReturnedCount} of {TotalCount} items")]
+    public static partial void CatalogQueryCompleted(ILogger logger, int layerId, int returnedCount, long totalCount);
+
+    [LoggerMessage(
+        EventId = 5820,
+        Level = LogLevel.Error,
+        Message = "Failed to query raster catalog for layer {LayerId}")]
+    public static partial void CatalogQueryFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5821,
+        Level = LogLevel.Information,
+        Message = "Computed statistics/histograms for layer {LayerId}: {BandCount} bands")]
+    public static partial void StatisticsHistogramsComputed(ILogger logger, int layerId, int bandCount);
+
+    [LoggerMessage(
+        EventId = 5822,
+        Level = LogLevel.Warning,
+        Message = "Invalid statistics/histograms parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidStatisticsHistogramsParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5823,
+        Level = LogLevel.Error,
+        Message = "Failed to compute statistics/histograms for layer {LayerId}")]
+    public static partial void StatisticsHistogramsFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5824,
+        Level = LogLevel.Information,
+        Message = "Generated legend for layer {LayerId}: {SwatchCount} swatches")]
+    public static partial void LegendGenerated(ILogger logger, int layerId, int swatchCount);
+
+    [LoggerMessage(
+        EventId = 5825,
+        Level = LogLevel.Error,
+        Message = "Failed to generate legend for layer {LayerId}")]
+    public static partial void LegendFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5826,
+        Level = LogLevel.Information,
+        Message = "Analyzed raster function chain for layer {LayerId}: depth={ChainDepth}")]
+    public static partial void AnalyzeCompleted(ILogger logger, int layerId, int chainDepth);
+
+    [LoggerMessage(
+        EventId = 5827,
+        Level = LogLevel.Warning,
+        Message = "Invalid analyze parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidAnalyzeParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5828,
+        Level = LogLevel.Error,
+        Message = "Failed to analyze raster function chain for layer {LayerId}")]
+    public static partial void AnalyzeFailed(ILogger logger, Exception ex, int layerId);
 }

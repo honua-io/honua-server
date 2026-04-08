@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
@@ -131,13 +132,18 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                Capabilities = "Catalog,Image,Metadata,Pixels,Tilemap",
+                // NOTE: Mensuration is intentionally omitted until the /measure endpoint
+                // is implemented. Re-add it alongside the handler so capability advertising
+                // stays in lockstep with routed operations.
+                Capabilities = "Catalog,Image,Metadata,Pixels,Statistics,Tilemap",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
                 MaxRecordCount = MaxRecordCount,
                 SingleFusedMapCache = true,
                 CacheType = "Map",
-                TileInfo = BuildTileInfo()
+                TileInfo = BuildTileInfo(),
+                HasHistograms = true,
+                TimeInfo = BuildTimeInfo(layer.Metadata?.TimeInfo)
             };
 
             ImageServerLog.ServiceInfoGenerated(_logger, layerId, primaryRaster.BandCount, statistics.Length);
@@ -201,6 +207,35 @@ internal sealed class ImageServerMetadataHandler
             "32BF" => "F32",
             "64BF" => "F64",
             _ => "U8" // Default fallback
+        };
+    }
+
+    /// <summary>
+    /// Builds the Esri-conformant <c>timeInfo</c> block when the layer declares
+    /// temporal fields. The temporal extent is intentionally left null because
+    /// raster catalog metadata does not yet carry per-item timestamps; clients
+    /// can still probe the field names without breakage.
+    /// </summary>
+    private static ImageServerTimeInfo? BuildTimeInfo(LayerTimeInfo? layerTimeInfo)
+    {
+        if (layerTimeInfo is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(layerTimeInfo.StartTimeField) &&
+            string.IsNullOrWhiteSpace(layerTimeInfo.EndTimeField) &&
+            string.IsNullOrWhiteSpace(layerTimeInfo.TrackIdField))
+        {
+            return null;
+        }
+
+        return new ImageServerTimeInfo
+        {
+            StartTimeField = layerTimeInfo.StartTimeField,
+            EndTimeField = layerTimeInfo.EndTimeField,
+            TrackIdField = layerTimeInfo.TrackIdField,
+            TimeReference = new ImageServerTimeReference()
         };
     }
 
