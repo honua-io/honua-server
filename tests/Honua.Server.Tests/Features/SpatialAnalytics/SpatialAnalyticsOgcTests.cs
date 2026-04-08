@@ -65,6 +65,22 @@ public sealed class SpatialAnalyticsOgcTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryClusters)]
     [Endpoint("POST /ogc/features/collections/{collectionId}/clusters")]
+    public async Task OgcClusters_OmitAlgorithm_DefaultsToDbscan()
+    {
+        // The OGC clusters contract documents `algorithm` as optional with a
+        // default of "dbscan"; omitting it must resolve to DBSCAN rather than
+        // returning a 400. The DBSCAN-specific parameters (eps, minPoints) are
+        // still required and supplied here.
+        var response = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{WebAppFixture.TestLayerId}/clusters",
+            JsonBody(new { eps = 50000, minPoints = 1 }));
+
+        await AssertSpatialAnalyticsFeatureCollectionAsync(response, "cluster");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/clusters")]
     public async Task OgcClusters_MissingEps_ReturnsBadRequest()
     {
         var response = await _fixture.Client.PostAsync(

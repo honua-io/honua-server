@@ -884,11 +884,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["algorithm"],
                 "properties": {
                   "algorithm": {
                     "type": "string",
-                    "enum": ["dbscan", "kmeans"]
+                    "enum": ["dbscan", "kmeans"],
+                    "default": "dbscan",
+                    "description": "Clustering algorithm. When omitted, defaults to 'dbscan'."
                   },
                   "eps": {
                     "type": "number",

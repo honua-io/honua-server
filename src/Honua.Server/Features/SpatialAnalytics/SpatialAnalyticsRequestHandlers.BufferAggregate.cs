@@ -215,6 +215,16 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return outStatsError!;
         }
 
+        // outStatistics require a GROUP BY, which only exists in the dissolve=true
+        // SQL path. Allowing dissolve=false + outStatistics would emit aggregate
+        // columns without a GROUP BY and produce invalid SQL at execution time.
+        if (!dissolve && outStatistics.HasValue && !outStatistics.Value.IsDefaultOrEmpty)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid outStatistics",
+                ["outStatistics requires dissolve=true; per-feature buffers cannot carry aggregate statistics."]);
+        }
+
         // Feature query.
         if (!TryBuildFeatureQuery(context, values, layer, out var featureQuery, out var filterError))
         {

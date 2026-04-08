@@ -634,6 +634,33 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         content.Should().Contain("distance");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task QueryBufferAggregate_DissolveFalseWithOutStatistics_ReturnsBadRequest()
+    {
+        // outStatistics requires GROUP BY which only exists in the dissolve=true SQL
+        // path. The server must reject dissolve=false + outStatistics at the handler
+        // so the builder never emits aggregate columns without a GROUP BY clause.
+        var payload = JsonSerializer.Serialize(new
+        {
+            distance = 1000,
+            unit = "meters",
+            dissolve = false,
+            outStatistics = "[{\"statisticType\":\"count\",\"onStatisticField\":\"objectid\",\"outStatisticFieldName\":\"cnt\"}]",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("outStatistics");
+        content.Should().Contain("dissolve");
+    }
+
     // ---------- Density Binning ----------
 
     [IntegrationTest]
