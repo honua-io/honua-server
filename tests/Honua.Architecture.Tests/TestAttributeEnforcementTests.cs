@@ -19,7 +19,7 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllIntegrationTestClasses_MustHaveProtocolAttribute()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var classesWithoutProtocol = new List<string>();
 
         foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
@@ -53,7 +53,7 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllIntegrationTestMethods_MustHaveOperationAndEndpointAttributes()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var methodsWithMissingAttributes = new List<string>();
 
         foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
@@ -100,7 +100,7 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllProtocolAttributes_ShouldUseStandardizedValues()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidProtocolValues = new List<string>();
 
         var validProtocols = GetConstantValues(typeof(Protocols));
@@ -157,7 +157,7 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllOperationAttributes_ShouldUseStandardizedValues()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidOperationValues = new List<string>();
 
         var validOperations = GetConstantValues(typeof(Operations));
@@ -214,7 +214,7 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllEndpointAttributes_ShouldHaveValidFormat()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidEndpointFormats = new List<string>();
 
         foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
@@ -265,7 +265,7 @@ public sealed class TestAttributeEnforcementTests
     [ArchitectureTest]
     public void AllInterfaceOperationAttributes_ShouldUseRegisteredValues()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidValues = new List<string>();
 
         var registeredOperations = OperationRegistry.All
