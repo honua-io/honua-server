@@ -14,6 +14,7 @@ using Npgsql;
 
 namespace Honua.Postgres.Features.Infrastructure.Caching;
 
+
 /// <summary>
 /// Manages prepared statement caching for PostgreSQL connections
 /// </summary>
@@ -47,28 +48,124 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     private volatile bool _disposed;
 
     /// <summary>
-    /// Metrics for tracking statement execution patterns
+    /// WEEK 5 FIX: Enhanced metrics for tracking statement execution patterns with performance analytics
     /// </summary>
-    private sealed class StatementMetrics
+    public sealed class StatementMetrics
     {
         private int _executionCount;
+        private long _totalExecutionTimeMs;
+        private long _minExecutionTimeMs = long.MaxValue;
+        private long _maxExecutionTimeMs;
+
         public int ExecutionCount
         {
             get => Volatile.Read(ref _executionCount);
             set => Volatile.Write(ref _executionCount, value);
         }
 
+        public double AverageExecutionTimeMs
+        {
+            get
+            {
+                var count = ExecutionCount;
+                return count > 0 ? (double)_totalExecutionTimeMs / count : 0;
+            }
+        }
+
+        public long MinExecutionTimeMs => _minExecutionTimeMs == long.MaxValue ? 0 : _minExecutionTimeMs;
+        public long MaxExecutionTimeMs => _maxExecutionTimeMs;
+
+        // WEEK 5 FIX: Parameter distribution tracking for adaptive optimization
+        public ConcurrentDictionary<string, ParameterDistribution> ParameterDistributions { get; } = new();
+
+        // WEEK 5 FIX: Query complexity scoring
+        public QueryComplexityScore ComplexityScore { get; set; } = new();
+
         public void IncrementExecutionCount() => Interlocked.Increment(ref _executionCount);
+
+        /// <summary>
+        /// WEEK 5 FIX: Record execution timing for performance analysis
+        /// </summary>
+        public void RecordExecutionTime(long executionTimeMs)
+        {
+            Interlocked.Add(ref _totalExecutionTimeMs, executionTimeMs);
+
+            // Update min/max using atomic operations
+            long currentMin, currentMax;
+            do
+            {
+                currentMin = _minExecutionTimeMs;
+            } while (executionTimeMs < currentMin && Interlocked.CompareExchange(ref _minExecutionTimeMs, executionTimeMs, currentMin) != currentMin);
+
+            do
+            {
+                currentMax = _maxExecutionTimeMs;
+            } while (executionTimeMs > currentMax && Interlocked.CompareExchange(ref _maxExecutionTimeMs, executionTimeMs, currentMax) != currentMax);
+        }
+
         public DateTime FirstSeen { get; init; } = DateTime.UtcNow;
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Represents a cached prepared statement with metadata
+    /// WEEK 5 FIX: Parameter distribution tracking for query plan optimization
     /// </summary>
-    private sealed class CachedStatement : IDisposable
+    public sealed class ParameterDistribution
+    {
+        private long _totalValues;
+        private readonly ConcurrentDictionary<string, long> _valueFrequency = new();
+
+        public void RecordValue(object? value)
+        {
+            Interlocked.Increment(ref _totalValues);
+            var key = value?.ToString() ?? "<null>";
+            _valueFrequency.AddOrUpdate(key, 1, (_, count) => count + 1);
+        }
+
+        public double GetSelectivity()
+        {
+            var total = _totalValues;
+            if (total == 0) return 1.0;
+
+            var distinctCount = _valueFrequency.Count;
+            return (double)distinctCount / total;
+        }
+
+        public string GetMostFrequentValue()
+        {
+            return _valueFrequency.OrderByDescending(kvp => kvp.Value).FirstOrDefault().Key ?? "";
+        }
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Query complexity scoring for intelligent caching decisions
+    /// </summary>
+    public sealed class QueryComplexityScore
+    {
+        public int JoinCount { get; set; }
+        public int SubqueryCount { get; set; }
+        public int AggregateCount { get; set; }
+        public bool HasGeospatialOperations { get; set; }
+        public bool HasWindowFunctions { get; set; }
+        public int EstimatedCost { get; set; }
+
+        public int GetComplexityScore()
+        {
+            var score = JoinCount * 2 + SubqueryCount * 3 + AggregateCount;
+            if (HasGeospatialOperations) score += 5;
+            if (HasWindowFunctions) score += 4;
+            return score + (EstimatedCost / 100);
+        }
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Enhanced cached prepared statement with performance analytics
+    /// </summary>
+    public sealed class CachedStatement : IDisposable
     {
         private int _hitCount;
+        private long _totalExecutionTimeMs;
+
         public required string StatementName { get; init; }
         public required NpgsqlCommand Command { get; init; }
         public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
@@ -79,7 +176,44 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             set => Volatile.Write(ref _hitCount, value);
         }
 
+        // WEEK 5 FIX: Performance tracking for cached statements
+        public double AverageExecutionTimeMs
+        {
+            get
+            {
+                var hits = HitCount;
+                return hits > 0 ? (double)_totalExecutionTimeMs / hits : 0;
+            }
+        }
+
+        // WEEK 5 FIX: Query plan stability scoring
+        public double PlanStabilityScore { get; set; } = 1.0;
+        public string? LastExplainPlan { get; set; }
+        public int PlanChangeCount { get; set; }
+
         public void IncrementHitCount() => Interlocked.Increment(ref _hitCount);
+
+        /// <summary>
+        /// WEEK 5 FIX: Record execution time for performance analysis
+        /// </summary>
+        public void RecordExecutionTime(long executionTimeMs)
+        {
+            Interlocked.Add(ref _totalExecutionTimeMs, executionTimeMs);
+        }
+
+        /// <summary>
+        /// WEEK 5 FIX: Calculate priority score for eviction decisions
+        /// </summary>
+        public double GetPriorityScore()
+        {
+            var age = DateTime.UtcNow - CreatedAt;
+            var recentUsage = Math.Max(1, (DateTime.UtcNow - LastUsed).TotalMinutes);
+            var hitRate = HitCount / Math.Max(1, age.TotalHours);
+            var performanceScore = AverageExecutionTimeMs > 0 ? 1000 / AverageExecutionTimeMs : 1;
+
+            // Higher score = higher priority to keep
+            return (hitRate * performanceScore * PlanStabilityScore) / Math.Log10(recentUsage + 1);
+        }
 
         public void Dispose()
         {
@@ -137,7 +271,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             _ => new StatementMetrics
             {
                 ExecutionCount = 1,
-                LastUsed = DateTime.UtcNow
+                LastUsed = DateTime.UtcNow,
+                ComplexityScore = AnalyzeQueryComplexity(sql) // WEEK 5 FIX: Analyze complexity for intelligent caching
             },
             (_, existing) =>
             {
@@ -145,6 +280,12 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 existing.LastUsed = DateTime.UtcNow;
                 return existing;
             });
+
+        // WEEK 5 FIX: Record parameter patterns for adaptive optimization
+        if (configureParameters != null)
+        {
+            RecordParameterPatterns(metrics, configureParameters);
+        }
 
         // Check if we have a cached prepared statement
         if (_cache.TryGetValue(cacheKey, out var cached))
@@ -176,8 +317,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             return null;
         }
 
-        // Check if this statement should be prepared
-        if (metrics.ExecutionCount >= _options.MinExecutionsForCaching)
+        // WEEK 5 FIX: Intelligent caching decision based on complexity and execution patterns
+        var shouldCache = ShouldCacheStatement(metrics, sql);
+        if (shouldCache)
         {
             try
             {
@@ -185,7 +327,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
                 if (GetConnectionCacheCount(connectionId) >= _options.MaxCachedStatements)
                 {
-                    EvictLeastRecentlyUsed(connectionId);
+                    EvictLowestPriorityStatement(connectionId); // WEEK 5 FIX: Use priority-based eviction
                 }
 
                 var cachedStatement = new CachedStatement
@@ -193,6 +335,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     StatementName = $"stmt_{statementHash}",
                     Command = preparedCommand
                 };
+
+                // WEEK 5 FIX: Initialize query plan analysis
+                await AnalyzeQueryPlan(cachedStatement, connection, cancellationToken);
 
                 var added = TryAddCachedStatement(cacheKey, cachedStatement);
 
@@ -502,6 +647,175 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return Convert.ToHexString(hash);
     }
 
+    /// <summary>
+    /// WEEK 5 FIX: Intelligent query complexity analysis for caching decisions
+    /// </summary>
+    private static QueryComplexityScore AnalyzeQueryComplexity(string sql)
+    {
+        var score = new QueryComplexityScore();
+        var sqlLower = sql.ToLowerInvariant();
+
+        // Count joins
+        score.JoinCount = CountOccurrences(sqlLower, "join");
+
+        // Count subqueries
+        score.SubqueryCount = CountOccurrences(sqlLower, "(select") + CountOccurrences(sqlLower, "exists(");
+
+        // Count aggregates
+        score.AggregateCount = CountOccurrences(sqlLower, "group by") + CountOccurrences(sqlLower, "having") +
+                              CountOccurrences(sqlLower, "count(") + CountOccurrences(sqlLower, "sum(") +
+                              CountOccurrences(sqlLower, "avg(") + CountOccurrences(sqlLower, "max(") + CountOccurrences(sqlLower, "min(");
+
+        // Check for geospatial operations
+        score.HasGeospatialOperations = sqlLower.Contains("st_") || sqlLower.Contains("geometry") || sqlLower.Contains("geography");
+
+        // Check for window functions
+        score.HasWindowFunctions = sqlLower.Contains("over(") || sqlLower.Contains("partition by") || sqlLower.Contains("row_number()");
+
+        return score;
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Record parameter patterns for adaptive optimization
+    /// </summary>
+    private static void RecordParameterPatterns(StatementMetrics metrics, Action<NpgsqlCommand> configureParameters)
+    {
+        // Create a temporary command to analyze parameters
+        using var tempCommand = new NpgsqlCommand();
+        configureParameters(tempCommand);
+
+        foreach (NpgsqlParameter param in tempCommand.Parameters)
+        {
+            var paramName = param.ParameterName ?? string.Empty;
+            var distribution = metrics.ParameterDistributions.GetOrAdd(paramName, _ => new ParameterDistribution());
+            distribution.RecordValue(param.Value);
+        }
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Intelligent caching decision based on complexity and execution patterns
+    /// </summary>
+    private bool ShouldCacheStatement(StatementMetrics metrics, string sql)
+    {
+        // Always cache if execution count threshold is met (traditional approach)
+        if (metrics.ExecutionCount >= _options.MinExecutionsForCaching)
+            return true;
+
+        var complexityScore = metrics.ComplexityScore.GetComplexityScore();
+
+        // WEEK 5 FIX: Early caching for high-complexity queries with lower execution threshold
+        if (complexityScore >= 10 && metrics.ExecutionCount >= Math.Max(1, _options.MinExecutionsForCaching / 2))
+        {
+            PreparedStatementCacheLog.EarlyCachingTriggered(_logger, GetStatementHash(sql), complexityScore);
+            return true;
+        }
+
+        // WEEK 5 FIX: Cache geospatial queries earlier due to high cost
+        if (metrics.ComplexityScore.HasGeospatialOperations && metrics.ExecutionCount >= 2)
+        {
+            PreparedStatementCacheLog.GeospatialCachingTriggered(_logger, GetStatementHash(sql));
+            return true;
+        }
+
+        // WEEK 5 FIX: Predictive caching for queries with consistent performance patterns
+        if (metrics.ExecutionCount >= 3 && metrics.AverageExecutionTimeMs > 50 && IsConsistentPerformance(metrics))
+        {
+            PreparedStatementCacheLog.PredictiveCachingTriggered(_logger, GetStatementHash(sql), metrics.AverageExecutionTimeMs);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Check if query has consistent performance characteristics
+    /// </summary>
+    private static bool IsConsistentPerformance(StatementMetrics metrics)
+    {
+        if (metrics.ExecutionCount < 3)
+            return false;
+
+        var avgTime = metrics.AverageExecutionTimeMs;
+        var minTime = metrics.MinExecutionTimeMs;
+        var maxTime = metrics.MaxExecutionTimeMs;
+
+        // Consider performance consistent if variance is low
+        var variance = (maxTime - minTime) / Math.Max(1, avgTime);
+        return variance < 0.5; // Less than 50% variance
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Priority-based eviction using performance analytics
+    /// </summary>
+    private void EvictLowestPriorityStatement(string connectionId)
+    {
+        var connectionEntries = _cache
+            .Where(kvp => kvp.Key.ConnectionId == connectionId)
+            .ToArray();
+
+        if (connectionEntries.Length == 0)
+            return;
+
+        // Find statement with lowest priority score
+        var lowestPriorityEntry = connectionEntries.MinBy(kvp => kvp.Value.GetPriorityScore());
+
+        if (TryRemoveCachedStatement(lowestPriorityEntry.Key, out var removed) && removed != null)
+        {
+            removed.Dispose();
+
+            if (_options.EnablePerformanceLogging)
+            {
+                PreparedStatementCacheLog.EvictedStatement(_logger, removed.StatementName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Analyze query execution plan for plan stability tracking
+    /// </summary>
+    private async Task AnalyzeQueryPlan(CachedStatement statement, NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var explainSql = $"EXPLAIN (FORMAT JSON) {statement.Command.CommandText}";
+            await using var explainCommand = new NpgsqlCommand(explainSql, connection);
+
+            // Copy parameters for EXPLAIN
+            foreach (NpgsqlParameter param in statement.Command.Parameters)
+            {
+                explainCommand.Parameters.Add(new NpgsqlParameter(param.ParameterName, param.NpgsqlDbType) { Value = DBNull.Value });
+            }
+
+            var planJson = await explainCommand.ExecuteScalarAsync(cancellationToken) as string;
+
+            if (!string.IsNullOrEmpty(planJson))
+            {
+                // Compare with previous plan if available
+                if (!string.IsNullOrEmpty(statement.LastExplainPlan) && statement.LastExplainPlan != planJson)
+                {
+                    statement.PlanChangeCount++;
+                    statement.PlanStabilityScore = Math.Max(0.1, statement.PlanStabilityScore - 0.1);
+                    PreparedStatementCacheLog.QueryPlanChanged(_logger, statement.StatementName);
+                }
+                else if (!string.IsNullOrEmpty(statement.LastExplainPlan))
+                {
+                    // Plan is stable, improve stability score
+                    statement.PlanStabilityScore = Math.Min(1.0, statement.PlanStabilityScore + 0.05);
+                }
+
+                statement.LastExplainPlan = planJson;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Plan analysis is non-critical, log and continue
+            PreparedStatementCacheLog.PlanAnalysisFailed(_logger, statement.StatementName, ex);
+        }
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Legacy LRU eviction for backward compatibility
+    /// </summary>
     private void EvictLeastRecentlyUsed(string connectionId)
     {
         var connectionEntries = _cache
@@ -522,6 +836,21 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 PreparedStatementCacheLog.EvictedStatement(_logger, removed.StatementName);
             }
         }
+    }
+
+    /// <summary>
+    /// WEEK 5 FIX: Helper method to count string occurrences
+    /// </summary>
+    private static int CountOccurrences(string text, string pattern)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(pattern, index, StringComparison.OrdinalIgnoreCase)) != -1)
+        {
+            count++;
+            index += pattern.Length;
+        }
+        return count;
     }
 
     private void CleanupExpiredStatements(object? state)
@@ -642,4 +971,35 @@ internal static partial class PreparedStatementCacheLog
         Level = LogLevel.Error,
         Message = "Error during cache cleanup")]
     public static partial void CleanupFailed(ILogger logger, Exception exception);
+
+    // WEEK 5 FIX: Advanced caching decision logging
+    [LoggerMessage(
+        EventId = 8710,
+        Level = LogLevel.Debug,
+        Message = "Early caching triggered for complex statement: {StatementHash} (complexity: {ComplexityScore})")]
+    public static partial void EarlyCachingTriggered(ILogger logger, string statementHash, int complexityScore);
+
+    [LoggerMessage(
+        EventId = 8711,
+        Level = LogLevel.Debug,
+        Message = "Geospatial caching triggered for statement: {StatementHash}")]
+    public static partial void GeospatialCachingTriggered(ILogger logger, string statementHash);
+
+    [LoggerMessage(
+        EventId = 8712,
+        Level = LogLevel.Debug,
+        Message = "Predictive caching triggered for statement: {StatementHash} (avg time: {AverageTimeMs}ms)")]
+    public static partial void PredictiveCachingTriggered(ILogger logger, string statementHash, double averageTimeMs);
+
+    [LoggerMessage(
+        EventId = 8713,
+        Level = LogLevel.Information,
+        Message = "Query plan changed for statement: {StatementName}")]
+    public static partial void QueryPlanChanged(ILogger logger, string statementName);
+
+    [LoggerMessage(
+        EventId = 8714,
+        Level = LogLevel.Warning,
+        Message = "Failed to analyze query plan for statement: {StatementName}")]
+    public static partial void PlanAnalysisFailed(ILogger logger, string statementName, Exception exception);
 }
