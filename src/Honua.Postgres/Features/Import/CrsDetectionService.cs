@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -292,17 +293,8 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
     }
 
-    private async Task<NpgsqlConnection> OpenConnectionAsync()
-    {
-        var connection = await _connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
-        if (connection is NpgsqlConnection npgsqlConnection)
-        {
-            return npgsqlConnection;
-        }
-
-        await connection.DisposeAsync().ConfigureAwait(false);
-        throw new InvalidOperationException("Expected NpgsqlConnection for CRS detection.");
-    }
+    private Task<NpgsqlConnectionLease> OpenConnectionAsync()
+        => _connectionProvider.OpenNpgsqlConnectionAsync();
 
     private static partial class CrsLog
     {

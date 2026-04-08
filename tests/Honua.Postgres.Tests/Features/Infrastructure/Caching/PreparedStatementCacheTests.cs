@@ -365,6 +365,35 @@ public class CachingDatabaseConnectionProviderTests : IDisposable
         await conn2.DisposeAsync();
     }
 
+    [Fact]
+    public async Task SemaphoreReleasingConnection_RelaysInnerStateChangeToSubscribers()
+    {
+        // Regression — DbConnectionTracking.Track subscribes to
+        // DbConnection.StateChange to drive the active-connection telemetry
+        // counter. Without the relay, subscribers on a SemaphoreReleasingConnection
+        // wrapper never see the Closed transition and the counter drifts.
+        var inner = await _dataSource.OpenConnectionAsync();
+        var wrapper = new SemaphoreReleasingConnection(inner, static () => { });
+
+        var observedClose = false;
+        wrapper.StateChange += (_, args) =>
+        {
+            if (args.CurrentState is System.Data.ConnectionState.Closed
+                or System.Data.ConnectionState.Broken)
+            {
+                observedClose = true;
+            }
+        };
+
+        // Act — dispose the wrapper, which closes the inner connection and
+        // should relay the inner's StateChange through to our subscriber.
+        await wrapper.DisposeAsync();
+
+        // Assert
+        observedClose.Should().BeTrue(
+            "wrapper must relay inner StateChange so telemetry decrements on close");
+    }
+
     public void Dispose()
     {
         GC.SuppressFinalize(this);

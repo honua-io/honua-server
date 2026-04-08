@@ -13,6 +13,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Features;
@@ -2736,17 +2737,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
-    {
-        var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        if (connection is NpgsqlConnection npgsqlConnection)
-        {
-            return npgsqlConnection;
-        }
-
-        await connection.DisposeAsync().ConfigureAwait(false);
-        throw new InvalidOperationException("Expected NpgsqlConnection for streaming import.");
-    }
+    private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
+        => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
     private static void ValidateTableName(string tableName)
     {

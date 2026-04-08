@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
@@ -11,6 +12,7 @@ using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Security;
 
@@ -27,7 +29,7 @@ namespace Honua.Postgres.Features.Security;
 /// 2. Secure mode: Uses named connection from secure registry
 /// 3. Mixed mode: Falls back to DefaultConnection if named connection not found
 /// </remarks>
-internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectionProvider
+internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectionProvider, IDisposable
 {
     private readonly IDatabaseConnectionProvider _defaultProvider;
     private readonly ISecureConnectionResolver _secureResolver;
@@ -36,7 +38,9 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     private readonly ILogger<SecureConnectionAwareDatabaseProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
+    private readonly QueryConcurrencyGate? _concurrencyGate;
     private readonly string? _namedConnectionToUse;
+    private int _acquiredSlots;
 
     // Logger message delegates for performance
     private static readonly Action<ILogger, string, Exception?> _logSecureConnectionConfigured =
@@ -63,6 +67,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         LoggerMessage.Define(LogLevel.Warning, new EventId(6, nameof(_logRetrieveConnectionsFailure)),
             "Failed to retrieve available secure connections");
 
+    private static readonly Action<ILogger, Exception?> _logSecureConnectionAcquisitionTimedOut =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(7, nameof(_logSecureConnectionAcquisitionTimedOut)),
+            "Secure connection acquisition timed out — server is under heavy load");
+
     public SecureConnectionAwareDatabaseProvider(
         IDatabaseConnectionProvider defaultProvider,
         ISecureConnectionResolver secureResolver,
@@ -70,7 +78,8 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         IConfiguration configuration,
         ILogger<SecureConnectionAwareDatabaseProvider> logger,
         ISchemaContext? schemaContext = null,
-        IActiveDbConnectionTracker? activeDbConnectionTracker = null)
+        IActiveDbConnectionTracker? activeDbConnectionTracker = null,
+        QueryConcurrencyGate? concurrencyGate = null)
     {
         _defaultProvider = defaultProvider ?? throw new ArgumentNullException(nameof(defaultProvider));
         _secureResolver = secureResolver ?? throw new ArgumentNullException(nameof(secureResolver));
@@ -79,6 +88,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaContext = schemaContext;
         _activeDbConnectionTracker = activeDbConnectionTracker;
+        _concurrencyGate = concurrencyGate;
 
         // Check if a specific named connection should be used
         _namedConnectionToUse = _configuration["Database:SecureConnection:Name"];
@@ -97,10 +107,31 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     {
         if (string.IsNullOrWhiteSpace(_namedConnectionToUse))
         {
-            // Legacy mode - use default provider
-            return await _defaultProvider.OpenConnectionAsync(cancellationToken);
+            // Legacy mode — delegate to the default provider, which enforces
+            // the shared QueryConcurrencyGate itself.
+            return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        // Secure mode — acquire the shared gate slot here so that secure-named
+        // connections share the same MaxConcurrentQueries budget as the default
+        // path. The slot is released when the caller disposes the returned
+        // SemaphoreReleasingConnection wrapper.
+        var gateAcquired = false;
+        if (_concurrencyGate is not null)
+        {
+            if (!await _concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false))
+            {
+                _logSecureConnectionAcquisitionTimedOut(_logger, null);
+                throw new ServiceUnavailableException(
+                    "Connection acquisition timed out — server is under heavy load.",
+                    _concurrencyGate.AcquisitionTimeoutSeconds);
+            }
+
+            Interlocked.Increment(ref _acquiredSlots);
+            gateAcquired = true;
+        }
+
+        NpgsqlConnection? connection = null;
         try
         {
             // Secure mode - resolve connection from registry
@@ -108,20 +139,50 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
                 _namedConnectionToUse, cancellationToken);
 
             var dataSource = _dataSourceCache.GetOrCreate(connectionString);
-            var connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return connection;
+            return _concurrencyGate is null
+                ? connection
+                : new SemaphoreReleasingConnection(connection, ReleaseOneSlot);
+        }
+        catch (ServiceUnavailableException)
+        {
+            // 503 from the gate must propagate — don't silently fall back to
+            // the default provider (it would just hit the same gate).
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (gateAcquired)
+            {
+                ReleaseOneSlot();
+            }
+
+            throw;
         }
         catch (Exception ex)
         {
             _logSecureConnectionFallback(_logger, _namedConnectionToUse, ex);
 
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+
+            // Release our slot before falling back — the default provider will
+            // acquire its own gate slot. Otherwise we'd double-count.
+            if (gateAcquired)
+            {
+                ReleaseOneSlot();
+            }
+
             // Fall back to default connection if secure resolution fails
-            return await _defaultProvider.OpenConnectionAsync(cancellationToken);
+            return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -199,6 +260,35 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         {
             _logRetrieveConnectionsFailure(_logger, ex);
             return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
+    /// Releases any gate slots still held when the scoped provider is disposed
+    /// at the end of the HTTP request. Mirrors the default provider's own
+    /// disposal so that secure-mode opens which never reach the wrapper's
+    /// disposal path (for example because of a mid-request crash) don't leak
+    /// the shared gate.
+    /// </summary>
+    public void Dispose()
+    {
+        var slots = Interlocked.Exchange(ref _acquiredSlots, 0);
+        if (slots > 0)
+        {
+            _concurrencyGate?.Release(slots);
+        }
+    }
+
+    private void ReleaseOneSlot()
+    {
+        if (Interlocked.Decrement(ref _acquiredSlots) >= 0)
+        {
+            _concurrencyGate?.Release();
+        }
+        else
+        {
+            // Underflow guard — restore count if no slot was actually held.
+            Interlocked.Increment(ref _acquiredSlots);
         }
     }
 }

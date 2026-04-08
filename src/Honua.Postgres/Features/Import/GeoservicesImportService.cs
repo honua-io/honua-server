@@ -13,6 +13,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Shared.Models;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -1452,17 +1453,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
-    {
-        var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        if (connection is NpgsqlConnection npgsqlConnection)
-        {
-            return npgsqlConnection;
-        }
-
-        await connection.DisposeAsync().ConfigureAwait(false);
-        throw new InvalidOperationException("Expected NpgsqlConnection for Geoservices import.");
-    }
+    private Task<NpgsqlConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
+        => _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken);
 
     private static void ReportProgress(
         IProgress<GeoservicesImportProgress>? progress,

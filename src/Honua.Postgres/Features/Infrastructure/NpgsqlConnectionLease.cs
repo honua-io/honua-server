@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
@@ -48,6 +49,16 @@ internal readonly struct NpgsqlConnectionLease : IAsyncDisposable
     /// </summary>
     public ValueTask<NpgsqlTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         => Connection.BeginTransactionAsync(cancellationToken);
+
+    /// <summary>
+    /// Forwarder for <see cref="NpgsqlConnection.BeginTransactionAsync(IsolationLevel, CancellationToken)"/>
+    /// so call sites that specify an isolation level can keep using
+    /// <c>connection.BeginTransactionAsync(isolationLevel, cancellationToken)</c>.
+    /// </summary>
+    public ValueTask<NpgsqlTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken = default)
+        => Connection.BeginTransactionAsync(isolationLevel, cancellationToken);
 
     /// <summary>
     /// Disposes the original wrapper so release callbacks (for example the
