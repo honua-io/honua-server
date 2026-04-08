@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints (connections, layers, styles, observability, and deploy control). For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, and deploy control. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -46,6 +46,10 @@
     {
       "name": "Layers",
       "description": "Layer publishing and management"
+    },
+    {
+      "name": "Import",
+      "description": "Migration source scanning and import-adjacent workflows"
     },
     {
       "name": "Styles",
@@ -1024,6 +1028,67 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/import/scan": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Scan Migration Source",
+        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504.",
+        "operationId": "scanMigrationSource",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationInventoryScanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can return a failed artifact for transport, timeout, auth-related, or other discovery failures; GeoServices can return a failed artifact for auth-related and source-reported discovery errors, while transport and timeout failures surface as 502/504.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationSourceInventoryArtifact"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "description": "Failed to connect to source service. This is currently surfaced primarily for GeoServices transport failures; GeoServer transport failures return a failed inventory artifact with HTTP 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Source scan timed out. This is currently surfaced primarily for GeoServices timeout failures; GeoServer timeout failures return a failed inventory artifact with HTTP 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3072,6 +3137,541 @@
           "planError": {
             "type": "string",
             "description": "Error detail when migration planning could not be completed"
+          }
+        }
+      },
+      "MigrationInventoryScanRequest": {
+        "type": "object",
+        "required": [
+          "sourceKind",
+          "sourceUrl"
+        ],
+        "properties": {
+          "sourceKind": {
+            "type": "string",
+            "description": "Source kind alias. Accepted values normalize to either geoserver-rest or arcgis-geoservices-rest in the response artifact.",
+            "enum": [
+              "geoserver",
+              "geoserver-rest",
+              "geoservices",
+              "arcgis-geoservices-rest"
+            ]
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Source URL to scan. GeoServices requires an HTTPS ArcGIS service root ending in FeatureServer or MapServer and rejects layer/table URLs, embedded credentials, plus private, loopback, or unresolvable targets. GeoServer follows the same HTTPS and address-safety rules outside the test-only unsafe local URL mode and also rejects embedded credentials."
+          },
+          "username": {
+            "type": "string",
+            "description": "Optional GeoServer basic-auth username. Both username and password are required to send GeoServer basic auth; otherwise the scan proceeds anonymously and records a note. Ignored for GeoServices scans."
+          },
+          "password": {
+            "type": "string",
+            "description": "Optional GeoServer basic-auth password. Both username and password are required to send GeoServer basic auth; otherwise the scan proceeds anonymously and records a note. Ignored for GeoServices scans.",
+            "writeOnly": true
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "description": "Optional scan timeout in seconds. Defaults to 120 for GeoServer and 30 for GeoServices."
+          },
+          "includeStyleContent": {
+            "type": "boolean",
+            "description": "GeoServer-only. Fetches SLD documents for deeper classification and external graphic detection without returning raw style documents in the artifact.",
+            "default": false
+          }
+        }
+      },
+      "MigrationSourceInventoryArtifact": {
+        "type": "object",
+        "required": [
+          "artifactKind",
+          "artifactVersion",
+          "sourceKind",
+          "source",
+          "authPosture",
+          "scanCompleteness",
+          "summary",
+          "overallCompatibility"
+        ],
+        "properties": {
+          "artifactKind": {
+            "type": "string",
+            "description": "Stable artifact identifier.",
+            "example": "honua.migration.source-inventory"
+          },
+          "artifactVersion": {
+            "type": "string",
+            "description": "Artifact schema version.",
+            "example": "1.0"
+          },
+          "sourceKind": {
+            "type": "string",
+            "description": "Canonical source kind returned by the scanner.",
+            "enum": [
+              "geoserver-rest",
+              "arcgis-geoservices-rest"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/MigrationSourceIdentity"
+          },
+          "authPosture": {
+            "$ref": "#/components/schemas/MigrationInventoryAuthPosture"
+          },
+          "scanCompleteness": {
+            "$ref": "#/components/schemas/MigrationInventoryCompleteness"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/MigrationInventorySummary"
+          },
+          "overallCompatibility": {
+            "$ref": "#/components/schemas/MigrationCompatibilityAssessment"
+          },
+          "containers": {
+            "type": "array",
+            "description": "Deterministically ordered workspaces or services.",
+            "items": {
+              "$ref": "#/components/schemas/MigrationInventoryContainer"
+            }
+          },
+          "resources": {
+            "type": "array",
+            "description": "Deterministically ordered layers, tables, or layer groups.",
+            "items": {
+              "$ref": "#/components/schemas/MigrationInventoryResource"
+            }
+          },
+          "styles": {
+            "type": "array",
+            "description": "Deterministically ordered GeoServer styles or GeoServices renderers.",
+            "items": {
+              "$ref": "#/components/schemas/MigrationInventoryStyle"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "description": "Deterministically ordered external dependencies with sanitized metadata and normalized external URL addresses.",
+            "items": {
+              "$ref": "#/components/schemas/MigrationExternalDependency"
+            }
+          }
+        }
+      },
+      "MigrationSourceIdentity": {
+        "type": "object",
+        "required": [
+          "displayName",
+          "baseUrl"
+        ],
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable source name."
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Canonical source URL used for the scan."
+          },
+          "product": {
+            "type": "string",
+            "description": "Source product name."
+          },
+          "version": {
+            "type": "string",
+            "description": "Reported source version."
+          },
+          "build": {
+            "type": "string",
+            "description": "Optional build or revision identifier."
+          },
+          "serviceType": {
+            "type": "string",
+            "description": "Optional service type or protocol subtype."
+          }
+        }
+      },
+      "MigrationInventoryAuthPosture": {
+        "type": "object",
+        "required": [
+          "mode",
+          "credentialsSupplied",
+          "accessConfirmed"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown. GeoServer scans without a complete username/password pair remain anonymous and add an explanatory note. Successful GeoServices scans are currently anonymous-only; failed artifacts can report auth-required or unknown."
+          },
+          "credentialsSupplied": {
+            "type": "boolean",
+            "description": "Whether the scanner had a complete, usable credential set. GeoServer only sets this to true when both username and password were supplied; partial credentials still fall back to anonymous mode and leave this false. Successful GeoServices scans currently remain false."
+          },
+          "accessConfirmed": {
+            "type": "boolean",
+            "description": "Whether the scan confirmed source access."
+          },
+          "notes": {
+            "type": "array",
+            "description": "Additional posture notes, including anonymous-fallback notes when only one GeoServer credential field was supplied.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MigrationInventoryCompleteness": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Scan completeness classification. failed can still be returned with HTTP 200 when the scanner produced an artifact but could not complete inventory generation cleanly.",
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "description": "Warnings that affected scan completeness.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingArtifacts": {
+            "type": "array",
+            "description": "Artifact categories that could not be collected.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MigrationInventorySummary": {
+        "type": "object",
+        "properties": {
+          "containerCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "styleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "externalDependencyCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "compatibleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "partiallyCompatibleCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "incompatibleCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "MigrationCompatibilityAssessment": {
+        "type": "object",
+        "required": [
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "level": {
+            "type": "string",
+            "description": "Compatibility classification.",
+            "enum": [
+              "compatible",
+              "partial",
+              "incompatible"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Primary explanation for the assigned compatibility level."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "manualSteps": {
+            "type": "array",
+            "description": "Manual follow-up steps needed for migration.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MigrationInventoryContainer": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "compatibility"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable artifact-local identifier."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Container kind such as workspace or service."
+          },
+          "name": {
+            "type": "string",
+            "description": "Container name."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional display title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional container description."
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "Whether the container is the source default."
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/MigrationCompatibilityAssessment"
+          }
+        }
+      },
+      "MigrationInventoryResource": {
+        "type": "object",
+        "required": [
+          "id",
+          "containerId",
+          "kind",
+          "name",
+          "compatibility"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Resource kind such as layer, table, or layer-group."
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "geometryType": {
+            "type": "string",
+            "description": "Reported geometry type when the resource carries geometry."
+          },
+          "featureCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Reported feature count when available."
+          },
+          "hasAttachments": {
+            "type": "boolean",
+            "description": "Whether the resource advertises attachments. Omitted when the source does not report attachment state."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spatialReferences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationSpatialReferenceInfo"
+            }
+          },
+          "styleIds": {
+            "type": "array",
+            "description": "Stable IDs linking this resource to entries in styles[].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencyIds": {
+            "type": "array",
+            "description": "Stable IDs linking this resource to entries in externalDependencies[].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/MigrationCompatibilityAssessment"
+          }
+        }
+      },
+      "MigrationInventoryStyle": {
+        "type": "object",
+        "required": [
+          "id",
+          "containerId",
+          "kind",
+          "name",
+          "compatibility"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Style kind such as style or renderer."
+          },
+          "name": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "resourceIds": {
+            "type": "array",
+            "description": "Stable IDs linking this style or renderer to entries in resources[].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencyIds": {
+            "type": "array",
+            "description": "Stable IDs linking this style or renderer to entries in externalDependencies[].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Deterministic planning metadata for the style or renderer. Does not include raw GeoServer SLD bodies.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/MigrationCompatibilityAssessment"
+          }
+        }
+      },
+      "MigrationExternalDependency": {
+        "type": "object",
+        "required": [
+          "id",
+          "containerId",
+          "kind",
+          "name",
+          "compatibility"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string",
+            "description": "Optional related layer/table identifier or owning style/renderer identifier."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Dependency kind such as datastore, coverage-store, attachments, external-graphic, or external-symbol."
+          },
+          "name": {
+            "type": "string"
+          },
+          "dependencyType": {
+            "type": "string",
+            "description": "Source-specific dependency subtype."
+          },
+          "address": {
+            "type": "string",
+            "description": "Dependency address or endpoint when available. External URLs omit embedded credentials, query strings, and fragments."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Deterministic dependency metadata with sensitive values redacted when applicable.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "spatialReferences": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationSpatialReferenceInfo"
+            }
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/MigrationCompatibilityAssessment"
+          }
+        }
+      },
+      "MigrationSpatialReferenceInfo": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Role of this spatial reference entry, for example resource, source, extent, declared, or native."
+          },
+          "sourceValue": {
+            "type": "string",
+            "description": "Source-provided CRS identifier or text. ArcGIS WKID values remain in source form when the scanner cannot confirm EPSG authority."
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "crsUri": {
+            "type": "string",
+            "format": "uri",
+            "description": "Canonical CRS URI when resolved or safely normalized to EPSG."
+          },
+          "datum": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "axisOrder": {
+            "type": "string"
+          },
+          "isGeographic": {
+            "type": "boolean"
           }
         }
       },

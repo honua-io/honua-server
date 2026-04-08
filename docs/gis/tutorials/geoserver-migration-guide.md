@@ -1,10 +1,10 @@
 # GeoServer to Honua Migration Guide
 
-Migrate from GeoServer to Honua Server, covering endpoint equivalence, automated import, and key configuration differences.
+Migrate from GeoServer to Honua Server, covering endpoint equivalence, inventory scanning, dry-run import, and key configuration differences.
 
 ## Overview
 
-Honua provides built-in GeoServer migration tooling that discovers your existing GeoServer configuration and imports workspaces, layers, and styles into Honua services. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
+Honua provides GeoServer migration tooling for discovery, compatibility classification, and dry-run import validation. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import remains a separate dry-run workflow, and style conversion still requires manual follow-up. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
 
 ## Endpoint Equivalence Mapping
 
@@ -39,32 +39,46 @@ Honua provides built-in GeoServer migration tooling that discovers your existing
 | `GET /geoserver/rest/layers` | `GET /ogc/features/collections` | Layer discovery |
 | `GET /geoserver/rest/styles` | `GET /api/v1/admin/metadata/layers/{id}/style` | Layer styles (MapLibre JSON) |
 
-## Automated Migration
+## Discovery And Dry-Run Import
 
-Honua provides admin API endpoints that automate the import of GeoServer configurations.
+Honua provides admin API endpoints for GeoServer discovery and a dry-run import workflow. Use the scanner artifact as the review contract for migration planning; the import endpoint currently validates and previews the work without applying configuration changes.
 
-### Step 1: Discover Your GeoServer
+### Step 1: Scan And Classify Your GeoServer
 
-Assess your GeoServer instance before importing. The discover endpoint analyzes workspaces, layers, and styles and returns a compatibility report.
+Assess your GeoServer instance before importing. The unified migration scanner returns a deterministic planning artifact for review and can be used consistently across GeoServer REST and ArcGIS GeoServices REST sources.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/discover \
+curl -X POST http://localhost:8080/api/v1/admin/import/scan \
   -H "Content-Type: application/json" \
   -d '{
-    "geoServerRestUrl": "http://geoserver-host:8080/geoserver/rest",
+    "sourceKind": "geoserver",
+    "sourceUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
     "password": "geoserver",
-    "includeCompatibilityAnalysis": true
+    "includeStyleContent": true
   }'
 ```
 
-The response includes:
-- Workspace and layer inventory
-- Data store types and connection parameters
-- Style formats and compatibility assessment
-- Feature type counts and geometry types
+Contract notes:
+- `sourceKind: "geoserver"` is normalized to `sourceKind: "geoserver-rest"` in the response artifact.
+- `includeStyleContent: true` fetches SLD documents for deeper compatibility analysis and external graphic detection, but the artifact does not echo raw SLD bodies.
+- GeoServer basic auth is only used when both `username` and `password` are supplied. Providing only one field falls back to anonymous discovery and records a note in `authPosture.notes`.
+- `timeoutSeconds` is optional for GeoServer scans and defaults to `120`.
+- The response body is the artifact itself, not a `success/data` admin envelope.
+- HTTP `200` only means the scanner returned an artifact. Review `scanCompleteness.status` and `overallCompatibility.level` before treating the source as ready for migration planning. Failed GeoServer artifacts can report `authPosture.mode = "basic"` when both credentials were supplied, or `anonymous-or-auth-required` when discovery ran without full credentials.
 
-Review the compatibility report before proceeding. Layers backed by PostGIS data stores have the highest migration fidelity.
+The response includes:
+- Stable artifact fields: `artifactKind = "honua.migration.source-inventory"` and `artifactVersion = "1.0"`
+- Source identity and reported version
+- Authentication posture and scan completeness
+- Workspace and layer inventory
+- Synthetic `workspace:global` container entries when GeoServer exposes global styles or layer groups
+- Datastore and coverage-store types with sanitized connection metadata and secret-safe addresses
+- Style formats, deterministic `styles[*].metadata`, and compatibility assessment
+- CRS, datum, and unit details for migration planning
+- External dependencies with sanitized addresses, stable cross-links (`styleIds`, `resourceIds`, `resourceId`), and manual follow-up steps
+
+Review the inventory artifact before proceeding. Start with `summary`, `scanCompleteness`, and `overallCompatibility`, then drill into per-item blockers using the stable IDs shared across `resources`, `styles`, and `externalDependencies`. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and nullable scalar fields are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
 
 ### Step 2: Start a Dry-Run Import
 
@@ -74,7 +88,7 @@ Review the compatibility report before proceeding. Layers backed by PostGIS data
 curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
   -H "Content-Type: application/json" \
   -d '{
-    "geoServerRestUrl": "http://geoserver-host:8080/geoserver/rest",
+    "geoServerRestUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
     "password": "geoserver",
     "dryRun": true
@@ -82,6 +96,8 @@ curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
 ```
 
 This returns a job ID for tracking progress.
+
+> **Unified scanner note:** the same `POST /api/v1/admin/import/scan` endpoint also accepts `sourceKind: "geoservices"` or `sourceKind: "arcgis-geoservices-rest"` for ArcGIS GeoServices REST inventory scans. Use an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`, not a layer or table URL. GeoServices discovery currently uses anonymous access only, normalizes `sourceKind` to `arcgis-geoservices-rest`, and emits the same top-level artifact sections, with renderers surfacing in `styles[]` and external symbol URLs surfacing as sanitized `externalDependencies[]` entries. Failed GeoServices artifacts can report `authPosture.mode = "auth-required"` or `"unknown"` when discovery is blocked or the ArcGIS API reports an error; transport failures and request timeouts still surface as `502` or `504`.
 
 ### Step 3: Monitor Progress
 
@@ -161,7 +177,7 @@ HONUA_REDIS_URL=redis:6379
 
 ### Styling
 
-GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. When importing from GeoServer, styles are converted to MapLibre format on a best-effort basis. Complex SLD filters and symbolizers may require manual adjustment.
+GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. The scanner inventories style metadata, compatibility warnings, and external graphic references, but the current GeoServer import flow does not convert or apply styles. Recreate target styles through the Admin API after data import, using the scanner artifact and its manual follow-up steps as the migration checklist.
 
 Manage styles via the Admin API:
 
@@ -184,7 +200,7 @@ After migrating server configuration, update client applications:
 - [ ] **WMTS clients**: Point to `http://honua-host:8080/rest/services/{id}/MapServer/WMTS` or `http://honua-host:8080/ogc/services/{id}/wmts`
 - [ ] **REST API consumers**: Map GeoServer REST paths to Honua Admin API equivalents (see table above)
 - [ ] **Authentication**: Replace GeoServer credentials with Honua API keys or OIDC tokens
-- [ ] **Styles**: Review imported styles and adjust MapLibre JSON as needed
+- [ ] **Styles**: Recreate target styles from the scanner artifact and adjust MapLibre JSON as needed
 - [ ] **CRS configuration**: Verify required SRIDs exist in PostGIS `spatial_ref_sys`
 - [ ] **Tile consumers**: Update tile URLs to Honua vector tile or WMTS endpoints
 

@@ -535,6 +535,11 @@ public sealed class ImportBackgroundServiceTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<GeoservicesImportResult> ImportLayerAsync(
             GeoservicesImportRequest request,
             CancellationToken cancellationToken = default)
@@ -575,6 +580,11 @@ public sealed class ImportBackgroundServiceTests
         private int _callCount;
 
         public Task<GeoServerServiceInfo> DiscoverServiceAsync(
+            GeoServerDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
             GeoServerDiscoveryRequest request,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

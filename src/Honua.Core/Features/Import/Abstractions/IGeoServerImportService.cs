@@ -21,6 +21,16 @@ public interface IGeoServerImportService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Scan a GeoServer source and produce a deterministic migration inventory artifact.
+    /// </summary>
+    /// <param name="request">Discovery request with GeoServer REST API URL.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Normalized inventory artifact for planning and review.</returns>
+    Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+        GeoServerDiscoveryRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Import workspaces, datastores, layers and styles from a GeoServer instance into Honua.
     /// </summary>
     /// <param name="request">Import request with migration details</param>
