@@ -175,3 +175,13 @@ and their OGC mirrors) are not supported — the analytics endpoints require Pos
 primitives (`ST_ClusterDBSCAN`/`ST_ClusterKMeans`, `ST_Buffer`/`ST_Union`, hex/square grid
 generators) that DuckDB Spatial does not provide. Use the PostgreSQL provider for write
 workloads, vector tiles, WFS GML responses, or spatial analytics.
+
+The analytics routes are mapped unconditionally so the route surface stays consistent
+across providers, but on the DuckDB provider calling any of them returns **HTTP 501
+Not Implemented** with a `StandardErrorResponse` body naming the unsupported operation
+(title `Not Implemented`, detail `Spatial analytics ({operation}) is not supported by
+the active feature-store provider.`). Clients should treat 501 as a permanent signal
+that the deployment does not ship an analytics backend — it is not a transient failure
+and will not recover without switching providers. This mirrors how the H3 capability
+gate surfaces an unsupported deployment instead of leaking an `InvalidOperationException`
+as HTTP 500.

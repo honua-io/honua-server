@@ -80,10 +80,15 @@ internal sealed partial class FeatureQueryBuilder
                     $"ST_ClusterKMeans({metersGeometry}, {kParam}) OVER ()");
             }
 
+            // Store the decoded, storage-aware geometry under the alias `geom` so the
+            // outer SELECT does not reference the raw `geometry` column. In bytea
+            // storage mode `ST_AsGeoJSON(bytea)` / `ST_Collect(bytea)` would fail at
+            // execution; carrying the typed operand through the CTE keeps the output
+            // path correct across Geometry / Geography / Bytea storage modes.
             sql.Append("WITH src AS (SELECT ");
             sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
             sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.GeometryColumn}, ");
+            sql.Append(CultureInfo.InvariantCulture, $"{geometryOperand} AS geom, ");
             sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id");
             sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
             sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
@@ -103,8 +108,7 @@ internal sealed partial class FeatureQueryBuilder
                 // Aggregated mode — one row per cluster with the convex hull and stats.
                 sql.Append(" SELECT cluster_id::bigint AS \"clusterId\"");
                 sql.Append(", COUNT(*)::bigint AS \"featureCount\"");
-                sql.Append(CultureInfo.InvariantCulture,
-                    $", ST_AsGeoJSON(ST_ConvexHull(ST_Collect({DatabaseSchema.GeometryColumn}))) AS \"clusterGeometry\"");
+                sql.Append(", ST_AsGeoJSON(ST_ConvexHull(ST_Collect(geom))) AS \"clusterGeometry\"");
                 AppendClusterStatisticsColumns(sql, clusterQuery.OutStatistics);
                 sql.Append(" FROM src WHERE cluster_id IS NOT NULL");
                 sql.Append(" GROUP BY cluster_id ORDER BY \"featureCount\" DESC");
@@ -117,8 +121,7 @@ internal sealed partial class FeatureQueryBuilder
                 sql.Append(", cluster_id::bigint AS \"clusterId\"");
                 sql.Append(CultureInfo.InvariantCulture,
                     $", {DatabaseSchema.AttributesColumn} AS \"attributes\"");
-                sql.Append(CultureInfo.InvariantCulture,
-                    $", ST_AsGeoJSON({DatabaseSchema.GeometryColumn}) AS \"geometry\"");
+                sql.Append(", ST_AsGeoJSON(geom) AS \"geometry\"");
                 sql.Append(" FROM src ORDER BY cluster_id NULLS LAST, \"objectId\"");
             }
 
@@ -134,12 +137,25 @@ internal sealed partial class FeatureQueryBuilder
     /// Builds a buffer-aggregate query.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Buffers each input feature by <see cref="BufferAggregateQuery.Distance"/>
     /// (converted to meters), then either <c>ST_Union</c>s the buffered geometries
     /// per group (when <see cref="BufferAggregateQuery.Dissolve"/> is true) or
     /// returns the per-row buffers. The buffer is computed in Web Mercator and
     /// the resulting geometry is emitted as GeoJSON in WGS 84 to match the rest
     /// of the analytics surface.
+    /// </para>
+    /// <para>
+    /// The input cap is applied inside a <c>src</c> CTE so <c>ST_Buffer</c> /
+    /// <c>ST_Union</c> only see at most <see cref="BufferAggregateQuery.MaxInputFeatures"/>
+    /// rows. A trailing <c>LIMIT</c> on the outer query would not fire until after
+    /// the group aggregation completes, which in the <c>dissolve=true</c> path
+    /// defeats the purpose of the cap — a large layer could still force an
+    /// unbounded expensive union. Pre-decoding the meters geometry inside the CTE
+    /// also means the storage-aware operand (bytea / geography / geometry) is
+    /// evaluated once and the outer query can reuse a single <c>geom_m</c>
+    /// expression.
+    /// </para>
     /// </remarks>
     public CoreParameterizedQuery BuildBufferAggregateQuery(
         int layerId,
@@ -164,9 +180,32 @@ internal sealed partial class FeatureQueryBuilder
             var geometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
             var metersGeometry = EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
-            var bufferedGeometry = $"ST_Buffer({metersGeometry}, {distanceParam})";
+            var bufferedGeometry = $"ST_Buffer(geom_m, {distanceParam})";
 
-            sql.Append("SELECT ");
+            // Source CTE — decode the meters geometry once and bound the input set
+            // BEFORE the buffer/union aggregation. objectid and attributes are carried
+            // forward so the outer query can reference them through AppendGroupBy* /
+            // AppendClusterStatisticsColumns without hitting the base table again.
+            sql.Append("WITH src AS (SELECT ");
+            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
+            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+            sql.Append(CultureInfo.InvariantCulture, $"{metersGeometry} AS geom_m");
+            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
+            sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL");
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+
+            // LIMIT n+1 inside the CTE so ST_Buffer / ST_Union only operate on the
+            // capped input set and the handler can still detect overflow without
+            // letting the query scan beyond MaxInputFeatures.
+            var maxInputParam = $"${paramIndex++}";
+            parameters.Add(bufferQuery.MaxInputFeatures + 1);
+            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
+
+            sql.Append(" SELECT ");
 
             // Group-by columns first.
             if (hasGroupBy)
@@ -191,28 +230,13 @@ internal sealed partial class FeatureQueryBuilder
 
             AppendClusterStatisticsColumns(sql, bufferQuery.OutStatistics);
 
-            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
-            sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
-            sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL");
-
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            sql.Append(" FROM src");
 
             if (bufferQuery.Dissolve && hasGroupBy)
             {
                 sql.Append(" GROUP BY ");
                 AppendGroupByFieldExpressions(sql, groupByFields!.Value);
             }
-            else if (bufferQuery.Dissolve)
-            {
-                // Single dissolved row across the entire filtered set — no GROUP BY needed.
-            }
-
-            // LIMIT n+1 so the handler can detect overflow before materializing more rows.
-            var maxInputParam = $"${paramIndex++}";
-            parameters.Add(bufferQuery.MaxInputFeatures + 1);
-            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam}");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }

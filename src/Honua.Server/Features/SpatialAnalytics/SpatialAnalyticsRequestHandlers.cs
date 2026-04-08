@@ -70,6 +70,44 @@ internal static partial class SpatialAnalyticsRequestHandlers
     }
 
     /// <summary>
+    /// Resolves the <see cref="ISpatialAnalyticsReader"/> from DI. Returns an HTTP 501
+    /// Not Implemented response when no backend is registered (for example when the
+    /// host is configured to run against the DuckDB read-only provider, which does not
+    /// ship a spatial-analytics backend). The analytics endpoints are mapped
+    /// unconditionally in <c>FeatureRegistrationExtensions</c> so all deployments expose
+    /// the same route surface; this gate converts the otherwise-unhelpful
+    /// <c>InvalidOperationException</c> (→ HTTP 500) into a contract-compliant
+    /// unsupported-feature response mirroring the H3 capability gate.
+    /// </summary>
+    internal static bool TryGetAnalyticsReader(
+        HttpContext context,
+        string operation,
+        ILogger? logger,
+        out ISpatialAnalyticsReader reader,
+        out IResult? errorResult)
+    {
+        var resolved = context.RequestServices.GetService<ISpatialAnalyticsReader>();
+        if (resolved == null)
+        {
+            if (logger != null)
+            {
+                SpatialAnalyticsLog.ReaderUnavailable(logger, operation);
+            }
+
+            reader = null!;
+            errorResult = StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "Spatial analytics backend not available",
+                [$"Spatial analytics ({operation}) is not supported by the active feature-store provider."]);
+            return false;
+        }
+
+        reader = resolved;
+        errorResult = null;
+        return true;
+    }
+
+    /// <summary>
     /// Parses the shared filter bundle accepted by every analytics endpoint:
     /// <c>where</c> (ArcGIS SQL filter) compiled via <see cref="IFilterExpressionService"/>.
     /// </summary>

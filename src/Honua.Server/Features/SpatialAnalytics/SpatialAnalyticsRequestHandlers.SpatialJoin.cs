@@ -262,7 +262,10 @@ internal static partial class SpatialAnalyticsRequestHandlers
             MaxInputFeatures = analyticsLimits.MaxInputFeatures
         };
 
-        var reader = context.RequestServices.GetRequiredService<ISpatialAnalyticsReader>();
+        if (!TryGetAnalyticsReader(context, SpatialJoinOperation, logger, out var reader, out var readerError))
+        {
+            return readerError!;
+        }
 
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try

@@ -52,4 +52,10 @@ internal static partial class SpatialAnalyticsLog
         Level = LogLevel.Error,
         Message = "Spatial analytics failed: op={Operation} layerId={LayerId}: {ErrorMessage}")]
     public static partial void RequestFailed(ILogger logger, string operation, int layerId, string errorMessage, Exception? exception = null);
+
+    [LoggerMessage(
+        EventId = 8207,
+        Level = LogLevel.Warning,
+        Message = "Spatial analytics reader not registered: op={Operation}; the active feature-store provider does not ship a spatial analytics backend")]
+    public static partial void ReaderUnavailable(ILogger logger, string operation);
 }

@@ -58,11 +58,20 @@ internal sealed partial class FeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
+            // Decode the target geometry once inside the CTE so the outer SELECT and the
+            // join predicate reference a typed geometry column. In bytea storage mode
+            // the raw column is `bytea`, so `t.geometry` flowing into `&&` / `ST_Intersects`
+            // / `ST_AsGeoJSON` would fail at execution. Carrying the typed operand
+            // forward keeps the join path correct across Geometry / Geography / Bytea.
+            // The builder assumes both layers share the same SRID (see the XML remarks).
+            var targetGeometryOperand = _geometryProcessor.GetGeometryOperand(
+                geometryStorageType, DatabaseSchema.GeometryColumn, targetQuery.SpatialReferenceSrid);
+
             // Target CTE — filtered subset of target layer with overflow guard.
             sql.Append("WITH target_src AS (SELECT ");
             sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
             sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.GeometryColumn}");
+            sql.Append(CultureInfo.InvariantCulture, $"{targetGeometryOperand} AS geom");
             sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
             sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");
             sql.Append(CultureInfo.InvariantCulture, $" AND {DatabaseSchema.GeometryColumn} IS NOT NULL");
@@ -79,14 +88,24 @@ internal sealed partial class FeatureQueryBuilder
             var joinLayerParam = $"${paramIndex++}";
             parameters.Add(joinQuery.JoinLayerId);
 
-            // Predicate clause references the t / j aliases established below.
-            var predicate = BuildSpatialJoinPredicate(joinQuery, ref paramIndex, parameters);
+            // Join-side operand — decoded the same way as the target so bytea storage
+            // joins produce a valid geometry expression for the PostGIS operators.
+            // Under Geometry storage this reduces to `j.geometry`, which keeps the
+            // existing GIST-index friendly `&&` fast-path intact.
+            var joinGeometryOperand = _geometryProcessor.GetGeometryOperand(
+                geometryStorageType,
+                $"j.{DatabaseSchema.GeometryColumn}",
+                targetQuery.SpatialReferenceSrid);
+
+            // Predicate clause references the typed operands established above.
+            var predicate = BuildSpatialJoinPredicate(
+                joinQuery, "t.geom", joinGeometryOperand, ref paramIndex, parameters);
 
             // Outer SELECT — one row per target with stats over matching join rows.
             sql.Append(" SELECT ");
             sql.Append(CultureInfo.InvariantCulture, $"t.{DatabaseSchema.ObjectIdColumn} AS \"objectId\"");
             sql.Append(CultureInfo.InvariantCulture, $", t.{DatabaseSchema.AttributesColumn} AS \"attributes\"");
-            sql.Append(CultureInfo.InvariantCulture, $", ST_AsGeoJSON(t.{DatabaseSchema.GeometryColumn}) AS \"geometry\"");
+            sql.Append(", ST_AsGeoJSON(t.geom) AS \"geometry\"");
             sql.Append(CultureInfo.InvariantCulture, $", COUNT(j.{DatabaseSchema.ObjectIdColumn})::bigint AS \"matchCount\"");
 
             AppendJoinCarryFieldColumns(sql, joinQuery.CarryFields);
@@ -100,7 +119,7 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture, $" AND {predicate}");
 
             sql.Append(CultureInfo.InvariantCulture,
-                $" GROUP BY t.{DatabaseSchema.ObjectIdColumn}, t.{DatabaseSchema.AttributesColumn}, t.{DatabaseSchema.GeometryColumn}");
+                $" GROUP BY t.{DatabaseSchema.ObjectIdColumn}, t.{DatabaseSchema.AttributesColumn}, t.geom");
             sql.Append(CultureInfo.InvariantCulture, $" ORDER BY t.{DatabaseSchema.ObjectIdColumn}");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -112,13 +131,18 @@ internal sealed partial class FeatureQueryBuilder
     }
 
     /// <summary>
-    /// Builds the SQL predicate that connects the target row (<c>t</c>) to the join
-    /// row (<c>j</c>). For <see cref="SpatialJoinPredicate.DWithin"/> the distance is
-    /// pushed through as a positional parameter and applied against the geography
-    /// projection so the threshold is interpreted in meters regardless of layer SRID.
+    /// Builds the SQL predicate that connects the target geometry expression to the
+    /// join geometry expression. For <see cref="SpatialJoinPredicate.DWithin"/> the
+    /// distance is pushed through as a positional parameter and applied against the
+    /// geography projection so the threshold is interpreted in meters regardless of
+    /// layer SRID. Callers are responsible for supplying storage-aware expressions
+    /// (see <see cref="GeometryProcessor.GetGeometryOperand"/>) so the predicate
+    /// works across Geometry, Geography and Bytea storage modes.
     /// </summary>
     private static string BuildSpatialJoinPredicate(
         SpatialJoinQuery joinQuery,
+        string targetGeometryExpression,
+        string joinGeometryExpression,
         ref int paramIndex,
         List<object> parameters)
     {
@@ -126,15 +150,15 @@ internal sealed partial class FeatureQueryBuilder
         {
             case SpatialJoinPredicate.Intersects:
                 return FormattableString.Invariant(
-                    $"t.{DatabaseSchema.GeometryColumn} && j.{DatabaseSchema.GeometryColumn} AND ST_Intersects(t.{DatabaseSchema.GeometryColumn}, j.{DatabaseSchema.GeometryColumn})");
+                    $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Intersects({targetGeometryExpression}, {joinGeometryExpression})");
 
             case SpatialJoinPredicate.Contains:
                 return FormattableString.Invariant(
-                    $"t.{DatabaseSchema.GeometryColumn} && j.{DatabaseSchema.GeometryColumn} AND ST_Contains(t.{DatabaseSchema.GeometryColumn}, j.{DatabaseSchema.GeometryColumn})");
+                    $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Contains({targetGeometryExpression}, {joinGeometryExpression})");
 
             case SpatialJoinPredicate.Within:
                 return FormattableString.Invariant(
-                    $"t.{DatabaseSchema.GeometryColumn} && j.{DatabaseSchema.GeometryColumn} AND ST_Within(t.{DatabaseSchema.GeometryColumn}, j.{DatabaseSchema.GeometryColumn})");
+                    $"{targetGeometryExpression} && {joinGeometryExpression} AND ST_Within({targetGeometryExpression}, {joinGeometryExpression})");
 
             case SpatialJoinPredicate.DWithin:
                 if (!joinQuery.DistanceMeters.HasValue || joinQuery.DistanceMeters.Value < 0)
@@ -147,7 +171,7 @@ internal sealed partial class FeatureQueryBuilder
                 var distanceParam = $"${paramIndex++}";
                 parameters.Add(joinQuery.DistanceMeters.Value);
                 return FormattableString.Invariant(
-                    $"ST_DWithin(t.{DatabaseSchema.GeometryColumn}::geography, j.{DatabaseSchema.GeometryColumn}::geography, {distanceParam})");
+                    $"ST_DWithin({targetGeometryExpression}::geography, {joinGeometryExpression}::geography, {distanceParam})");
 
             default:
                 throw new ArgumentOutOfRangeException(

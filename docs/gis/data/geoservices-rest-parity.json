@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-04-07",
+  "lastReviewed": "2026-04-08",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -76,7 +76,8 @@
           "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerMaintenanceTests.cs",
           "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsOgcTests.cs",
-          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsEditionGateTests.cs"
+          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsEditionGateTests.cs",
+          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsPerformanceTests.cs"
         ]
       },
       "operations": {
