@@ -459,9 +459,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                 continue;
             }
 
-            // Check if progress entry still exists
-            var progressExists = await ProgressEntryExistsAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (!progressExists)
+            if (!await ProgressEntryExistsAsync(operationId, cancellationToken).ConfigureAwait(false))
             {
                 await RemoveFromRedisIndexAsync(operationId, operationType).ConfigureAwait(false);
                 continue;

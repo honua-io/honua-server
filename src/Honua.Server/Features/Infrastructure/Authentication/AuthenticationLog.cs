@@ -18,15 +18,6 @@ internal static partial class AuthenticationLog
     public static partial void DevelopmentBypassEnabled(ILogger logger);
 
     /// <summary>
-    /// Logs when development authentication bypass is blocked in production environment
-    /// </summary>
-    [LoggerMessage(
-        EventId = 4111,
-        Level = LogLevel.Warning,
-        Message = "SECURITY: Development authentication bypass blocked - production environment detected")]
-    public static partial void DevelopmentBypassBlockedInProduction(ILogger logger);
-
-    /// <summary>
     /// Logs when no API key is found in headers
     /// </summary>
     [LoggerMessage(

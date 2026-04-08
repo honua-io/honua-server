@@ -525,45 +525,20 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 {
     options.IsDevelopmentMode = builder.Environment.IsDevelopment();
     options.IsTestMode = builder.Environment.IsEnvironment("Test");
-    var adminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
-
-    // SECURITY: Validate admin password complexity in production
-    if (builder.Environment.IsProduction() && !string.IsNullOrEmpty(adminPassword))
-    {
-        if (adminPassword.Length < 16)
-        {
-            throw new InvalidOperationException("Admin password must be at least 16 characters in production environment");
-        }
-
-        bool hasUpper = adminPassword.Any(char.IsUpper);
-        bool hasLower = adminPassword.Any(char.IsLower);
-        bool hasDigit = adminPassword.Any(char.IsDigit);
-        bool hasSpecial = adminPassword.Any(c => !char.IsLetterOrDigit(c));
-
-        if (!(hasUpper && hasLower && hasDigit && hasSpecial))
-        {
-            throw new InvalidOperationException("Admin password must contain uppercase, lowercase, digit, and special characters in production environment");
-        }
-    }
-
-    options.AdminPassword = adminPassword;
+    options.AdminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
     options.EnableBasicAuthCompatibility =
         builder.Configuration.GetValue("Authentication:BasicCompatibility:Enabled",
             builder.Configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
 
-    // SECURITY: Always enforce HTTPS for basic auth in production - cannot be overridden
-    if (builder.Environment.IsProduction())
-    {
-        options.RequireHttpsForBasicAuth = true;
-    }
-    else
-    {
-        // In development/test environments, allow configuration override
-        var requireHttpsForBasicAuth = builder.Configuration.GetValue("Authentication:BasicCompatibility:RequireHttps",
-            builder.Configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
-        options.RequireHttpsForBasicAuth = requireHttpsForBasicAuth;
-    }
+    // Enforce HTTPS for basic auth in production - override configuration for security
+    var requireHttpsForBasicAuth = builder.Configuration.GetValue("Authentication:BasicCompatibility:RequireHttps",
+        builder.Configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
+
+    // Always require HTTPS for basic auth in non-development environments
+    options.RequireHttpsForBasicAuth = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test")
+        ? requireHttpsForBasicAuth
+        : true;
 });
 
 // Configure OIDC authentication options
