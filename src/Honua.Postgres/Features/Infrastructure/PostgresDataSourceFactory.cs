@@ -102,6 +102,11 @@ internal static class PostgresDataSourceFactory
     /// <summary>
     /// Resolves the effective multiplexing setting.
     /// Schema headers always force multiplexing off regardless of config.
+    /// Accepted values are <c>"auto"</c>, <c>"true"</c>, and <c>"false"</c>
+    /// (case-insensitive). Null, empty, and unrecognized values fall back to
+    /// the documented default (<c>"false"</c>) so a typo cannot silently
+    /// enable multiplexing; <see cref="Honua.Core.Configuration.LimitsOptionsValidator"/>
+    /// rejects unrecognized values at startup as a paired fail-fast guard.
     /// </summary>
     internal static bool ResolveMultiplexing(string? multiplexingSetting, bool schemaHeadersEnabled)
     {
@@ -110,8 +115,19 @@ internal static class PostgresDataSourceFactory
             return false;
         }
 
-        return string.Equals(multiplexingSetting, "false", StringComparison.OrdinalIgnoreCase)
-            ? false
-            : true; // "auto" and "true" both enable multiplexing when schema headers are off
+        if (string.IsNullOrWhiteSpace(multiplexingSetting))
+        {
+            return false;
+        }
+
+        if (string.Equals(multiplexingSetting, "true", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(multiplexingSetting, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Includes "false" and any unrecognized token — default to the safe off
+        // behavior so typos cannot silently flip the runtime contract.
+        return false;
     }
 }

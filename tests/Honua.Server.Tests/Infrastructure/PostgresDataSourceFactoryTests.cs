@@ -23,7 +23,14 @@ public sealed class PostgresDataSourceFactoryTests
     [InlineData("FALSE", false, false)]
     [InlineData("True", false, true)]
     [InlineData("AUTO", false, true)]
-    [InlineData(null, false, true)]
+    [InlineData(null, false, false)]
+    [InlineData("", false, false)]
+    [InlineData("   ", false, false)]
+    // Unrecognized values must default to the safe off behavior so a typo
+    // cannot silently flip multiplexing on — paired with LimitsOptionsValidator
+    // rejection for fail-fast startup semantics.
+    [InlineData("fasle", false, false)]
+    [InlineData("yes", false, false)]
     [InlineData("false", true, false)]
     [InlineData("true", true, false)]
     [InlineData("auto", true, false)]

@@ -368,7 +368,15 @@ internal sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Connections:MaxConcurrentQueries", "Limits__Connections__MaxConcurrentQueries", "integer",
                     "Maximum concurrent query operations", 100, opts.MaxConcurrentQueries, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:MaxConnectionPoolSize", "Limits__Connections__MaxConnectionPoolSize", "integer",
-                    "Maximum database connection pool size", 100, opts.MaxConnectionPoolSize, "Range: 10-500"),
+                    "Maximum database connection pool size", 200, opts.MaxConnectionPoolSize, "Range: 10-500"),
+                BuildPropertyWithCurrent("Limits:Connections:MinConnectionPoolSize", "Limits__Connections__MinConnectionPoolSize", "integer",
+                    "Minimum database connection pool size (clamped to MaxConnectionPoolSize)", 20, opts.MinConnectionPoolSize, "Range: 0-100"),
+                BuildPropertyWithCurrent("Limits:Connections:BufferSizeBytes", "Limits__Connections__BufferSizeBytes", "integer",
+                    "Npgsql read/write buffer size in bytes", 32768, opts.BufferSizeBytes, "Range: 4096-65536"),
+                BuildPropertyWithCurrent("Limits:Connections:Multiplexing", "Limits__Connections__Multiplexing", "string",
+                    "Npgsql multiplexing mode ('auto', 'true', or 'false'); default off avoids write-lock contention at high concurrency", "false", opts.Multiplexing, "Allowed: auto|true|false"),
+                BuildPropertyWithCurrent("Limits:Connections:ConnectionAcquisitionTimeoutSeconds", "Limits__Connections__ConnectionAcquisitionTimeoutSeconds", "integer",
+                    "Maximum seconds to wait for a gate slot before returning HTTP 503 with Retry-After", 5, opts.ConnectionAcquisitionTimeoutSeconds, "Range: 1-60"),
                 BuildPropertyWithCurrent("Limits:Connections:RequestTimeout", "Limits__Connections__RequestTimeout", "timespan",
                     "Overall request timeout", TimeSpan.FromSeconds(120), opts.RequestTimeout, "Range: 00:00:10-00:10:00")
             ]

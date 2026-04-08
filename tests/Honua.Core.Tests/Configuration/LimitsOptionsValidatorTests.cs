@@ -225,6 +225,53 @@ public class LimitsOptionsValidatorTests
         Assert.Throws<ArgumentNullException>(() => _validator.Validate(null, null!));
     }
 
+    [Theory]
+    [InlineData("auto")]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("AUTO")]
+    [InlineData("True")]
+    [InlineData("FALSE")]
+    [InlineData(null)]
+    [InlineData("")]
+    [Trait("Category", "Unit")]
+    public void Validate_MultiplexingAllowedValue_ReturnsSuccess(string? value)
+    {
+        var options = new LimitsOptions
+        {
+            Connections = new ConnectionLimits { Multiplexing = value! }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.DoesNotContain(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("Connections.Multiplexing", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("fasle")]
+    [InlineData("yes")]
+    [InlineData("on")]
+    [InlineData("enabled")]
+    [Trait("Category", "Unit")]
+    public void Validate_MultiplexingInvalidValue_ReturnsFail(string value)
+    {
+        // Regression — a typo like "fasle" must fail fast at startup rather
+        // than silently enabling multiplexing at runtime.
+        var options = new LimitsOptions
+        {
+            Connections = new ConnectionLimits { Multiplexing = value }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("Connections.Multiplexing", StringComparison.Ordinal) && f.Contains("invalid value", StringComparison.Ordinal));
+    }
+
     [UnitTest]
     public void Validate_ValidMimeTypes_ReturnsSuccess()
     {
