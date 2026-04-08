@@ -6,40 +6,153 @@ using Honua.Postgres.Features.Infrastructure.Resilience;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
+using Polly.CircuitBreaker;
 
 namespace Honua.Server.Tests.Infrastructure;
 
 /// <summary>
-/// Tests for cached Polly resilience policies for database connections.
-/// Validates retry behavior, callback threading via Context, and singleton semantics.
+/// Tests for per-data-source Polly resilience policies for database connections.
+/// Validates retry behavior, callback threading via Context, and isolation of
+/// circuit-breaker state across distinct <see cref="NpgsqlDataSource"/> instances.
 /// </summary>
 [Protocol(Protocols.TestQuality)]
 public sealed class ResiliencePoliciesTests
 {
+    private const string FakeConnectionString1 =
+        "Host=fake1.example.invalid;Port=5432;Database=test;Username=u;Password=p;SslMode=Disable";
+    private const string FakeConnectionString2 =
+        "Host=fake2.example.invalid;Port=5432;Database=test;Username=u;Password=p;SslMode=Disable";
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public void ConnectionRetryPolicy_ReturnsCachedSingleton()
+    public void GetConnectionRetryPolicy_SameDataSource_ReturnsCachedInstance()
     {
-        // Act
-        var policy1 = ResiliencePolicies.ConnectionRetryPolicy;
-        var policy2 = ResiliencePolicies.ConnectionRetryPolicy;
+        // Arrange
+        using var dataSource = NpgsqlDataSource.Create(FakeConnectionString1);
 
-        // Assert — same cached instance
+        // Act
+        var policy1 = ResiliencePolicies.GetConnectionRetryPolicy(dataSource);
+        var policy2 = ResiliencePolicies.GetConnectionRetryPolicy(dataSource);
+
+        // Assert — same cached instance for the same data source
         policy1.Should().NotBeNull();
         policy1.Should().BeSameAs(policy2);
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public void DeadlockRetryPolicy_ReturnsCachedSingleton()
+    public void GetDeadlockRetryPolicy_SameDataSource_ReturnsCachedInstance()
     {
-        // Act
-        var policy1 = ResiliencePolicies.DeadlockRetryPolicy;
-        var policy2 = ResiliencePolicies.DeadlockRetryPolicy;
+        // Arrange
+        using var dataSource = NpgsqlDataSource.Create(FakeConnectionString1);
 
-        // Assert — same cached instance
+        // Act
+        var policy1 = ResiliencePolicies.GetDeadlockRetryPolicy(dataSource);
+        var policy2 = ResiliencePolicies.GetDeadlockRetryPolicy(dataSource);
+
+        // Assert — same cached instance for the same data source
         policy1.Should().NotBeNull();
         policy1.Should().BeSameAs(policy2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void GetConnectionRetryPolicy_DifferentDataSources_ReturnsDistinctInstances()
+    {
+        // Regression — a single shared static breaker would let one failing
+        // data source trip the breaker for every healthy data source. Each
+        // NpgsqlDataSource must get its own retry+breaker policy instance.
+        using var dataSource1 = NpgsqlDataSource.Create(FakeConnectionString1);
+        using var dataSource2 = NpgsqlDataSource.Create(FakeConnectionString2);
+
+        var policy1 = ResiliencePolicies.GetConnectionRetryPolicy(dataSource1);
+        var policy2 = ResiliencePolicies.GetConnectionRetryPolicy(dataSource2);
+
+        policy1.Should().NotBeSameAs(policy2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void GetDeadlockRetryPolicy_DifferentDataSources_ReturnsDistinctInstances()
+    {
+        // Regression — same isolation requirement as the connection retry
+        // policy. Deadlock breakers must not bleed across data sources.
+        using var dataSource1 = NpgsqlDataSource.Create(FakeConnectionString1);
+        using var dataSource2 = NpgsqlDataSource.Create(FakeConnectionString2);
+
+        var policy1 = ResiliencePolicies.GetDeadlockRetryPolicy(dataSource1);
+        var policy2 = ResiliencePolicies.GetDeadlockRetryPolicy(dataSource2);
+
+        policy1.Should().NotBeSameAs(policy2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetConnectionRetryPolicy_TrippedBreakerOnOneDataSource_DoesNotAffectAnother()
+    {
+        // Regression — directly exercise the breaker on a fresh policy for one
+        // data source identity, then verify the policy returned for a second
+        // data source identity is still closed and accepts work. Uses fresh
+        // policies (not the cached accessor) so the test does not depend on
+        // ConditionalWeakTable lifetime semantics or cross-test interference,
+        // while still demonstrating the isolation guarantee that the cache
+        // provides per data source.
+        var policy1 = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
+        var policy2 = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
+
+        // Trip policy1's breaker. CircuitBreakerFailures defaults to 5; each
+        // ExecuteAsync call exhausts MaxRetryAttempts (3) + 1 initial = 4
+        // failures registered against the breaker. Two attempted calls is
+        // therefore enough to push past the breaker threshold.
+        var contextNoCallback = ResiliencePolicies.CreateRetryContext();
+        for (int i = 0; i < 3; i++)
+        {
+            try
+            {
+                await policy1.ExecuteAsync(
+                    async (_) =>
+                    {
+                        await Task.Yield();
+                        throw new TimeoutException("synthetic failure");
+                    },
+                    contextNoCallback);
+            }
+            catch (TimeoutException)
+            {
+                // expected — driving failures into the breaker
+            }
+            catch (BrokenCircuitException)
+            {
+                // expected once the breaker has opened mid-loop
+                break;
+            }
+        }
+
+        // Confirm policy1's breaker is now open by issuing another call.
+        var brokenAttempt = async () => await policy1.ExecuteAsync(
+            async (_) =>
+            {
+                await Task.Yield();
+                return 0;
+            },
+            ResiliencePolicies.CreateRetryContext());
+
+        await brokenAttempt.Should().ThrowAsync<BrokenCircuitException>(
+            "policy1's breaker should be open after exceeding the failure threshold");
+
+        // Act — execute a successful operation on policy2. With per-instance
+        // breakers, policy2's breaker is still closed and the work runs.
+        var resultOnHealthyPolicy = await policy2.ExecuteAsync(
+            async (_) =>
+            {
+                await Task.Yield();
+                return "ok";
+            },
+            ResiliencePolicies.CreateRetryContext());
+
+        // Assert
+        resultOnHealthyPolicy.Should().Be("ok",
+            "tripping the breaker on one data source must not affect another");
     }
 
     [Theory]

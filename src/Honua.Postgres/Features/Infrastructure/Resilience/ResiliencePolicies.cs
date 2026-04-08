@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Npgsql;
 using Polly;
@@ -9,8 +10,12 @@ namespace Honua.Postgres.Features.Infrastructure.Resilience;
 
 /// <summary>
 /// Cached resilience policies for database operations with PostgreSQL.
-/// Policies are created once and reused across all requests. The onRetry callback
-/// is threaded via <see cref="Polly.Context"/> at execution time, allowing a single
+/// Policies are cached <em>per <see cref="NpgsqlDataSource"/></em> so each data
+/// source carries its own circuit breaker state. Sharing a single static breaker
+/// across data sources lets one failing endpoint (e.g. a misconfigured secure
+/// connection) trip the breaker for every healthy data source as well — the
+/// per-instance cache prevents that cross-contamination. The onRetry callback
+/// is threaded via <see cref="Polly.Context"/> at execution time, allowing a
 /// cached policy to serve callers with different logging needs.
 /// </summary>
 internal static class ResiliencePolicies
@@ -21,12 +26,13 @@ internal static class ResiliencePolicies
     /// </summary>
     internal const string OnRetryCallbackKey = "OnRetryCallback";
 
-    /// <summary>
-    /// Cached retry + circuit breaker policy for transient connection errors.
-    /// The circuit breaker is shared across all callers, so it correctly accumulates
-    /// failures and trips when the database is genuinely unavailable.
-    /// </summary>
-    public static IAsyncPolicy ConnectionRetryPolicy { get; } = BuildConnectionRetryPolicy();
+    // Per-data-source policy caches. ConditionalWeakTable holds a weak reference
+    // to the NpgsqlDataSource key, so policies are eligible for collection as
+    // soon as their owning data source is disposed/GC'd. This matters for the
+    // SecureConnectionDataSourceCache, which can churn data source instances
+    // when secure connection registry entries are rotated.
+    private static readonly ConditionalWeakTable<NpgsqlDataSource, IAsyncPolicy> _connectionPolicies = new();
+    private static readonly ConditionalWeakTable<NpgsqlDataSource, IAsyncPolicy> _deadlockPolicies = new();
 
     /// <summary>
     /// Default deadlock resilience options.
@@ -43,11 +49,27 @@ internal static class ResiliencePolicies
     };
 
     /// <summary>
-    /// Cached retry + circuit breaker policy for deadlock errors.
-    /// Safe to retry deadlock errors with fresh transaction, as the entire transaction was rolled back.
-    /// Uses exponential backoff: 100ms, 200ms, 400ms for 3 retry attempts.
+    /// Returns the retry + circuit breaker policy for transient connection errors,
+    /// scoped to <paramref name="dataSource"/>. Each data source instance gets its
+    /// own breaker so a failure on one source cannot block traffic to another.
     /// </summary>
-    public static IAsyncPolicy DeadlockRetryPolicy { get; } = BuildDeadlockRetryPolicy();
+    public static IAsyncPolicy GetConnectionRetryPolicy(NpgsqlDataSource dataSource)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+        return _connectionPolicies.GetValue(dataSource, static _ => BuildConnectionRetryPolicy());
+    }
+
+    /// <summary>
+    /// Returns the retry + circuit breaker policy for deadlock errors, scoped to
+    /// <paramref name="dataSource"/>. Safe to retry with a fresh transaction
+    /// because the entire transaction was rolled back. Each data source has its
+    /// own breaker for the same isolation reason as the connection retry policy.
+    /// </summary>
+    public static IAsyncPolicy GetDeadlockRetryPolicy(NpgsqlDataSource dataSource)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+        return _deadlockPolicies.GetValue(dataSource, static _ => BuildDeadlockRetryPolicy());
+    }
 
     /// <summary>
     /// Creates a <see cref="Context"/> that carries the optional retry callback.
@@ -96,9 +118,17 @@ internal static class ResiliencePolicies
 
     /// <summary>
     /// Creates a fresh connection retry policy instance. Use only for testing;
-    /// production code should use the cached <see cref="ConnectionRetryPolicy"/>.
+    /// production code should use the per-data-source cached
+    /// <see cref="GetConnectionRetryPolicy"/>.
     /// </summary>
     internal static IAsyncPolicy CreateFreshConnectionRetryPolicy() => BuildConnectionRetryPolicy();
+
+    /// <summary>
+    /// Creates a fresh deadlock retry policy instance. Use only for testing;
+    /// production code should use the per-data-source cached
+    /// <see cref="GetDeadlockRetryPolicy"/>.
+    /// </summary>
+    internal static IAsyncPolicy CreateFreshDeadlockRetryPolicy() => BuildDeadlockRetryPolicy();
 
     private static IAsyncPolicy BuildConnectionRetryPolicy()
     {
