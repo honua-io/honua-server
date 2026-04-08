@@ -71,8 +71,7 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
                 return null;
             }
 
-            await using var connection = (NpgsqlConnection)await _connectionProvider
-                .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = new NpgsqlCommand(
                 "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'h3')", connection);
             command.CommandTimeout = 10;

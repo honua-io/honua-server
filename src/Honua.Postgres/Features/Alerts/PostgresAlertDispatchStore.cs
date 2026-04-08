@@ -42,9 +42,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 
         var channelTypes = channels.Distinct().Select(static c => c.ToDbValue()).ToArray();
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("event_id", NpgsqlDbType.Bigint, eventId);
         command.Parameters.AddWithValue("channel_types", NpgsqlDbType.Array | NpgsqlDbType.Smallint, channelTypes);
@@ -100,9 +98,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                       d.status, d.attempts, d.max_attempts, d.next_attempt_at
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection, transaction);
 
@@ -152,9 +148,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             WHERE dispatch_id = @dispatch_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
         command.Parameters.AddWithValue("delivered_at", NpgsqlDbType.TimestampTz, deliveredAt);
@@ -180,9 +174,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             WHERE dispatch_id = @dispatch_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);

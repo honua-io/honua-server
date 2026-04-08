@@ -22,6 +22,12 @@ internal sealed class QueryConcurrencyGate : IDisposable
     }
 
     /// <summary>
+    /// Acquisition timeout in whole seconds, used to populate the
+    /// <c>Retry-After</c> hint when a 503 is returned for a gate timeout.
+    /// </summary>
+    public int AcquisitionTimeoutSeconds => (int)Math.Max(1, Math.Ceiling(_acquisitionTimeout.TotalSeconds));
+
+    /// <summary>
     /// Waits for an available slot. Returns <see langword="false"/> if the timeout expires.
     /// </summary>
     public async Task<bool> WaitAsync(CancellationToken cancellationToken)

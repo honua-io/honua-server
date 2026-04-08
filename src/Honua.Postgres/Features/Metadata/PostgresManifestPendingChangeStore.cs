@@ -39,9 +39,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
             RETURNING pending_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@pendingId", pendingChange.PendingId);
         command.Parameters.AddWithValue("@snapshot", NpgsqlDbType.Jsonb, pendingChange.ManifestSnapshot.GetRawText());
@@ -69,9 +67,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
             WHERE pending_id = @pendingId
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@pendingId", pendingId);
 
@@ -106,9 +102,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
 
         sql += " ORDER BY created_at DESC LIMIT @limit OFFSET @offset";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@limit", effectiveLimit);
         command.Parameters.AddWithValue("@offset", effectiveOffset);
@@ -142,9 +136,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
             WHERE pending_id = @pendingId AND status = @expectedStatus
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@pendingId", pendingId);
         command.Parameters.AddWithValue("@status", MapStatusToString(status));
@@ -173,9 +165,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
             LIMIT @limit
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@asOf", asOf);
         command.Parameters.AddWithValue("@limit", effectiveLimit);

@@ -35,7 +35,7 @@ internal sealed class PostgresLayerMetadataUpdater : ILayerMetadataUpdater
 
         var metadataJson = JsonSerializer.Serialize(metadata, CatalogJsonContext.Default.CatalogMetadata);
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.AddWithValue("@metadata", metadataJson);

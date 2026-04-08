@@ -8,6 +8,7 @@ using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
@@ -74,7 +75,9 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             if (!await _concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false))
             {
                 ConnectionAcquisitionTimedOut(_logger, null);
-                throw new ServiceUnavailableException("Connection acquisition timed out — server is under heavy load.");
+                throw new ServiceUnavailableException(
+                    "Connection acquisition timed out — server is under heavy load.",
+                    _concurrencyGate.AcquisitionTimeoutSeconds);
             }
 
             Interlocked.Increment(ref _acquiredSlots);
@@ -91,7 +94,9 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return connection;
+            return _concurrencyGate is null
+                ? connection
+                : new SemaphoreReleasingConnection(connection, ReleaseOneSlot);
         }
         catch
         {

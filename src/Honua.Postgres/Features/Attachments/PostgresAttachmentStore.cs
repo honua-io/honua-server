@@ -45,7 +45,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             FROM {_tableName}
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -69,7 +69,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             WHERE layer_id = $1 AND feature_id = $2
             ORDER BY created_at DESC";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -92,7 +92,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(featureId);
         command.Parameters.AddWithValue(layerId);
@@ -120,7 +120,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
@@ -145,7 +145,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3
             RETURNING storage_path";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);

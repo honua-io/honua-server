@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Caching;
@@ -226,7 +227,7 @@ public class CachingDatabaseConnectionProviderTests : IDisposable
     {
         // Arrange
         await using var dbConnection = await _provider.OpenConnectionAsync();
-        var connection = (NpgsqlConnection)dbConnection;
+        var connection = dbConnection.RequireNpgsqlConnection();
 
         // Act
         using var command = connection.CreateCommand();
@@ -239,7 +240,7 @@ public class CachingDatabaseConnectionProviderTests : IDisposable
     }
 
     [Fact]
-    public async Task OpenConnectionAsync_WithConcurrencyGate_ReturnsNpgsqlConnection()
+    public async Task OpenConnectionAsync_WithConcurrencyGate_ReturnsWrappedConnection()
     {
         // Arrange — gate active (production default)
         var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 10 });
@@ -251,11 +252,89 @@ public class CachingDatabaseConnectionProviderTests : IDisposable
         // Act
         await using var connection = await provider.OpenConnectionAsync();
 
-        // Assert — must be castable to NpgsqlConnection (no wrapper)
+        // Assert — the wrapper should preserve Npgsql access while owning slot release.
         connection.Should().NotBeNull();
-        connection.Should().BeOfType<NpgsqlConnection>();
-        var npgsql = (NpgsqlConnection)connection;
+        connection.Should().BeOfType<SemaphoreReleasingConnection>();
+        var npgsql = connection.RequireNpgsqlConnection();
         npgsql.Should().NotBeNull();
+        npgsql.Should().BeOfType<NpgsqlConnection>();
+    }
+
+    [Fact]
+    public async Task OpenConnectionAsync_WithConcurrencyGate_ReleasesSlotWhenConnectionDisposed()
+    {
+        // Arrange
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1
+        });
+        using var provider = new CachingDatabaseConnectionProvider(
+            _dataSource,
+            NullLogger<CachingDatabaseConnectionProvider>.Instance,
+            concurrencyGate: gate);
+
+        // Act
+        var connection = await provider.OpenConnectionAsync();
+        gate.AvailableSlots.Should().Be(0);
+
+        await connection.DisposeAsync();
+
+        // Assert
+        gate.AvailableSlots.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task OpenNpgsqlConnectionAsync_WithConcurrencyGate_ReleasesSlotWhenLeaseDisposed()
+    {
+        // Regression — the lease must dispose the wrapper (not just the inner
+        // NpgsqlConnection) so the gate slot is released per-operation.
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1
+        });
+        using var provider = new CachingDatabaseConnectionProvider(
+            _dataSource,
+            NullLogger<CachingDatabaseConnectionProvider>.Instance,
+            concurrencyGate: gate);
+
+        // Act — acquire via the Npgsql lease helper
+        var lease = await provider.OpenNpgsqlConnectionAsync();
+        gate.AvailableSlots.Should().Be(0);
+        lease.Connection.Should().NotBeNull();
+
+        await lease.DisposeAsync();
+
+        // Assert — slot released; gate should accept a new caller immediately
+        gate.AvailableSlots.Should().Be(1);
+        await using var next = await provider.OpenNpgsqlConnectionAsync();
+        next.Connection.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task OpenConnectionAsync_WhenGateTimesOut_ThrowsWithRetryAfterHint()
+    {
+        // Regression — the 503 raised on gate timeout must populate
+        // RetryAfterSeconds so the middleware can emit a Retry-After header.
+        var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1
+        });
+        using var provider = new CachingDatabaseConnectionProvider(
+            _dataSource,
+            NullLogger<CachingDatabaseConnectionProvider>.Instance,
+            concurrencyGate: gate);
+
+        // Exhaust the single slot so the next caller must wait and time out.
+        await using var holder = await provider.OpenConnectionAsync();
+
+        var exception = await Assert.ThrowsAsync<ServiceUnavailableException>(
+            () => provider.OpenConnectionAsync());
+
+        exception.RetryAfterSeconds.Should().NotBeNull();
+        exception.RetryAfterSeconds!.Value.Should().BeGreaterThan(0);
     }
 
     [Fact]

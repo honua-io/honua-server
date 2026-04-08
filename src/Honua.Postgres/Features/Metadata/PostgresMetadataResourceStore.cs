@@ -53,9 +53,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
             WHERE kind = @kind AND namespace = @namespace AND name = @name
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@kind", identifier.Kind);
         command.Parameters.AddWithValue("@namespace", identifier.Namespace);
@@ -100,9 +98,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
             ORDER BY kind, namespace, name
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         foreach (var parameter in parameters)
         {
@@ -146,9 +142,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
                       spec, status, labels, annotations, created_at, updated_at, last_applied_manifest_hash
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@resourceId", resourceId);
@@ -223,9 +217,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
                       spec, status, labels, annotations, created_at, updated_at, last_applied_manifest_hash
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@apiVersion", resource.ApiVersion ?? string.Empty);
@@ -285,9 +277,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
                       spec, status, labels, annotations, created_at, updated_at, last_applied_manifest_hash
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@kind", identifier.Kind);
@@ -334,9 +324,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
                 compiler_version = EXCLUDED.compiler_version
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@resourceId", artifact.ResourceId ?? string.Empty);
         command.Parameters.AddWithValue("@resourceVersion", ParseResourceVersion(artifact.ResourceVersion));
@@ -384,9 +372,7 @@ internal sealed class PostgresMetadataResourceStore : IMetadataResourceStore
             WHERE resource_id = @resourceId AND resource_version = @resourceVersion
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@resourceId", resourceId);
         command.Parameters.AddWithValue("@resourceVersion", ParseResourceVersion(resourceVersion));

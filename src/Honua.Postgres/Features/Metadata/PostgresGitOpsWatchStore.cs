@@ -53,9 +53,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             RETURNING config_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@configId", config.ConfigId);
         command.Parameters.AddWithValue("@repoUrl", config.RepositoryUrl);
@@ -85,9 +83,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             LIMIT 1
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -103,9 +99,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
     {
         var sql = $"DELETE FROM {_configTable} WHERE config_id = @configId";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@configId", configId);
 
@@ -121,9 +115,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             WHERE config_id = @configId
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@configId", configId);
         command.Parameters.AddWithValue("@commitSha", commitSha);
@@ -147,9 +139,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             RETURNING change_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@changeId", record.ChangeId);
         command.Parameters.AddWithValue("@configId", record.ConfigId);
@@ -181,9 +171,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             WHERE change_id = @changeId
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@changeId", changeId);
 
@@ -209,9 +197,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             LIMIT @limit OFFSET @offset
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@limit", effectiveLimit);
         command.Parameters.AddWithValue("@offset", effectiveOffset);
@@ -243,9 +229,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             WHERE pending_approval_id = @pendingApprovalId
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@pendingApprovalId", pendingApprovalId);
         command.Parameters.AddWithValue("@status", newStatus.ToWireString());
