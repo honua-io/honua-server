@@ -3,9 +3,13 @@
 # JIT build for maximum compatibility (AOT via docker/Dockerfile.aot)
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
+# Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:f061e5a7532b36fa1d1b684857fe1f504ba92115b9934f154643266613c44c62
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:8c7671a6f0f984d0c102ee70d61e8010857de032b320561dea97cc5781aea5f8
+
 # Build stage
 # Use the Debian SDK image so Grpc.Tools/protoc can run during container builds.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
 # grpc.tools' bundled linux_arm64 protoc segfaults on native ARM runners.
@@ -83,7 +87,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
 # Security: Install runtime dependencies
 RUN apk add --no-cache \

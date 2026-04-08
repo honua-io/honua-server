@@ -3,8 +3,12 @@
 # Native AOT build for minimal image size and fast cold start
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
+# Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:a65df8d9ad0661a1a785a4f26188b3a2826540d448df317ac69cfb6e801e1592
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:9ec585b84e539eff25a0c925137263ecb900db78d47e02a3b9ceb5d5009551fb
+
 # Build stage with security hardening
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
 # Security: Create non-root build user
@@ -72,7 +76,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage - distroless-style minimal image for maximum security
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
+FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 # Security: Install runtime dependencies
 RUN apk add --no-cache \
