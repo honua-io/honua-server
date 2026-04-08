@@ -14,6 +14,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     private readonly ConcurrentDictionary<string, Lazy<NpgsqlDataSource>> _dataSources = new(StringComparer.Ordinal);
     private readonly bool _schemaHeadersEnabled;
     private readonly ConnectionLimits _connectionLimits;
+    private readonly string? _defaultSchema;
 
     public SecureConnectionDataSourceCache(IConfiguration configuration)
     {
@@ -21,6 +22,12 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
 
         _schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
         _connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+        // Preserve the configured default schema so named secure connections
+        // get the same search_path embedded in their Options parameter as the
+        // default data source. Without this, background/service callers (where
+        // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL
+        // default search_path and miss schema-qualified tables.
+        _defaultSchema = configuration["Database:Schema"];
     }
 
     public NpgsqlDataSource GetOrCreate(string connectionString)
@@ -32,7 +39,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
 
         var lazy = _dataSources.GetOrAdd(connectionString, key =>
             new Lazy<NpgsqlDataSource>(
-                () => PostgresDataSourceFactory.Create(key, _schemaHeadersEnabled, _connectionLimits),
+                () => PostgresDataSourceFactory.Create(key, _schemaHeadersEnabled, _connectionLimits, _defaultSchema),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
         return lazy.Value;
