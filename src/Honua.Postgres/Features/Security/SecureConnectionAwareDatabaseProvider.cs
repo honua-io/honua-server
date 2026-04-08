@@ -112,9 +112,32 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
             return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        // Secure mode — acquire the shared gate slot here so that secure-named
-        // connections share the same MaxConcurrentQueries budget as the default
-        // path. The slot is released when the caller disposes the returned
+        // Secure mode — resolve the connection string FIRST. The registry
+        // lookup itself opens a metadata connection through the primary
+        // (gated) provider, so taking the gate slot here would either
+        // self-deadlock at MaxConcurrentQueries=1 or double-count capacity at
+        // higher limits. The primary provider gates its own metadata open and
+        // releases the slot before this method returns.
+        string connectionString;
+        try
+        {
+            connectionString = await _secureResolver.ResolveConnectionStringAsync(
+                _namedConnectionToUse, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logSecureConnectionFallback(_logger, _namedConnectionToUse, ex);
+
+            // Fall back to default connection if secure resolution fails.
+            // The default provider acquires its own gate slot.
+            return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Now that the connection string is resolved, acquire the shared gate
+        // slot just before opening the target secure NpgsqlDataSource. This
+        // ensures secure-named connections share the same MaxConcurrentQueries
+        // budget as the default path while costing exactly one slot per open.
+        // The slot is released when the caller disposes the returned
         // SemaphoreReleasingConnection wrapper.
         var gateAcquired = false;
         if (_concurrencyGate is not null)
@@ -134,10 +157,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
         NpgsqlConnection? connection = null;
         try
         {
-            // Secure mode - resolve connection from registry
-            var connectionString = await _secureResolver.ResolveConnectionStringAsync(
-                _namedConnectionToUse, cancellationToken);
-
             var dataSource = _dataSourceCache.GetOrCreate(connectionString);
             connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -149,10 +168,8 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
                 ? connection
                 : new SemaphoreReleasingConnection(connection, ReleaseOneSlot);
         }
-        catch (ServiceUnavailableException)
+        catch
         {
-            // 503 from the gate must propagate — don't silently fall back to
-            // the default provider (it would just hit the same gate).
             if (connection is not null)
             {
                 await connection.DisposeAsync().ConfigureAwait(false);
@@ -164,25 +181,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
             }
 
             throw;
-        }
-        catch (Exception ex)
-        {
-            _logSecureConnectionFallback(_logger, _namedConnectionToUse, ex);
-
-            if (connection is not null)
-            {
-                await connection.DisposeAsync().ConfigureAwait(false);
-            }
-
-            // Release our slot before falling back — the default provider will
-            // acquire its own gate slot. Otherwise we'd double-count.
-            if (gateAcquired)
-            {
-                ReleaseOneSlot();
-            }
-
-            // Fall back to default connection if secure resolution fails
-            return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
