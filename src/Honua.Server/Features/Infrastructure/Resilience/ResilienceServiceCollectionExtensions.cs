@@ -4,7 +4,6 @@
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.CircuitBreaker;
-using Polly.Extensions.Http;
 using Polly.Timeout;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Infrastructure.Monitoring;

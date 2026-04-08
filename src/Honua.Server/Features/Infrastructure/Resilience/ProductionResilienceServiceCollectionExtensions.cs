@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.Extensions.Options;
-using Polly.Extensions.Http;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Monitoring;

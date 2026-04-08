@@ -527,6 +527,16 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
             int activeRequests,
             double avgResponseTime,
             double errorRate);
+
+        [LoggerMessage(
+            EventId = 10,
+            Level = LogLevel.Debug,
+            Message = "ML learning triggered: patterns={PatternCount}, avgSuccess={AvgSuccess:F2}, globalConfidence={GlobalConfidence:F2}")]
+        public static partial void MLLearningTriggered(
+            ILogger logger,
+            int patternCount,
+            double avgSuccess,
+            double globalConfidence);
     }
 }
 
@@ -905,8 +915,7 @@ internal sealed class MLSamplingDecisionEngine : IDisposable
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
-            _logger.LogDebug("ML learning triggered: patterns={PatternCount}, avgSuccess={AvgSuccess:F2}, globalConfidence={GlobalConfidence:F2}",
-                patterns.Count, avgSuccessRate, _globalConfidence);
+            Log.MLLearningTriggered(_logger, patterns.Count, avgSuccessRate, _globalConfidence);
         }
     }
 
