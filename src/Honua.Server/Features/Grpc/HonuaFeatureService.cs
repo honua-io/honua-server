@@ -13,6 +13,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Proto = Geospatial.V1;
 
@@ -63,6 +64,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     {
     }
 
+    [ActivatorUtilitiesConstructor]
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
         IFeatureReader featureReader,
