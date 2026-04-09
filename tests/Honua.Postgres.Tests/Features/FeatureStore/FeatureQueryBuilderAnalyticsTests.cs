@@ -127,6 +127,31 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     }
 
     [Fact]
+    public void BuildClusterQuery_HullMode_AppliesMaxClustersLimitAfterGrouping()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var clusterQuery = new ClusterQuery
+        {
+            Algorithm = ClusterAlgorithm.DbScan,
+            Eps = 50d,
+            MinPoints = 1,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = true,
+            MaxInputFeatures = 10_000,
+            MaxClusters = 250
+        };
+
+        var result = queryBuilder.BuildClusterQuery(layerId: 1, query, clusterQuery);
+
+        // Hull mode must cap the grouped result set in SQL so Postgres does not
+        // sort/materialize arbitrarily many clusters before the handler trims.
+        result.Sql.Should().Contain("GROUP BY cluster_id ORDER BY \"featureCount\" DESC LIMIT $5");
+        result.WhereParameters.Should().HaveCount(4);
+        result.WhereParameters[^1].Should().Be(251);
+    }
+
+    [Fact]
     public void BuildSpatialJoinQuery_WithByteaStorage_UsesDecodedOperandsInPredicateAndOutput()
     {
         var queryBuilder = CreateQueryBuilder();

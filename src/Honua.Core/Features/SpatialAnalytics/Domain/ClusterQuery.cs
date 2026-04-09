@@ -82,6 +82,14 @@ public readonly record struct ClusterQuery
     public int MaxInputFeatures { get; init; }
 
     /// <summary>
+    /// Maximum number of aggregated cluster rows returned in hull-per-cluster mode.
+    /// The SQL applies <c>LIMIT n+1</c> after the <c>GROUP BY</c> so the handler
+    /// can detect result truncation without materializing the full cluster set.
+    /// Ignored when <see cref="ReturnHullPerCluster"/> is false.
+    /// </summary>
+    public int MaxClusters { get; init; }
+
+    /// <summary>
     /// Minimum allowed value for DBSCAN <see cref="Eps"/> (meters or selected unit).
     /// Prevents pathological queries that would force every feature into its own cluster.
     /// </summary>

@@ -838,7 +838,7 @@
             "content": {
               "application/geo+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeatureCollection"
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
                 }
               }
             }
@@ -930,7 +930,7 @@
             "content": {
               "application/geo+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeatureCollection"
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
                 }
               }
             }
@@ -1015,7 +1015,7 @@
             "content": {
               "application/geo+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeatureCollection"
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
                 }
               }
             }
@@ -1102,7 +1102,7 @@
             "content": {
               "application/geo+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeatureCollection"
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
                 }
               }
             }
@@ -1184,7 +1184,7 @@
             "content": {
               "application/geo+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeatureCollection"
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
                 }
               }
             }
@@ -1323,6 +1323,62 @@
           "timeStamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SpatialAnalyticsFeatureCollection": {
+        "type": "object",
+        "required": [
+          "type",
+          "features",
+          "numberReturned",
+          "metadata"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "FeatureCollection"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoJsonFeature"
+            }
+          },
+          "numberReturned": {
+            "type": "integer"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/SpatialAnalyticsMetadata"
+          }
+        }
+      },
+      "SpatialAnalyticsMetadata": {
+        "type": "object",
+        "required": [
+          "operation",
+          "inputTruncated",
+          "resultTruncated",
+          "maxInputFeatures"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "inputTruncated": {
+            "type": "boolean"
+          },
+          "resultTruncated": {
+            "type": "boolean"
+          },
+          "maxInputFeatures": {
+            "type": "integer"
+          },
+          "maxOutputRows": {
+            "type": "integer",
+            "nullable": true
           }
         }
       },

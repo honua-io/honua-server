@@ -119,6 +119,12 @@ internal sealed partial class FeatureQueryBuilder
                 AppendClusterStatisticsColumns(sql, clusterQuery.OutStatistics);
                 sql.Append(" FROM src WHERE cluster_id IS NOT NULL");
                 sql.Append(" GROUP BY cluster_id ORDER BY \"featureCount\" DESC");
+                if (clusterQuery.MaxClusters > 0)
+                {
+                    var maxClustersParam = $"${paramIndex++}";
+                    parameters.Add(clusterQuery.MaxClusters + 1);
+                    sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxClustersParam}");
+                }
             }
             else
             {
@@ -414,7 +420,7 @@ internal sealed partial class FeatureQueryBuilder
             }
 
             var statFieldExpr = GetFieldExpression(stat.OnStatisticField);
-            var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr);
+            var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr, stat.FieldType);
             sql.Append(CultureInfo.InvariantCulture,
                 $", {aggregateExpr} AS {SanitizeAlias(stat.OutStatisticFieldName)}");
         }

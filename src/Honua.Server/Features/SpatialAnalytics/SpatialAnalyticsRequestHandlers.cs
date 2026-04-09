@@ -230,6 +230,51 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return type.ToLowerInvariant() is "count" or "sum" or "min" or "max" or "avg" or "stddev" or "var";
     }
 
+    private static ImmutableArray<StatisticDefinition>? ApplyStatisticFieldTypes(
+        ImmutableArray<StatisticDefinition>? outStatistics,
+        LayerDefinition layer)
+    {
+        if (!outStatistics.HasValue || outStatistics.Value.IsDefaultOrEmpty)
+        {
+            return outStatistics;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<StatisticDefinition>(outStatistics.Value.Length);
+        foreach (var statistic in outStatistics.Value)
+        {
+            builder.Add(statistic with
+            {
+                FieldType = TryResolveFieldType(layer, statistic.OnStatisticField, out var fieldType)
+                    ? fieldType
+                    : statistic.FieldType
+            });
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool TryResolveFieldType(LayerDefinition layer, string fieldName, out FieldType fieldType)
+    {
+        if (string.Equals(fieldName, layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fieldName, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            fieldType = layer.PrimaryKeyField?.Type ?? FieldType.Integer;
+            return true;
+        }
+
+        foreach (var field in layer.Fields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                fieldType = field.Type;
+                return true;
+            }
+        }
+
+        fieldType = default;
+        return false;
+    }
+
     private static string? GetValueString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 

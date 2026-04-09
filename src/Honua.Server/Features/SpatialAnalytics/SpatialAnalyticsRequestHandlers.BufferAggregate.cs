@@ -226,6 +226,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["outStatistics requires dissolve=true; per-feature buffers cannot carry aggregate statistics."]);
         }
 
+        outStatistics = ApplyStatisticFieldTypes(outStatistics, layer);
+
         // Feature query (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
             context, values, layer, cancellationToken);

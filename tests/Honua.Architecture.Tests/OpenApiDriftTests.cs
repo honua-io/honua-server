@@ -48,6 +48,45 @@ public sealed class OpenApiDriftTests
             tilesRegistryEndpoints);
     }
 
+    [ArchitectureTest]
+    public void SpatialAnalyticsResponses_UseDedicatedFeatureCollectionSchema()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("openapi.json")));
+        var root = document.RootElement;
+        var paths = root.GetProperty("paths");
+
+        foreach (var path in new[]
+                 {
+                     "/collections/{collectionId}/clusters",
+                     "/collections/{collectionId}/spatial-join",
+                     "/collections/{collectionId}/buffer-aggregate",
+                     "/collections/{collectionId}/density"
+                 })
+        {
+            var schemaRef = paths.GetProperty(path)
+                .GetProperty("post")
+                .GetProperty("responses")
+                .GetProperty("200")
+                .GetProperty("content")
+                .GetProperty("application/geo+json")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString();
+
+            schemaRef.Should().Be("#/components/schemas/SpatialAnalyticsFeatureCollection");
+        }
+
+        var analyticsSchema = root.GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("SpatialAnalyticsFeatureCollection");
+
+        analyticsSchema.GetProperty("properties")
+            .GetProperty("metadata")
+            .GetProperty("$ref")
+            .GetString()
+            .Should().Be("#/components/schemas/SpatialAnalyticsMetadata");
+    }
+
     private static void AssertSpecMatchesRegistry(
         string specName,
         HashSet<string> specEndpoints,

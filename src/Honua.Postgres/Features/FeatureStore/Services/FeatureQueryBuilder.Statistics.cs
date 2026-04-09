@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -99,26 +100,38 @@ internal sealed partial class FeatureQueryBuilder
             }
 
             var fieldExpr = GetFieldExpression(stat.OnStatisticField);
-            var aggregateExpr = BuildAggregateExpression(stat.StatisticType, fieldExpr);
+            var aggregateExpr = BuildAggregateExpression(stat.StatisticType, fieldExpr, stat.FieldType);
             sql.Append(CultureInfo.InvariantCulture, $"{aggregateExpr} AS {SanitizeAlias(stat.OutStatisticFieldName)}");
             first = false;
         }
     }
 
-    private static string BuildAggregateExpression(StatisticType statisticType, string fieldExpr)
+    private static string BuildAggregateExpression(
+        StatisticType statisticType,
+        string fieldExpr,
+        FieldType? fieldType = null)
     {
         var numericExpr = $"({fieldExpr})::numeric";
+        var orderedExpr = IsNumericFieldType(fieldType) ? numericExpr : fieldExpr;
         return statisticType switch
         {
             StatisticType.Count => $"COUNT({fieldExpr})",
             StatisticType.Sum => $"SUM({numericExpr})",
-            StatisticType.Min => $"MIN({fieldExpr})",
-            StatisticType.Max => $"MAX({fieldExpr})",
+            StatisticType.Min => $"MIN({orderedExpr})",
+            StatisticType.Max => $"MAX({orderedExpr})",
             StatisticType.Avg => $"AVG({numericExpr})",
             StatisticType.Stddev => $"STDDEV_SAMP({numericExpr})",
             StatisticType.Var => $"VAR_SAMP({numericExpr})",
             _ => throw new ArgumentOutOfRangeException(nameof(statisticType), statisticType, "Unsupported statistic type")
         };
+    }
+
+    private static bool IsNumericFieldType(FieldType? fieldType)
+    {
+        return fieldType is FieldType.Integer
+            or FieldType.BigInteger
+            or FieldType.Float
+            or FieldType.Double;
     }
 
     private static string GetFieldExpression(string fieldName)

@@ -258,7 +258,7 @@ internal sealed partial class FeatureQueryBuilder
             }
 
             var statFieldExpr = GetJoinFieldExpression(stat.OnStatisticField);
-            var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr);
+            var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr, stat.FieldType);
             sql.Append(CultureInfo.InvariantCulture,
                 $", {aggregateExpr} AS {SanitizeAlias(stat.OutStatisticFieldName)}");
         }

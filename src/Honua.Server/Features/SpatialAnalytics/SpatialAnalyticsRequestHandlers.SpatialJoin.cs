@@ -257,6 +257,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return outStatsError!;
         }
 
+        outStatistics = ApplyStatisticFieldTypes(outStatistics, joinLayerValidation.Layer!);
+
         // Feature query for the target layer (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
             context, values, targetLayer, cancellationToken);

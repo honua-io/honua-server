@@ -385,6 +385,62 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.SpatialJoin)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin")]
+    public async Task SpatialJoin_WithNumericOutStatistics_UsesNumericMaxOrdering()
+    {
+        await _fixture.Postgres.ExecuteAsync(
+            """
+            UPDATE features
+            SET attributes = jsonb_set(attributes, '{related_id}', '10'::jsonb)
+            WHERE layer_id = 1 AND objectid = 101;
+
+            UPDATE features
+            SET attributes = jsonb_set(attributes, '{related_id}', '2'::jsonb)
+            WHERE layer_id = 1 AND objectid = 102;
+            """,
+            _fixture.CurrentSchema);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            joinLayerId = 1,
+            predicate = "dwithin",
+            distance = 100000,
+            outStatistics = "[{\"statisticType\":\"max\",\"onStatisticField\":\"related_id\",\"outStatisticFieldName\":\"max_related_id\"}]",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var features = doc.RootElement.GetProperty("features");
+
+        var foundNumericMax = false;
+        foreach (var feature in features.EnumerateArray())
+        {
+            if (!feature.GetProperty("properties").TryGetProperty("max_related_id", out var maxRelatedId) ||
+                maxRelatedId.ValueKind != JsonValueKind.Number)
+            {
+                continue;
+            }
+
+            if (maxRelatedId.GetDecimal() == 10m)
+            {
+                foundNumericMax = true;
+                break;
+            }
+        }
+
+        foundNumericMax.Should().BeTrue(
+            "numeric max aggregation over JSON-backed related_id values should yield 10 instead of lexicographic 2");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SpatialJoin)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin")]
     public async Task SpatialJoin_MissingJoinLayerId_ReturnsBadRequest()
     {
         var payload = JsonSerializer.Serialize(new

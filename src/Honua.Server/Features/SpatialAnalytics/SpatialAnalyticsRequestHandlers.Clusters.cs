@@ -268,6 +268,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate statistics."]);
         }
 
+        outStatistics = ApplyStatisticFieldTypes(outStatistics, layer);
+
         // Feature query (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
             context, values, layer, cancellationToken);
@@ -285,7 +287,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
             DistanceUnit = DistanceUnit.Meters,
             ReturnHullPerCluster = returnHull,
             OutStatistics = outStatistics,
-            MaxInputFeatures = analyticsLimits.MaxInputFeatures
+            MaxInputFeatures = analyticsLimits.MaxInputFeatures,
+            MaxClusters = analyticsLimits.MaxClusters
         };
 
         if (!TryGetAnalyticsReader(context, ClusterOperation, logger, out var reader, out var readerError))
