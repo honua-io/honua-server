@@ -1,0 +1,18 @@
+{
+  "gdal_version": "GDAL 3.0.4, released 2020/01/28",
+  "timestamp": "2026-04-08T18:21:42.290135+00:00",
+  "protocols": {
+    "wfs": {
+      "feature_read": "pass"
+    }
+  },
+  "details": [
+    {
+      "test": "test_read_geojson",
+      "protocol": "wfs",
+      "category": "feature_read",
+      "status": "pass",
+      "detail": ""
+    }
+  ]
+}

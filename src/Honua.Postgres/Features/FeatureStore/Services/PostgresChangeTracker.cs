@@ -26,7 +26,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
     {
         const string sql = "SELECT last_value FROM honua.sync_generation";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -80,7 +80,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
             ORDER BY max_gen
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue(NpgsqlDbType.Bigint, sinceGeneration);

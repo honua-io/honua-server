@@ -198,7 +198,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
                 var prepared = await _statementCache.PreparePriorityStatementAsync(
-                    (NpgsqlConnection)connection,
+                    connection.RequireNpgsqlConnection(),
                     query.Sql,
                     query.Name,
                     cancellationToken);

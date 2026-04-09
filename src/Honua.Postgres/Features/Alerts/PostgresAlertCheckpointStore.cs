@@ -30,9 +30,7 @@ internal sealed class PostgresAlertCheckpointStore : IAlertCheckpointStore
             WHERE worker_name = @worker_name
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var select = new NpgsqlCommand(selectSql, connection);
         select.Parameters.AddWithValue("worker_name", NpgsqlDbType.Text, workerName);
 
@@ -81,9 +79,7 @@ internal sealed class PostgresAlertCheckpointStore : IAlertCheckpointStore
                 updated_at = now()
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("worker_name", NpgsqlDbType.Text, checkpoint.WorkerName);

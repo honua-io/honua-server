@@ -80,9 +80,7 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
               ORDER BY layer_id, rule_id
               """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, layerIds);
@@ -150,9 +148,7 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
 
         var normalizedRuleIds = ruleIds.Distinct().ToArray();
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("rule_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, normalizedRuleIds);
 
@@ -182,9 +178,7 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
             WHERE zone_id = ANY(@zone_ids)
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("zone_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, zoneIds.ToArray());
 

@@ -31,9 +31,7 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader
             LIMIT @max_count
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("last_generation", NpgsqlDbType.Bigint, lastGeneration);

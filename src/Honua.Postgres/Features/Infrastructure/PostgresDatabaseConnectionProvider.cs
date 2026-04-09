@@ -92,11 +92,11 @@ internal sealed class PostgresDatabaseConnectionProvider(
         if (_schemaContext?.CurrentSchema != null)
         {
             activity?.SetTag("db.schema", _schemaContext.CurrentSchema);
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken).ConfigureAwait(false);
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken).ConfigureAwait(false);
+            await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         DbConnectionTracking.Track(connection, _activeDbConnectionTracker);

@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using System.Data.Common;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using NetTopologySuite.IO;
@@ -15,19 +16,19 @@ internal sealed partial class FeatureDataAccess
 {
     public async Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await CreateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
     }
 
     public async Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await UpdateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
     }
 
     public async Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await DeleteWithConnectionAsync(layerId, featureId, connection, transaction: null, cancellationToken);
     }
 
@@ -38,23 +39,24 @@ internal sealed partial class FeatureDataAccess
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        NpgsqlConnection connection;
+        DbConnection dbConnection;
         NpgsqlTransaction? transaction;
 
         if (editBatch.RollbackOnFailure)
         {
             // Use RepeatableRead isolation level for feature edits to prevent phantom reads during batch operations
-            var (dbConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
-            connection = (NpgsqlConnection)dbConnection;
+            var (txConnection, dbTransaction) = await _connectionProvider.OpenTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken).ConfigureAwait(false);
+            dbConnection = txConnection;
             transaction = (NpgsqlTransaction)dbTransaction;
         }
         else
         {
-            connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            dbConnection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             transaction = null;
         }
 
-        await using var _ = connection;
+        await using var _ = dbConnection;
+        var connection = dbConnection.RequireNpgsqlConnection();
         await using var __ = transaction;
 
         try

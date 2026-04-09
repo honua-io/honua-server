@@ -67,11 +67,17 @@ internal static class ServiceCollectionExtensions
         var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
         var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
+        var defaultSchema = configuration["Database:Schema"];
+
+        // Register concurrency gate as singleton — shared across all scoped providers.
+        // Factory form so the DI container tracks the IDisposable for shutdown disposal.
+        services.TryAddSingleton(_ => new QueryConcurrencyGate(connectionLimits));
+
         // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
             var connectionString = ResolveConnectionString(serviceProvider, configuration);
-            return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits);
+            return PostgresDataSourceFactory.Create(connectionString, schemaHeadersEnabled, connectionLimits, defaultSchema);
         });
 
         // Register refactored feature store implementation

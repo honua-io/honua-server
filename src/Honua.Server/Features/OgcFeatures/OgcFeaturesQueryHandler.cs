@@ -48,8 +48,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly OgcFeaturesOptions _ogcFeaturesOptions = dependencies.OgcFeaturesOptions;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private const int StreamingThreshold = 1000;
-    private const int StreamingFlushInterval = 32;
+    private const int StreamingThreshold = 200;
+    private const int StreamingFlushInterval = 128;
     private static readonly ImmutableHashSet<string> _sortByCoreFields = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
         FieldNames.ObjectId,
@@ -1068,7 +1068,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
-            SkipValidation = false
+            SkipValidation = true
         });
 
         writer.WriteStartObject();

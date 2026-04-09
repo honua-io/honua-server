@@ -8,21 +8,37 @@ using Npgsql;
 namespace Honua.Postgres.Features.Infrastructure;
 
 /// <summary>
-/// Wraps a database connection to release a semaphore when disposed.
+/// Wraps a database connection to invoke a release callback when disposed.
 /// Used by <see cref="Caching.CachingDatabaseConnectionProvider"/> to enforce
-/// MaxConcurrentQueries — the semaphore is acquired before opening the connection
+/// MaxConcurrentQueries — the gate slot is acquired before opening the connection
 /// and released when the connection is returned (disposed).
 /// </summary>
+/// <remarks>
+/// The wrapper relays <see cref="DbConnection.StateChange"/> events from the
+/// inner <see cref="NpgsqlConnection"/> so that code subscribing to the wrapper
+/// (for example
+/// <see cref="Monitoring.DbConnectionTracking.Track"/>) sees Closed/Broken
+/// transitions and can decrement active-connection telemetry. Without the
+/// relay, a subscriber on the wrapper would never receive the close signal.
+/// </remarks>
 internal sealed class SemaphoreReleasingConnection : DbConnection
 {
     private readonly NpgsqlConnection _inner;
-    private readonly SemaphoreSlim _semaphore;
+    private readonly Action _releaseAction;
     private bool _disposed;
 
-    public SemaphoreReleasingConnection(NpgsqlConnection inner, SemaphoreSlim semaphore)
+    public SemaphoreReleasingConnection(NpgsqlConnection inner, Action releaseAction)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
-        _semaphore = semaphore ?? throw new ArgumentNullException(nameof(semaphore));
+        _releaseAction = releaseAction ?? throw new ArgumentNullException(nameof(releaseAction));
+        _inner.StateChange += OnInnerStateChange;
+    }
+
+    private void OnInnerStateChange(object? sender, StateChangeEventArgs e)
+    {
+        // Relay inner state transitions onto the wrapper's own StateChange
+        // event so subscribers on the wrapper see the same lifecycle signals.
+        OnStateChange(e);
     }
 
     internal NpgsqlConnection InnerConnection => _inner;
@@ -47,6 +63,15 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
         => _inner.BeginTransaction(isolationLevel);
 
+    // Without this override, DbConnection.BeginTransactionAsync falls back to
+    // calling the synchronous BeginDbTransaction above, turning every gated
+    // OpenTransactionAsync into blocking I/O on the request thread. Forwarding
+    // to NpgsqlConnection.BeginTransactionAsync preserves the async path.
+    protected override async ValueTask<DbTransaction> BeginDbTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken)
+        => await _inner.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+
     protected override DbCommand CreateDbCommand()
     {
         var cmd = _inner.CreateCommand();
@@ -60,8 +85,13 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
             _disposed = true;
             if (disposing)
             {
+                // Dispose the inner connection FIRST so its final
+                // StateChange(Closed) event can relay through the wrapper,
+                // then unsubscribe to avoid rooting the wrapper from the
+                // pooled connection's event list.
                 _inner.Dispose();
-                _semaphore.Release();
+                _inner.StateChange -= OnInnerStateChange;
+                _releaseAction();
             }
         }
 
@@ -74,7 +104,8 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
         {
             _disposed = true;
             await _inner.DisposeAsync().ConfigureAwait(false);
-            _semaphore.Release();
+            _inner.StateChange -= OnInnerStateChange;
+            _releaseAction();
         }
 
         await base.DisposeAsync().ConfigureAwait(false);

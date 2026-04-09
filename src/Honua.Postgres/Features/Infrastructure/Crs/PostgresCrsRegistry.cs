@@ -181,9 +181,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
     {
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider
-                .OpenConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = new NpgsqlCommand(
                 "SELECT srtext, proj4text FROM public.spatial_ref_sys WHERE srid = @srid LIMIT 1",
                 connection);

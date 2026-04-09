@@ -125,9 +125,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             return cachedEntry.Srid;
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         if (!await IsLayerCatalogAvailableAsync(connection, cancellationToken).ConfigureAwait(false))
         {
@@ -182,9 +180,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
                 return (CoreGeometryStorageType)cached;
             }
 
-            await using var connection = (NpgsqlConnection)await _connectionProvider
-                .OpenConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
             const string sql = """
                 SELECT data_type, udt_name
@@ -239,9 +235,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
                 return cached == 1;
             }
 
-            await using var connection = (NpgsqlConnection)await _connectionProvider
-                .OpenConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
             return await IsLayerCatalogAvailableInternalAsync(connection, cancellationToken).ConfigureAwait(false);
         }

@@ -509,7 +509,14 @@ jobs:
         working-directory: tests/js
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: |
+          # Ubuntu 24 runner images currently ship Microsoft apt feeds that can
+          # return transient 403s, which breaks Playwright's dependency bootstrap
+          # before the JS tests even start.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 \
+            \( -name 'azure-cli*' -o -name 'microsoft-prod*' \) \
+            -print -delete
+          npx playwright install --with-deps chromium
         working-directory: tests/js
 
       - name: Run JavaScript Integration Tests
@@ -580,7 +587,13 @@ jobs:
         working-directory: tests/js-browser
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          # Ubuntu 24 runner images currently ship Microsoft apt feeds that can
+          # return transient 403s during Playwright's `apt` dependency install.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 \
+            \( -name 'azure-cli*' -o -name 'microsoft-prod*' \) \
+            -print -delete
+          npx playwright install --with-deps chromium
         working-directory: tests/js-browser
 
       - name: Run Esri Leaflet Browser Tests
@@ -652,7 +665,13 @@ jobs:
         working-directory: tests/js-browser
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          # Ubuntu 24 runner images currently ship Microsoft apt feeds that can
+          # return transient 403s during Playwright's `apt` dependency install.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 \
+            \( -name 'azure-cli*' -o -name 'microsoft-prod*' \) \
+            -print -delete
+          npx playwright install --with-deps chromium
         working-directory: tests/js-browser
 
       - name: Run MapLibre Browser Compatibility Tests

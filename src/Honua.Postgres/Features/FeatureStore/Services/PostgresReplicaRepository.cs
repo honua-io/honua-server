@@ -35,7 +35,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
                 last_sync_generation = EXCLUDED.last_sync_generation
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ReplicaId);
@@ -59,7 +59,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
             WHERE replica_id = $1
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(NpgsqlDbType.Text, replicaId);
 
@@ -86,7 +86,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
     {
         const string sql = "DELETE FROM honua.replicas WHERE replica_id = $1";
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(NpgsqlDbType.Text, replicaId);
 

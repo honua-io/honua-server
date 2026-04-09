@@ -36,8 +36,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
             WHERE layer_id = @layerId
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
 
@@ -68,8 +67,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
                       style_version
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.Add(new NpgsqlParameter("@mapLibreStyle", NpgsqlDbType.Jsonb)
@@ -105,8 +103,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
                       style_version
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.Add(new NpgsqlParameter("@mapLibreStyle", NpgsqlDbType.Jsonb)
@@ -143,8 +140,7 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
                       style_version
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.Add(new NpgsqlParameter("@drawingInfo", NpgsqlDbType.Jsonb)

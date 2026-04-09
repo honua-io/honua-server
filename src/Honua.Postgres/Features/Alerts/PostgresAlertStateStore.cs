@@ -67,9 +67,7 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
         var layerIds = normalizedKeys.Select(static key => key.LayerId).ToArray();
         var objectIds = normalizedKeys.Select(static key => key.ObjectId).ToArray();
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("rule_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, ruleIds);
@@ -106,9 +104,7 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
                 threshold_state = EXCLUDED.threshold_state
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, state.RuleId);
@@ -141,9 +137,7 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
             LIMIT @max_count
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("due_before", NpgsqlDbType.TimestampTz, dueBefore);

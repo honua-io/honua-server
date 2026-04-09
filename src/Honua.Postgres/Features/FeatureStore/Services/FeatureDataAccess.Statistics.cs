@@ -21,7 +21,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = new NpgsqlCommand(query.Sql, connection);
 
             command.Parameters.AddWithValue(layerId);

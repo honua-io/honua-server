@@ -30,9 +30,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             ORDER BY zone_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, (object?)serviceId ?? DBNull.Value);
 
@@ -56,9 +54,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             WHERE zone_id = @zone_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("zone_id", NpgsqlDbType.Bigint, zoneId);
 
@@ -91,9 +87,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             RETURNING zone_id, service_id, zone_name, ST_AsBinary(geometry), ST_SRID(geometry), metadata, is_active
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = BuildZoneWriteCommand(sql, connection, zone);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -122,9 +116,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             RETURNING zone_id, service_id, zone_name, ST_AsBinary(geometry), ST_SRID(geometry), metadata, is_active
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = BuildZoneWriteCommand(sql, connection, zone);
         command.Parameters.AddWithValue("zone_id", NpgsqlDbType.Bigint, zone.ZoneId);
 
@@ -144,9 +136,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             WHERE zone_id = @zone_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("zone_id", NpgsqlDbType.Bigint, zoneId);
 
@@ -167,9 +157,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             ORDER BY rule_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, (object?)serviceId ?? DBNull.Value);
         command.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, (object?)layerId ?? DBNull.Value);
@@ -201,9 +189,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
                       conditions, cooldown_seconds, severity, edition_required, channels, is_active
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = BuildRuleWriteCommand(sql, connection, rule);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -236,9 +222,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
                       conditions, cooldown_seconds, severity, edition_required, channels, is_active
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = BuildRuleWriteCommand(sql, connection, rule);
         command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, rule.RuleId);
 
@@ -258,9 +242,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             WHERE rule_id = @rule_id
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleId);
 

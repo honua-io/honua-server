@@ -29,7 +29,7 @@ internal sealed partial class FeatureDataAccess
             throw new ArgumentException($"Invalid relationship field: {query.Relationship.DestinationForeignKeyField}");
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         var foreignKeyValues = await GetOriginForeignKeyValuesAsync(connection, layerId, query, cancellationToken).ConfigureAwait(false);
         if (foreignKeyValues.Count == 0)

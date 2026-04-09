@@ -59,8 +59,10 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            NpgsqlConnection npgsqlConnection = connection as NpgsqlConnection
-                ?? throw new ArgumentException("Connection must be an NpgsqlConnection", nameof(connection));
+            // Unwrap provider wrappers (e.g., SemaphoreReleasingConnection) so
+            // this overload accepts both raw NpgsqlConnection and connections
+            // handed out by the gated provider.
+            var npgsqlConnection = connection.RequireNpgsqlConnection();
 
             return await DiscoverPostGisTablesCoreAsync(npgsqlConnection, cancellationToken);
         }
@@ -79,7 +81,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
     {
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT DISTINCT

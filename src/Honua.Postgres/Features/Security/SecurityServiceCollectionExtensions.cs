@@ -138,6 +138,9 @@ internal static class SecurityServiceCollectionExtensions
                 var logger = serviceProvider.GetRequiredService<ILogger<SecureConnectionAwareDatabaseProvider>>();
                 var schemaContext = serviceProvider.GetService<ISchemaContext>();
                 var activeDbConnectionTracker = serviceProvider.GetService<IActiveDbConnectionTracker>();
+                // Share the same singleton gate as CachingDatabaseConnectionProvider so
+                // secure-mode opens honour MaxConcurrentQueries / acquisition timeouts.
+                var concurrencyGate = serviceProvider.GetService<QueryConcurrencyGate>();
 
                 return new SecureConnectionAwareDatabaseProvider(
                     originalProvider,
@@ -146,7 +149,8 @@ internal static class SecurityServiceCollectionExtensions
                     configuration,
                     logger,
                     schemaContext,
-                    activeDbConnectionTracker);
+                    activeDbConnectionTracker,
+                    concurrencyGate);
             },
             existingDescriptor.Lifetime));
 

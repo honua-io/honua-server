@@ -4,7 +4,6 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Text.Json;
-using Honua.Postgres.Features.Import.JsonContexts;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
@@ -173,8 +172,9 @@ internal static class BulkImportExtensions
                 properties[name] = feature.Attributes[name];
             }
 
-            // PERFORMANCE FIX: Use optimized JSON context for faster serialization
-            return JsonSerializer.Serialize(properties, ImportJsonOptimizationContext.OptimizedOptions);
+            // Use the shared import source-generated context so native AOT publish
+            // does not fall back to reflection-based metadata generation.
+            return JsonSerializer.Serialize(properties, ImportJsonContext.Default.DictionaryStringObject);
         }
         finally
         {

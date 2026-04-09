@@ -56,8 +56,7 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
 
         var profiles = new List<FieldProfile>(fields.Count);
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var field in fields)
         {
@@ -98,8 +97,7 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
             LIMIT @limit
             """;
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider
-            .OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.AddWithValue("@limit", limit);

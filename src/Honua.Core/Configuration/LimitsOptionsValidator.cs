@@ -153,11 +153,27 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
     }
 
     /// <summary>
+    /// Valid values for <see cref="ConnectionLimits.Multiplexing"/>.
+    /// Null or empty is treated as "unset" (the safe default is applied).
+    /// </summary>
+    private static readonly string[] AllowedMultiplexingValues = ["auto", "true", "false"];
+
+    /// <summary>
     /// Validates connection limits for logical consistency.
     /// </summary>
     private static void ValidateConnectionLimits(ConnectionLimits connections, List<string> failures)
     {
         // Validate RequestTimeout range (10 seconds to 10 minutes)
         ValidateTimeSpan(connections.RequestTimeout, TimeConstants.TenSecondsTimeSpan, TimeConstants.TenMinutesTimeSpan, "Connections.RequestTimeout", failures);
+
+        // Validate Multiplexing whitelist so a typo like "fasle" fails fast at
+        // startup rather than silently enabling multiplexing at runtime.
+        if (!string.IsNullOrWhiteSpace(connections.Multiplexing) &&
+            !AllowedMultiplexingValues.Any(v => string.Equals(v, connections.Multiplexing, StringComparison.OrdinalIgnoreCase)))
+        {
+            failures.Add(
+                $"Connections.Multiplexing has invalid value '{connections.Multiplexing}'. " +
+                "Allowed values: 'auto', 'true', 'false'.");
+        }
     }
 }

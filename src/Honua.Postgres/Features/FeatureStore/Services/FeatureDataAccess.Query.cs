@@ -20,7 +20,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -51,7 +51,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -91,7 +91,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -131,7 +131,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -171,7 +171,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -211,7 +211,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -251,7 +251,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -294,7 +294,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -337,7 +337,7 @@ internal sealed partial class FeatureDataAccess
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = await CreateCommandAsync(
                 connection,
                 query.Sql,
@@ -369,7 +369,7 @@ internal sealed partial class FeatureDataAccess
 
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
 
@@ -404,7 +404,7 @@ internal sealed partial class FeatureDataAccess
             return null;
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(query.Sql, connection);
 
         command.Parameters.AddWithValue(layerId);
@@ -443,7 +443,7 @@ internal sealed partial class FeatureDataAccess
             return null;
         }
 
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(query.Sql, connection);
 
         command.Parameters.AddWithValue(layerId);
@@ -473,7 +473,7 @@ internal sealed partial class FeatureDataAccess
 
     public async Task<byte[]?> GetMvtTileAsync(int layerId, CoreParameterizedQuery query, CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(query.Sql, connection);
 
         foreach (var param in query.WhereParameters)
@@ -519,7 +519,7 @@ internal sealed partial class FeatureDataAccess
         FeatureQuery featureQuery,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = await CreateCommandAsync(
             connection,
             query.Sql,
@@ -540,7 +540,7 @@ internal sealed partial class FeatureDataAccess
         FeatureQuery featureQuery,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = await CreateCommandAsync(
             connection,
             query.Sql,

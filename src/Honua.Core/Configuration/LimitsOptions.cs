@@ -268,14 +268,14 @@ public sealed class ConnectionLimits
     /// Range: 10-500.
     /// </summary>
     [Range(10, 500, ErrorMessage = ErrorMessages.RangeValidation.MaxConnectionPoolSize)]
-    public int MaxConnectionPoolSize { get; init; } = 100;
+    public int MaxConnectionPoolSize { get; init; } = 200;
 
     /// <summary>
     /// Minimum size of the database connection pool.
     /// Clamped to not exceed <see cref="MaxConnectionPoolSize"/>.
     /// </summary>
     [Range(0, 100)]
-    public int MinConnectionPoolSize { get; init; } = 5;
+    public int MinConnectionPoolSize { get; init; } = 20;
 
     /// <summary>
     /// Overall timeout for HTTP requests including database operations.
@@ -320,7 +320,27 @@ public sealed class ConnectionLimits
     /// Read and write buffer size in bytes for database connections.
     /// </summary>
     [Range(4096, 65536)]
-    public int BufferSizeBytes { get; init; } = 16384;
+    public int BufferSizeBytes { get; init; } = 32768;
+
+    /// <summary>
+    /// Controls Npgsql connection multiplexing. Accepted values:
+    /// <list type="bullet">
+    ///   <item><c>"auto"</c> — multiplexing is enabled unless schema headers are active.</item>
+    ///   <item><c>"true"</c> — force multiplexing on (ignored when schema headers are active).</item>
+    ///   <item><c>"false"</c> (default) — multiplexing off, using traditional connection pooling.</item>
+    /// </list>
+    /// Disabling multiplexing at high concurrency avoids write-lock contention on shared
+    /// physical connections that causes p95 latency spikes.
+    /// </summary>
+    public string Multiplexing { get; init; } = "false";
+
+    /// <summary>
+    /// Maximum time in seconds to wait for a connection from the semaphore gate
+    /// when all <see cref="MaxConcurrentQueries"/> slots are occupied.
+    /// Requests that exceed this timeout receive an HTTP 503.
+    /// </summary>
+    [Range(1, 60)]
+    public int ConnectionAcquisitionTimeoutSeconds { get; init; } = 5;
 }
 
 /// <summary>

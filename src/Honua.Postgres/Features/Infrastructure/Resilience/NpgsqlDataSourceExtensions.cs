@@ -12,7 +12,11 @@ namespace Honua.Postgres.Features.Infrastructure.Resilience;
 internal static class NpgsqlDataSourceExtensions
 {
     /// <summary>
-    /// Opens a connection with retry policy for transient connection errors
+    /// Opens a connection with the per-data-source retry policy for transient
+    /// connection errors. The optional <paramref name="onRetry"/> callback is
+    /// threaded via <see cref="Polly.Context"/> so the cached policy can serve
+    /// callers with different logging needs. Each data source has its own
+    /// circuit breaker so a failure on one source cannot starve healthy ones.
     /// </summary>
     /// <param name="dataSource">The Npgsql data source</param>
     /// <param name="onRetry">Optional callback for retry events (for logging)</param>
@@ -23,14 +27,15 @@ internal static class NpgsqlDataSourceExtensions
         Action<Exception, TimeSpan, int>? onRetry = null,
         CancellationToken cancellationToken = default)
     {
-        IAsyncPolicy retryPolicy = ResiliencePolicies.GetConnectionRetryPolicy(onRetry);
+        var context = ResiliencePolicies.CreateRetryContext(onRetry);
 
-        return await retryPolicy.ExecuteAsync(async () =>
-            await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+        return await ResiliencePolicies.GetConnectionRetryPolicy(dataSource).ExecuteAsync(
+            async (_) => await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false),
+            context).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Executes a database operation with deadlock retry policy
+    /// Executes a database operation with the per-data-source deadlock retry policy.
     /// </summary>
     /// <typeparam name="T">Return type of the operation</typeparam>
     /// <param name="dataSource">The Npgsql data source</param>
@@ -44,12 +49,15 @@ internal static class NpgsqlDataSourceExtensions
         Action<Exception, TimeSpan, int>? onRetry = null,
         CancellationToken cancellationToken = default)
     {
-        IAsyncPolicy retryPolicy = ResiliencePolicies.GetDeadlockRetryPolicy(onRetry);
-        return await retryPolicy.ExecuteAsync(operation).ConfigureAwait(false);
+        var context = ResiliencePolicies.CreateRetryContext(onRetry);
+
+        return await ResiliencePolicies.GetDeadlockRetryPolicy(dataSource).ExecuteAsync(
+            async (_) => await operation().ConfigureAwait(false),
+            context).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Executes a database operation with deadlock retry policy (no return value)
+    /// Executes a database operation with the per-data-source deadlock retry policy (no return value).
     /// </summary>
     /// <param name="dataSource">The Npgsql data source</param>
     /// <param name="operation">The database operation to execute</param>
@@ -62,7 +70,10 @@ internal static class NpgsqlDataSourceExtensions
         Action<Exception, TimeSpan, int>? onRetry = null,
         CancellationToken cancellationToken = default)
     {
-        IAsyncPolicy retryPolicy = ResiliencePolicies.GetDeadlockRetryPolicy(onRetry);
-        await retryPolicy.ExecuteAsync(operation).ConfigureAwait(false);
+        var context = ResiliencePolicies.CreateRetryContext(onRetry);
+
+        await ResiliencePolicies.GetDeadlockRetryPolicy(dataSource).ExecuteAsync(
+            async (_) => await operation().ConfigureAwait(false),
+            context).ConfigureAwait(false);
     }
 }
