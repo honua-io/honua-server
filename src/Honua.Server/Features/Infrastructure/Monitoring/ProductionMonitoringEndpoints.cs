@@ -195,21 +195,21 @@ internal static class ProductionMonitoringEndpoints
     /// <summary>
     /// Gets file upload queue metrics.
     /// </summary>
-    /// <param name="uploadService">Streaming file upload service.</param>
+    /// <param name="uploadQueueMetricsProvider">Upload queue metrics provider.</param>
     /// <returns>Upload queue metrics.</returns>
     private static IResult GetUploadQueueMetrics(
-        [FromServices] StreamingFileUploadService uploadService)
+        [FromServices] Abstractions.IUploadQueueMetricsProvider uploadQueueMetricsProvider)
     {
-        var queueMetrics = uploadService.GetQueueMetrics();
+        var queueSnapshot = uploadQueueMetricsProvider.GetQueueSnapshot();
 
         var response = new UploadQueueMetricsResponse
         {
-            QueueDepth = queueMetrics.QueueDepth,
-            MaxQueueDepth = queueMetrics.MaxQueueDepth,
-            ActiveUploads = queueMetrics.ActiveUploads,
-            MaxConcurrentUploads = queueMetrics.MaxConcurrentUploads,
-            QueueUtilization = (double)queueMetrics.QueueDepth / queueMetrics.MaxQueueDepth,
-            IsHealthy = queueMetrics.QueueDepth < queueMetrics.MaxQueueDepth * 0.8,
+            QueueDepth = queueSnapshot.QueueDepth,
+            MaxQueueDepth = queueSnapshot.MaxQueueDepth,
+            ActiveUploads = queueSnapshot.ActiveUploads,
+            MaxConcurrentUploads = queueSnapshot.MaxConcurrentUploads,
+            QueueUtilization = (double)queueSnapshot.QueueDepth / queueSnapshot.MaxQueueDepth,
+            IsHealthy = queueSnapshot.QueueDepth < queueSnapshot.MaxQueueDepth * 0.8,
             Timestamp = DateTimeOffset.UtcNow
         };
 

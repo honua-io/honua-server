@@ -50,6 +50,17 @@ public sealed class ImportSourceUrlValidationTests
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("10.0.0.10") }));
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.DisallowedAddressMessage);
+        result.ErrorMessage.Should().Be(ImportSourceUrlValidation.DisallowedAddressMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WithEmbeddedCredentials_ReturnsFailure()
+    {
+        var result = await ImportSourceUrlValidation.ValidateAsync(
+            "https://user:pass@s3.amazonaws.com/sample-bucket/data.geojson",
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("8.8.8.8") }));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(ImportSourceUrlValidation.EmbeddedCredentialsMessage);
     }
 }

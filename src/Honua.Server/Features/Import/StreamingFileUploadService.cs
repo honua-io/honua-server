@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Threading.Channels;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Import;
@@ -10,7 +11,7 @@ namespace Honua.Server.Features.Import;
 /// Service for handling streaming file uploads with backpressure control.
 /// Prevents memory exhaustion from large file uploads and provides upload queue management.
 /// </summary>
-internal sealed class StreamingFileUploadService : IDisposable
+internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetricsProvider
 {
     private readonly Channel<FileUploadJob> _uploadQueue;
     private readonly ChannelWriter<FileUploadJob> _writer;
@@ -219,13 +220,25 @@ internal sealed class StreamingFileUploadService : IDisposable
     /// <returns>Upload queue metrics.</returns>
     public UploadQueueMetrics GetQueueMetrics()
     {
+        var snapshot = GetQueueSnapshot();
+
         return new UploadQueueMetrics
         {
-            QueueDepth = _uploadQueue.Reader.Count,
-            MaxQueueDepth = _options.MaxQueuedUploads,
-            ActiveUploads = _options.MaxConcurrentUploads - _processingSlot.CurrentCount,
-            MaxConcurrentUploads = _options.MaxConcurrentUploads
+            QueueDepth = snapshot.QueueDepth,
+            MaxQueueDepth = snapshot.MaxQueueDepth,
+            ActiveUploads = snapshot.ActiveUploads,
+            MaxConcurrentUploads = snapshot.MaxConcurrentUploads
         };
+    }
+
+    /// <inheritdoc />
+    public UploadQueueSnapshot GetQueueSnapshot()
+    {
+        return new UploadQueueSnapshot(
+            _uploadQueue.Reader.Count,
+            _options.MaxQueuedUploads,
+            _options.MaxConcurrentUploads - _processingSlot.CurrentCount,
+            _options.MaxConcurrentUploads);
     }
 
     /// <summary>

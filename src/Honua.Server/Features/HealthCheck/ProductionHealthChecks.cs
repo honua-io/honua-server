@@ -7,8 +7,8 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Npgsql;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Import;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -264,19 +264,19 @@ internal sealed class RedisHealthCheck : IHealthCheck
 /// </summary>
 internal sealed class FileUploadHealthCheck : IHealthCheck
 {
-    private readonly StreamingFileUploadService _uploadService;
+    private readonly IUploadQueueMetricsProvider _uploadQueueMetricsProvider;
     private readonly ILogger<FileUploadHealthCheck> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileUploadHealthCheck"/> class.
     /// </summary>
-    /// <param name="uploadService">Streaming file upload service.</param>
+    /// <param name="uploadQueueMetricsProvider">Upload queue metrics provider.</param>
     /// <param name="logger">Logger instance.</param>
     public FileUploadHealthCheck(
-        StreamingFileUploadService uploadService,
+        IUploadQueueMetricsProvider uploadQueueMetricsProvider,
         ILogger<FileUploadHealthCheck> logger)
     {
-        _uploadService = uploadService;
+        _uploadQueueMetricsProvider = uploadQueueMetricsProvider;
         _logger = logger;
     }
 
@@ -287,15 +287,15 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
     {
         try
         {
-            var queueMetrics = _uploadService.GetQueueMetrics();
-            var queueUtilization = (double)queueMetrics.QueueDepth / queueMetrics.MaxQueueDepth;
+            var queueSnapshot = _uploadQueueMetricsProvider.GetQueueSnapshot();
+            var queueUtilization = (double)queueSnapshot.QueueDepth / queueSnapshot.MaxQueueDepth;
 
             var data = new Dictionary<string, object>
             {
-                ["queueDepth"] = queueMetrics.QueueDepth,
-                ["maxQueueDepth"] = queueMetrics.MaxQueueDepth,
-                ["activeUploads"] = queueMetrics.ActiveUploads,
-                ["maxConcurrentUploads"] = queueMetrics.MaxConcurrentUploads,
+                ["queueDepth"] = queueSnapshot.QueueDepth,
+                ["maxQueueDepth"] = queueSnapshot.MaxQueueDepth,
+                ["activeUploads"] = queueSnapshot.ActiveUploads,
+                ["maxConcurrentUploads"] = queueSnapshot.MaxConcurrentUploads,
                 ["queueUtilization"] = queueUtilization,
                 ["queueUtilizationPercentage"] = $"{queueUtilization:P2}"
             };

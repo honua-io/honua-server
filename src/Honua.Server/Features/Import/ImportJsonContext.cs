@@ -13,6 +13,8 @@ namespace Honua.Server.Features.Import;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(FileFormatsResponse))]
+[JsonSerializable(typeof(MigrationInventoryScanRequest))]
+[JsonSerializable(typeof(MigrationSourceInventoryArtifact))]
 [JsonSerializable(typeof(FilePreview))]
 [JsonSerializable(typeof(ImportResult))]
 [JsonSerializable(typeof(ImportProgress))]

@@ -17,6 +17,7 @@ internal readonly record struct ImportSourceUrlValidationResult(bool IsValid, st
 internal static class ImportSourceUrlValidation
 {
     internal const string InvalidSourceUrlMessage = "SourceUrl must be a valid HTTPS URL.";
+    internal const string EmbeddedCredentialsMessage = "SourceUrl must not include embedded credentials.";
     internal const string DisallowedAddressMessage =
         "SourceUrl resolves to a private, loopback, or unresolvable network address, which is not allowed.";
     internal const string UnsupportedHostMessage =
@@ -38,14 +39,14 @@ internal static class ImportSourceUrlValidation
             return ImportSourceUrlValidationResult.Failure(InvalidSourceUrlMessage);
         }
 
-        var baseValidation = await GeoservicesServiceUrlValidation
-            .ValidateAsync(sourceUrl, hostAddressResolver, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!baseValidation.IsValid)
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
         {
-            return ImportSourceUrlValidationResult.Failure(
-                baseValidation.ErrorMessage ?? DisallowedAddressMessage);
+            return ImportSourceUrlValidationResult.Failure(EmbeddedCredentialsMessage);
+        }
+
+        if (await NetworkAddressValidator.IsDisallowedAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
+        {
+            return ImportSourceUrlValidationResult.Failure(DisallowedAddressMessage);
         }
 
         if (!IsSupportedPublicObjectHost(uri.Host))

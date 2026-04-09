@@ -406,6 +406,9 @@ builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IU
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Import.UniversalProgressStore>>(),
         sp.GetService<IConnectionMultiplexer>()));
+builder.Services.AddSingleton<Honua.Server.Features.Import.StreamingFileUploadService>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Abstractions.IUploadQueueMetricsProvider>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Import.StreamingFileUploadService>());
 builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistributedImportJobManager>(sp =>
     new Honua.Server.Features.Import.RedisImportJobManager(
         sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
@@ -965,6 +968,7 @@ if (app.Environment.IsDevelopment())
 
 // Configure file import endpoints
 app.MapImportEndpoints();
+app.MapMigrationScannerEndpoints();
 app.MapRasterImportEndpoints();
 
 // Configure Geoservices service import endpoints

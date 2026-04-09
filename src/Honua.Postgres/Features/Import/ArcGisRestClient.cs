@@ -21,6 +21,8 @@ namespace Honua.Postgres.Features.Import;
 internal sealed partial class ArcGisRestClient
 {
     private const string DisallowedNetworkAddressMessage = "ArcGIS service URL resolves to a disallowed network address.";
+    private const string InvalidServiceRootUrlMessage =
+        "ArcGIS service URL must target a service root URL (FeatureServer or MapServer).";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<ArcGisRestClient> _logger;
@@ -250,6 +252,38 @@ internal sealed partial class ArcGisRestClient
         return result ?? throw new InvalidOperationException("Failed to deserialize response");
     }
 
+    internal async Task<JsonDocument> GetJsonDocumentAsync(
+        string url,
+        int maxRetries,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
+
+        var options = BuildHttpOptions(maxRetries);
+        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
+        using var response = await policy.ExecuteAsync(
+            async ct =>
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                return await _httpClient.GetAsync(url, timeoutCts.Token).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return JsonDocument.Parse(content);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Failed to parse ArcGIS JSON from '{url}'.", ex);
+        }
+    }
+
     private static ResiliencePolicyOptions BuildHttpOptions(int maxRetries)
     {
         return new ResiliencePolicyOptions
@@ -292,14 +326,28 @@ internal sealed partial class ArcGisRestClient
             : "Unknown failure";
     }
 
-    private static string NormalizeServiceUrl(string url)
+    internal static string NormalizeServiceUrl(string url)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
-            return uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            var normalizedUrl = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            if (!IsServiceRootUrl(normalizedUrl))
+            {
+                throw new HttpRequestException(InvalidServiceRootUrlMessage);
+            }
+
+            return normalizedUrl;
         }
 
         return url.TrimEnd('/');
+    }
+
+    private static bool IsServiceRootUrl(string normalizedUrl)
+    {
+        var segments = normalizedUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length > 0 &&
+            (segments[^1].Equals("FeatureServer", StringComparison.OrdinalIgnoreCase)
+             || segments[^1].Equals("MapServer", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task EnsureSafeOutboundUriAsync(string url, CancellationToken cancellationToken)

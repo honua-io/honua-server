@@ -295,17 +295,15 @@ internal sealed class ProductionMetricsCollector : IDisposable
     {
         try
         {
-            // Try to get the upload service from DI container
-            var uploadService = _serviceProvider.GetService<Honua.Server.Features.Import.StreamingFileUploadService>();
-            if (uploadService != null)
+            var uploadQueueMetricsProvider = _serviceProvider.GetService<Abstractions.IUploadQueueMetricsProvider>();
+            if (uploadQueueMetricsProvider != null)
             {
-                var queueMetrics = uploadService.GetQueueMetrics();
-                return queueMetrics.QueueDepth;
+                return uploadQueueMetricsProvider.GetQueueSnapshot().QueueDepth;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get upload queue depth from StreamingFileUploadService");
+            _logger.LogWarning(ex, "Failed to get upload queue depth from IUploadQueueMetricsProvider");
         }
 
         return 0;
