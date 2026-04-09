@@ -159,7 +159,6 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
         if (prepared != null)
         {
-            configureParameters(prepared);
             ApplyCommandTimeout(prepared, _queryTimeoutSeconds);
             return prepared;
         }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -298,9 +299,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 PreparedStatementCacheLog.CacheHit(_logger, statementHash);
             }
 
-            var cachedClone = await TryClonePreparedCommandAsync(
+            var cachedClone = await CreatePreparedExecutionCommandAsync(
                 cached.Command,
                 connection,
+                configureParameters,
                 statementHash,
                 cancellationToken).ConfigureAwait(false);
 
@@ -336,7 +338,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     Command = preparedCommand
                 };
 
-                // WEEK 5 FIX: Initialize query plan analysis
+                // Parameterized statements require concrete runtime values, so
+                // opportunistic EXPLAIN can invalidate the live request connection.
                 await AnalyzeQueryPlan(cachedStatement, connection, cancellationToken);
 
                 var added = TryAddCachedStatement(cacheKey, cachedStatement);
@@ -352,9 +355,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
                     if (_cache.TryGetValue(cacheKey, out var existing))
                     {
-                        return await TryClonePreparedCommandAsync(
+                        return await CreatePreparedExecutionCommandAsync(
                             existing.Command,
                             connection,
+                            configureParameters,
                             statementHash,
                             cancellationToken).ConfigureAwait(false);
                     }
@@ -362,9 +366,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     return null;
                 }
 
-                return await TryClonePreparedCommandAsync(
+                return await CreatePreparedExecutionCommandAsync(
                     preparedCommand,
                     connection,
+                    configureParameters,
                     statementHash,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -426,9 +431,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         {
             existing.LastUsed = DateTime.UtcNow;
             existing.HitCount++;
-            var cachedClone = await TryClonePreparedCommandAsync(
+            var cachedClone = await CreatePreparedExecutionCommandAsync(
                 existing.Command,
                 connection,
+                configureParameters,
                 statementHash,
                 cancellationToken).ConfigureAwait(false);
 
@@ -468,9 +474,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
         PreparedStatementCacheLog.PriorityStatementPrepared(_logger, statementName);
 
-        return await TryClonePreparedCommandAsync(
+        return await CreatePreparedExecutionCommandAsync(
             command,
             connection,
+            configureParameters,
             statementHash,
             cancellationToken).ConfigureAwait(false);
     }
@@ -564,40 +571,78 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         // Clone parameters structure but not values (will be set by caller)
         foreach (NpgsqlParameter param in original.Parameters)
         {
-            var clonedParam = new NpgsqlParameter
-            {
-                ParameterName = param.ParameterName,
-                NpgsqlDbType = param.NpgsqlDbType,
-                DbType = param.DbType,
-                Direction = param.Direction,
-                Size = param.Size,
-                Precision = param.Precision,
-                Scale = param.Scale
-            };
-            cloned.Parameters.Add(clonedParam);
+            cloned.Parameters.Add(CloneParameter(param, includeValue: false));
         }
 
         return cloned;
     }
 
-    private async Task<NpgsqlCommand?> TryClonePreparedCommandAsync(
+    private static NpgsqlParameter CloneParameter(NpgsqlParameter original, bool includeValue)
+    {
+        var cloned = new NpgsqlParameter
+        {
+            ParameterName = original.ParameterName,
+            NpgsqlDbType = original.NpgsqlDbType,
+            DbType = original.DbType,
+            Direction = original.Direction,
+            Size = original.Size,
+            Precision = original.Precision,
+            Scale = original.Scale
+        };
+
+        if (includeValue)
+        {
+            cloned.Value = original.Value;
+        }
+
+        return cloned;
+    }
+
+    private static void ApplyConfiguredParameterValues(
+        NpgsqlCommand destination,
+        Action<NpgsqlCommand>? configureParameters)
+    {
+        if (configureParameters == null)
+        {
+            return;
+        }
+
+        using var configured = new NpgsqlCommand();
+        configureParameters(configured);
+
+        for (var index = 0; index < configured.Parameters.Count; index++)
+        {
+            var source = configured.Parameters[index];
+
+            if (destination.Parameters.Count > index)
+            {
+                var target = destination.Parameters[index];
+                target.Value = source.Value;
+                target.ParameterName = source.ParameterName;
+                target.NpgsqlDbType = source.NpgsqlDbType;
+                target.DbType = source.DbType;
+                target.Direction = source.Direction;
+                target.Size = source.Size;
+                target.Precision = source.Precision;
+                target.Scale = source.Scale;
+            }
+            else
+            {
+                destination.Parameters.Add(CloneParameter(source, includeValue: true));
+            }
+        }
+    }
+
+    private static Task<NpgsqlCommand?> CreatePreparedExecutionCommandAsync(
         NpgsqlCommand template,
         NpgsqlConnection connection,
+        Action<NpgsqlCommand>? configureParameters,
         string statementHash,
         CancellationToken cancellationToken)
     {
         var cloned = CloneCommand(template, connection);
-        try
-        {
-            await cloned.PrepareAsync(cancellationToken).ConfigureAwait(false);
-            return cloned;
-        }
-        catch (Exception ex)
-        {
-            cloned.Dispose();
-            PreparedStatementCacheLog.PrepareFailed(_logger, statementHash, ex);
-            return null;
-        }
+        ApplyConfiguredParameterValues(cloned, configureParameters);
+        return Task.FromResult<NpgsqlCommand?>(cloned);
     }
 
     private int GetConnectionCacheCount(string connectionId)
@@ -637,7 +682,14 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static string GetConnectionId(NpgsqlConnection connection)
     {
-        return connection.ProcessID.ToString(CultureInfo.InvariantCulture);
+        try
+        {
+            return connection.ProcessID.ToString(CultureInfo.InvariantCulture);
+        }
+        catch (InvalidOperationException)
+        {
+            return RuntimeHelpers.GetHashCode(connection).ToString(CultureInfo.InvariantCulture);
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -775,6 +827,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
     /// </summary>
     private async Task AnalyzeQueryPlan(CachedStatement statement, NpgsqlConnection connection, CancellationToken cancellationToken)
     {
+        if (connection.State != ConnectionState.Open || statement.Command.Parameters.Count > 0)
+        {
+            return;
+        }
+
         try
         {
             var explainSql = $"EXPLAIN (FORMAT JSON) {statement.Command.CommandText}";

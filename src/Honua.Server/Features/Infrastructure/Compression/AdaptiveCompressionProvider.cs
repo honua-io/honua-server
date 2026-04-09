@@ -115,12 +115,29 @@ internal sealed class AdaptiveBrotliStream : Stream
 
             if (_buffer.Length >= _options.FastCompressionThreshold || ShouldFlush())
             {
-                InitializeCompressionStream();
+                await InitializeCompressionStreamAsync(cancellationToken);
             }
         }
         else
         {
             await _compressionStream.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+    }
+
+    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (_compressionStream == null)
+        {
+            await _buffer.WriteAsync(buffer, cancellationToken);
+
+            if (_buffer.Length >= _options.FastCompressionThreshold || ShouldFlush())
+            {
+                await InitializeCompressionStreamAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            await _compressionStream.WriteAsync(buffer, cancellationToken);
         }
     }
 
@@ -134,6 +151,25 @@ internal sealed class AdaptiveBrotliStream : Stream
         {
             var bufferedData = _buffer.ToArray();
             _compressionStream.Write(bufferedData, 0, bufferedData.Length);
+            _buffer.SetLength(0);
+        }
+    }
+
+    private async Task InitializeCompressionStreamAsync(CancellationToken cancellationToken)
+    {
+        if (_compressionStream != null)
+        {
+            return;
+        }
+
+        var level = DetermineCompressionLevel(_buffer.Length);
+        _compressionStream = new BrotliStream(_outputStream, level, leaveOpen: true);
+
+        if (_buffer.Length > 0)
+        {
+            var bufferedData = _buffer.ToArray();
+            await _compressionStream.WriteAsync(bufferedData, cancellationToken);
+            _buffer.SetLength(0);
         }
     }
 
@@ -166,7 +202,7 @@ internal sealed class AdaptiveBrotliStream : Stream
     {
         if (_compressionStream == null && _buffer.Length > 0)
         {
-            InitializeCompressionStream();
+            await InitializeCompressionStreamAsync(cancellationToken);
         }
         if (_compressionStream != null)
         {
@@ -186,6 +222,22 @@ internal sealed class AdaptiveBrotliStream : Stream
             _buffer.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (_compressionStream == null && _buffer.Length > 0)
+        {
+            await InitializeCompressionStreamAsync(CancellationToken.None);
+        }
+
+        if (_compressionStream != null)
+        {
+            await _compressionStream.DisposeAsync();
+        }
+
+        await _buffer.DisposeAsync();
+        await base.DisposeAsync();
     }
 
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
@@ -233,6 +285,40 @@ internal sealed class AdaptiveGzipStream : Stream
         }
     }
 
+    public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        if (_compressionStream == null)
+        {
+            await _buffer.WriteAsync(buffer, offset, count, cancellationToken);
+
+            if (_buffer.Length >= _options.FastCompressionThreshold)
+            {
+                await InitializeCompressionStreamAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            await _compressionStream.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+    }
+
+    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (_compressionStream == null)
+        {
+            await _buffer.WriteAsync(buffer, cancellationToken);
+
+            if (_buffer.Length >= _options.FastCompressionThreshold)
+            {
+                await InitializeCompressionStreamAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            await _compressionStream.WriteAsync(buffer, cancellationToken);
+        }
+    }
+
     private void InitializeCompressionStream()
     {
         var level = DetermineCompressionLevel(_buffer.Length);
@@ -242,6 +328,25 @@ internal sealed class AdaptiveGzipStream : Stream
         {
             var bufferedData = _buffer.ToArray();
             _compressionStream.Write(bufferedData, 0, bufferedData.Length);
+            _buffer.SetLength(0);
+        }
+    }
+
+    private async Task InitializeCompressionStreamAsync(CancellationToken cancellationToken)
+    {
+        if (_compressionStream != null)
+        {
+            return;
+        }
+
+        var level = DetermineCompressionLevel(_buffer.Length);
+        _compressionStream = new GZipStream(_outputStream, level, leaveOpen: true);
+
+        if (_buffer.Length > 0)
+        {
+            var bufferedData = _buffer.ToArray();
+            await _compressionStream.WriteAsync(bufferedData, cancellationToken);
+            _buffer.SetLength(0);
         }
     }
 
@@ -264,6 +369,19 @@ internal sealed class AdaptiveGzipStream : Stream
         _compressionStream?.Flush();
     }
 
+    public override async Task FlushAsync(CancellationToken cancellationToken)
+    {
+        if (_compressionStream == null && _buffer.Length > 0)
+        {
+            await InitializeCompressionStreamAsync(cancellationToken);
+        }
+
+        if (_compressionStream != null)
+        {
+            await _compressionStream.FlushAsync(cancellationToken);
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -276,6 +394,22 @@ internal sealed class AdaptiveGzipStream : Stream
             _buffer.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (_compressionStream == null && _buffer.Length > 0)
+        {
+            await InitializeCompressionStreamAsync(CancellationToken.None);
+        }
+
+        if (_compressionStream != null)
+        {
+            await _compressionStream.DisposeAsync();
+        }
+
+        await _buffer.DisposeAsync();
+        await base.DisposeAsync();
     }
 
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
