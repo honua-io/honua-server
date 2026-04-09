@@ -27,6 +27,10 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 ```
 /rest/services/{service-name}/FeatureServer/{layer-id}
 |-- /query
+|-- /queryClusters          (Pro extension, POST only)
+|-- /spatialJoin            (Pro extension, POST only)
+|-- /queryBufferAggregate   (Pro extension, POST only)
+|-- /queryDensity           (Pro extension, POST only)
 |-- /addFeatures
 |-- /updateFeatures
 |-- /deleteFeatures
@@ -42,6 +46,11 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - ArcGIS SDK clients
 - Legacy FeatureServer integrations
 - Analytics workflows (GeoParquet export)
+
+**Contract notes:**
+- The Pro-tier analytics extensions always return GeoJSON FeatureCollections (`application/geo+json`) even on the FeatureServer route family.
+- Analytics geometries are normalized to WGS 84 / EPSG:4326 and the payload always includes `numberReturned` plus a `metadata` object (`operation`, truncation flags, and configured limits).
+- Per-feature cluster and spatial-join rows preserve `properties.objectId` plus nested `properties.attributes`; operation-specific fields then layer on top (`clusterId`, `matchCount`, `featureCount`, `cellId`, optional `weight`).
 
 ---
 
@@ -77,6 +86,10 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /collections
 |-- /collections/{id}
 |-- /collections/{id}/items
+|-- /collections/{id}/clusters           (Pro extension, POST only)
+|-- /collections/{id}/spatial-join       (Pro extension, POST only)
+|-- /collections/{id}/buffer-aggregate   (Pro extension, POST only)
+|-- /collections/{id}/density            (Pro extension, POST only)
 ```
 
 **Output formats:**
@@ -87,6 +100,11 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - QGIS and open-source GIS tooling
 - Vendor-neutral integration
 - Simple feature queries by bbox or filter
+
+**Contract notes:**
+- The analytics mirrors are POST-only Honua extensions that share the same request fields and response contract as the FeatureServer analytics routes.
+- Responses remain `application/geo+json` in WGS 84 with `numberReturned` and analytics `metadata`; `application/json` is the canonical request content type, and the shared POST-body parser also accepts `application/x-www-form-urlencoded`.
+- Per-feature cluster and spatial-join mirrors preserve `properties.objectId` plus nested `properties.attributes`; aggregate outputs then surface operation-specific summary fields such as `featureCount`, `cellId`, and optional `weight`.
 
 ---
 

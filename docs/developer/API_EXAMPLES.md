@@ -131,7 +131,7 @@ curl -X POST "http://localhost:8080/rest/services/1/FeatureServer/0/queryCluster
 }
 ```
 
-`outStatistics` is only valid when `returnHullPerCluster=true`. Shared filters include `where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, and `timeRelation`. Distance-based GeoServices spatial relationships (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) are rejected on the analytics slice because `distance` already has operation-specific meaning on other analytics endpoints. `metadata.maxOutputRows` is populated only when the operation has a distinct result cap: hull-per-cluster responses and density return a number, while per-feature clusters, spatial join, and buffer aggregate return `null`.
+`outStatistics` is only valid when `returnHullPerCluster=true`. Shared filters include `where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, and `timeRelation`. Distance-based GeoServices spatial relationships (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) are rejected on the analytics slice because `distance` already has operation-specific meaning on other analytics endpoints. `numberReturned` is always present and equals `features.length` after any truncation. `metadata.maxOutputRows` is populated only when the operation has a distinct result cap: hull-per-cluster responses and density return a number, while per-feature clusters, spatial join, and buffer aggregate return `null`. In per-feature mode, cluster rows keep `properties.objectId` and nested `properties.attributes` from the source feature alongside `clusterId`.
 
 ---
 
@@ -355,7 +355,7 @@ curl -H "Accept: application/gml+xml;version=3.2" \
 
 ### **Spatial Analytics Extensions (Pro)**
 
-The OGC analytics mirrors accept the same request fields as the FeatureServer routes. `application/json` is the canonical content type, `application/x-www-form-urlencoded` is also accepted by the shared POST-body parser, and other POST media types return `415 Unsupported Media Type`.
+The OGC analytics mirrors are POST-only and accept the same request fields as the FeatureServer routes. `application/json` is the canonical content type, `application/x-www-form-urlencoded` is also accepted by the shared POST-body parser, and other POST media types return `415 Unsupported Media Type`.
 
 ```bash
 curl -X POST "http://localhost:8080/ogc/features/collections/0/density" \
@@ -380,7 +380,8 @@ curl -X POST "http://localhost:8080/ogc/features/collections/0/density" \
         "coordinates": [[[-122.6, 37.6], [-122.4, 37.6], [-122.3, 37.8], [-122.4, 38.0], [-122.6, 38.0], [-122.7, 37.8], [-122.6, 37.6]]]
       },
       "properties": {
-        "count": 3
+        "cellId": 1,
+        "featureCount": 3
       }
     }
   ],
@@ -400,7 +401,7 @@ The other OGC analytics mirrors are:
 - `POST /ogc/features/collections/{collectionId}/spatial-join`
 - `POST /ogc/features/collections/{collectionId}/buffer-aggregate`
 
-As with the FeatureServer mirror, `metadata.maxOutputRows` is populated for density and cluster hull mode, and `null` for per-feature clusters, spatial join, and buffer aggregate.
+As with the FeatureServer mirror, `numberReturned` equals `features.length` after truncation, and `metadata.maxOutputRows` is populated for density and cluster hull mode while remaining `null` for per-feature clusters, spatial join, and buffer aggregate. Per-feature cluster and spatial-join rows keep `properties.objectId` plus nested `properties.attributes`; spatial join also exposes `matchCount` and any array-valued `carryFields`, buffer aggregate dissolved rows expose `featureCount`, and density rows expose `cellId`, `featureCount`, and optional `weight`.
 
 ---
 
