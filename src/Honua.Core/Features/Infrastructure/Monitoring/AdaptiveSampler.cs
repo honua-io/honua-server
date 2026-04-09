@@ -102,6 +102,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         {
             OperationName = operationName,
             Importance = importance,
+            AdaptiveSamplingRate = CalculateEffectiveSamplingRate(importance),
             ActivityKind = activityKind,
             Timestamp = DateTime.UtcNow,
             CurrentMetrics = _metricsCollector.GetCurrentMetrics(),
@@ -871,7 +872,9 @@ internal sealed class MLSamplingDecisionEngine : IDisposable
 
     public MLSamplingDecision MakeSamplingDecision(MLSamplingContext context)
     {
-        var baseRate = CalculateBaseSamplingRate(context);
+        var baseRate = context.AdaptiveSamplingRate > 0
+            ? context.AdaptiveSamplingRate
+            : CalculateBaseSamplingRate(context);
         var mlAdjustment = CalculateMLAdjustment(context);
         var confidence = CalculateDecisionConfidence(context);
 
@@ -1069,6 +1072,7 @@ internal sealed class MLSamplingContext
 {
     public string OperationName { get; set; } = string.Empty;
     public OperationImportance Importance { get; set; }
+    public double AdaptiveSamplingRate { get; set; }
     public ActivityKind ActivityKind { get; set; }
     public DateTime Timestamp { get; set; }
     public SystemMetrics CurrentMetrics { get; set; } = new();

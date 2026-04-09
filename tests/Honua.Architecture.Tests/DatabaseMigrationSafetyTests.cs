@@ -13,6 +13,9 @@ public sealed class DatabaseMigrationSafetyTests
     private static readonly Regex CompatibilityReviewMarker = new(
         @"^\s*--\s*honua:compatibility-review\b.*\breason\s*=",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+    private static readonly Regex ConcurrentIndexPattern = new(
+        @"\bCREATE\s+INDEX\s+CONCURRENTLY\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
     [
@@ -77,6 +80,18 @@ public sealed class DatabaseMigrationSafetyTests
             """;
 
         AnalyzePotentiallyBreakingChanges(sql).Should().BeEmpty();
+    }
+
+    [ArchitectureTest]
+    public void MigrationScripts_ShouldNotUseConcurrentIndexes_WithTransactionalRunner()
+    {
+        var violations = EnumerateMigrationFiles()
+            .Where(file => ConcurrentIndexPattern.IsMatch(File.ReadAllText(file)))
+            .Select(Path.GetFileName)
+            .ToArray();
+
+        violations.Should().BeEmpty(
+            "DbUp executes these migrations transactionally, so CREATE INDEX CONCURRENTLY will fail during startup and integration tests.");
     }
 
     private static List<string> AnalyzePotentiallyBreakingChanges(string sql)

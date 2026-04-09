@@ -11,7 +11,7 @@
 -- Without this composite index, the query performs O(n) scans instead of O(log n) lookups
 -- under production load with many alert rules.
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_alert_rules_dwell_sweep
+CREATE INDEX IF NOT EXISTS idx_alert_rules_dwell_sweep
     ON honua.alert_rules(rule_id, is_active, trigger_type)
     WHERE is_active = TRUE;
 

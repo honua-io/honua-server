@@ -88,18 +88,10 @@ internal sealed class GlobalExceptionMiddleware(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private async Task HandleFastPathException(HttpContext context, Exception ex, ExceptionCategory category)
     {
-        // Add correlation ID header for traceability (minimal processing)
-        context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
+        _ = category;
 
-        // WEEK 5 FIX: Use pre-compiled response if available
-        if (PrecompiledErrorResponseCache.TryGetPrecompiledResponse(category.Type, _includeDebugDetails, out var precompiled) && precompiled != null)
-        {
-            await StreamingErrorHandler.WritePrecompiledResponseAsync(context, precompiled);
-            return;
-        }
-
-        // Fallback to optimized response generation
-        await GenerateOptimizedErrorResponse(context, ex, category);
+        // Preserve protocol-specific error contracts even on the fast path.
+        await HandleExceptionAsync(context, ex);
     }
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
@@ -146,26 +138,29 @@ internal sealed class GlobalExceptionMiddleware(
         {
             // Set response headers optimally
             context.Response.StatusCode = category.StatusCode;
-            context.Response.ContentType = "application/json; charset=utf-8";
+            context.Response.ContentType = "application/problem+json; charset=utf-8";
 
-            // Build JSON response efficiently using StringBuilder
+            // Build ProblemDetails-compliant JSON response efficiently using StringBuilder
             stringBuilder.Clear();
-            stringBuilder.Append("{\"error\":{");
-            stringBuilder.Append("\"code\":").Append(category.StatusCode).Append(',');
-            stringBuilder.Append("\"message\":\"").Append(JsonEncodedText.Encode(category.Message)).Append('\"');
+            stringBuilder.Append('{');
+            stringBuilder.Append("\"title\":\"").Append(EscapeJsonString(category.Title)).Append("\",");
+            stringBuilder.Append("\"detail\":\"").Append(EscapeJsonString(category.Message)).Append("\",");
+            stringBuilder.Append("\"status\":").Append(category.StatusCode);
 
             if (_includeDebugDetails)
             {
-                stringBuilder.Append(",\"details\":\"").Append(JsonEncodedText.Encode(exception.Message)).Append('\"');
-                stringBuilder.Append(",\"type\":\"").Append(JsonEncodedText.Encode(exception.GetType().Name)).Append('\"');
+                stringBuilder.Append(",\"exception\":{");
+                stringBuilder.Append("\"type\":\"").Append(EscapeJsonString(exception.GetType().Name)).Append("\",");
+                stringBuilder.Append("\"message\":\"").Append(EscapeJsonString(exception.Message)).Append('\"');
                 if (!string.IsNullOrEmpty(exception.StackTrace))
                 {
-                    stringBuilder.Append(",\"stackTrace\":\"").Append(JsonEncodedText.Encode(exception.StackTrace)).Append('\"');
+                    stringBuilder.Append(",\"stackTrace\":\"").Append(EscapeJsonString(exception.StackTrace)).Append('\"');
                 }
+                stringBuilder.Append('}');
             }
 
-            stringBuilder.Append(",\"correlationId\":\"").Append(context.TraceIdentifier).Append('\"');
-            stringBuilder.Append("}}");
+            stringBuilder.Append(",\"traceId\":\"").Append(context.TraceIdentifier).Append('\"');
+            stringBuilder.Append('}');
 
             // WEEK 5 FIX: Use streaming write for better performance
             await StreamingErrorHandler.WriteJsonResponseAsync(context, stringBuilder.ToString());
@@ -174,6 +169,14 @@ internal sealed class GlobalExceptionMiddleware(
         {
             _stringBuilderPool.Return(stringBuilder);
         }
+    }
+
+    private static string EscapeJsonString(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return string.Empty;
+
+        return input.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
     }
 }
 
@@ -219,6 +222,7 @@ internal sealed class ExceptionCategorizer
             {
                 Type = ExceptionType.ValidationError,
                 StatusCode = 400,
+                Title = "Bad Request",
                 Message = "Invalid request parameters",
                 IsFastPath = true
             };
@@ -230,6 +234,7 @@ internal sealed class ExceptionCategorizer
             {
                 Type = ExceptionType.ValidationError,
                 StatusCode = 400,
+                Title = "Bad Request",
                 Message = "Invalid request format",
                 IsFastPath = true
             };
@@ -241,6 +246,7 @@ internal sealed class ExceptionCategorizer
             {
                 Type = ExceptionType.NotFound,
                 StatusCode = 404,
+                Title = "Not Found",
                 Message = "Resource not found",
                 IsFastPath = true
             };
@@ -251,8 +257,9 @@ internal sealed class ExceptionCategorizer
             return new ExceptionCategory
             {
                 Type = ExceptionType.Authorization,
-                StatusCode = 403,
-                Message = "Access denied",
+                StatusCode = 401,
+                Title = "Unauthorized",
+                Message = "Authentication is required to access this resource.",
                 IsFastPath = true
             };
         }
@@ -263,6 +270,7 @@ internal sealed class ExceptionCategorizer
             {
                 Type = ExceptionType.Timeout,
                 StatusCode = 408,
+                Title = "Request Timeout",
                 Message = "Request timeout",
                 IsFastPath = true
             };
@@ -275,18 +283,33 @@ internal sealed class ExceptionCategorizer
             {
                 Type = ExceptionType.ValidationError,
                 StatusCode = 400,
+                Title = "Bad Request",
                 Message = "Validation failed",
                 IsFastPath = true
             };
         }
 
-        // Check for custom NotFoundException from Honua.Core
+        // Handle Honua.Core custom exceptions specifically
+        if (exceptionType.Name == "ResourceNotFoundException")
+        {
+            return new ExceptionCategory
+            {
+                Type = ExceptionType.NotFound,
+                StatusCode = 404,
+                Title = "Not Found",
+                Message = "The requested resource was not found.",
+                IsFastPath = true
+            };
+        }
+
+        // Check for other custom NotFoundException types
         if (exceptionType.Name.Contains("NotFound"))
         {
             return new ExceptionCategory
             {
                 Type = ExceptionType.NotFound,
                 StatusCode = 404,
+                Title = "Not Found",
                 Message = "Resource not found",
                 IsFastPath = true
             };
@@ -298,6 +321,7 @@ internal sealed class ExceptionCategorizer
             {
                 Type = ExceptionType.ServiceUnavailable,
                 StatusCode = 503,
+                Title = "Service Unavailable",
                 Message = "Service temporarily unavailable",
                 IsFastPath = false // Needs special Retry-After header handling
             };
@@ -308,6 +332,7 @@ internal sealed class ExceptionCategorizer
         {
             Type = ExceptionType.InternalError,
             StatusCode = 500,
+            Title = "Internal Server Error",
             Message = "An internal error occurred",
             IsFastPath = false
         };
@@ -338,8 +363,8 @@ internal sealed class PrecompiledErrorResponseCache
         var commonResponses = new[]
         {
             (ExceptionType.ValidationError, 400, "Invalid request parameters"),
-            (ExceptionType.NotFound, 404, "Resource not found"),
-            (ExceptionType.Authorization, 403, "Access denied"),
+            (ExceptionType.NotFound, 404, "The requested resource was not found."),
+            (ExceptionType.Authorization, 401, "Authentication is required to access this resource."),
             (ExceptionType.Timeout, 408, "Request timeout"),
             (ExceptionType.InternalError, 500, "An internal error occurred")
         };
@@ -357,29 +382,46 @@ internal sealed class PrecompiledErrorResponseCache
         var key = $"{type}_{includeDebug}";
 
         var jsonBuilder = new StringBuilder();
-        jsonBuilder.Append("{\"error\":{");
-        jsonBuilder.Append("\"code\":").Append(statusCode).Append(',');
-        jsonBuilder.Append("\"message\":\"").Append(JsonEncodedText.Encode(message)).Append('\"');
+
+        // Use ProblemDetails format
+        jsonBuilder.Append('{');
+        jsonBuilder.Append("\"title\":\"").Append(GetTitleForStatusCode(statusCode)).Append("\",");
+        jsonBuilder.Append("\"detail\":\"").Append(JsonEncodedText.Encode(message)).Append("\",");
+        jsonBuilder.Append("\"status\":").Append(statusCode);
 
         if (includeDebug)
         {
-            jsonBuilder.Append(",\"details\":\"Debug information available\"");
-            jsonBuilder.Append(",\"type\":\"").Append(type).Append('\"');
+            jsonBuilder.Append(",\"exception\":{");
+            jsonBuilder.Append("\"details\":\"Debug information available\",");
+            jsonBuilder.Append("\"type\":\"").Append(type).Append('\"');
+            jsonBuilder.Append('}');
         }
 
-        jsonBuilder.Append(",\"correlationId\":\"{correlationId}\"");
-        jsonBuilder.Append("}}");
+        jsonBuilder.Append(",\"traceId\":\"{correlationId}\"");
+        jsonBuilder.Append('}');
 
         var response = new PrecompiledResponse
         {
             StatusCode = statusCode,
-            ContentType = "application/json; charset=utf-8",
+            ContentType = "application/problem+json; charset=utf-8",
             JsonTemplate = jsonBuilder.ToString(),
             BodyBytes = Encoding.UTF8.GetBytes(jsonBuilder.ToString())
         };
 
         _cache.TryAdd(key, response);
     }
+
+    private static string GetTitleForStatusCode(int statusCode) => statusCode switch
+    {
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        408 => "Request Timeout",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _ => "Error"
+    };
 }
 
 /// <summary>
@@ -452,6 +494,7 @@ internal sealed class ExceptionCategory
 {
     public ExceptionType Type { get; set; }
     public int StatusCode { get; set; }
+    public string Title { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public bool IsFastPath { get; set; }
 }
