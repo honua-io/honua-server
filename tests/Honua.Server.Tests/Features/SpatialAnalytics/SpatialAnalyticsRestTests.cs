@@ -831,4 +831,381 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ---------- Fix #1: TryBuildFeatureQuery shared filter parameters ----------
+    // These tests cover the extended filter parsing (objectIds / time / geometry /
+    // spatialRel) added so the analytics endpoints honour the same FeatureQuery
+    // shape as the rest of FeatureServer. Each test exercises one filter dimension
+    // through a representative analytics endpoint to keep the suite quick.
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_WithObjectIdsFilter_NarrowsInput()
+    {
+        // Seed layer 0 has 5 features (objectids 1..5). Filtering to {1, 5} should
+        // limit clustering input to those two features (objectid 3 has no geometry
+        // and is filtered by the IS NOT NULL guard regardless).
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            objectIds = "1,5",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var features = doc.RootElement.GetProperty("features");
+
+        // Per-feature mode emits one row per source feature, so the filter should
+        // bound the response to at most the two requested objectids.
+        features.GetArrayLength().Should().BeLessThanOrEqualTo(2);
+        foreach (var feature in features.EnumerateArray())
+        {
+            var objectId = feature.GetProperty("properties").GetProperty("objectId").GetInt64();
+            objectId.Should().BeOneOf(1L, 5L);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_WithInvalidObjectIds_ReturnsBadRequest()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            objectIds = "1,not-a-number,5",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("objectIds");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task QueryBufferAggregate_WithGeometryFilter_NarrowsInput()
+    {
+        // Bounding box around the seed feature cluster (-122.8, 37.2, -122.0, 38.0).
+        // The geometry filter should pass through TryBuildFeatureQuery and narrow
+        // the input set so the dissolved buffer reflects only the bbox-intersecting
+        // features.
+        var payload = JsonSerializer.Serialize(new
+        {
+            distance = 5000,
+            unit = "meters",
+            dissolve = true,
+            geometry = "-122.8,37.2,-122.0,38.0",
+            geometryType = "esriGeometryEnvelope",
+            inSR = 4326,
+            spatialRel = "esriSpatialRelIntersects",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var features = doc.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+
+        // The dissolved row should have a positive featureCount because the bbox
+        // covers the seeded feature cluster.
+        var props = features[0].GetProperty("properties");
+        props.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_WithDistanceBasedSpatialRel_ReturnsBadRequest()
+    {
+        // The analytics endpoints overload `distance` for operation-specific
+        // semantics (DWithin radius / buffer radius), so distance-based esri
+        // spatial relationships are explicitly rejected to avoid silent
+        // parameter collisions. Cluster doesn't use `distance`, but the guard
+        // is shared across the slice and must reject the relationship anyway.
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            geometry = "-122.5,37.5",
+            geometryType = "esriGeometryPoint",
+            inSR = 4326,
+            spatialRel = "esriSpatialRelWithinDistance",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("spatialRel");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDensity)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
+    public async Task QueryDensity_WithTimeFilter_FlowsThroughTemporalBuilder()
+    {
+        // Layer 0 declares timeInfo with startTimeField=timestamp,endTimeField=event_date
+        // in the seed, so the same `time={start,end}` shape that FeatureServer's
+        // main query handler accepts should also flow through the analytics
+        // path. The fix wires TryBuildFeatureQueryAsync to call the same
+        // FeatureServerTemporalQueryBuilder used by the main handler, so the
+        // request must succeed and yield a well-formed feature collection.
+        var payload = JsonSerializer.Serialize(new
+        {
+            mode = "hex",
+            cellSize = 20000,
+            time = "2023-01-01T00:00:00Z,2023-12-31T23:59:59Z",
+            timeRelation = "esriTimeRelationOverlaps",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("metadata").GetProperty("operation").GetString().Should().Be("density");
+    }
+
+    // ---------- Fix #3: aggregated paths report InputTruncated correctly ----------
+    // These tests verify the SQL builder emits "_inputCount" and the handler
+    // strips it from the response payload. Triggering an actual truncation
+    // requires >MaxInputFeatures (≥1000) seeded features, which is impractical
+    // in the unit-style integration suite — the regression we guard against is
+    // the column leaking into feature properties or the metadata flag being
+    // hardcoded false.
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_HullMode_DoesNotLeakInputCountIntoProperties()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            returnHullPerCluster = true,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+
+        // The handler strips _inputCount before MapRowToFeature so it must not
+        // appear in any feature.properties bag.
+        foreach (var feature in root.GetProperty("features").EnumerateArray())
+        {
+            feature.GetProperty("properties").TryGetProperty("_inputCount", out _)
+                .Should().BeFalse("_inputCount is an internal SQL signal, not a public property");
+        }
+
+        // Metadata.inputTruncated must be present and false (small input).
+        var metadata = root.GetProperty("metadata");
+        metadata.GetProperty("inputTruncated").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task QueryBufferAggregate_DoesNotLeakInputCountIntoProperties()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            distance = 1000,
+            unit = "meters",
+            dissolve = true,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+
+        foreach (var feature in root.GetProperty("features").EnumerateArray())
+        {
+            feature.GetProperty("properties").TryGetProperty("_inputCount", out _)
+                .Should().BeFalse("_inputCount must be stripped before MapRowToFeature");
+        }
+
+        root.GetProperty("metadata").GetProperty("inputTruncated").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDensity)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
+    public async Task QueryDensity_DoesNotLeakInputCountIntoProperties()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            mode = "hex",
+            cellSize = 20000,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+
+        foreach (var feature in root.GetProperty("features").EnumerateArray())
+        {
+            feature.GetProperty("properties").TryGetProperty("_inputCount", out _)
+                .Should().BeFalse("_inputCount must be stripped before MapRowToFeature");
+        }
+
+        // Density was previously hardcoding inputTruncated=false; the fix wires
+        // it to the actual overflow detector. With small input it must still be
+        // false, but the property must now be present in the metadata.
+        root.GetProperty("metadata").GetProperty("inputTruncated").GetBoolean().Should().BeFalse();
+    }
+
+    // ---------- Fix #4: cluster and spatial-join geometries are EPSG:4326 ----------
+    // Per `application/geo+json` (RFC 7946), the response must be in WGS 84
+    // unless an alternate CRS is negotiated. The cluster (per-feature + hull)
+    // and spatial-join SQL builders now wrap the emitted geometry with
+    // ST_Transform(_, 4326). The seed layer is already in 4326 so the
+    // transform is effectively a no-op for these tests, but verifying the
+    // coordinate ranges guards against future seed changes that switch to a
+    // projected SRID.
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_PerFeature_ReturnsGeometryInWgs84()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+
+        var anyChecked = false;
+        foreach (var feature in doc.RootElement.GetProperty("features").EnumerateArray())
+        {
+            if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind == JsonValueKind.Null)
+            {
+                continue;
+            }
+
+            if (!geometry.TryGetProperty("coordinates", out var coords) || coords.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            // Per-feature mode is point geometry — first two coordinates are
+            // longitude / latitude in degrees.
+            var lon = coords[0].GetDouble();
+            var lat = coords[1].GetDouble();
+            lon.Should().BeInRange(-180d, 180d);
+            lat.Should().BeInRange(-90d, 90d);
+            anyChecked = true;
+        }
+
+        anyChecked.Should().BeTrue("at least one cluster row should carry a geometry to validate");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SpatialJoin)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin")]
+    public async Task SpatialJoin_ReturnsTargetGeometryInWgs84()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            joinLayerId = 1,
+            predicate = "intersects",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+
+        var anyChecked = false;
+        foreach (var feature in doc.RootElement.GetProperty("features").EnumerateArray())
+        {
+            if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind == JsonValueKind.Null)
+            {
+                continue;
+            }
+
+            if (!geometry.TryGetProperty("coordinates", out var coords) || coords.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var lon = coords[0].GetDouble();
+            var lat = coords[1].GetDouble();
+            lon.Should().BeInRange(-180d, 180d);
+            lat.Should().BeInRange(-90d, 90d);
+            anyChecked = true;
+        }
+
+        anyChecked.Should().BeTrue("spatial join should emit at least one target geometry to validate");
+    }
 }

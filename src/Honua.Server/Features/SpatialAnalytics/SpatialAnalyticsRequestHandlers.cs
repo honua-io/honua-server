@@ -18,6 +18,8 @@ using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -108,59 +110,242 @@ internal static partial class SpatialAnalyticsRequestHandlers
     }
 
     /// <summary>
-    /// Parses the shared filter bundle accepted by every analytics endpoint:
-    /// <c>where</c> (ArcGIS SQL filter) compiled via <see cref="IFilterExpressionService"/>.
+    /// Parses the shared filter bundle accepted by every analytics endpoint and
+    /// turns it into a <see cref="FeatureQuery"/> the SQL builders can consume:
+    /// <list type="bullet">
+    ///   <item><c>where</c> — ArcGIS SQL filter (folded into <see cref="FeatureQuery.SqlFilter"/>).</item>
+    ///   <item><c>time</c>/<c>timeRelation</c> — FeatureServer-style temporal filter,
+    ///     ANDed with the where clause and translated through the same
+    ///     <see cref="IFilterExpressionService"/> the main query handler uses.</item>
+    ///   <item><c>objectIds</c> — comma-separated long list mapped to
+    ///     <see cref="FeatureQuery.ObjectIds"/> (the SQL builder picks this up via
+    ///     <c>AppendWhereClause</c>).</item>
+    ///   <item><c>geometry</c>/<c>geometryType</c>/<c>inSR</c>/<c>spatialRel</c>
+    ///     — GeoServices-style spatial filter mapped to
+    ///     <see cref="FeatureQuery.SpatialFilter"/>. Distance-based relationships
+    ///     (<c>esriSpatialRelWithinDistance</c>/<c>esriSpatialRelBeyondDistance</c>)
+    ///     are rejected because the analytics endpoints already overload
+    ///     <c>distance</c> for spatial-join (DWithin radius) and buffer-aggregate
+    ///     (buffer radius); reusing the same key for two different concepts would
+    ///     hide caller errors.</item>
+    /// </list>
+    /// <para>
+    /// The helper is async because <see cref="IFeatureServerQueryServices.ResolveSridAsync"/>
+    /// can hit the catalog when the supplied <c>inSR</c> is a WKT string. Callers
+    /// pattern-match on <c>(featureQuery, errorResult)</c>: when <c>errorResult</c>
+    /// is non-null they should return it directly, otherwise <c>featureQuery</c> is
+    /// the populated value.
+    /// </para>
     /// </summary>
-    private static bool TryBuildFeatureQuery(
+    private static async Task<(FeatureQuery? Query, IResult? Error)> TryBuildFeatureQueryAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
         LayerDefinition layer,
-        out FeatureQuery featureQuery,
-        out IResult? errorResult)
+        CancellationToken cancellationToken)
     {
-        featureQuery = default;
-        errorResult = null;
+        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
+        // ----- where (ArcGIS SQL) -----
         var where = GetValueString(values, SpatialAnalyticsParameters.Where);
-        SqlFragment? sqlFilter = null;
-
+        FilterExpression? whereExpression = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
             var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
             if (!parseResult.IsSuccess)
             {
-                errorResult = StandardErrorHelpers.CreateBadRequest(
+                return (null, StandardErrorHelpers.CreateBadRequest(
                     context,
                     ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-                return false;
+                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]));
             }
 
-            if (parseResult.Expression != null)
-            {
-                var translationResult = filterService.Translate(parseResult.Expression, layer);
-                if (!translationResult.IsSuccess)
-                {
-                    errorResult = StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                    return false;
-                }
+            whereExpression = parseResult.Expression;
+        }
 
-                sqlFilter = translationResult.SqlFilter;
+        // ----- time / timeRelation (FeatureServer style) -----
+        // Built as a FilterExpression and ANDed with the where clause so a single
+        // SqlFragment carries both predicates. Mirrors the main FeatureServer
+        // query handler so the analytics surface honours the same temporal logic.
+        var time = GetValueString(values, SpatialAnalyticsParameters.Time);
+        FilterExpression? temporalExpression = null;
+        if (!string.IsNullOrWhiteSpace(time))
+        {
+            var timeRelation = GetValueString(values, SpatialAnalyticsParameters.TimeRelation);
+            try
+            {
+                temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(
+                    time, timeRelation, layer);
+            }
+            catch (ArgumentException ex)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [ex.Message]));
             }
         }
 
-        featureQuery = new FeatureQuery
+        FilterExpression? combinedExpression = whereExpression;
+        if (combinedExpression != null && temporalExpression != null)
+        {
+            combinedExpression = new BinaryExpression(combinedExpression, BinaryOperator.And, temporalExpression);
+        }
+        else
+        {
+            combinedExpression ??= temporalExpression;
+        }
+
+        SqlFragment? sqlFilter = null;
+        if (combinedExpression != null)
+        {
+            var translationResult = filterService.Translate(combinedExpression, layer);
+            if (!translationResult.IsSuccess)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [translationResult.ErrorMessage ?? "Invalid filter syntax."]));
+            }
+
+            sqlFilter = translationResult.SqlFilter;
+        }
+
+        // ----- objectIds -----
+        ImmutableArray<long>? objectIds = null;
+        var objectIdsRaw = GetValueString(values, SpatialAnalyticsParameters.ObjectIds);
+        if (!string.IsNullOrWhiteSpace(objectIdsRaw))
+        {
+            if (!TryParseObjectIds(objectIdsRaw, out var parsedObjectIds))
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid objectIds parameter",
+                    ["objectIds must be a comma-separated list of integer feature identifiers."]));
+            }
+
+            objectIds = parsedObjectIds;
+        }
+
+        // ----- geometry / geometryType / inSR / spatialRel -----
+        SpatialFilter? spatialFilter = null;
+        var geometryRaw = GetValueString(values, SpatialAnalyticsParameters.Geometry);
+        if (!string.IsNullOrWhiteSpace(geometryRaw))
+        {
+            var geometryType = GetValueString(values, SpatialAnalyticsParameters.GeometryType);
+            if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(
+                    geometryRaw, geometryType, out var parsedGeometry, out var geometryError) ||
+                parsedGeometry == null)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid geometry parameter",
+                    [geometryError ?? "geometry could not be parsed."]));
+            }
+
+            var queryServices = context.RequestServices.GetRequiredService<IFeatureServerQueryServices>();
+            var inSr = GetValueString(values, SpatialAnalyticsParameters.InSr);
+            int? inputSrid;
+            try
+            {
+                inputSrid = await queryServices.ResolveSridAsync(
+                    inSr, parsedGeometry.SpatialReference, cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid inSR parameter",
+                    [ex.Message]));
+            }
+
+            var spatialRel = GetValueString(values, SpatialAnalyticsParameters.SpatialRel);
+            if (IsDistanceBasedSpatialRelationship(spatialRel))
+            {
+                // The analytics endpoints already overload `distance` for
+                // spatial-join (DWithin radius) and buffer-aggregate (buffer
+                // radius). Distance-based esri spatial relationships would need
+                // to reuse the same key for the spatial-filter radius, which
+                // would silently mask whichever meaning the caller intended.
+                // Reject explicitly so the caller gets a clear error instead
+                // of a confusing parameter collision.
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Unsupported spatialRel",
+                    ["Distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported on the spatial analytics endpoints; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead."]));
+            }
+
+            try
+            {
+                var queryParamsForFilter = new QueryParameters { SpatialRel = spatialRel };
+                spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
+                    queryParamsForFilter, parsedGeometry, inputSrid);
+            }
+            catch (ArgumentException ex)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid spatialRel",
+                    [ex.Message]));
+            }
+        }
+
+        var featureQuery = new FeatureQuery
         {
             Where = where,
             SqlFilter = sqlFilter,
+            ObjectIds = objectIds,
+            SpatialFilter = spatialFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid()
         };
 
+        return (featureQuery, null);
+    }
+
+    /// <summary>
+    /// Parses a comma-separated list of long feature identifiers. Whitespace
+    /// is trimmed and empty entries are skipped; the method returns false if
+    /// any non-empty entry fails to parse so the handler can surface an
+    /// HTTP 400 with a clear message instead of silently dropping IDs.
+    /// </summary>
+    private static bool TryParseObjectIds(string raw, out ImmutableArray<long> objectIds)
+    {
+        var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            objectIds = ImmutableArray<long>.Empty;
+            return true;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<long>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (!long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                objectIds = ImmutableArray<long>.Empty;
+                return false;
+            }
+
+            builder.Add(parsed);
+        }
+
+        objectIds = builder.ToImmutable();
         return true;
+    }
+
+    /// <summary>
+    /// Returns true when the supplied <c>spatialRel</c> would otherwise build a
+    /// distance-based spatial filter. The analytics endpoints reject these so the
+    /// `distance` parameter has a single, unambiguous meaning per operation.
+    /// </summary>
+    private static bool IsDistanceBasedSpatialRelationship(string? spatialRel)
+    {
+        if (string.IsNullOrWhiteSpace(spatialRel))
+        {
+            return false;
+        }
+
+        var normalized = spatialRel.Trim().ToLowerInvariant();
+        return normalized is "esrispatialrelwithindistance" or "esrispatialrelbeyonddistance";
     }
 
     /// <summary>
@@ -478,18 +663,69 @@ internal static partial class SpatialAnalyticsRequestHandlers
     }
 
     /// <summary>
-    /// Detects overflow by comparing the row count to the <c>maxInputFeatures + 1</c>
-    /// guard cap emitted by the SQL builders and logs a telemetry marker.
+    /// Detects overflow against the <c>MaxInputFeatures + 1</c> and
+    /// <c>MaxOutputRows + 1</c> guard caps emitted by the SQL builders.
+    /// <paramref name="inputRowCount"/> reflects the number of rows that survived
+    /// the input cap (<c>src</c> CTE) — for per-feature paths the handler passes
+    /// <c>rows.Length</c> (since each output row corresponds to one input row),
+    /// for aggregated paths the handler passes the value extracted from the
+    /// <c>_inputCount</c> column emitted by the SQL builder.
+    /// <paramref name="outputRowCount"/> is always the row count returned to the
+    /// client. This split is necessary because aggregated paths can shrink the
+    /// output row count to a single value while still having truncated the input.
     /// </summary>
     private static (bool InputTruncated, bool ResultTruncated) DetectOverflow(
-        int rowCount, int maxInputFeatures, int? maxOutputRows)
+        int inputRowCount, int outputRowCount, int maxInputFeatures, int? maxOutputRows)
     {
-        var resultTruncated = maxOutputRows.HasValue && rowCount > maxOutputRows.Value;
-        // rowCount > maxInputFeatures is only reached when no per-result cap applies
-        // (cluster per-feature mode, spatial join, buffer per-row), in which case the
-        // SQL builder applied LIMIT maxInputFeatures+1.
-        var inputTruncated = !maxOutputRows.HasValue && rowCount > maxInputFeatures;
+        var inputTruncated = inputRowCount > maxInputFeatures;
+        var resultTruncated = maxOutputRows.HasValue && outputRowCount > maxOutputRows.Value;
         return (inputTruncated, resultTruncated);
+    }
+
+    /// <summary>
+    /// Reads the <c>_inputCount</c> column emitted by aggregated SQL builders
+    /// (cluster hull, buffer dissolve, density) and strips it from every row so
+    /// the property bag handed to <see cref="MapRowToFeature"/> stays clean.
+    /// Returns 0 when no rows are present, or when the column is missing
+    /// (per-feature paths that did not request it).
+    /// </summary>
+    /// <remarks>
+    /// The SQL builders cap the <c>src</c> CTE at <c>MaxInputFeatures + 1</c>, so
+    /// the value read here is at most <c>MaxInputFeatures + 1</c> and the
+    /// <see cref="DetectOverflow"/> guard interprets it consistently with the
+    /// per-feature paths. When the result is empty (e.g. cluster hull mode where
+    /// every input feature was DBSCAN noise) the handler reports
+    /// <c>InputTruncated = false</c>; that corner case is acceptable because
+    /// callers can re-issue the query with stricter filters and the
+    /// <c>numberReturned = 0</c> signal already tells them no clusters formed.
+    /// </remarks>
+    private static int ExtractInputCount(ref ImmutableArray<IReadOnlyDictionary<string, object?>> rows)
+    {
+        if (rows.IsDefaultOrEmpty)
+        {
+            return 0;
+        }
+
+        if (!rows[0].TryGetValue("_inputCount", out var raw) || raw == null)
+        {
+            return 0;
+        }
+
+        var inputCount = Convert.ToInt32(raw, CultureInfo.InvariantCulture);
+
+        // Strip "_inputCount" from every row so MapRowToFeature does not surface
+        // it as a feature property. Reuse the case-insensitive equality the
+        // dictionary already provides instead of allocating a fresh comparer.
+        var trimmed = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>(rows.Length);
+        foreach (var row in rows)
+        {
+            var copy = new Dictionary<string, object?>(row);
+            copy.Remove("_inputCount");
+            trimmed.Add(copy);
+        }
+
+        rows = trimmed.MoveToImmutable();
+        return inputCount;
     }
 
     private static ImmutableArray<IReadOnlyDictionary<string, object?>> TrimOverflowRows(

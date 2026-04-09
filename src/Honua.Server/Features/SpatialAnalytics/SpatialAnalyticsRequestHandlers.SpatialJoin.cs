@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Server.Features.FeatureServer;
@@ -165,6 +166,15 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return joinLayerValidation.ErrorResult!;
         }
 
+        // Capture the join layer's stored SRID so the SQL builder can tag the
+        // join geometry column (Bytea storage) and wrap it with ST_Transform when
+        // the two layers live in different CRSs. Without this the join would tag
+        // the join geometry with the target's SRID and either silently produce
+        // wrong results (mixed CRS comparison) or surface a confusing PostGIS
+        // error at execution. ValidateLayerWithAccessAsync already authorized
+        // the join layer's parent service so it is safe to read its metadata.
+        var joinLayerSrid = joinLayerValidation.Layer!.SpatialReference.ToSrid();
+
         // Predicate (default: intersects).
         var predicateStr = GetValueString(values, SpatialAnalyticsParameters.Predicate);
         SpatialJoinPredicate predicate;
@@ -246,8 +256,10 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return outStatsError!;
         }
 
-        // Feature query for the target layer.
-        if (!TryBuildFeatureQuery(context, values, targetLayer, out var featureQuery, out var filterError))
+        // Feature query for the target layer (where + SQL filter + objectIds + spatial + temporal).
+        var (featureQuery, filterError) = await TryBuildFeatureQueryAsync(
+            context, values, targetLayer, cancellationToken);
+        if (featureQuery == null)
         {
             return filterError!;
         }
@@ -255,6 +267,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         var joinQuery = new SpatialJoinQuery
         {
             JoinLayerId = joinLayerId,
+            JoinLayerSrid = joinLayerSrid,
             Predicate = predicate,
             DistanceMeters = distanceMeters,
             CarryFields = carryFields,
@@ -270,7 +283,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QuerySpatialJoinAsync(targetLayer.Id, featureQuery, joinQuery, cancellationToken);
+            rows = await reader.QuerySpatialJoinAsync(targetLayer.Id, featureQuery.Value, joinQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -285,8 +298,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return CreateReaderFailureResult(context, SpatialJoinOperation, ex);
         }
 
-        // Spatial join is bounded by MaxInputFeatures (no per-result cap).
-        var (inputTruncated, _) = DetectOverflow(rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows: null);
+        // Spatial join is bounded by MaxInputFeatures (no per-result cap). The
+        // SQL builder emits one row per target row, so rows.Length already
+        // reflects the input count after the LIMIT n+1 guard fired.
+        var (inputTruncated, _) = DetectOverflow(
+            rows.Length, rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows: null);
         if (inputTruncated && logger != null)
         {
             SpatialAnalyticsLog.InputTruncated(logger, SpatialJoinOperation, targetLayer.Id, analyticsLimits.MaxInputFeatures);

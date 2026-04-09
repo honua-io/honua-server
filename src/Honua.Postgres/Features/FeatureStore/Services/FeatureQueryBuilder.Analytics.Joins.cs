@@ -41,9 +41,16 @@ internal sealed partial class FeatureQueryBuilder
     /// <c>{NULL}</c>.
     /// </para>
     /// <para>
-    /// Both layers are assumed to live in the same SRID. The handler is responsible
-    /// for validating cross-layer compatibility before calling the builder; PostGIS
-    /// will surface a clear error if the SRIDs do not match.
+    /// The two layers may live in different SRIDs. The builder uses
+    /// <see cref="SpatialJoinQuery.JoinLayerSrid"/> to tag the join geometry column
+    /// (necessary for Bytea storage where the raw column has no SRID), and wraps
+    /// the join operand with <c>ST_Transform</c> when the join layer's SRID
+    /// differs from the target layer's SRID so the spatial predicate evaluates in
+    /// a single CRS. This matches how the rest of the slice handles cross-CRS
+    /// spatial filters via <c>BuildSpatialFilterGeometryExpression</c>. The
+    /// per-row transform is unavoidable in cross-CRS joins; same-CRS joins skip
+    /// the wrap entirely so the GiST-index friendly <c>&amp;&amp;</c> fast-path
+    /// stays intact.
     /// </para>
     /// </remarks>
     public CoreParameterizedQuery BuildSpatialJoinQuery(
@@ -63,7 +70,6 @@ internal sealed partial class FeatureQueryBuilder
             // the raw column is `bytea`, so `t.geometry` flowing into `&&` / `ST_Intersects`
             // / `ST_AsGeoJSON` would fail at execution. Carrying the typed operand
             // forward keeps the join path correct across Geometry / Geography / Bytea.
-            // The builder assumes both layers share the same SRID (see the XML remarks).
             var targetGeometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType, DatabaseSchema.GeometryColumn, targetQuery.SpatialReferenceSrid);
 
@@ -88,24 +94,40 @@ internal sealed partial class FeatureQueryBuilder
             var joinLayerParam = $"${paramIndex++}";
             parameters.Add(joinQuery.JoinLayerId);
 
-            // Join-side operand — decoded the same way as the target so bytea storage
-            // joins produce a valid geometry expression for the PostGIS operators.
-            // Under Geometry storage this reduces to `j.geometry`, which keeps the
-            // existing GIST-index friendly `&&` fast-path intact.
+            // Join-side operand — decoded with the join layer's own SRID so bytea
+            // storage joins produce a valid geometry expression for the PostGIS
+            // operators. Under Geometry storage this reduces to `j.geometry`,
+            // which keeps the existing GIST-index friendly `&&` fast-path intact
+            // when the join layer happens to share the target layer's SRID.
             var joinGeometryOperand = _geometryProcessor.GetGeometryOperand(
                 geometryStorageType,
                 $"j.{DatabaseSchema.GeometryColumn}",
-                targetQuery.SpatialReferenceSrid);
+                joinQuery.JoinLayerSrid);
+
+            // Cross-CRS transform: when both SRIDs are known and differ, wrap the
+            // join operand with ST_Transform so the spatial predicate evaluates in
+            // the target layer's CRS. Same-CRS or unknown SRIDs skip the wrap so
+            // PostGIS can keep using the GiST index on the join layer.
+            if (targetQuery.SpatialReferenceSrid.HasValue &&
+                joinQuery.JoinLayerSrid.HasValue &&
+                targetQuery.SpatialReferenceSrid.Value != joinQuery.JoinLayerSrid.Value)
+            {
+                joinGeometryOperand = FormattableString.Invariant(
+                    $"ST_Transform({joinGeometryOperand}, {targetQuery.SpatialReferenceSrid.Value})");
+            }
 
             // Predicate clause references the typed operands established above.
             var predicate = BuildSpatialJoinPredicate(
                 joinQuery, "t.geom", joinGeometryOperand, ref paramIndex, parameters);
 
             // Outer SELECT — one row per target with stats over matching join rows.
+            // The target geometry is reprojected to EPSG:4326 before serialisation
+            // so the GeoJSON response matches the application/geo+json WGS 84
+            // contract regardless of the target layer's stored SRID.
             sql.Append(" SELECT ");
             sql.Append(CultureInfo.InvariantCulture, $"t.{DatabaseSchema.ObjectIdColumn} AS \"objectId\"");
             sql.Append(CultureInfo.InvariantCulture, $", t.{DatabaseSchema.AttributesColumn} AS \"attributes\"");
-            sql.Append(", ST_AsGeoJSON(t.geom) AS \"geometry\"");
+            sql.Append(", ST_AsGeoJSON(ST_Transform(t.geom, 4326)) AS \"geometry\"");
             sql.Append(CultureInfo.InvariantCulture, $", COUNT(j.{DatabaseSchema.ObjectIdColumn})::bigint AS \"matchCount\"");
 
             AppendJoinCarryFieldColumns(sql, joinQuery.CarryFields);

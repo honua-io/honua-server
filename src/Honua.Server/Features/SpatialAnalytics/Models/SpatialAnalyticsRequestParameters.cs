@@ -15,6 +15,19 @@ internal static class SpatialAnalyticsParameters
     public const string OutStatistics = "outStatistics";
     public const string Format = "f";
 
+    // Shared FeatureQuery filter parameters parsed by TryBuildFeatureQuery so the
+    // analytics endpoints honor the same objectIds / spatial / temporal filters as
+    // the rest of FeatureServer + the OGC mirror. The parameter names match the
+    // GeoServices REST conventions used by FeatureServer's main query endpoint so
+    // callers can reuse the same payload shape.
+    public const string ObjectIds = "objectIds";
+    public const string Geometry = "geometry";
+    public const string GeometryType = "geometryType";
+    public const string InSr = "inSR";
+    public const string SpatialRel = "spatialRel";
+    public const string Time = "time";
+    public const string TimeRelation = "timeRelation";
+
     // Cluster parameters
     public const string Algorithm = "algorithm";
     public const string Eps = "eps";

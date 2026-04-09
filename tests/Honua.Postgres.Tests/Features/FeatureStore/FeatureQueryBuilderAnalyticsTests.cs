@@ -93,9 +93,12 @@ public sealed class FeatureQueryBuilderAnalyticsTests
             layerId: 1, query, clusterQuery, GeometryStorageType.Bytea);
 
         // The CTE must materialise the decoded geometry under the `geom` alias
-        // so the outer SELECT does not call ST_AsGeoJSON on a bytea.
+        // so the outer SELECT does not call ST_AsGeoJSON on a bytea. The
+        // emitted geometry is wrapped in ST_Transform(_, 4326) so the
+        // GeoJSON response complies with application/geo+json's WGS 84
+        // contract regardless of the layer's stored SRID.
         result.Sql.Should().Contain("ST_SetSRID(ST_GeomFromEWKB(geometry), 4326) AS geom");
-        result.Sql.Should().Contain("ST_AsGeoJSON(geom) AS \"geometry\"");
+        result.Sql.Should().Contain("ST_AsGeoJSON(ST_Transform(geom, 4326)) AS \"geometry\"");
         result.Sql.Should().NotContain("ST_AsGeoJSON(geometry) AS \"geometry\"");
     }
 
@@ -131,6 +134,9 @@ public sealed class FeatureQueryBuilderAnalyticsTests
         var joinQuery = new SpatialJoinQuery
         {
             JoinLayerId = 7,
+            // Same SRID as the target so the same-CRS fast path is exercised.
+            // The cross-CRS variant is covered by its own dedicated test.
+            JoinLayerSrid = 4326,
             Predicate = SpatialJoinPredicate.Intersects,
             MaxInputFeatures = 1_000
         };
@@ -139,17 +145,22 @@ public sealed class FeatureQueryBuilderAnalyticsTests
             targetLayerId: 1, targetQuery, joinQuery, GeometryStorageType.Bytea);
 
         // Target CTE must carry the decoded geometry under `geom` so the outer
-        // SELECT / GROUP BY / predicate can use a typed geometry expression.
+        // SELECT / GROUP BY / predicate can use a typed geometry expression. The
+        // emitted geometry is wrapped in ST_Transform(_, 4326) so the GeoJSON
+        // response complies with application/geo+json's WGS 84 contract.
         result.Sql.Should().Contain("ST_SetSRID(ST_GeomFromEWKB(geometry), 4326) AS geom");
-        result.Sql.Should().Contain("ST_AsGeoJSON(t.geom) AS \"geometry\"");
+        result.Sql.Should().Contain("ST_AsGeoJSON(ST_Transform(t.geom, 4326)) AS \"geometry\"");
         result.Sql.Should().Contain("GROUP BY t.objectid, t.attributes, t.geom");
 
         // Predicate must reference `t.geom` and the decoded j-side expression —
-        // raw `t.geometry && j.geometry` would fail under bytea storage.
+        // raw `t.geometry && j.geometry` would fail under bytea storage. Same-CRS
+        // joins skip the ST_Transform wrap on the join operand so the GiST-index
+        // friendly `&&` fast-path stays intact.
         result.Sql.Should().Contain(
             "t.geom && ST_SetSRID(ST_GeomFromEWKB(j.geometry), 4326) AND " +
             "ST_Intersects(t.geom, ST_SetSRID(ST_GeomFromEWKB(j.geometry), 4326))");
         result.Sql.Should().NotContain("t.geometry && j.geometry");
+        result.Sql.Should().NotContain("ST_Transform(ST_SetSRID(ST_GeomFromEWKB(j.geometry)");
     }
 
     [Fact]
@@ -160,6 +171,10 @@ public sealed class FeatureQueryBuilderAnalyticsTests
         var joinQuery = new SpatialJoinQuery
         {
             JoinLayerId = 7,
+            // Same SRID as the target — keeps the existing assertion shape and
+            // exercises the no-cross-CRS fast path. The cross-CRS variant has
+            // its own dedicated test below.
+            JoinLayerSrid = 4326,
             Predicate = SpatialJoinPredicate.DWithin,
             DistanceMeters = 500d,
             MaxInputFeatures = 1_000
@@ -172,6 +187,56 @@ public sealed class FeatureQueryBuilderAnalyticsTests
         result.Sql.Should().Contain(
             "ST_DWithin(t.geom::geography, ST_SetSRID(ST_GeomFromEWKB(j.geometry), 4326)::geography");
         result.Sql.Should().NotContain("t.geometry::geography");
+    }
+
+    [Fact]
+    public void BuildSpatialJoinQuery_WithCrossCrsJoinLayer_WrapsJoinOperandWithStTransform()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var targetQuery = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var joinQuery = new SpatialJoinQuery
+        {
+            JoinLayerId = 7,
+            // Join layer in Web Mercator while the target is in WGS 84 — the
+            // builder must wrap the join operand with ST_Transform so the
+            // spatial predicate evaluates in a single CRS.
+            JoinLayerSrid = 3857,
+            Predicate = SpatialJoinPredicate.Intersects,
+            MaxInputFeatures = 1_000
+        };
+
+        var result = queryBuilder.BuildSpatialJoinQuery(
+            targetLayerId: 1, targetQuery, joinQuery, GeometryStorageType.Geometry);
+
+        // The join operand under Geometry storage with cross-CRS wrap should be
+        // ST_Transform(j.geometry, 4326) — same operand on both sides of the
+        // bbox short-circuit and the predicate.
+        result.Sql.Should().Contain(
+            "t.geom && ST_Transform(j.geometry, 4326) AND " +
+            "ST_Intersects(t.geom, ST_Transform(j.geometry, 4326))");
+    }
+
+    [Fact]
+    public void BuildSpatialJoinQuery_WithSameCrsJoinLayer_DoesNotWrapJoinOperand()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var targetQuery = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var joinQuery = new SpatialJoinQuery
+        {
+            JoinLayerId = 7,
+            JoinLayerSrid = 4326,
+            Predicate = SpatialJoinPredicate.Intersects,
+            MaxInputFeatures = 1_000
+        };
+
+        var result = queryBuilder.BuildSpatialJoinQuery(
+            targetLayerId: 1, targetQuery, joinQuery, GeometryStorageType.Geometry);
+
+        // Same-CRS joins must not wrap the join operand with ST_Transform —
+        // doing so would discard the GiST index on j.geometry. The fast path
+        // keeps the raw `j.geometry` operand under Geometry storage.
+        result.Sql.Should().Contain("t.geom && j.geometry AND ST_Intersects(t.geom, j.geometry)");
+        result.Sql.Should().NotContain("ST_Transform(j.geometry");
     }
 
     [Fact]

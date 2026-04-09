@@ -47,6 +47,16 @@ public readonly record struct SpatialJoinQuery
     public required int JoinLayerId { get; init; }
 
     /// <summary>
+    /// SRID of the join layer's stored geometry. The SQL builder uses this to
+    /// tag the join geometry column when the storage format does not embed an
+    /// SRID (Bytea WKB), and to transform the join geometry into the target
+    /// layer's CRS so the spatial predicate is evaluated in a single coordinate
+    /// system. The caller resolves this from the join layer's catalog metadata
+    /// at the same time it authorizes access.
+    /// </summary>
+    public int? JoinLayerSrid { get; init; }
+
+    /// <summary>
     /// Spatial predicate that selects matching rows from the join layer.
     /// </summary>
     public required SpatialJoinPredicate Predicate { get; init; }

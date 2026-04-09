@@ -106,22 +106,32 @@ internal sealed partial class FeatureQueryBuilder
             if (clusterQuery.ReturnHullPerCluster)
             {
                 // Aggregated mode — one row per cluster with the convex hull and stats.
-                sql.Append(" SELECT cluster_id::bigint AS \"clusterId\"");
+                // _inputCount carries the actual src CTE row count (capped at
+                // MaxInputFeatures+1) so the handler can report InputTruncated even
+                // though COUNT(*) per cluster does not include DBSCAN noise points.
+                // The hull is reprojected to EPSG:4326 before serialisation so the
+                // GeoJSON response is consistent with application/geo+json's
+                // WGS 84 contract regardless of the layer's stored SRID.
+                sql.Append(" SELECT (SELECT COUNT(*)::bigint FROM src) AS \"_inputCount\"");
+                sql.Append(", cluster_id::bigint AS \"clusterId\"");
                 sql.Append(", COUNT(*)::bigint AS \"featureCount\"");
-                sql.Append(", ST_AsGeoJSON(ST_ConvexHull(ST_Collect(geom))) AS \"clusterGeometry\"");
+                sql.Append(", ST_AsGeoJSON(ST_Transform(ST_ConvexHull(ST_Collect(geom)), 4326)) AS \"clusterGeometry\"");
                 AppendClusterStatisticsColumns(sql, clusterQuery.OutStatistics);
                 sql.Append(" FROM src WHERE cluster_id IS NOT NULL");
                 sql.Append(" GROUP BY cluster_id ORDER BY \"featureCount\" DESC");
             }
             else
             {
-                // Per-feature mode — one row per source feature carrying its assigned cluster id.
+                // Per-feature mode — one row per source feature carrying its assigned
+                // cluster id. The geometry is reprojected to EPSG:4326 to match the
+                // GeoJSON contract; layer-native SRIDs would otherwise leak through
+                // application/geo+json responses.
                 sql.Append(CultureInfo.InvariantCulture,
                     $" SELECT {DatabaseSchema.ObjectIdColumn} AS \"objectId\"");
                 sql.Append(", cluster_id::bigint AS \"clusterId\"");
                 sql.Append(CultureInfo.InvariantCulture,
                     $", {DatabaseSchema.AttributesColumn} AS \"attributes\"");
-                sql.Append(", ST_AsGeoJSON(geom) AS \"geometry\"");
+                sql.Append(", ST_AsGeoJSON(ST_Transform(geom, 4326)) AS \"geometry\"");
                 sql.Append(" FROM src ORDER BY cluster_id NULLS LAST, \"objectId\"");
             }
 
@@ -206,6 +216,13 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
 
             sql.Append(" SELECT ");
+
+            // _inputCount carries the actual src CTE row count (capped at
+            // MaxInputFeatures+1) so the handler can report InputTruncated in the
+            // dissolve=true path where COUNT(*) per group does not represent the
+            // pre-cap input volume. Per-feature mode still emits it for symmetry
+            // (each per-feature row knows its own input count is rows.Length).
+            sql.Append("(SELECT COUNT(*)::bigint FROM src) AS \"_inputCount\", ");
 
             // Group-by columns first.
             if (hasGroupBy)
@@ -324,7 +341,12 @@ internal sealed partial class FeatureQueryBuilder
                 $" cells AS (SELECT (g).geom AS cell FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g)");
 
             // Outer query — count or weighted sum per cell, emit GeoJSON in WGS 84.
-            sql.Append(" SELECT row_number() OVER (ORDER BY count(*) DESC)::bigint AS \"cellId\"");
+            // _inputCount carries the actual src CTE row count (capped at
+            // MaxInputFeatures+1) so the handler can report InputTruncated even
+            // though the cell-level count(*) only reflects features inside that
+            // particular cell.
+            sql.Append(" SELECT (SELECT COUNT(*)::bigint FROM src) AS \"_inputCount\"");
+            sql.Append(", row_number() OVER (ORDER BY count(*) DESC)::bigint AS \"cellId\"");
             sql.Append(", count(*)::bigint AS \"featureCount\"");
             if (weightExpression != null)
             {

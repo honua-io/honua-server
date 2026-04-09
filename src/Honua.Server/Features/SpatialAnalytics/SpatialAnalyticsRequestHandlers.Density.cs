@@ -179,8 +179,10 @@ internal static partial class SpatialAnalyticsRequestHandlers
             weightField = null;
         }
 
-        // Feature query.
-        if (!TryBuildFeatureQuery(context, values, layer, out var featureQuery, out var filterError))
+        // Feature query (where + SQL filter + objectIds + spatial + temporal).
+        var (featureQuery, filterError) = await TryBuildFeatureQueryAsync(
+            context, values, layer, cancellationToken);
+        if (featureQuery == null)
         {
             return filterError!;
         }
@@ -202,7 +204,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QueryDensityAsync(layer.Id, featureQuery, densityQuery, cancellationToken);
+            rows = await reader.QueryDensityAsync(layer.Id, featureQuery.Value, densityQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -218,9 +220,16 @@ internal static partial class SpatialAnalyticsRequestHandlers
         }
 
         // Density binning applies both caps: MaxInputFeatures on the src CTE and
-        // MaxDensityCells on the outer SELECT.
-        var (_, resultTruncated) = DetectOverflow(
-            rows.Length, analyticsLimits.MaxInputFeatures, analyticsLimits.MaxDensityCells);
+        // MaxDensityCells on the outer SELECT. The cell-level COUNT(*) does not
+        // reflect the pre-cap input volume, so the SQL builder emits "_inputCount"
+        // on every row and the handler reads it once before stripping it.
+        var inputCount = ExtractInputCount(ref rows);
+        var (inputTruncated, resultTruncated) = DetectOverflow(
+            inputCount, rows.Length, analyticsLimits.MaxInputFeatures, analyticsLimits.MaxDensityCells);
+        if (inputTruncated && logger != null)
+        {
+            SpatialAnalyticsLog.InputTruncated(logger, DensityOperation, layer.Id, analyticsLimits.MaxInputFeatures);
+        }
         if (resultTruncated && logger != null)
         {
             SpatialAnalyticsLog.ResultTruncated(logger, DensityOperation, layer.Id, analyticsLimits.MaxDensityCells);
@@ -248,7 +257,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             Metadata = new SpatialAnalyticsMetadata
             {
                 Operation = DensityOperation,
-                InputTruncated = false,
+                InputTruncated = inputTruncated,
                 ResultTruncated = resultTruncated,
                 MaxInputFeatures = analyticsLimits.MaxInputFeatures,
                 MaxOutputRows = analyticsLimits.MaxDensityCells

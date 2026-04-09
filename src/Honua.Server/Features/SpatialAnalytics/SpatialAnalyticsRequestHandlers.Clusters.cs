@@ -267,8 +267,10 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate statistics."]);
         }
 
-        // Feature query (where + SQL filter).
-        if (!TryBuildFeatureQuery(context, values, layer, out var featureQuery, out var filterError))
+        // Feature query (where + SQL filter + objectIds + spatial + temporal).
+        var (featureQuery, filterError) = await TryBuildFeatureQueryAsync(
+            context, values, layer, cancellationToken);
+        if (featureQuery == null)
         {
             return filterError!;
         }
@@ -293,7 +295,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QueryClustersAsync(layer.Id, featureQuery, clusterQuery, cancellationToken);
+            rows = await reader.QueryClustersAsync(layer.Id, featureQuery.Value, clusterQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -310,9 +312,14 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
         // Overflow detection: per-feature mode uses maxInputFeatures, hull-per-cluster
         // mode uses maxClusters as the per-result cap.
+        // - Per-feature: every row is one input feature, so inputCount == outputCount.
+        // - Hull mode: aggregated, so the SQL builder emits "_inputCount" on every
+        //   row (capped at MaxInputFeatures+1 by the src CTE LIMIT). Strip it from
+        //   the rows so MapRowToFeature does not leak it back to the caller.
         int? maxOutputRows = returnHull ? analyticsLimits.MaxClusters : null;
+        var inputCount = returnHull ? ExtractInputCount(ref rows) : rows.Length;
         var (inputTruncated, resultTruncated) = DetectOverflow(
-            rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows);
+            inputCount, rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows);
         if (inputTruncated && logger != null)
         {
             SpatialAnalyticsLog.InputTruncated(logger, ClusterOperation, layer.Id, analyticsLimits.MaxInputFeatures);

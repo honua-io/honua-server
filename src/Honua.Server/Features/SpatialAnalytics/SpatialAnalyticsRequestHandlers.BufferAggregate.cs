@@ -225,8 +225,10 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["outStatistics requires dissolve=true; per-feature buffers cannot carry aggregate statistics."]);
         }
 
-        // Feature query.
-        if (!TryBuildFeatureQuery(context, values, layer, out var featureQuery, out var filterError))
+        // Feature query (where + SQL filter + objectIds + spatial + temporal).
+        var (featureQuery, filterError) = await TryBuildFeatureQueryAsync(
+            context, values, layer, cancellationToken);
+        if (featureQuery == null)
         {
             return filterError!;
         }
@@ -249,7 +251,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QueryBufferAggregateAsync(layer.Id, featureQuery, bufferQuery, cancellationToken);
+            rows = await reader.QueryBufferAggregateAsync(layer.Id, featureQuery.Value, bufferQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -265,7 +267,13 @@ internal static partial class SpatialAnalyticsRequestHandlers
         }
 
         // Buffer aggregate is bounded by MaxInputFeatures (no distinct result cap).
-        var (inputTruncated, _) = DetectOverflow(rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows: null);
+        // The dissolve=true path collapses the source set to a small number of
+        // groups, so rows.Length cannot be used to detect input truncation; both
+        // dissolve modes emit "_inputCount" so the handler reports overflow
+        // consistently regardless of dissolve flag.
+        var inputCount = ExtractInputCount(ref rows);
+        var (inputTruncated, _) = DetectOverflow(
+            inputCount, rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows: null);
         if (inputTruncated && logger != null)
         {
             SpatialAnalyticsLog.InputTruncated(logger, BufferAggregateOperation, layer.Id, analyticsLimits.MaxInputFeatures);

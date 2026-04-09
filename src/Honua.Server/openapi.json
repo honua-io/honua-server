@@ -943,6 +943,9 @@
           },
           "404": {
             "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
           }
         }
       }
@@ -1025,6 +1028,9 @@
           },
           "404": {
             "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
           }
         }
       }
@@ -1109,6 +1115,9 @@
           },
           "404": {
             "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
           }
         }
       }
@@ -1188,6 +1197,9 @@
           },
           "404": {
             "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
           }
         }
       }
