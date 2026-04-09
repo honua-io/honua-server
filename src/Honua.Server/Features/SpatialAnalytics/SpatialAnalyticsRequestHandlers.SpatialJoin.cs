@@ -11,6 +11,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.Infrastructure.Analytics;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.SpatialAnalytics.Models;
@@ -257,7 +258,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         }
 
         // Feature query for the target layer (where + SQL filter + objectIds + spatial + temporal).
-        var (featureQuery, filterError) = await TryBuildFeatureQueryAsync(
+        var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
             context, values, targetLayer, cancellationToken);
         if (featureQuery == null)
         {
