@@ -35,7 +35,7 @@ public sealed class OperationCoverageTests
 
     private static HashSet<string> CollectIntegrationTestOperations()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var operations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))

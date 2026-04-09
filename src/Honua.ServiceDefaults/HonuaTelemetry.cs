@@ -40,13 +40,19 @@ public static class HonuaTelemetry
         "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex KeyValuePattern = new(
-        "(?i)\\b(password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)\\b\\s*([:=])\\s*([^;\\s]+)",
+        "(?i)\\b(password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret|private[-_]?key|auth[-_]?token|session[-_]?id|refresh[-_]?token|database|connectionstring|connection[-_]?string)\\b\\s*([:=])\\s*([^;\\s]+)",
         RegexOptions.CultureInvariant);
     private static readonly Regex AuthorizationPattern = new(
         "(?i)\\bauthorization\\b\\s*([:=])\\s*([^;\\s]+)",
         RegexOptions.CultureInvariant);
     private static readonly Regex BearerPattern = new(
         "(?i)\\bbearer\\s+[A-Za-z0-9-._~+/]+=*",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex JwtPattern = new(
+        "\\bey[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\.[A-Za-z0-9-_.+/=]*",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex ConnectionStringPattern = new(
+        "(?i)(server|host|database|uid|user\\s*id|pwd|password|trusted_connection)\\s*=\\s*[^;]+",
         RegexOptions.CultureInvariant);
 
     private static volatile bool _exportExceptionDetails;
@@ -416,6 +422,8 @@ public static class HonuaTelemetry
         sanitized = KeyValuePattern.Replace(sanitized, "$1$2***");
         sanitized = AuthorizationPattern.Replace(sanitized, "Authorization$1***");
         sanitized = BearerPattern.Replace(sanitized, "Bearer ***");
+        sanitized = JwtPattern.Replace(sanitized, "eyJ***");
+        sanitized = ConnectionStringPattern.Replace(sanitized, "$1=***");
 
         if (maxLength > 0 && sanitized.Length > maxLength)
         {

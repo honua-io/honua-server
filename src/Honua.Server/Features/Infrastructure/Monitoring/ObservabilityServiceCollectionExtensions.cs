@@ -4,6 +4,7 @@
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Compression;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -377,24 +378,27 @@ internal static class ObservabilityServiceCollectionExtensions
             // Enable compression for HTTPS requests
             options.EnableForHttps = true;
 
-            // Configure compression providers
-            options.Providers.Add<BrotliCompressionProvider>();
-            options.Providers.Add<GzipCompressionProvider>();
+            // PERFORMANCE FIX: Use adaptive compression providers for content-size based optimization
+            options.Providers.Add<AdaptiveBrotliCompressionProvider>();
+            options.Providers.Add<AdaptiveGzipCompressionProvider>();
 
             // Add MIME types for geospatial data formats
             options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(additionalMimeTypes);
         });
 
-        // Configure Brotli compression for fastest performance (low latency)
-        services.Configure<BrotliCompressionProviderOptions>(options =>
+        // PERFORMANCE FIX: Configure adaptive compression that adjusts level based on content size
+        services.Configure<AdaptiveCompressionOptions>(options =>
         {
-            options.Level = CompressionLevel.Fastest;
+            // Small content (< 4KB): Use fastest compression for low latency
+            options.SmallContentLevel = CompressionLevel.Fastest;
+            // Medium content (4KB-64KB): Balanced compression
+            options.MediumContentLevel = CompressionLevel.SmallestSize;
+            // Large content (> 64KB): Optimal compression for bandwidth savings
+            options.LargeContentLevel = CompressionLevel.Optimal;
         });
 
-        // Configure Gzip compression for fastest performance (fallback)
-        services.Configure<GzipCompressionProviderOptions>(options =>
-        {
-            options.Level = CompressionLevel.Fastest;
-        });
+        // Register adaptive compression providers
+        services.TryAddTransient<AdaptiveBrotliCompressionProvider>();
+        services.TryAddTransient<AdaptiveGzipCompressionProvider>();
     }
 }

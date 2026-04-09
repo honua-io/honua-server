@@ -31,7 +31,7 @@ public sealed class ApiSurfaceCoverageTests
 
     private static HashSet<string> CollectIntegrationTestEndpoints()
     {
-        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))

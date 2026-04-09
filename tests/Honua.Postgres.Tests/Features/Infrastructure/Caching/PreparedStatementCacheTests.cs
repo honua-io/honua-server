@@ -115,6 +115,29 @@ public class PreparedStatementCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOrCreatePreparedCommandAsync_MultipleExecutions_ReturnedCommandExecutes()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        const string sql = "SELECT $1::integer as test_value";
+
+        Action<NpgsqlCommand> configureParams = cmd =>
+        {
+            cmd.Parameters.AddWithValue(42);
+        };
+
+        await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
+        await using var preparedCommand = await _cache.GetOrCreatePreparedCommandAsync(
+            (NpgsqlConnection)connection,
+            sql,
+            configureParams);
+
+        preparedCommand.Should().NotBeNull();
+
+        var result = await preparedCommand!.ExecuteScalarAsync();
+        result.Should().Be(42);
+    }
+
+    [Fact]
     public async Task PreparePriorityStatementAsync_ValidStatement_CreatesPreparedStatement()
     {
         // Arrange
