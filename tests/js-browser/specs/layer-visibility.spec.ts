@@ -4,34 +4,30 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from '../helpers/map-harness.js';
-import {
-  BASE_URL,
-  POINT_LAYER_ID, POINT_CENTER,
-  LINE_LAYER_ID, LINE_CENTER,
-  POLYGON_LAYER_ID, POLYGON_CENTER,
-} from '../helpers/constants.js';
+
+const BASE_URL = process.env.HONUA_BASE_URL ?? 'http://localhost:5000';
 
 const GEOMETRY_LAYERS = [
   {
     name: 'Point (circle)',
-    layerId: POINT_LAYER_ID,
-    expectedMapLibreLayer: `layer-${POINT_LAYER_ID}-circle`,
+    layerId: 2000,
+    expectedMapLibreLayer: 'layer-2000-circle',
     expectedType: 'circle',
-    center: POINT_CENTER,
+    center: [-122.4194, 37.7749] as [number, number],
   },
   {
     name: 'LineString (line)',
-    layerId: LINE_LAYER_ID,
-    expectedMapLibreLayer: `layer-${LINE_LAYER_ID}-line`,
+    layerId: 2001,
+    expectedMapLibreLayer: 'layer-2001-line',
     expectedType: 'line',
-    center: LINE_CENTER,
+    center: [-122.4200, 37.7750] as [number, number],
   },
   {
     name: 'Polygon (fill)',
-    layerId: POLYGON_LAYER_ID,
-    expectedMapLibreLayer: `layer-${POLYGON_LAYER_ID}-fill`,
+    layerId: 2002,
+    expectedMapLibreLayer: 'layer-2002-fill',
     expectedType: 'fill',
-    center: POLYGON_CENTER,
+    center: [-122.4200, 37.7750] as [number, number],
   },
 ];
 

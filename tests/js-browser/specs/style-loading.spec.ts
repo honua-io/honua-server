@@ -3,7 +3,9 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from '../helpers/map-harness.js';
-import { BASE_URL, POINT_LAYER_ID, POINT_CENTER } from '../helpers/constants.js';
+
+const BASE_URL = process.env.HONUA_BASE_URL ?? 'http://localhost:5000';
+const POINT_LAYER_ID = 2000;
 
 test.describe('Style Loading', () => {
   test('[CERT-CONN-01] fetch style JSON returns valid MapLibre v8 document', async ({ request }) => {
@@ -43,7 +45,7 @@ test.describe('Style Loading', () => {
     const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
     const map = await createMap(page, {
       styleUrl,
-      center: POINT_CENTER,
+      center: [-122.4194, 37.7749],
       zoom: 14,
     });
 

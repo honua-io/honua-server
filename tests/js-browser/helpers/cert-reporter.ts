@@ -53,9 +53,7 @@ const EXTENSION_IDS = [
 const CERT_ID_REGEX = /\[(CERT-[A-Z]+-\d+|JS-EXT-\d+)]/g;
 
 class CertReporter implements Reporter {
-  // Map<certId, Map<testId, result>> — inner map keyed by Playwright test ID
-  // so retries (same test) overwrite while different tests aggregate correctly.
-  private resultsByTest = new Map<string, Map<string, { status: CertResult['status']; duration_ms: number; notes: string }>>();
+  private results = new Map<string, { status: CertResult['status']; duration_ms: number; notes: string }>();
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const ids = [...test.title.matchAll(CERT_ID_REGEX)].map((m) => m[1]);
@@ -63,26 +61,24 @@ class CertReporter implements Reporter {
 
     const status: CertResult['status'] =
       result.status === 'passed' ? 'pass'
+      : result.status === 'failed' ? 'fail'
       : result.status === 'skipped' ? 'skip'
-      : 'fail';
+      : 'skip';
 
-    const notes = result.status !== 'passed' && result.status !== 'skipped'
+    const notes = result.status === 'failed'
       ? result.errors.map((e) => e.message ?? '').join('; ').slice(0, 500)
       : '';
 
     for (const id of ids) {
-      if (!this.resultsByTest.has(id)) this.resultsByTest.set(id, new Map());
-      // Last attempt per test wins (handles Playwright retries).
-      this.resultsByTest.get(id)!.set(test.id, { status, duration_ms: result.duration, notes });
+      // If a test passed but we already have a pass, keep it. If the
+      // previous was fail and this is pass, the pass wins (retry).
+      const prev = this.results.get(id);
+      if (prev && prev.status === 'pass' && status !== 'pass') continue;
+      this.results.set(id, { status, duration_ms: result.duration, notes });
     }
   }
 
-  async onEnd(result: FullResult): Promise<void> {
-    const hasObservedResults = [...this.resultsByTest.values()].some((byTest) => byTest.size > 0);
-    if (result.status !== 'passed' && !hasObservedResults) {
-      return;
-    }
-
+  async onEnd(_result: FullResult): Promise<void> {
     const runDate = new Date();
     const runId = runDate.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
@@ -94,24 +90,15 @@ class CertReporter implements Reporter {
     }
 
     const buildResult = (id: string): CertResult => {
-      const byTest = this.resultsByTest.get(id);
-      if (!byTest || byTest.size === 0) {
-        return {
-          test_case_id: id, status: 'skip', duration_ms: null,
-          measured_count: null, measured_delta: null, notes: '', evidence_ref: '',
-        };
-      }
-      const entries = [...byTest.values()];
-      // Aggregate: any fail across different tests → fail; else any pass → pass.
-      const hasFail = entries.some((e) => e.status === 'fail');
-      const hasPass = entries.some((e) => e.status === 'pass');
-      const status: CertResult['status'] = hasFail ? 'fail' : hasPass ? 'pass' : 'skip';
-      const totalDuration = entries.reduce((sum, e) => sum + e.duration_ms, 0);
-      const failNotes = entries.filter((e) => e.status === 'fail').map((e) => e.notes).filter(Boolean).join('; ');
+      const r = this.results.get(id);
       return {
-        test_case_id: id, status, duration_ms: totalDuration,
-        measured_count: null, measured_delta: null,
-        notes: hasFail ? failNotes : '', evidence_ref: '',
+        test_case_id: id,
+        status: r?.status ?? 'skip',
+        duration_ms: r?.duration_ms ?? null,
+        measured_count: null,
+        measured_delta: null,
+        notes: r?.notes ?? '',
+        evidence_ref: '',
       };
     };
 

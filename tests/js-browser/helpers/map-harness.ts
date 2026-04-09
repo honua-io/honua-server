@@ -56,9 +56,8 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
   // absolutized via MapLibre's transformRequest before requests are dispatched
   // to the worker. The page is loaded via setContent (about:blank origin),
   // so neither a <base> tag nor a blob-URL worker can resolve a leading-slash
-  // path — Request construction fails inside the worker. transformRequest
-  // runs on the main thread, so prefixing with the origin here lets the
-  // worker receive a fully-qualified URL it can parse.
+  // path. transformRequest runs on the main thread, so prefixing with the
+  // origin here lets the worker receive a fully-qualified URL it can parse.
   const origin = new URL(styleUrl).origin;
 
   // Navigate to a minimal HTML page with a map container.
@@ -95,14 +94,10 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
           fadeDuration: 0,
           trackResize: false,
           // Preserve the WebGL drawing buffer so gl.readPixels() can read
-          // rendered pixels after the frame is presented. Without this,
-          // MapLibre clears the back buffer after each frame and pixel
-          // assertions (e.g. countNonBackgroundPixels) see all zeros even
-          // though Playwright screenshots show the rendered features.
+          // rendered pixels after the frame is presented.
           preserveDrawingBuffer: true,
-          // Absolutize server-relative URLs (e.g. tile templates from the
-          // style JSON) so the request URL parses inside MapLibre's worker,
-          // where the document base is unavailable.
+          // Absolutize server-relative URLs so request parsing works inside
+          // MapLibre's worker when the page itself is about:blank.
           transformRequest: (url: string) => {
             if (url.startsWith('/')) {
               return { url: origin + url };
@@ -176,24 +171,48 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
       }, layerId);
     },
 
-    async countNonBackgroundPixels(bgColor = { r: 0, g: 0, b: 0 }) {
-      return page.evaluate((bg) => {
-        const map = (window as any).__map;
-        const canvas = map.getCanvas() as HTMLCanvasElement;
-        const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
-        if (!gl) return 0;
-        const pixels = new Uint8Array(canvas.width * canvas.height * 4);
-        gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        let count = 0;
-        for (let i = 0; i < pixels.length; i += 4) {
-          const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3];
-          // Skip fully transparent or matching background.
-          if (a === 0) continue;
-          if (r === bg.r && g === bg.g && b === bg.b) continue;
-          count++;
-        }
-        return count;
-      }, bgColor);
+    async countNonBackgroundPixels(bgColor) {
+      const screenshot = await page.locator('#map').screenshot();
+      const screenshotBase64 = screenshot.toString('base64');
+
+      return page.evaluate(
+        async ({ bg, screenshotBase64 }) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${screenshotBase64}`;
+
+          await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('Failed to decode map screenshot'));
+          });
+
+          const sampleCanvas = document.createElement('canvas');
+          sampleCanvas.width = image.naturalWidth;
+          sampleCanvas.height = image.naturalHeight;
+          const context = sampleCanvas.getContext('2d');
+          if (!context) return 0;
+
+          context.drawImage(image, 0, 0);
+          const pixels = context.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+          const background = bg ?? { r: pixels[0], g: pixels[1], b: pixels[2] };
+
+          let count = 0;
+          for (let i = 0; i < pixels.length; i += 4) {
+            const r = pixels[i];
+            const g = pixels[i + 1];
+            const b = pixels[i + 2];
+            const a = pixels[i + 3];
+            if (a === 0) continue;
+            if (r === background.r && g === background.g && b === background.b) continue;
+            count++;
+          }
+
+          return count;
+        },
+        {
+          bg: bgColor,
+          screenshotBase64,
+        },
+      );
     },
 
     async screenshot() {

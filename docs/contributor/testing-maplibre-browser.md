@@ -34,17 +34,17 @@ npm install
 npx playwright install --with-deps chromium
 ```
 
-Set `HONUA_BASE_URL` to point at a running server seeded with `tests/seed/browser-compat.yaml` (layers 2000-2002). The suite will fail with a clear error if no healthy server is found.
+Set `HONUA_BASE_URL` to point at a running server seeded with `tests/seed/browser-compat.yaml` (layers 2000-2002).
 
 ```bash
 # Against a running server
-HONUA_BASE_URL=http://localhost:5000 npm test
+HONUA_BASE_URL=http://localhost:5000 npm run test:maplibre
 
 # Headed mode (see the browser)
-HONUA_BASE_URL=http://localhost:5000 npm run test:headed
+HONUA_BASE_URL=http://localhost:5000 npm run test:maplibre:headed
 
 # Debug mode (Playwright inspector)
-HONUA_BASE_URL=http://localhost:5000 npm run test:debug
+HONUA_BASE_URL=http://localhost:5000 npm run test:maplibre:debug
 ```
 
 ## Environment Variables
@@ -52,7 +52,7 @@ HONUA_BASE_URL=http://localhost:5000 npm run test:debug
 | Variable | Default | Description |
 |---|---|---|
 | `HONUA_BASE_URL` | `http://localhost:5000` | Honua server URL (must be seeded with `browser-compat.yaml`) |
-| `CI` | — | Set by GitHub Actions; controls reporter environment field |
+| `CI` | — | Set by GitHub Actions; controls retry/reporting behavior |
 
 ## Seed Data
 
@@ -70,23 +70,23 @@ The `maplibre-compat` job in `ci.yml` runs this suite as a merge-blocking gate. 
 
 1. Starts Honua Server with PostGIS and the browser-compat seed.
 2. Installs Playwright Chromium.
-3. Runs `npm test` and uploads the `maplibre-compat-results` artifact (Playwright report + `.cert.json` envelope).
+3. Runs `npm run test:maplibre` and uploads the `maplibre-compat-results` artifact (Playwright report + `.cert.json` envelope).
 
 ## Test Structure
 
-```
+```text
 tests/js-browser/
 ├── package.json
-├── playwright.config.ts
+├── playwright.maplibre.config.ts
+├── maplibre-global-setup.ts
 ├── tsconfig.json
-├── global-setup.ts          # Health check (requires pre-started server)
 ├── helpers/
-│   ├── constants.ts         # Shared seed layer IDs, URLs, centers
-│   ├── map-harness.ts       # MapLibre map lifecycle helper
-│   └── cert-reporter.ts     # .cert.json evidence reporter
+│   ├── constants.ts
+│   ├── map-harness.ts
+│   └── cert-reporter.ts
 └── specs/
-    ├── style-loading.spec.ts     # Style + TileJSON discovery
-    ├── tile-rendering.spec.ts    # MVT fetch + canvas render
-    ├── layer-visibility.spec.ts  # Per-geometry-type visibility
-    └── feature-query.spec.ts     # Interactive queryRenderedFeatures
+    ├── style-loading.spec.ts
+    ├── tile-rendering.spec.ts
+    ├── layer-visibility.spec.ts
+    └── feature-query.spec.ts
 ```
