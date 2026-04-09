@@ -51,7 +51,7 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-RNDR-SPR-01 | RNDR | Sprite/icon resolves and draws | MVT | screenshot+pass/fail |
 | CERT-RNDR-URL-01 | RNDR | Style URL/metadata is consumed | FS, MVT | pass/fail |
 
-‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS, OpenLayers `OGCVectorTile`). The manual smoke runbook does not yet include an MapLibre lane; MVT render certification is tracked via the JS lane extensions (JS-EXT-01, JS-EXT-02) and the visual / style certification slice ([`visual-style-certification-slice.md`](visual-style-certification-slice.md)) until a dedicated MapLibre lane is added.
+‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS, OpenLayers `OGCVectorTile`). Automated browser evidence now comes from the JS — MapLibre (Playwright) lane for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02 (#464). The visual / style certification slice ([`visual-style-certification-slice.md`](visual-style-certification-slice.md)) tracks the additional `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs.
 
 The six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs above are the visual / style certification slice that ticket [`#478`](https://github.com/honua-io/honua-server/issues/478) introduces. They are append-only additions to the matrix — `CERT-RNDR-01` and `CERT-RNDR-02` are unchanged. The slice spec at [`visual-style-certification-slice.md`](visual-style-certification-slice.md) defines per-scenario fixtures, expected colors, pass criteria, and lane substantiation.
 
@@ -89,6 +89,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | Lane | Automation | Core Coverage | Extensions |
 |---|---|---|---|
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
+| **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
@@ -181,3 +182,4 @@ All certification results must follow the standardized evidence specification in
 | 1.0.12 | 2026-04-06 | Note CLI/SDK OData automation via Microsoft.OData.Client xUnit suite; close OData automation gap for the CLI lane |
 | 1.1.0 | 2026-04-06 | Add visual / style certification slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) per ticket #478; link slice spec |
 | 1.1.1 | 2026-04-07 | Update the `§§` Esri Leaflet sub-lane footnote to the post-#478 24-case common-core shape; document slice-ID `not-applicable` rationale on the mapserver envelope |
+| 1.1.2 | 2026-04-08 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification (#464) |

@@ -53,7 +53,7 @@ Update from certification workflow outputs and manual validation logs:
 | Excel | _update_ | OData v4 | _update_ | _update_ |
 | MapLibre GL JS ‡ | _update_ | MVT | _update_ | _update_ |
 
-‡ MapLibre GL JS certification is currently **manual** (visual browser-based verification). Evidence rolls up under the **JS lane** (`client_lane: "js"`) with protocol `"mvt"`. The existing Vitest suite does not yet include MVT tests; automated coverage is tracked as a follow-up. See [Certification Matrix — JS Lane Extensions](../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#js-lane) for JS-EXT-01/JS-EXT-02 scope.
+‡ MapLibre GL JS certification is **automated** via the `maplibre-compat` CI job (Playwright + Chromium). Evidence rolls up under the **JS lane** (`client_lane: "js"`) with protocol `"mvt"`. The browser suite (`tests/js-browser/`) covers CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02. See [Certification Matrix — JS Lane Extensions](../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#js-lane) for scope.
 
 ### Tool Interoperability Evidence (Required)
 

@@ -187,7 +187,7 @@ This section describes how each evidence source will map to the evidence envelop
 | xUnit attributes | CLI | Live (OData lane): each test in `tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs` carries `[Trait("CertId", "CERT-…")]` alongside `[Protocol]`, and the class fixture flushes a `<run-id>-cli-odata.cert.json` envelope to `tests/TestResults/`. Filter the lane in isolation with `dotnet test --filter "CertId~CERT-"` |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
-| Manual browser verification | JS (MVT) | Fallback: operator loads MapLibre GL JS against the server, records remaining manual-only results into a `js`/`mvt` evidence file (see [MapLibre MVT workflow](#maplibre-mvt-manual-workflow) below). CERT-RNDR-01 and JS-EXT-02 are now automated via Playwright |
+| Playwright MapLibre suite | JS (MVT) | Automated: `tests/js-browser/specs/` renders MapLibre GL JS against live TileJSON/MVT endpoints and emits a `<run-id>-js-mvt.cert.json` envelope via the custom reporter. See [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below. A manual fallback remains documented for ad-hoc visual verification. |
 
 ### Manual Lane Workflow
 
@@ -267,9 +267,23 @@ The reporter skips evidence emission when the run is interrupted, timed out, or 
 
 To distinguish Esri Leaflet evidence from Vitest JS evidence in a shared evidence directory, check for the presence of `EL-EXT-*` entries in the `extensions` array. A future follow-on may introduce a dedicated `js-esri-leaflet` client lane value if disambiguation at the envelope level becomes necessary.
 
+### MapLibre MVT Automated Workflow
+
+The MapLibre GL JS MVT lane is certified by the Playwright + Chromium suite in `tests/js-browser/specs/` (ticket [`#464`](https://github.com/honua-io/honua-server/issues/464)), driven by `playwright.maplibre.config.ts` and the `helpers/cert-reporter.ts` custom reporter. The `maplibre-compat` CI job runs `npm run test:maplibre` against a live Honua Server seeded with `tests/seed/browser-compat.yaml` and uploads the Playwright report plus the generated `<run-id>-js-mvt.cert.json` envelope as merge-blocking artifacts.
+
+The reporter seeds the full 24-ID common-core matrix into every envelope it emits:
+
+- Tests substantiating a CERT ID (`CERT-RNDR-01`, currently covered by `style-loading.spec.ts`, `layer-visibility.spec.ts`, and `feature-query.spec.ts`) are recorded at their test-case outcome using worst-status aggregation (fail > pass > skip), so a later passing test cannot mask an earlier failure when the same CERT ID is attached to multiple specs.
+- `CERT-CONN-01`, `CERT-CONN-02`, `CERT-AUTH-01`, `CERT-AUTH-02`, and `CERT-ERRH-01` are recorded as `skip` with the note `"Covered by JS/featureserver automated tests."` — they apply to MVT but are not exercisable in the MapLibre rendering path.
+- The six visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are recorded as `skip` with a `pending-fixture` note until the MapLibre MVT lane substantiates them. Tracked in [`visual-style-certification-slice.md`](visual-style-certification-slice.md).
+- All remaining common-core IDs (DISC, SCHM, QFLT, PAGE, GEOM, ERRH-02, RNDR-02) are recorded as `not-applicable` because they do not list MVT in their protocol column.
+- `JS-EXT-01` (PBF/MVT decode fidelity) and `JS-EXT-02` (tile load pipeline) are recorded in the `extensions` array from `tile-rendering.spec.ts`.
+
+Envelopes are written to `tests/js-browser/test-results/<run-id>-js-mvt.cert.json`. Runbook and prerequisite details live in [`docs/contributor/testing-maplibre-browser.md`](../contributor/testing-maplibre-browser.md).
+
 ### MapLibre MVT Manual Workflow
 
-MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT-02 are covered by the Playwright headless browser test (`render.spec.ts`), and MVT tile metadata/discovery tests run via Vitest. This manual workflow remains useful for JS-EXT-01 (PBF decode fidelity) and any visual verification beyond pixel-diff assertions.
+This manual workflow predates the automated suite above and remains as a fallback for ad-hoc visual verification (e.g. JS-EXT-01 PBF decode inspection beyond pixel-diff assertions) when the `maplibre-compat` CI job is not available.
 
 1. Copy the evidence template above.
 2. Set `client_lane` to `"js"` and `protocol` to `"mvt"`.
@@ -301,3 +315,4 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | 1.0.12 | 2026-04-06 | Mark xUnit `[Trait("CertId", …)]` mapping as live for the CLI/OData lane; add `cli-odata.cert.json` example produced by `ODataClientCertificationTests` |
 | 1.0.13 | 2026-04-06 | Document the visual / style certification slice append-only IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) and update the example envelope template to the new 24-case core total |
 | 1.0.14 | 2026-04-07 | Update the Esri Leaflet evidence note to reference the 24-case common-core total and document slice-ID `not-applicable` on the mapserver envelope |
+| 1.0.15 | 2026-04-08 | Add MapLibre MVT automated workflow section for the Playwright suite landed by ticket `#464`; retarget the version-matrix footnote and integration-mapping row at the new anchor |

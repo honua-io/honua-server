@@ -18,7 +18,7 @@ For GeoServices REST specifically, start with [GeoServices REST Parity](geoservi
 | WMS 1.3 | Supported (CITE certified) | GetCapabilities, GetMap, GetFeatureInfo | 227/227 CITE tests passing | [MapServer Coverage Matrix](map-server-matrix.md) |
 | WMTS 1.0 | Supported (CITE certified) | GetCapabilities, GetTile, GetFeatureInfo (KVP + RESTful) | 118/118 CITE tests passing; WebMercatorQuad only | [MapServer Coverage Matrix](map-server-matrix.md) |
 | OData v4 | Supported with partial parity | Core entities/metadata/query, `$batch`, `$apply`, `$search`, `$skiptoken`, `$deltatoken`, spatial functions | Delta change-tracking is timestamp-based (MVP-level); PUT not supported | [OData v4 Coverage](specifications/odata-v4-coverage.md) |
-| Vector Tiles (MVT) | Supported | PostGIS-native `ST_AsMVT` generation, TileJSON metadata, auto-generated MapLibre styles | — | — |
+| Vector Tiles (MVT) | Supported | PostGIS-native `ST_AsMVT` generation, TileJSON metadata, auto-generated MapLibre styles; automated browser render proof via Playwright (merge-blocking) | — | — |
 | STAC API | Supported | Catalog, collections, items, item lookup, GET/POST search with fields, sortby, CQL2 filtering | ETag on catalog/collection metadata only; CRS84-only filter-crs; no STAC transaction extensions | [STAC API (STANDARDS_APIS.md)](STANDARDS_APIS.md#stac-api) |
 | GDAL/OGR (ogrinfo / ogr2ogr) | Supported | OAPIF: discovery, read, query, export; WFS 2.0: discovery, read, query, export | Tested with GDAL 3.4+ against OGC API Features and WFS 2.0 endpoints | — |
 | KML 2.2 (format) | CITE validated | `MapServer/generateKml` output validated against OGC KML 2.2 schema | Format-level conformance; always EPSG:4326 | [KML 2.2 CITE Guide](../contributor/cite-kml22-conformance-testing.md) |

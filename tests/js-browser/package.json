@@ -3,21 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Esri Leaflet browser compatibility tests for Honua Server",
+  "description": "Esri Leaflet and MapLibre browser compatibility tests for Honua Server",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.11.0"
   },
   "scripts": {
     "test": "npx playwright test",
     "test:update-snapshots": "npx playwright test --update-snapshots",
     "test:headed": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug",
+    "test:maplibre": "npx playwright test --config playwright.maplibre.config.ts",
+    "test:maplibre:headed": "npx playwright test --config playwright.maplibre.config.ts --headed",
+    "test:maplibre:debug": "npx playwright test --config playwright.maplibre.config.ts --debug",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
     "esri-leaflet": "^3.0.14",
-    "esri-leaflet-renderers": "^3.0.1"
+    "esri-leaflet-renderers": "^3.0.1",
+    "maplibre-gl": "^5.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

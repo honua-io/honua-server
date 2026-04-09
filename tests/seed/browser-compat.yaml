@@ -1,0 +1,148 @@
+version: 1
+sql:
+  # Browser compatibility service — anonymous access, three geometry-type layers.
+  # Layer IDs 2000-2002 avoid collision with base-schema (0) and js_test_server (1000).
+  - |
+      INSERT INTO honua.services (
+          service_name, description, srid, max_record_count,
+          supported_formats, capabilities, service_extent, metadata
+      )
+      VALUES (
+          'browser_compat', 'Browser Compatibility Test Service', 4326, 1000,
+          ARRAY['JSON', 'GeoJSON'],
+          ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+      )
+      ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description,
+          metadata = EXCLUDED.metadata,
+          service_extent = EXCLUDED.service_extent,
+          updated_at = NOW();
+
+  # Layer 2000 — Point (circle style)
+  - |
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility,
+          metadata
+      )
+      VALUES (
+          2000, 'Browser Points', 'Point layer for browser compat tests',
+          'features', 'Point', 4326,
+          ST_MakeEnvelope(-122.44, 37.76, -122.40, 37.79, 4326), true,
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          extent = EXCLUDED.extent,
+          metadata = EXCLUDED.metadata;
+
+  # Layer 2001 — LineString (line style)
+  - |
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility,
+          metadata
+      )
+      VALUES (
+          2001, 'Browser Lines', 'Line layer for browser compat tests',
+          'features', 'LineString', 4326,
+          ST_MakeEnvelope(-122.44, 37.76, -122.40, 37.79, 4326), true,
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          extent = EXCLUDED.extent,
+          metadata = EXCLUDED.metadata;
+
+  # Layer 2002 — Polygon (fill style)
+  - |
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility,
+          metadata
+      )
+      VALUES (
+          2002, 'Browser Polygons', 'Polygon layer for browser compat tests',
+          'features', 'Polygon', 4326,
+          ST_MakeEnvelope(-122.44, 37.76, -122.40, 37.79, 4326), true,
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+      )
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name,
+          description = EXCLUDED.description,
+          table_name = EXCLUDED.table_name,
+          geometry_type = EXCLUDED.geometry_type,
+          extent = EXCLUDED.extent,
+          metadata = EXCLUDED.metadata;
+
+  # Bind layers to service
+  - |
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES
+          ('browser_compat', 2000, 0),
+          ('browser_compat', 2001, 1),
+          ('browser_compat', 2002, 2)
+      ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+  # Layer fields — minimal set for queryRenderedFeatures assertions
+  - |
+      INSERT INTO honua.layer_fields (layer_id, field_name, field_type, field_order, nullable, description)
+      VALUES
+          (2000, 'objectid', 'Integer', 0, false, 'Object ID'),
+          (2000, 'name',     'String',  1, true,  'Feature name'),
+          (2000, 'shape',    'Geometry', 2, true,  'Geometry'),
+          (2001, 'objectid', 'Integer', 0, false, 'Object ID'),
+          (2001, 'name',     'String',  1, true,  'Feature name'),
+          (2001, 'shape',    'Geometry', 2, true,  'Geometry'),
+          (2002, 'objectid', 'Integer', 0, false, 'Object ID'),
+          (2002, 'name',     'String',  1, true,  'Feature name'),
+          (2002, 'shape',    'Geometry', 2, true,  'Geometry')
+      ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+  # Seed features — Point layer 2000 (cluster near SF center)
+  - |
+      INSERT INTO features (layer_id, geometry, attributes)
+      SELECT 2000, ST_SetSRID(ST_GeomFromText(wkt), 4326),
+             jsonb_build_object('name', name)
+      FROM (VALUES
+          ('pt-alpha',   'POINT(-122.4194 37.7749)'),
+          ('pt-beta',    'POINT(-122.4180 37.7760)'),
+          ('pt-gamma',   'POINT(-122.4210 37.7735)')
+      ) AS seed(name, wkt)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM features WHERE layer_id = 2000
+      );
+
+  # Seed features — Line layer 2001
+  - |
+      INSERT INTO features (layer_id, geometry, attributes)
+      SELECT 2001, ST_SetSRID(ST_GeomFromText(wkt), 4326),
+             jsonb_build_object('name', name)
+      FROM (VALUES
+          ('line-alpha', 'LINESTRING(-122.4300 37.7700, -122.4100 37.7800)'),
+          ('line-beta',  'LINESTRING(-122.4250 37.7750, -122.4050 37.7850)')
+      ) AS seed(name, wkt)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM features WHERE layer_id = 2001
+      );
+
+  # Seed features — Polygon layer 2002
+  - |
+      INSERT INTO features (layer_id, geometry, attributes)
+      SELECT 2002, ST_SetSRID(ST_GeomFromText(wkt), 4326),
+             jsonb_build_object('name', name)
+      FROM (VALUES
+          ('poly-alpha', 'POLYGON((-122.4250 37.7700, -122.4150 37.7700, -122.4150 37.7800, -122.4250 37.7800, -122.4250 37.7700))'),
+          ('poly-beta',  'POLYGON((-122.4200 37.7720, -122.4100 37.7720, -122.4100 37.7780, -122.4200 37.7780, -122.4200 37.7720))')
+      ) AS seed(name, wkt)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM features WHERE layer_id = 2002
+      );
