@@ -34,6 +34,8 @@ Legend:
 
 The four spatial analytics extensions are Pro-tier (ADR-0024) and return HTTP 403 Forbidden with a `StandardErrorResponse` body (title `Forbidden`, detail naming the blocked operation and current edition) on Community, mirroring the PrintingTools layout-template gate. On deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider), the same routes return HTTP 501 Not Implemented with a `StandardErrorResponse` body — see the [DuckDB provider](../../operator/duckdb-provider.md#write-operations-return-errors) doc for the full envelope. They share their handler implementations with the GeoServices REST surface — see the [FeatureServer matrix](../feature-server-matrix.md#honua-spatial-analytics-extensions-pro-tier) for parameter semantics, limits, and response shape (`metadata.operation`, `metadata.inputTruncated`, `metadata.resultTruncated`, `metadata.maxInputFeatures`, `metadata.maxOutputRows`).
 
+The extensions share the same POST-body parser as FeatureServer, so callers can send `application/json` or `application/x-www-form-urlencoded`; unsupported POST content types return HTTP 415 Unsupported Media Type. Responses always use `application/geo+json` with geometry normalized to WGS 84 / EPSG:4326. The shared filter bundle supports `where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, and `timeRelation`; distance-based GeoServices spatial relationships (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) are rejected to avoid conflicting with the operation-specific `distance` parameter on spatial join and buffer aggregate.
+
 ## Items query parameter coverage
 
 Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.

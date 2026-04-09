@@ -86,6 +86,53 @@ curl -X POST "http://localhost:8080/rest/services/1/FeatureServer/0/addFeatures"
   -d '{"features":[{"geometry":{"x":-122.42,"y":37.77},"attributes":{"name":"New Place"}}]}'
 ```
 
+### **Spatial Analytics: Cluster Features**
+
+FeatureServer analytics routes accept the usual GeoServices-style POST body. The legacy `f=json` flag is tolerated for GeoServices parity, but the response is always GeoJSON (`application/geo+json`) with WGS 84 coordinates and a `metadata` envelope.
+
+```bash
+curl -X POST "http://localhost:8080/rest/services/1/FeatureServer/0/queryClusters" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "algorithm": "dbscan",
+    "eps": 50000,
+    "minPoints": 1,
+    "returnHullPerCluster": true,
+    "where": "category = '\''test'\''",
+    "f": "json"
+  }'
+```
+
+**Example GeoJSON response (trimmed):**
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]]]
+      },
+      "properties": {
+        "clusterId": 0,
+        "featureCount": 2
+      }
+    }
+  ],
+  "numberReturned": 1,
+  "metadata": {
+    "operation": "cluster",
+    "inputTruncated": false,
+    "resultTruncated": false,
+    "maxInputFeatures": 1000,
+    "maxOutputRows": 100
+  }
+}
+```
+
+`outStatistics` is only valid when `returnHullPerCluster=true`. Shared filters include `where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `time`, and `timeRelation`. Distance-based GeoServices spatial relationships (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) are rejected on the analytics slice because `distance` already has operation-specific meaning on other analytics endpoints. `metadata.maxOutputRows` is populated only when the operation has a distinct result cap: hull-per-cluster responses and density return a number, while per-feature clusters, spatial join, and buffer aggregate return `null`.
+
 ---
 
 ## **MapServer REST**
@@ -306,6 +353,55 @@ curl -H "Accept: application/gml+xml;version=3.2" \
   "http://localhost:8080/ogc/features/collections/0/items"
 ```
 
+### **Spatial Analytics Extensions (Pro)**
+
+The OGC analytics mirrors accept the same request fields as the FeatureServer routes. `application/json` is the canonical content type, `application/x-www-form-urlencoded` is also accepted by the shared POST-body parser, and other POST media types return `415 Unsupported Media Type`.
+
+```bash
+curl -X POST "http://localhost:8080/ogc/features/collections/0/density" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "hex",
+    "cellSize": 20000,
+    "time": "2023-01-01T00:00:00Z,2023-12-31T23:59:59Z",
+    "timeRelation": "esriTimeRelationOverlaps"
+  }'
+```
+
+**Example GeoJSON response (trimmed):**
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-122.6, 37.6], [-122.4, 37.6], [-122.3, 37.8], [-122.4, 38.0], [-122.6, 38.0], [-122.7, 37.8], [-122.6, 37.6]]]
+      },
+      "properties": {
+        "count": 3
+      }
+    }
+  ],
+  "numberReturned": 1,
+  "metadata": {
+    "operation": "density",
+    "inputTruncated": false,
+    "resultTruncated": false,
+    "maxInputFeatures": 1000,
+    "maxOutputRows": 1000
+  }
+}
+```
+
+The other OGC analytics mirrors are:
+- `POST /ogc/features/collections/{collectionId}/clusters`
+- `POST /ogc/features/collections/{collectionId}/spatial-join`
+- `POST /ogc/features/collections/{collectionId}/buffer-aggregate`
+
+As with the FeatureServer mirror, `metadata.maxOutputRows` is populated for density and cluster hull mode, and `null` for per-feature clusters, spatial join, and buffer aggregate.
+
 ---
 
 ## **OData v4 API**
@@ -360,8 +456,11 @@ const map = new maplibregl.Map({
 
 **Common HTTP status codes:**
 - `400` Bad request or invalid parameters
+- `403` Feature or edition gate blocked the request
 - `401` Unauthorized (missing/invalid credentials)
 - `404` Layer or collection not found
+- `415` Unsupported media type for POST body parsing
+- `501` Capability is not available on the active provider
 - `500` Server error
 
 **Example error response (shape may vary by protocol):**

@@ -76,6 +76,18 @@ public sealed class OpenApiDriftTests
             schemaRef.Should().Be("#/components/schemas/SpatialAnalyticsFeatureCollection");
         }
 
+        var h3SchemaRef = paths.GetProperty("/collections/{collectionId}/h3")
+            .GetProperty("get")
+            .GetProperty("responses")
+            .GetProperty("200")
+            .GetProperty("content")
+            .GetProperty("application/geo+json")
+            .GetProperty("schema")
+            .GetProperty("$ref")
+            .GetString();
+
+        h3SchemaRef.Should().Be("#/components/schemas/FeatureCollection");
+
         var analyticsSchema = root.GetProperty("components")
             .GetProperty("schemas")
             .GetProperty("SpatialAnalyticsFeatureCollection");
@@ -85,6 +97,61 @@ public sealed class OpenApiDriftTests
             .GetProperty("$ref")
             .GetString()
             .Should().Be("#/components/schemas/SpatialAnalyticsMetadata");
+    }
+
+    [ArchitectureTest]
+    public void SpatialAnalyticsRequestSchemas_AdvertiseSharedFilters_AndDensityAvoidsUnsupportedStatistics()
+    {
+        string[] analyticsPaths =
+        [
+            "/collections/{collectionId}/clusters",
+            "/collections/{collectionId}/spatial-join",
+            "/collections/{collectionId}/buffer-aggregate",
+            "/collections/{collectionId}/density"
+        ];
+
+        string[] sharedFilters =
+        [
+            "where",
+            "objectIds",
+            "geometry",
+            "geometryType",
+            "inSR",
+            "spatialRel",
+            "time",
+            "timeRelation"
+        ];
+
+        foreach (var specPath in GetAnalyticsContractSpecPaths())
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(specPath));
+            var root = document.RootElement;
+            var paths = root.GetProperty("paths");
+
+            foreach (var path in analyticsPaths)
+            {
+                var propertyNames = GetRequestBodyPropertyNames(paths, path);
+                propertyNames.Should().Contain(sharedFilters, $"{specPath} should document the shared analytics filters on {path}");
+            }
+
+            var densityOperation = paths.GetProperty("/collections/{collectionId}/density").GetProperty("post");
+            GetRequestBodyPropertyNames(paths, "/collections/{collectionId}/density")
+                .Should()
+                .NotContain("outStatistics", $"{specPath} should not advertise unsupported density statistics");
+
+            densityOperation.GetProperty("description")
+                .GetString()
+                .Should()
+                .Contain("counts or weighted sums")
+                .And.NotContain("statistics per cell");
+
+            densityOperation.GetProperty("requestBody")
+                .GetProperty("description")
+                .GetString()
+                .Should()
+                .Contain("shared filters")
+                .And.NotContain("outStatistics");
+        }
     }
 
     private static void AssertSpecMatchesRegistry(
@@ -225,5 +292,42 @@ public sealed class OpenApiDriftTests
         }
 
         return Path.Combine(directory.FullName, "src", "Honua.Server", fileName);
+    }
+
+    private static string[] GetAnalyticsContractSpecPaths()
+        =>
+        [
+            ResolveOpenApiPath("openapi.json"),
+            ResolveDeveloperOpenApiPath("ogc-api-features.json")
+        ];
+
+    private static string ResolveDeveloperOpenApiPath(string fileName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        if (directory == null)
+        {
+            throw new FileNotFoundException("Unable to locate repository root for developer OpenAPI specifications.");
+        }
+
+        return Path.Combine(directory.FullName, "docs", "developer", "api-specs", fileName);
+    }
+
+    private static HashSet<string> GetRequestBodyPropertyNames(JsonElement paths, string path)
+    {
+        return paths.GetProperty(path)
+            .GetProperty("post")
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema")
+            .GetProperty("properties")
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 }
