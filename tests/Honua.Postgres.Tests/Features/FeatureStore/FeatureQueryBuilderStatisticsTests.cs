@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
@@ -52,6 +53,35 @@ public sealed class FeatureQueryBuilderStatisticsTests
         result.Sql.Should().Contain("AVG((attributes->>'ratio')::numeric) AS \"avg_ratio\"");
         result.Sql.Should().NotContain("MIN((attributes->>'name')::numeric)");
         result.Sql.Should().NotContain("MAX((attributes->>'created_at')::numeric)");
+    }
+
+    [Fact]
+    public void BuildStatisticsQuery_WithNumericFieldTypeHint_CastsMinAndMaxToNumeric()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Min,
+                    OnStatisticField = "bucket",
+                    OutStatisticFieldName = "min_bucket",
+                    FieldType = FieldType.Integer
+                },
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Max,
+                    OnStatisticField = "bucket",
+                    OutStatisticFieldName = "max_bucket",
+                    FieldType = FieldType.Integer
+                })
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("MIN((attributes->>'bucket')::numeric) AS \"min_bucket\"");
+        result.Sql.Should().Contain("MAX((attributes->>'bucket')::numeric) AS \"max_bucket\"");
     }
 
     private static FeatureQueryBuilder CreateQueryBuilder()

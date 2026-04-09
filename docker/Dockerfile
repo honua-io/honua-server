@@ -6,8 +6,12 @@
 # JIT build for maximum compatibility (AOT via docker/Dockerfile.aot)
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
+# Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:a65df8d9ad0661a1a785a4f26188b3a2826540d448df317ac69cfb6e801e1592
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:8c7671a6f0f984d0c102ee70d61e8010857de032b320561dea97cc5781aea5f8
+
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
 # glibc compat required for Grpc.Tools protoc binary on Alpine/musl
@@ -67,7 +71,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 
 # Security: Install runtime dependencies
 RUN apk add --no-cache \

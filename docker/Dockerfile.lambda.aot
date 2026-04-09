@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1.7
 # AWS Lambda-targeted Honua image (AOT) with Lambda Web Adapter.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:f061e5a7532b36fa1d1b684857fe1f504ba92115b9934f154643266613c44c62
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:a2bfa45d1d1b158c9374d010ccef889e245b5ac3713e48565d27845558fb2a93
+
+FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
 RUN apt-get update && \
@@ -53,7 +57,7 @@ RUN case "${TARGETARCH:-amd64}" in \
     rm -rf /app/BlazorDebugProxy /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
+FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
 

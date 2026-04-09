@@ -767,6 +767,537 @@
           }
         }
       }
+    },
+    "/collections/{collectionId}/clusters": {
+      "post": {
+        "summary": "Spatial clustering for a collection (Pro)",
+        "description": "Runs DBSCAN or K-Means clustering over the collection features and returns either per-feature cluster assignments or per-cluster convex hulls. `outStatistics` requires `returnHullPerCluster=true` (the aggregate columns only exist in the GROUP BY cluster-hull path); supplying both `returnHullPerCluster=false` and `outStatistics` returns HTTP 400. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Clustering request payload (algorithm, parameters, and optional shared filters)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "type": "string",
+                    "enum": ["dbscan", "kmeans"],
+                    "default": "dbscan",
+                    "description": "Clustering algorithm. When omitted, defaults to 'dbscan'."
+                  },
+                  "eps": {
+                    "type": "number",
+                    "description": "DBSCAN neighborhood distance in meters. Required when algorithm is 'dbscan'."
+                  },
+                  "minPoints": {
+                    "type": "integer",
+                    "description": "DBSCAN minimum cluster size. Required when algorithm is 'dbscan'."
+                  },
+                  "k": {
+                    "type": "integer",
+                    "description": "K-Means cluster count. Required when algorithm is 'kmeans'."
+                  },
+                  "returnHullPerCluster": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Return per-cluster convex hulls instead of per-feature assignments. Must be true when outStatistics is supplied — aggregate columns are only emitted in the hull-per-cluster GROUP BY path."
+                  },
+                  "outStatistics": {
+                    "type": "array",
+                    "description": "Optional statistic definitions evaluated per cluster. Only honored when returnHullPerCluster=true; supplying outStatistics with returnHullPerCluster=false returns HTTP 400.",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "where": {
+                    "type": "string",
+                    "description": "ArcGIS SQL filter applied before clustering."
+                  },
+                  "objectIds": {
+                    "type": "string",
+                    "description": "Comma-separated list of integer feature identifiers used to restrict the input set before clustering."
+                  },
+                  "geometry": {
+                    "description": "GeoServices geometry filter applied before clustering. May be supplied as a GeoServices geometry JSON object or the equivalent serialized JSON string.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "geometryType": {
+                    "type": "string",
+                    "description": "GeoServices geometry type for the geometry filter (for example esriGeometryPoint, esriGeometryEnvelope, or esriGeometryPolygon)."
+                  },
+                  "inSR": {
+                    "description": "Spatial reference for the geometry filter, expressed as a WKID, well-known text string, or spatial-reference JSON object understood by the FeatureServer spatial-reference resolver.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "spatialRel": {
+                    "type": "string",
+                    "description": "GeoServices spatial relationship applied with geometry. Distance-based relationships are not supported on analytics endpoints because distance is operation-specific."
+                  },
+                  "time": {
+                    "type": "string",
+                    "description": "FeatureServer time filter interval applied before clustering."
+                  },
+                  "timeRelation": {
+                    "type": "string",
+                    "description": "FeatureServer temporal relationship used with the time filter."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cluster assignments or hulls as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid clustering parameters or filter syntax"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/spatial-join": {
+      "post": {
+        "summary": "Spatial join against a target collection (Pro)",
+        "description": "Joins features from the source collection against a join collection using a spatial predicate (intersects, contains, within, dwithin) and optionally aggregates carry fields and statistics. The join layer is identified by its integer layer id (the same value used as the OGC collection id). Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Source (target) collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Spatial join request payload (join layer id, predicate, optional distance, carry fields, outStatistics, and shared filters)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["joinLayerId"],
+                "properties": {
+                  "joinLayerId": {
+                    "type": "integer",
+                    "description": "Integer id of the layer to join against. Must differ from the source collection id."
+                  },
+                  "predicate": {
+                    "type": "string",
+                    "default": "intersects",
+                    "enum": ["intersects", "contains", "within", "dwithin"]
+                  },
+                  "distance": {
+                    "type": "number",
+                    "description": "Distance in meters. Required when predicate is 'dwithin'."
+                  },
+                  "carryFields": {
+                    "type": "string",
+                    "description": "Comma-separated list of join-layer field names to aggregate onto each target row."
+                  },
+                  "outStatistics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "where": {
+                    "type": "string",
+                    "description": "ArcGIS SQL filter applied before the spatial join."
+                  },
+                  "objectIds": {
+                    "type": "string",
+                    "description": "Comma-separated list of integer feature identifiers used to restrict the target input set before the spatial join."
+                  },
+                  "geometry": {
+                    "description": "GeoServices geometry filter applied before the spatial join. May be supplied as a GeoServices geometry JSON object or the equivalent serialized JSON string.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "geometryType": {
+                    "type": "string",
+                    "description": "GeoServices geometry type for the geometry filter (for example esriGeometryPoint, esriGeometryEnvelope, or esriGeometryPolygon)."
+                  },
+                  "inSR": {
+                    "description": "Spatial reference for the geometry filter, expressed as a WKID, well-known text string, or spatial-reference JSON object understood by the FeatureServer spatial-reference resolver.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "spatialRel": {
+                    "type": "string",
+                    "description": "GeoServices spatial relationship applied with geometry. Distance-based relationships are not supported on analytics endpoints because distance is operation-specific."
+                  },
+                  "time": {
+                    "type": "string",
+                    "description": "FeatureServer time filter interval applied before the spatial join."
+                  },
+                  "timeRelation": {
+                    "type": "string",
+                    "description": "FeatureServer temporal relationship used with the time filter."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Joined features as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid join parameters"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/buffer-aggregate": {
+      "post": {
+        "summary": "Buffer + aggregate for a collection (Pro)",
+        "description": "Buffers features by a configurable radius and optionally dissolves overlapping buffers, groups by attributes, and emits aggregate statistics. `outStatistics` requires `dissolve=true` (the aggregate columns only exist in the dissolved group-by path); supplying both `dissolve=false` and `outStatistics` returns HTTP 400. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Buffer aggregate request payload (distance, unit, dissolve flag, optional groupByFields, outStatistics, and shared filters)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["distance"],
+                "properties": {
+                  "distance": {
+                    "type": "number",
+                    "description": "Buffer radius. Interpreted in the supplied unit (default meters). The server enforces an operator-configured maximum after unit conversion."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "default": "meters",
+                    "enum": ["meters", "kilometers", "feet", "miles"],
+                    "description": "Unit of measure for distance. Aliases m/km/ft/mi are also accepted."
+                  },
+                  "dissolve": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Union overlapping buffers within each group. Must be true when outStatistics is supplied — the aggregate columns are only emitted in the dissolved GROUP BY path."
+                  },
+                  "groupByFields": {
+                    "type": "string",
+                    "description": "Comma-separated list of field names to group buffers by before dissolving."
+                  },
+                  "outStatistics": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "where": {
+                    "type": "string",
+                    "description": "ArcGIS SQL filter applied before the buffer aggregate operation."
+                  },
+                  "objectIds": {
+                    "type": "string",
+                    "description": "Comma-separated list of integer feature identifiers used to restrict the input set before buffer aggregation."
+                  },
+                  "geometry": {
+                    "description": "GeoServices geometry filter applied before buffer aggregation. May be supplied as a GeoServices geometry JSON object or the equivalent serialized JSON string.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "geometryType": {
+                    "type": "string",
+                    "description": "GeoServices geometry type for the geometry filter (for example esriGeometryPoint, esriGeometryEnvelope, or esriGeometryPolygon)."
+                  },
+                  "inSR": {
+                    "description": "Spatial reference for the geometry filter, expressed as a WKID, well-known text string, or spatial-reference JSON object understood by the FeatureServer spatial-reference resolver.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "spatialRel": {
+                    "type": "string",
+                    "description": "GeoServices spatial relationship applied with geometry. Distance-based relationships are not supported on analytics endpoints because distance is operation-specific."
+                  },
+                  "time": {
+                    "type": "string",
+                    "description": "FeatureServer time filter interval applied before buffer aggregation."
+                  },
+                  "timeRelation": {
+                    "type": "string",
+                    "description": "FeatureServer temporal relationship used with the time filter."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Buffered features as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid buffer parameters"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
+          }
+        }
+      }
+    },
+    "/collections/{collectionId}/density": {
+      "post": {
+        "summary": "Density binning for a collection (Pro)",
+        "description": "Bins features into a hexagonal or square grid at a configurable cell size and returns counts or weighted sums per cell. Pro-tier feature gated by ADR-0024.",
+        "tags": [
+          "OGC API Features",
+          "Spatial Analytics"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Density request payload (grid mode, cell size, optional weight field, and shared filters)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["cellSize"],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "default": "hex",
+                    "enum": ["hex", "square"],
+                    "description": "Grid type. Aliases 'hexgrid', 'hex-grid', 'squaregrid', 'square-grid' are also accepted."
+                  },
+                  "cellSize": {
+                    "type": "number",
+                    "description": "Cell size in meters. Bounded by the operator-configured min/max density cell size."
+                  },
+                  "weightField": {
+                    "type": "string",
+                    "description": "Optional numeric field summed per cell instead of feature counts."
+                  },
+                  "where": {
+                    "type": "string",
+                    "description": "ArcGIS SQL filter applied before density binning."
+                  },
+                  "objectIds": {
+                    "type": "string",
+                    "description": "Comma-separated list of integer feature identifiers used to restrict the input set before density binning."
+                  },
+                  "geometry": {
+                    "description": "GeoServices geometry filter applied before density binning. May be supplied as a GeoServices geometry JSON object or the equivalent serialized JSON string.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "geometryType": {
+                    "type": "string",
+                    "description": "GeoServices geometry type for the geometry filter (for example esriGeometryPoint, esriGeometryEnvelope, or esriGeometryPolygon)."
+                  },
+                  "inSR": {
+                    "description": "Spatial reference for the geometry filter, expressed as a WKID, well-known text string, or spatial-reference JSON object understood by the FeatureServer spatial-reference resolver.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "spatialRel": {
+                    "type": "string",
+                    "description": "GeoServices spatial relationship applied with geometry. Distance-based relationships are not supported on analytics endpoints because distance is operation-specific."
+                  },
+                  "time": {
+                    "type": "string",
+                    "description": "FeatureServer time filter interval applied before density binning."
+                  },
+                  "timeRelation": {
+                    "type": "string",
+                    "description": "FeatureServer temporal relationship used with the time filter."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Density bins as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpatialAnalyticsFeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid density parameters"
+          },
+          "403": {
+            "description": "Pro-tier license required"
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "501": {
+            "description": "Spatial analytics backend not available — the active feature-store provider does not ship a spatial analytics reader (for example, the DuckDB read-only provider). Permanent condition until providers are switched; not a transient failure."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -887,6 +1418,62 @@
           "timeStamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SpatialAnalyticsFeatureCollection": {
+        "type": "object",
+        "required": [
+          "type",
+          "features",
+          "numberReturned",
+          "metadata"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "FeatureCollection"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoJsonFeature"
+            }
+          },
+          "numberReturned": {
+            "type": "integer"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/SpatialAnalyticsMetadata"
+          }
+        }
+      },
+      "SpatialAnalyticsMetadata": {
+        "type": "object",
+        "required": [
+          "operation",
+          "inputTruncated",
+          "resultTruncated",
+          "maxInputFeatures"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "inputTruncated": {
+            "type": "boolean"
+          },
+          "resultTruncated": {
+            "type": "boolean"
+          },
+          "maxInputFeatures": {
+            "type": "integer"
+          },
+          "maxOutputRows": {
+            "type": "integer",
+            "nullable": true
           }
         }
       },

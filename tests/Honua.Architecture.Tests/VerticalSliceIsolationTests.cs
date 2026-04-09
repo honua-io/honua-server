@@ -44,7 +44,8 @@ public sealed class VerticalSliceIsolationTests
         "Streaming",
         "CloudCog",
         "Infrastructure", // Infrastructure is allowed to be referenced by others
-        "StaticMap"
+        "StaticMap",
+        "SpatialAnalytics"
     };
 
     [ArchitectureTest]

@@ -16,6 +16,9 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Access individual features
 - Perform CRUD operations
 - Use advanced CQL2 filtering
+- Use the Honua spatial analytics extensions (`/clusters`, `/spatial-join`, `/buffer-aggregate`, `/density`)
+
+> **Contract note**: the versioned OGC Features snapshot includes Honua's POST-only spatial analytics extension paths plus the shared `SpatialAnalyticsFeatureCollection` / `SpatialAnalyticsMetadata` response schema used by those operations. Analytics responses are always `application/geo+json` in WGS 84; per-feature cluster and spatial-join rows keep `properties.objectId` plus nested `properties.attributes`, while aggregate outputs use operation-specific summary fields such as `featureCount`, `cellId`, and optional `weight`. The handlers also accept `application/x-www-form-urlencoded` at runtime via the shared POST-body parser even though `application/json` remains the canonical request content type in the generated OpenAPI.
 
 {% swagger src="ogc-api-features.json" %}
 {% endswagger %}

@@ -54,6 +54,9 @@ public static class FeatureCatalog
 
         /// <summary>Raster and imagery features.</summary>
         public const string Raster = "Raster";
+
+        /// <summary>Spatial analytics — clustering, joins, density, buffer aggregate.</summary>
+        public const string Analytics = "Analytics";
     }
 
     /// <summary>
@@ -146,5 +149,15 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Serve COG files directly from S3/Azure/GCS via HTTP range requests."),
         new("raster.cloud-storage-config", "Cloud Storage Configuration", Categories.Raster,
             HonuaEdition.Pro, "Configure cloud storage connections for direct raster serving."),
+
+        // Analytics — Pro (PostGIS-backed spatial analytics on filtered layer subsets)
+        new("analytics.clustering", "Spatial Clustering", Categories.Analytics,
+            HonuaEdition.Pro, "Server-side DBSCAN and K-Means clustering with optional cluster hulls."),
+        new("analytics.spatial-join", "Spatial Join", Categories.Analytics,
+            HonuaEdition.Pro, "Cross-layer spatial join with intersects/contains/within/dwithin predicates."),
+        new("analytics.buffer-aggregate", "Buffer Aggregate", Categories.Analytics,
+            HonuaEdition.Pro, "Buffer features by a fixed distance and dissolve or aggregate per group."),
+        new("analytics.density", "Density Binning", Categories.Analytics,
+            HonuaEdition.Pro, "Hex or square grid density (heatmap) binning over a filtered subset."),
     ];
 }

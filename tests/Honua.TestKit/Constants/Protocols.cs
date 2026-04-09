@@ -118,4 +118,10 @@ public static class Protocols
     /// STAC (SpatioTemporal Asset Catalog) API.
     /// </summary>
     public const string Stac = "STAC";
+
+    /// <summary>
+    /// Pro-tier spatial analytics endpoints (clustering, spatial join, buffer
+    /// aggregate, density binning). Mirrored under both REST and OGC route families.
+    /// </summary>
+    public const string SpatialAnalytics = "SpatialAnalytics";
 }

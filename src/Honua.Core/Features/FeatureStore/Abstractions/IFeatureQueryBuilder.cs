@@ -4,6 +4,7 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
@@ -204,5 +205,51 @@ internal interface IFeatureQueryBuilder
         FeatureQuery? query,
         TileOptions tileOptions,
         TileLimits tileLimits,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a spatial clustering query (DBSCAN or K-Means) over the filtered
+    /// subset of <paramref name="layerId"/>. Honors <see cref="ClusterQuery.ReturnHullPerCluster"/>
+    /// to choose between an aggregated hull-per-cluster output and a per-feature
+    /// output that carries the assigned cluster id.
+    /// </summary>
+    ParameterizedQuery BuildClusterQuery(
+        int layerId,
+        FeatureQuery query,
+        ClusterQuery clusterQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a buffer-aggregate query that buffers each input feature by a fixed
+    /// distance and either dissolves the buffered geometries with <c>ST_Union</c>
+    /// per group or returns the per-row buffers.
+    /// </summary>
+    ParameterizedQuery BuildBufferAggregateQuery(
+        int layerId,
+        FeatureQuery query,
+        BufferAggregateQuery bufferQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a density (heatmap) query that bins the filtered subset into a hex
+    /// or square grid and returns one row per occupied cell with feature count or
+    /// weighted sum.
+    /// </summary>
+    ParameterizedQuery BuildDensityQuery(
+        int layerId,
+        FeatureQuery query,
+        DensityQuery densityQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a spatial join query that joins the filtered target-layer subset to
+    /// a join layer using the requested spatial predicate, optionally enriching
+    /// each target row with carry fields or aggregate statistics computed over
+    /// matching join rows.
+    /// </summary>
+    ParameterizedQuery BuildSpatialJoinQuery(
+        int targetLayerId,
+        FeatureQuery targetQuery,
+        SpatialJoinQuery joinQuery,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 }

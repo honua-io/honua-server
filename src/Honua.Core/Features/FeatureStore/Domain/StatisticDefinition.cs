@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Catalog.Domain;
+
 namespace Honua.Core.Features.FeatureStore.Domain;
 
 /// <summary>
@@ -22,6 +25,14 @@ public readonly record struct StatisticDefinition
     /// The output alias for the computed statistic in results
     /// </summary>
     public required string OutStatisticFieldName { get; init; }
+
+    /// <summary>
+    /// Optional field type hint supplied by the caller when the layer schema is
+    /// known. Providers use this to emit correctly typed aggregates for
+    /// JSON-backed fields without changing the public request contract.
+    /// </summary>
+    [JsonIgnore]
+    public FieldType? FieldType { get; init; }
 }
 
 /// <summary>

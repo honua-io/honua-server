@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.DuckDB.Features.Infrastructure;
 
@@ -542,6 +543,60 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
     {
         throw new NotSupportedException("DuckDB provider does not support H3 tile generation.");
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The spatial analytics endpoints (ticket #342) are PostGIS-only — they rely on
+    /// <c>ST_ClusterDBSCAN</c>/<c>ST_ClusterKMeans</c>, which DuckDB Spatial does not provide.
+    /// The DuckDB provider is read-only for catalog/GeoParquet workflows and intentionally
+    /// surfaces this gap with the same <see cref="NotSupportedException"/> pattern used by
+    /// the MVT and H3 helpers above.
+    /// </remarks>
+    public ParameterizedQuery BuildClusterQuery(
+        int layerId,
+        FeatureQuery query,
+        ClusterQuery clusterQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+    {
+        throw new NotSupportedException(
+            "DuckDB provider does not support spatial clustering (ST_ClusterDBSCAN / ST_ClusterKMeans).");
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See <see cref="BuildClusterQuery"/> for the rationale behind the DuckDB gap.</remarks>
+    public ParameterizedQuery BuildBufferAggregateQuery(
+        int layerId,
+        FeatureQuery query,
+        BufferAggregateQuery bufferQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+    {
+        throw new NotSupportedException(
+            "DuckDB provider does not support buffer-aggregate analytics (requires PostGIS ST_Buffer/ST_Union).");
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See <see cref="BuildClusterQuery"/> for the rationale behind the DuckDB gap.</remarks>
+    public ParameterizedQuery BuildDensityQuery(
+        int layerId,
+        FeatureQuery query,
+        DensityQuery densityQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+    {
+        throw new NotSupportedException(
+            "DuckDB provider does not support density binning (requires PostGIS ST_HexagonGrid / ST_SquareGrid).");
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See <see cref="BuildClusterQuery"/> for the rationale behind the DuckDB gap.</remarks>
+    public ParameterizedQuery BuildSpatialJoinQuery(
+        int targetLayerId,
+        FeatureQuery targetQuery,
+        SpatialJoinQuery joinQuery,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
+    {
+        throw new NotSupportedException(
+            "DuckDB provider does not support spatial join analytics (requires PostGIS predicate pushdown).");
     }
 
     #region Private helpers
