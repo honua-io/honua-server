@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Security;
 [Operation(Operations.Security)]
 public sealed class SecurityComplianceTests : IAsyncLifetime
 {
-    private const string AdminPassword = "valid-test-key";
+    private const string AdminPassword = "Valid-Test-Key123!";
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
     private static readonly string[] _sensitiveDataPatterns =
