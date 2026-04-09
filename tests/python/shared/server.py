@@ -104,6 +104,12 @@ class HonuaServer:
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",
         })
+        # Keep protocol/client compatibility runs focused on external behavior.
+        # Query-cache behavior is covered separately in dedicated .NET tests.
+        env.setdefault(
+            "Database__QueryCache__EnableAutomaticCaching",
+            os.getenv("HONUA_TEST_ENABLE_QUERY_CACHE", "false"),
+        )
         # Provide deterministic test keys for connection encryption unless supplied.
         env.setdefault(
             "Security__ConnectionEncryption__MasterKey",
