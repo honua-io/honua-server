@@ -40,17 +40,44 @@ interface CertEnvelope {
   extensions: CertResult[];
 }
 
-// CERT IDs that this reporter tracks. Results not matching these are ignored.
-const CERT_IDS = [
-  'CERT-CONN-01', 'CERT-RNDR-01',
-];
+// Full 24-ID common-core matrix from docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md
+// (18 base IDs plus the six visual / style slice IDs added by ticket #478).
+const COMMON_CORE_IDS = [
+  'CERT-CONN-01', 'CERT-CONN-02',
+  'CERT-AUTH-01', 'CERT-AUTH-02',
+  'CERT-DISC-01', 'CERT-DISC-02',
+  'CERT-SCHM-01', 'CERT-SCHM-02',
+  'CERT-QFLT-01', 'CERT-QFLT-02',
+  'CERT-PAGE-01', 'CERT-PAGE-02',
+  'CERT-GEOM-01', 'CERT-GEOM-02',
+  'CERT-ERRH-01', 'CERT-ERRH-02',
+  'CERT-RNDR-01', 'CERT-RNDR-02',
+  // Visual / style certification slice (ticket #478) — append-only.
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
+] as const;
+
+// IDs that apply to MVT but are not exercisable in the browser visual workflow.
+// Matches the MapLibre MVT workflow guidance in the evidence spec: record
+// these as `skip` with a "covered by automated JS tests" note.
+const COVERED_BY_OTHER_JS_TESTS: ReadonlySet<string> = new Set([
+  'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02', 'CERT-ERRH-01',
+]);
+
+// The six visual / style slice IDs — emitted as `skip` with a pending-fixture
+// note because the MapLibre MVT lane does not yet substantiate them.
+const SLICE_TEST_IDS: ReadonlySet<string> = new Set([
+  'CERT-RNDR-SYM-01', 'CERT-RNDR-LIN-01', 'CERT-RNDR-FIL-01',
+  'CERT-RNDR-LBL-01', 'CERT-RNDR-SPR-01', 'CERT-RNDR-URL-01',
+]);
 
 const EXTENSION_IDS = [
   'JS-EXT-01', 'JS-EXT-02',
 ];
 
-// Regex to extract cert IDs from test titles, e.g. "[CERT-RNDR-01]".
-const CERT_ID_REGEX = /\[(CERT-[A-Z]+-\d+|JS-EXT-\d+)]/g;
+// Regex to extract cert IDs from test titles, e.g. "[CERT-RNDR-01]" or
+// the 4-part slice IDs like "[CERT-RNDR-SYM-01]".
+const CERT_ID_REGEX = /\[((?:[A-Z]+-)+\d+)]/g;
 
 class CertReporter implements Reporter {
   private results = new Map<string, { status: CertResult['status']; duration_ms: number; notes: string }>();
@@ -70,10 +97,14 @@ class CertReporter implements Reporter {
       : '';
 
     for (const id of ids) {
-      // If a test passed but we already have a pass, keep it. If the
-      // previous was fail and this is pass, the pass wins (retry).
+      // Keep the worst status: fail > pass > skip. When the same CERT ID is
+      // attached to multiple tests (or a test is retried), a later pass must
+      // not mask an earlier failure.
       const prev = this.results.get(id);
-      if (prev && prev.status === 'pass' && status !== 'pass') continue;
+      if (prev) {
+        if (prev.status === 'fail') continue;
+        if (prev.status === 'pass' && status !== 'fail') continue;
+      }
       this.results.set(id, { status, duration_ms: result.duration, notes });
     }
   }
@@ -89,7 +120,53 @@ class CertReporter implements Reporter {
       clientVersion = 'unknown';
     }
 
-    const buildResult = (id: string): CertResult => {
+    const buildSeededResult = (id: string): CertResult => {
+      const tracked = this.results.get(id);
+      if (tracked) {
+        return {
+          test_case_id: id,
+          status: tracked.status,
+          duration_ms: tracked.duration_ms,
+          measured_count: null,
+          measured_delta: null,
+          notes: tracked.notes,
+          evidence_ref: '',
+        };
+      }
+      if (SLICE_TEST_IDS.has(id)) {
+        return {
+          test_case_id: id,
+          status: 'skip',
+          duration_ms: null,
+          measured_count: null,
+          measured_delta: null,
+          notes: 'pending-fixture: visual / style slice ID not yet substantiated by the MapLibre MVT lane; tracked in visual-style-certification-slice.md',
+          evidence_ref: '',
+        };
+      }
+      if (COVERED_BY_OTHER_JS_TESTS.has(id)) {
+        return {
+          test_case_id: id,
+          status: 'skip',
+          duration_ms: null,
+          measured_count: null,
+          measured_delta: null,
+          notes: 'Covered by JS/featureserver automated tests.',
+          evidence_ref: '',
+        };
+      }
+      return {
+        test_case_id: id,
+        status: 'not-applicable',
+        duration_ms: null,
+        measured_count: null,
+        measured_delta: null,
+        notes: '',
+        evidence_ref: '',
+      };
+    };
+
+    const buildExtensionResult = (id: string): CertResult => {
       const r = this.results.get(id);
       return {
         test_case_id: id,
@@ -102,46 +179,8 @@ class CertReporter implements Reporter {
       };
     };
 
-    const certResults = CERT_IDS.map(buildResult);
-    const extResults = EXTENSION_IDS.map(buildResult);
-
-    // Fill non-applicable CERT IDs that aren't relevant to MVT browser tests.
-    const allCertIds = [
-      'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
-      'CERT-DISC-01', 'CERT-DISC-02', 'CERT-SCHM-01', 'CERT-SCHM-02',
-      'CERT-QFLT-01', 'CERT-QFLT-02', 'CERT-PAGE-01', 'CERT-PAGE-02',
-      'CERT-GEOM-01', 'CERT-GEOM-02', 'CERT-ERRH-01', 'CERT-ERRH-02',
-      'CERT-RNDR-01', 'CERT-RNDR-02',
-    ];
-
-    const fullResults: CertResult[] = allCertIds.map((id) => {
-      const tracked = certResults.find((r) => r.test_case_id === id);
-      if (tracked) return tracked;
-      // IDs covered by JS/featureserver automated tests.
-      const coveredByVitest = [
-        'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02', 'CERT-ERRH-01',
-      ];
-      if (coveredByVitest.includes(id)) {
-        return {
-          test_case_id: id,
-          status: 'skip' as const,
-          duration_ms: null,
-          measured_count: null,
-          measured_delta: null,
-          notes: 'Covered by JS/featureserver automated tests.',
-          evidence_ref: '',
-        };
-      }
-      return {
-        test_case_id: id,
-        status: 'not-applicable' as const,
-        duration_ms: null,
-        measured_count: null,
-        measured_delta: null,
-        notes: '',
-        evidence_ref: '',
-      };
-    });
+    const fullResults: CertResult[] = COMMON_CORE_IDS.map(buildSeededResult);
+    const extResults = EXTENSION_IDS.map(buildExtensionResult);
 
     const summary = {
       total: fullResults.length,
