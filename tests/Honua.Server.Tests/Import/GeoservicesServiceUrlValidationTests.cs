@@ -67,6 +67,40 @@ public sealed class GeoservicesServiceUrlValidationTests
     }
 
     [UnitTest]
+    public async Task ValidateAsync_FeatureServerLayerUrl_ReturnsFailureWithoutResolution()
+    {
+        var resolverCalled = false;
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer/0",
+            (_, _) =>
+            {
+                resolverCalled = true;
+                return Task.FromResult(Array.Empty<IPAddress>());
+            });
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.InvalidServiceRootMessage);
+        resolverCalled.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_MapServerLayerUrl_ReturnsFailureWithoutResolution()
+    {
+        var resolverCalled = false;
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://example.com/arcgis/rest/services/Test/MapServer/0",
+            (_, _) =>
+            {
+                resolverCalled = true;
+                return Task.FromResult(Array.Empty<IPAddress>());
+            });
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Be(GeoservicesServiceUrlValidation.InvalidServiceRootMessage);
+        resolverCalled.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task ValidateAsync_PublicDnsResolution_ReturnsSuccess()
     {
         var result = await GeoservicesServiceUrlValidation.ValidateAsync(

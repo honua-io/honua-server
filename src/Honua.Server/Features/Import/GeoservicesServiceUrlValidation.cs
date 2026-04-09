@@ -18,6 +18,8 @@ internal static class GeoservicesServiceUrlValidation
 {
     internal const string InvalidHttpsUrlMessage = "ServiceUrl must be a valid HTTPS URL";
     internal const string EmbeddedCredentialsMessage = "ServiceUrl must not include embedded credentials.";
+    internal const string InvalidServiceRootMessage =
+        "ServiceUrl must target an ArcGIS Service root URL (FeatureServer or MapServer), not a layer/table URL.";
     internal const string DisallowedAddressMessage =
         "ServiceUrl resolves to a private, loopback, or unresolvable network address, which is not allowed.";
 
@@ -42,12 +44,32 @@ internal static class GeoservicesServiceUrlValidation
             return GeoservicesServiceUrlValidationResult.Failure(EmbeddedCredentialsMessage);
         }
 
+        if (!IsServiceRootUrl(uri))
+        {
+            return GeoservicesServiceUrlValidationResult.Failure(InvalidServiceRootMessage);
+        }
+
         if (await NetworkAddressValidator.IsDisallowedAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
         {
             return GeoservicesServiceUrlValidationResult.Failure(DisallowedAddressMessage);
         }
 
         return GeoservicesServiceUrlValidationResult.Success();
+    }
+
+    private static bool IsServiceRootUrl(Uri uri)
+    {
+        var segments = uri.AbsolutePath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        if (segments.Length == 0)
+        {
+            return false;
+        }
+
+        var lastSegment = segments[^1];
+        return lastSegment.Equals("FeatureServer", StringComparison.OrdinalIgnoreCase)
+               || lastSegment.Equals("MapServer", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Task<IPAddress[]> ResolveHostAddressesAsync(string host, CancellationToken cancellationToken)

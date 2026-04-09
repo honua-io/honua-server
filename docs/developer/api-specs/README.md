@@ -46,6 +46,10 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
 > Use the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
 >
+> **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
+> Request aliases normalize `sourceKind` to `geoserver-rest` or `arcgis-geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
+> Stable IDs cross-link `resources[*].styleIds`, `styles[*].resourceIds`, and `externalDependencies[*].resourceId` so review tooling can traverse the artifact without guessing by display name.
+>
 > **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
 
 **What you can do**:
@@ -53,6 +57,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Publish and configure layers from database tables
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
+- Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance

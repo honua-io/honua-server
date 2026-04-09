@@ -219,6 +219,8 @@ For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` di
 
 For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The server reads GeoParquet `geo` metadata for CRS detection and requires WKB geometry encoding. Non-WKB encodings are rejected. Nested column types (Struct, List, Map) are skipped with warnings. Rows with null geometry are skipped during both preview and import, and reported as warnings in the import response. Files with more than 100,000 rows in a single Parquet row group are rejected to maintain bounded memory usage; re-export such files with smaller row groups.
 
+For source-system migration planning, use the unified scan endpoint before starting any GeoServer or GeoServices import job. The scan response is a deterministic inventory artifact that records source identity and version, authentication posture, scan completeness, containers, resources, styles or renderers, external dependencies, spatial reference details, and compatibility classifications.
+
 ### **Import Endpoints**
 
 | Endpoint | Method | Purpose |
@@ -235,6 +237,99 @@ For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The se
 | `/api/v1/admin/import/jobs/{jobId}` | GET | Get import job status |
 | `/api/v1/admin/import/jobs/{jobId}/cancel` | POST | Cancel an import job |
 | `/api/v1/admin/import/limits` | GET | Get import limits/configuration |
+
+### **Migration Scanner Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/import/scan` | POST | Scan a supported source environment and return a deterministic migration inventory artifact |
+
+Request body:
+
+| Field | Required | Notes |
+|----------|--------|---------|
+| `sourceKind` | Yes | Accepted aliases: `geoserver`, `geoserver-rest`, `geoservices`, `arcgis-geoservices-rest`. The response normalizes this to `geoserver-rest` or `arcgis-geoservices-rest`. |
+| `sourceUrl` | Yes | Canonical source URL to scan. GeoServices requires an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`; layer or table URLs are rejected. GeoServer and GeoServices reject embedded credentials. GeoServices also rejects private, loopback, or unresolvable addresses. GeoServer follows the same HTTPS and address-safety rules in normal environments; test-only unsafe local URLs can be enabled separately. |
+| `username` | No | GeoServer basic-auth username. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
+| `password` | No | GeoServer basic-auth password. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
+| `timeoutSeconds` | No | Defaults to `120` for GeoServer scans and `30` for GeoServices scans. |
+| `includeStyleContent` | No | GeoServer-only. Fetches SLD documents for deeper classification and external graphic detection. Raw style documents are not returned in the artifact. |
+
+GeoServer example:
+
+```json
+{
+  "sourceKind": "geoserver",
+  "sourceUrl": "https://example.com/geoserver/rest",
+  "username": "admin",
+  "password": "geoserver",
+  "includeStyleContent": true
+}
+```
+
+GeoServices example:
+
+```json
+{
+  "sourceKind": "geoservices",
+  "sourceUrl": "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+  "timeoutSeconds": 10
+}
+```
+
+Successful response contract:
+
+| Field | Notes |
+|----------|--------|
+| `artifactKind` | Stable artifact identifier: `honua.migration.source-inventory`. |
+| `artifactVersion` | Current schema version: `1.0`. |
+| `sourceKind` | Canonical source kind: `geoserver-rest` or `arcgis-geoservices-rest`. |
+| `source` | Source identity, product, version, build, and service type metadata. |
+| `authPosture` | Observed authentication mode (`anonymous`, `basic`, `auth-required`, `anonymous-or-auth-required`, or `unknown`), whether usable credentials were supplied, whether access was confirmed, and any auth notes. |
+| `scanCompleteness` | Scan status (`complete`, `partial`, or `failed`) plus warnings and missing artifact categories. |
+| `summary` | Aggregate counts for containers, resources, styles, dependencies, and compatibility tallies. |
+| `overallCompatibility` | Roll-up compatibility level (`compatible`, `partial`, `incompatible`) with warnings and manual follow-up steps. |
+| `containers` | Deterministically ordered workspaces or services. |
+| `resources` | Deterministically ordered layers, tables, or layer groups. |
+| `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
+| `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references with secret-safe addresses for external URLs. |
+
+Artifact item details:
+
+| Section | Key fields | Notes |
+|----------|--------|---------|
+| `containers[*]` | `id`, `kind`, `name`, `title`, `description`, `isDefault`, `compatibility` | `id` stays stable across display-title changes. `kind` is typically `workspace` or `service`. |
+| `resources[*]` | `containerId`, `kind`, `geometryType`, `featureCount`, `hasAttachments`, `capabilities`, `spatialReferences`, `styleIds`, `externalDependencyIds`, `compatibility` | `hasAttachments` is omitted when the source does not report attachment state rather than being coerced to `false`. |
+| `styles[*]` | `kind`, `format`, `resourceIds`, `externalDependencyIds`, `metadata`, `compatibility` | `kind` is `style` for GeoServer and `renderer` for GeoServices. `metadata` carries deterministic planning details, not raw style documents. |
+| `externalDependencies[*]` | `resourceId`, `kind`, `dependencyType`, `address`, `metadata`, `spatialReferences`, `compatibility` | `resourceId` can point at a layer/table or the owning style/renderer. External addresses are sanitized and secret-like metadata values are redacted. |
+| `spatialReferences[*]` | `role`, `sourceValue`, `srid`, `crsUri`, `datum`, `unit`, `axisOrder`, `isGeographic` | Entries are emitted only when the scanner has meaningful CRS data to report. |
+
+The response body is the artifact itself, not a `success/data` admin envelope.
+
+Behavior notes:
+- `200 OK` means Honua produced an inventory artifact. Use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate before import or cutover decisions.
+- A `200 OK` artifact can still report `scanCompleteness.status = "failed"`. GeoServer uses that path for reachability, timeout, auth, and other discovery failures. GeoServices also uses it when anonymous discovery is blocked or the ArcGIS API returns a source-reported discovery error.
+- Failed GeoServer artifacts keep `authPosture.mode = "basic"` when both credentials were supplied; otherwise they use `anonymous-or-auth-required` and record failure details in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
+- GeoServer scans only send Basic auth when both `username` and `password` are present. Supplying only one credential field leaves the scan in anonymous mode and adds an explanatory auth note.
+- Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
+- External URL dependencies strip embedded credentials, query strings, and fragments before serialization, and the corresponding dependency IDs use stable hashed fingerprints instead of raw URLs.
+- GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
+- GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner. Successful GeoServices artifacts therefore report `authPosture.mode = "anonymous"`, while failed artifacts can report `auth-required` or `unknown`.
+- GeoServer can emit a synthetic `workspace:global` container when global styles or layer groups are discovered.
+- Stable artifact IDs are keyed from canonical source names rather than display text, so changing a source description does not churn container, resource, style, or dependency identifiers. Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Nullable scalar properties are omitted when the scanner has no value to emit.
+
+Failure semantics:
+- `400 Bad Request`: invalid JSON body, missing required fields, unsupported `sourceKind`, non-positive `timeoutSeconds`, invalid HTTPS requirements, invalid GeoServices service-root paths, embedded credentials in the URL, or disallowed private or loopback targets.
+- `200 OK` with `scanCompleteness.status = "failed"`: the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses this for auth-required, reachability, timeout, or unusable-metadata cases. GeoServices uses it for auth-required and source-reported ArcGIS discovery errors.
+- `502 Bad Gateway`: the scanner failed to connect to the source service. This is surfaced primarily for GeoServices; GeoServer transport failures are normalized into a failed artifact with HTTP `200`.
+- `504 Gateway Timeout`: the scanner exceeded the request timeout. This is surfaced primarily for GeoServices; GeoServer timeout failures are normalized into a failed artifact with HTTP `200`.
+
+The artifact includes:
+- source identity and version
+- auth posture and scan completeness
+- workspaces or services, layers or tables, styles or renderers, and external dependencies
+- CRS, datum, and unit details needed for migration planning
+- per-resource and overall compatibility assessments, warnings, and manual follow-up steps
 
 ### **GeoServices Import Endpoints**
 

@@ -160,6 +160,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/jobs"),
         new("GET", "/api/v1/admin/import/limits"),
+        new("POST", "/api/v1/admin/import/scan"),
 
         // v1 admin import endpoints (Geoservices)
         new("POST", "/api/v1/admin/import/geoservices/discover"),

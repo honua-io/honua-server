@@ -309,6 +309,93 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             });
         }
 
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            GeoServerDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new MigrationSourceInventoryArtifact
+            {
+                SourceKind = "geoserver-rest",
+                Source = new MigrationSourceIdentity
+                {
+                    DisplayName = "Demo GeoServer",
+                    BaseUrl = request.GeoServerRestUrl,
+                    Product = "GeoServer",
+                    Version = "2.28.0",
+                    ServiceType = "REST"
+                },
+                AuthPosture = new MigrationInventoryAuthPosture
+                {
+                    Mode = "anonymous",
+                    AccessConfirmed = true
+                },
+                ScanCompleteness = new MigrationInventoryCompleteness
+                {
+                    Status = "complete"
+                },
+                Summary = new MigrationInventorySummary
+                {
+                    ContainerCount = 1,
+                    ResourceCount = 1,
+                    StyleCount = 0,
+                    ExternalDependencyCount = 1,
+                    CompatibleCount = 2,
+                    PartiallyCompatibleCount = 0,
+                    IncompatibleCount = 0
+                },
+                OverallCompatibility = new MigrationCompatibilityAssessment
+                {
+                    Level = "compatible",
+                    Reason = "Test scan artifact."
+                },
+                Containers =
+                [
+                    new MigrationInventoryContainer
+                    {
+                        Id = "workspace:demo",
+                        Kind = "workspace",
+                        Name = "demo",
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "compatible",
+                            Reason = "Workspace can be migrated."
+                        }
+                    }
+                ],
+                Resources =
+                [
+                    new MigrationInventoryResource
+                    {
+                        Id = "layer:demo:states",
+                        ContainerId = "workspace:demo",
+                        Kind = "layer",
+                        Name = "states",
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "compatible",
+                            Reason = "Layer can be migrated."
+                        }
+                    }
+                ],
+                ExternalDependencies =
+                [
+                    new MigrationExternalDependency
+                    {
+                        Id = "datastore:demo:states",
+                        ContainerId = "workspace:demo",
+                        Kind = "datastore",
+                        Name = "states",
+                        DependencyType = "PostGIS",
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "compatible",
+                            Reason = "Dependency can be migrated."
+                        }
+                    }
+                ]
+            });
+        }
+
         public Task<GeoServerImportResult> ImportConfigurationAsync(
             GeoServerImportRequest request,
             CancellationToken cancellationToken = default)
