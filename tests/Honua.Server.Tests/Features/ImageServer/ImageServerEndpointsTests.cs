@@ -47,6 +47,8 @@ public class ImageServerEndpointsTests
 
         store.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(rasterInfo);
+        store.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([rasterInfo]);
         store.GetRasterInfoAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(rasterInfo);
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())

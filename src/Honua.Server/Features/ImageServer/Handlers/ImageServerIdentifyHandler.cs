@@ -5,7 +5,9 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
@@ -62,15 +64,6 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // Resolve the primary raster without scanning the entire layer.
-            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-            if (primaryRaster is null)
-            {
-                ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
-            }
-            var primaryRasterInfo = primaryRaster.Value;
-
             if (!string.IsNullOrWhiteSpace(request.GeometryType) &&
                 !string.Equals(request.GeometryType, SupportedGeometryType, StringComparison.OrdinalIgnoreCase))
             {
@@ -88,22 +81,51 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid geometry coordinates");
             }
 
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            {
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, timeError ?? "Invalid time parameter");
+                return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
+            }
+
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+            var selectionQuery = new RasterSelectionQuery
+            {
+                Geometry = ImageServerMosaicHelpers.CreatePointGeometry(x.Value, y.Value),
+                GeometrySrid = srid,
+                Timestamp = timestamp
+            };
+            var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            if (selectedRasters.Length == 0)
+            {
+                ImageServerLog.NoRastersFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);
 
             // Identify pixel values
-            var pixelResult = await _rasterStore.IdentifyAsync(
-                layerId,
-                primaryRasterInfo.Id,
-                x.Value,
-                y.Value,
-                srid,
-                cancellationToken);
+            var pixelResult = selectedRasters.Length == 1
+                ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, x.Value, y.Value, srid, cancellationToken)
+                : await _rasterStore.IdentifyMosaicAsync(
+                    layerId,
+                    selectedRasters.Select(r => r.Id).ToArray(),
+                    mergeStrategy,
+                    x.Value,
+                    y.Value,
+                    srid,
+                    cancellationToken);
 
             // Build identify response
             var response = new IdentifyResponse
             {
-                ObjectId = primaryRasterInfo.Id,
-                Name = primaryRasterInfo.Name,
+                ObjectId = selectedRasters.Length == 1 ? selectedRasters[0].Id : null,
+                Name = selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{layer.Name} mosaic",
                 Value = FormatPixelValues(pixelResult.BandValues),
                 Location = new Point
                 {
@@ -112,7 +134,7 @@ internal sealed class ImageServerIdentifyHandler
                 },
                 Properties = CreateProperties(pixelResult),
                 CatalogItems = request.ReturnCatalogItems == true
-                    ? [new CatalogItem { Id = primaryRasterInfo.Id, Name = primaryRasterInfo.Name }]
+                    ? selectedRasters.Select(r => new CatalogItem { Id = r.Id, Name = r.Name }).ToArray()
                     : null
             };
 

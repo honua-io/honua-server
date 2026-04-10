@@ -55,12 +55,12 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public async Task ComputeAsync_NoPrimaryRaster_ReturnsNotFound()
+    public async Task ComputeAsync_NoRasters_ReturnsNotFound()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns((RasterInfo?)null);
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, EmptyValues(), CancellationToken.None);
@@ -118,8 +118,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {
@@ -270,7 +270,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
         // Primary raster fallback must NOT be used when rasterIds is supplied.
-        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive().QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
         // Both catalog rasters should be analysed (no band filter when bandIds omitted).
         await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>());
         await _rasterStore.Received(1).GetStatisticsAsync(1, 200, null, Arg.Any<CancellationToken>());
@@ -293,7 +293,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
         result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
-        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive().QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
         await _rasterStore.Received(1).GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>());
     }
 
@@ -352,8 +352,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
         // statistics[i] and histograms[i] always describe the same band.
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
 
         // Stats: returned in DB ascending order (band 1, then band 3) — mimics the
         // PostgresRasterStore behaviour where the SQL ORDER BY band_number wins.
@@ -500,8 +500,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
             .Returns<Task<RasterStatistics[]>>(_ => throw new InvalidOperationException("boom"));
 
@@ -516,8 +516,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
             .Returns(new[]
             {

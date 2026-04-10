@@ -226,6 +226,30 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithRasterMosaicPayload_ReturnsUpdatedMergeStrategy()
+    {
+        var body = """
+            {
+              "rasterMosaic": {
+                "mergeStrategy": "max"
+              }
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        data.GetProperty("rasterMosaic").GetProperty("mergeStrategy").GetString().Should().Be("max");
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer")]
     public async Task UpdateProtocols_DisableFeatureServer_BlocksFeatureServerServiceMetadata()

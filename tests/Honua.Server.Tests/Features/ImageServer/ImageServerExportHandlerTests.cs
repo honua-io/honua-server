@@ -63,8 +63,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns((RasterInfo?)null);
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
         var request = CreateRequest();
@@ -247,8 +247,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo() with { Width = 100, Height = 20000 });
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo() with { Width = 100, Height = 20000 }]);
 
         RasterQuery? capturedQuery = null;
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -402,7 +402,7 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_NullExtent_UsesDefaultExtent()
+    public async Task ExportImageAsync_NullExtent_FallsBackToSelectedRasterExtent()
     {
         SetupLayerAndRasters();
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -423,11 +423,10 @@ public class ImageServerExportHandlerTests
 
         var jsonResult = result as JsonHttpResult<ExportImageResponse>;
         jsonResult.Should().NotBeNull();
-        // When extent is null, defaults to 0,0,1,1
-        jsonResult!.Value!.Extent.XMin.Should().Be(0);
-        jsonResult.Value.Extent.YMin.Should().Be(0);
-        jsonResult.Value.Extent.XMax.Should().Be(1);
-        jsonResult.Value.Extent.YMax.Should().Be(1);
+        jsonResult!.Value!.Extent.XMin.Should().Be(-180);
+        jsonResult.Value.Extent.YMin.Should().Be(-90);
+        jsonResult.Value.Extent.XMax.Should().Be(180);
+        jsonResult.Value.Extent.YMax.Should().Be(90);
     }
 
     [UnitTest]
@@ -545,8 +544,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
     }
 
     private void SetupSuccessfulExport()

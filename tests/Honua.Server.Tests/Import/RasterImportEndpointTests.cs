@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -303,6 +304,92 @@ public class RasterImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("tileZoomLevels");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/raster")]
+    public async Task ImportRaster_WithInvalidAcquisitionDate_Returns400()
+    {
+        var content = new MultipartFormDataContent();
+        var fileBytes = CreateMinimalGeoTiffBytes();
+        var fileContent = new ByteArrayContent(fileBytes);
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "file",
+            FileName = "test.tif"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("1"), "layerId");
+        content.Add(new StringContent("test-raster"), "name");
+        content.Add(new StringContent("definitely-not-a-timestamp"), "acquisitionDate");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("acquisitionDate");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/raster")]
+    public async Task ImportRaster_WithValidAcquisitionDate_PassesTimestampToImportService()
+    {
+        var expectedAcquisitionDate = DateTimeOffset.Parse("2024-02-15T00:00:00Z", CultureInfo.InvariantCulture);
+        RasterImportRequest? capturedRequest = null;
+
+        var rasterImportService = Substitute.For<IRasterImportService>();
+        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
+        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedRequest = callInfo.Arg<RasterImportRequest>();
+                return Task.FromResult(RasterImportResult.CreateSuccess(
+                    rasterId: 42,
+                    layerId: 1,
+                    name: "test-raster",
+                    format: SupportedRasterFormat.GeoTiff,
+                    srid: 4326,
+                    width: 1,
+                    height: 1,
+                    bandCount: 1,
+                    statisticsBands: 1,
+                    tilesGenerated: 0,
+                    duration: TimeSpan.Zero));
+            });
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRasterImportService>();
+                services.AddSingleton(rasterImportService);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var content = new MultipartFormDataContent();
+            var fileBytes = CreateMinimalGeoTiffBytes();
+            var fileContent = new ByteArrayContent(fileBytes);
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "file",
+                FileName = "test.tif"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent("1"), "layerId");
+            content.Add(new StringContent("test-raster"), "name");
+            content.Add(new StringContent(expectedAcquisitionDate.ToString("O")), "acquisitionDate");
+
+            var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            capturedRequest.Should().NotBeNull();
+            capturedRequest!.AcquisitionDate.Should().Be(expectedAcquisitionDate);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

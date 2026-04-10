@@ -228,15 +228,16 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /computeClass                   (raster function chain validation)
 ```
 
-**Limitations:** `query` filtering happens in memory after the catalog is read; spatial filters and `orderByFields` are not pushed to PostGIS yet. `computeStatisticsHistograms` does not honour AOI clipping. `legend` uses a fixed viridis ramp keyed off the primary raster band-1 statistics. `computeClass` validates and plans `Identity`/`Stretch`/`Clip` chains (max depth 8) but does not execute the chain — the planner is not yet wired into `exportImage`/`identify`. See the [ImageServer Matrix](image-server-matrix.md) for full parameter coverage.
+**Limitations:** `query` filtering still happens in memory after the catalog is read; spatial filters and `orderByFields` are not pushed to PostGIS yet. `computeStatisticsHistograms` does not honour AOI clipping. `legend` uses a fixed viridis ramp keyed off the resolved layer mosaic's band-1 statistics. Temporal raster mosaic accepts single instants only and requires Pro edition licensing. `computeClass` validates and plans `Identity`/`Stretch`/`Clip` chains (max depth 8) but does not execute the chain — the planner is not yet wired into `exportImage`/`identify`. See the [ImageServer Matrix](image-server-matrix.md) for full parameter coverage.
 
 **Typical use cases:**
 - ArcGIS Pro raster rendering
-- Image export and pixel value queries
+- Image export and pixel value queries across multi-raster mosaics
 - Tiled image serving
-- Raster catalog discovery (footprint polygons + per-item attributes via `query`)
-- Per-band statistics and histograms for analytics dashboards
+- Raster catalog discovery (footprint polygons + per-item attributes, including `AcquisitionDate`, via `query`)
+- Per-band statistics and histograms for analytics dashboards, including selected mosaics
 - Layer legend swatches for ArcGIS Maps SDK clients
+- Time-aware raster mosaic requests on Pro editions
 - Validating raster function chains before submitting them to the server
 
 ---

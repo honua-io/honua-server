@@ -6,7 +6,9 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
@@ -90,14 +92,21 @@ internal sealed class ImageServerMetadataHandler
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
-            // Use the first raster for service metadata (could be enhanced for multi-raster scenarios)
-            var primaryRaster = rasters[0];
+            var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
+            var referenceRaster = CreateMosaicReferenceRaster(rasters, aggregateExtent);
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, mosaicRule: null);
 
-            // Get raster statistics for min/max values
-            var statistics = await _rasterStore.GetStatisticsAsync(layerId, primaryRaster.Id, cancellationToken: cancellationToken);
+            // Get raster statistics for the layer mosaic.
+            var statistics = rasters.Length == 1
+                ? await _rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: cancellationToken)
+                : await _rasterStore.GetMosaicStatisticsAsync(
+                    layerId,
+                    rasters.Select(r => r.Id).ToArray(),
+                    mergeStrategy,
+                    cancellationToken: cancellationToken);
 
             // Get raster extent
-            var extent = await _rasterStore.GetExtentAsync(layerId, primaryRaster.Id, cancellationToken);
+            var extent = aggregateExtent;
             if (extent == null)
             {
                 ImageServerLog.ExtentNotAvailable(_logger, layerId);
@@ -119,11 +128,11 @@ internal sealed class ImageServerMetadataHandler
                     YMax = extent.Value.YMax,
                     SpatialReference = CreateSpatialReference(extent.Value.Srid)
                 },
-                SpatialReference = CreateSpatialReference(primaryRaster.Srid),
-                PixelSizeX = CalculatePixelSize(extent.Value, primaryRaster.Width),
-                PixelSizeY = CalculatePixelSize(extent.Value, primaryRaster.Height, isHeight: true),
-                BandCount = primaryRaster.BandCount,
-                PixelType = MapPixelType(primaryRaster.PixelType),
+                SpatialReference = CreateSpatialReference(referenceRaster.Srid),
+                PixelSizeX = CalculatePixelSize(extent.Value, referenceRaster.Width),
+                PixelSizeY = CalculatePixelSize(extent.Value, referenceRaster.Height, isHeight: true),
+                BandCount = referenceRaster.BandCount,
+                PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,
                 MaxPixelSize = MaxPixelSize,
                 CopyrightText = layer.Description ?? "",
@@ -143,10 +152,10 @@ internal sealed class ImageServerMetadataHandler
                 CacheType = "Map",
                 TileInfo = BuildTileInfo(),
                 HasHistograms = true,
-                TimeInfo = BuildTimeInfo(layer.Metadata?.TimeInfo)
+                TimeInfo = BuildTimeInfo(layer.Metadata?.TimeInfo, rasters)
             };
 
-            ImageServerLog.ServiceInfoGenerated(_logger, layerId, primaryRaster.BandCount, statistics.Length);
+            ImageServerLog.ServiceInfoGenerated(_logger, layerId, referenceRaster.BandCount, statistics.Length);
 
             // Record telemetry success
             HonuaTelemetry.SetSuccess(featureActivity, 1);
@@ -212,30 +221,64 @@ internal sealed class ImageServerMetadataHandler
 
     /// <summary>
     /// Builds the Esri-conformant <c>timeInfo</c> block when the layer declares
-    /// temporal fields. The temporal extent is intentionally left null because
-    /// raster catalog metadata does not yet carry per-item timestamps; clients
-    /// can still probe the field names without breakage.
+    /// temporal fields or when the raster catalog carries acquisition timestamps.
     /// </summary>
-    private static ImageServerTimeInfo? BuildTimeInfo(LayerTimeInfo? layerTimeInfo)
+    private static ImageServerTimeInfo? BuildTimeInfo(LayerTimeInfo? layerTimeInfo, IReadOnlyList<RasterInfo> rasters)
     {
-        if (layerTimeInfo is null)
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(layerTimeInfo.StartTimeField) &&
-            string.IsNullOrWhiteSpace(layerTimeInfo.EndTimeField) &&
-            string.IsNullOrWhiteSpace(layerTimeInfo.TrackIdField))
+        var hasAcquisitionDates = rasters.Any(r => r.AcquisitionDate.HasValue);
+        var timeExtent = hasAcquisitionDates ? ImageServerMosaicHelpers.CreateTimeExtent(rasters) : null;
+        var hasDeclaredFields = !string.IsNullOrWhiteSpace(layerTimeInfo?.StartTimeField) ||
+                                !string.IsNullOrWhiteSpace(layerTimeInfo?.EndTimeField) ||
+                                !string.IsNullOrWhiteSpace(layerTimeInfo?.TrackIdField);
+        if (!hasDeclaredFields && timeExtent is null)
         {
             return null;
         }
 
         return new ImageServerTimeInfo
         {
-            StartTimeField = layerTimeInfo.StartTimeField,
-            EndTimeField = layerTimeInfo.EndTimeField,
-            TrackIdField = layerTimeInfo.TrackIdField,
+            StartTimeField = layerTimeInfo?.StartTimeField ?? (timeExtent is null ? null : "AcquisitionDate"),
+            EndTimeField = layerTimeInfo?.EndTimeField,
+            TrackIdField = layerTimeInfo?.TrackIdField,
+            TimeExtent = timeExtent,
             TimeReference = new ImageServerTimeReference()
+        };
+    }
+
+    private static RasterInfo CreateMosaicReferenceRaster(
+        RasterInfo[] rasters,
+        RasterExtent? aggregateExtent)
+    {
+        var primary = rasters[0];
+        if (aggregateExtent is not { } extent)
+        {
+            return primary;
+        }
+
+        var pixelWidth = rasters
+            .Select(r => r.GeoTransform is { Length: >= 2 } ? Math.Abs(r.GeoTransform[1]) : 0d)
+            .Where(v => v > 0)
+            .DefaultIfEmpty(0d)
+            .Min();
+        var pixelHeight = rasters
+            .Select(r => r.GeoTransform is { Length: >= 6 } ? Math.Abs(r.GeoTransform[5]) : 0d)
+            .Where(v => v > 0)
+            .DefaultIfEmpty(0d)
+            .Min();
+
+        var width = pixelWidth > 0
+            ? Math.Max(1, (int)Math.Ceiling((extent.XMax - extent.XMin) / pixelWidth))
+            : primary.Width;
+        var height = pixelHeight > 0
+            ? Math.Max(1, (int)Math.Ceiling((extent.YMax - extent.YMin) / pixelHeight))
+            : primary.Height;
+
+        return primary with
+        {
+            Width = width,
+            Height = height,
+            Srid = extent.Srid ?? primary.Srid,
+            Extent = extent
         };
     }
 

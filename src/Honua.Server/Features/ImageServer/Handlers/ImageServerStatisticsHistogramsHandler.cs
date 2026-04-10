@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
@@ -94,8 +95,20 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
 
+            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+            {
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, timeError ?? "Invalid time");
+                return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
+            }
+
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             // Resolve the catalog rasters to analyse. When rasterIds is omitted we fall back to the
-            // layer's primary raster, matching ArcGIS Server's default behaviour.
+            // selected layer mosaic instead of arbitrarily picking the newest raster.
             var targetRasters = new List<RasterInfo>();
             if (rasterIds is { Length: > 0 })
             {
@@ -118,29 +131,43 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             }
             else
             {
-                var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-                if (primaryRaster is null)
+                var selected = await _rasterStore.QueryRastersAsync(
+                    layerId,
+                    new RasterSelectionQuery { Timestamp = timestamp },
+                    cancellationToken);
+                if (selected.Length == 0)
                 {
                     ImageServerLog.NoRastersFound(_logger, layerId);
                     return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
                 }
 
-                targetRasters.Add(primaryRaster.Value);
+                targetRasters.AddRange(selected);
             }
 
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, GetString(values, "mosaicRule"));
             var statisticsList = new List<BandStatistic>();
             var histogramsList = new List<BandHistogram>();
-            foreach (var raster in targetRasters)
+            if ((rasterIds is null or { Length: 0 }) && targetRasters.Count > 1)
             {
-                var statistics = await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
-                var histograms = await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
-
-                // The store implementations do not guarantee a shared band order:
-                // GetStatisticsAsync streams cached rows in DB ascending order while
-                // GetHistogramsAsync preserves the caller-supplied band order. Index both
-                // sets by band number and emit them in a single canonical order so the
-                // parallel statistics/histograms arrays in the response stay aligned.
+                var mosaicIds = targetRasters.Select(r => r.Id).ToArray();
+                var statistics = await _rasterStore.GetMosaicStatisticsAsync(layerId, mosaicIds, mergeStrategy, bands, cancellationToken);
+                var histograms = await _rasterStore.GetMosaicHistogramsAsync(layerId, mosaicIds, mergeStrategy, bands, binCount, cancellationToken);
                 AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
+            }
+            else
+            {
+                foreach (var raster in targetRasters)
+                {
+                    var statistics = await _rasterStore.GetStatisticsAsync(layerId, raster.Id, bands, cancellationToken);
+                    var histograms = await _rasterStore.GetHistogramsAsync(layerId, raster.Id, bands, binCount, cancellationToken);
+
+                    // The store implementations do not guarantee a shared band order:
+                    // GetStatisticsAsync streams cached rows in DB ascending order while
+                    // GetHistogramsAsync preserves the caller-supplied band order. Index both
+                    // sets by band number and emit them in a single canonical order so the
+                    // parallel statistics/histograms arrays in the response stay aligned.
+                    AppendAlignedBandResults(statisticsList, histogramsList, bands, statistics, histograms);
+                }
             }
 
             var response = new ComputeStatisticsHistogramsResponse

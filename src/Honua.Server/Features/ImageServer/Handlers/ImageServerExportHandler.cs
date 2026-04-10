@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
+using Honua.Server.Features.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
@@ -77,15 +78,6 @@ internal sealed class ImageServerExportHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // Resolve the primary raster without scanning the entire layer.
-            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-            if (primaryRaster is null)
-            {
-                ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
-            }
-            var primaryRasterInfo = primaryRaster.Value;
-
             // Parse export parameters
             var query = ParseExportParameters(request);
             if (query == null)
@@ -94,11 +86,41 @@ internal sealed class ImageServerExportHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid export parameters");
             }
 
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            {
+                ImageServerLog.InvalidExportParameters(_logger, layerId, timeError ?? "Invalid time parameter");
+                return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
+            }
+
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+            var selectionQuery = new RasterSelectionQuery
+            {
+                Geometry = query.Value.ClipRegion?.Geometry,
+                GeometrySrid = query.Value.ClipRegion?.Srid,
+                Timestamp = timestamp
+            };
+
+            var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            if (selectedRasters.Length == 0)
+            {
+                ImageServerLog.NoRastersFound(_logger, layerId);
+                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(selectedRasters);
+            var referenceRaster = CreateMosaicReferenceRaster(selectedRasters, aggregateExtent);
+
             // Determine output dimensions and propagate to query
             var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
             var (width, height) = await CalculateOutputDimensionsAsync(
                 request,
-                primaryRasterInfo,
+                referenceRaster,
                 coordinateTransformService,
                 cancellationToken).ConfigureAwait(false);
             var exportQuery = query.Value with { OutputWidth = width, OutputHeight = height };
@@ -106,7 +128,9 @@ internal sealed class ImageServerExportHandler
             ImageServerLog.ExportImageStarted(_logger, layerId, width, height, formatName);
 
             // Export the image
-            var result = await _rasterStore.ExportImageAsync(layerId, primaryRasterInfo.Id, exportQuery, cancellationToken);
+            var result = selectedRasters.Length == 1
+                ? await _rasterStore.ExportImageAsync(layerId, selectedRasters[0].Id, exportQuery, cancellationToken)
+                : await _rasterStore.ExportMosaicAsync(layerId, selectedRasters.Select(r => r.Id).ToArray(), mergeStrategy, exportQuery, cancellationToken);
 
             if (WantsInlineImageResponse(request.F))
             {
@@ -123,8 +147,11 @@ internal sealed class ImageServerExportHandler
                 principal: context.User,
                 cancellationToken: cancellationToken);
 
-            var extent = result.Extent;
-            extent ??= await _rasterStore.GetExtentAsync(layerId, primaryRasterInfo.Id, cancellationToken);
+            var extent = result.Extent ?? aggregateExtent;
+            if (extent == null && selectedRasters.Length == 1)
+            {
+                extent = await _rasterStore.GetExtentAsync(layerId, selectedRasters[0].Id, cancellationToken);
+            }
 
             var exportResponse = new ExportImageResponse
             {
@@ -300,6 +327,43 @@ internal sealed class ImageServerExportHandler
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
+
+    private static RasterInfo CreateMosaicReferenceRaster(
+        RasterInfo[] rasters,
+        RasterExtent? aggregateExtent)
+    {
+        var primary = rasters[0];
+        if (aggregateExtent is not { } extent)
+        {
+            return primary;
+        }
+
+        var pixelWidth = rasters
+            .Select(r => r.GeoTransform is { Length: >= 2 } ? Math.Abs(r.GeoTransform[1]) : 0d)
+            .Where(v => v > 0)
+            .DefaultIfEmpty(0d)
+            .Min();
+        var pixelHeight = rasters
+            .Select(r => r.GeoTransform is { Length: >= 6 } ? Math.Abs(r.GeoTransform[5]) : 0d)
+            .Where(v => v > 0)
+            .DefaultIfEmpty(0d)
+            .Min();
+
+        var width = pixelWidth > 0
+            ? Math.Max(1, (int)Math.Ceiling((extent.XMax - extent.XMin) / pixelWidth))
+            : primary.Width;
+        var height = pixelHeight > 0
+            ? Math.Max(1, (int)Math.Ceiling((extent.YMax - extent.YMin) / pixelHeight))
+            : primary.Height;
+
+        return primary with
+        {
+            Width = width,
+            Height = height,
+            Srid = extent.Srid ?? primary.Srid,
+            Extent = extent
+        };
+    }
 
     private static async Task<double> GetOutputAspectRatioAsync(
         ExportImageRequest request,

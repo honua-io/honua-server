@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     raster raster NOT NULL,
+    acquisition_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ,
 
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
 CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id ON honua.raster_data(layer_id);
 CREATE INDEX IF NOT EXISTS idx_raster_data_name ON honua.raster_data(name);
 CREATE INDEX IF NOT EXISTS idx_raster_data_created_at ON honua.raster_data(created_at);
+CREATE INDEX IF NOT EXISTS idx_raster_data_acquisition_date ON honua.raster_data(acquisition_date);
+CREATE INDEX IF NOT EXISTS idx_raster_data_layer_acquisition ON honua.raster_data(layer_id, acquisition_date DESC, created_at DESC, id DESC);
 
 -- Composite index for common query pattern: list rasters by layer
 CREATE INDEX IF NOT EXISTS idx_raster_data_layer_id_id ON honua.raster_data(layer_id, id);
@@ -103,6 +106,7 @@ COMMENT ON COLUMN honua.raster_data.id IS 'Unique identifier for the raster data
 COMMENT ON COLUMN honua.raster_data.layer_id IS 'Reference to the layer this raster belongs to';
 COMMENT ON COLUMN honua.raster_data.name IS 'Display name for the raster dataset';
 COMMENT ON COLUMN honua.raster_data.raster IS 'PostGIS raster data with all bands and metadata';
+COMMENT ON COLUMN honua.raster_data.acquisition_date IS 'Optional acquisition timestamp for temporal mosaic selection';
 COMMENT ON COLUMN honua.raster_data.width IS 'Width of the raster in pixels (computed from raster)';
 COMMENT ON COLUMN honua.raster_data.height IS 'Height of the raster in pixels (computed from raster)';
 COMMENT ON COLUMN honua.raster_data.band_count IS 'Number of bands in the raster (computed from raster)';

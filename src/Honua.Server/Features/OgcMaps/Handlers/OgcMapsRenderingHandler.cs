@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -98,6 +100,12 @@ internal sealed class OgcMapsRenderingHandler
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
                 return CreateBadRequestResult(context, validationError!);
+            }
+
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value.DateTime);
+            if (editionError != null)
+            {
+                return editionError;
             }
 
             OgcMapsLog.CollectionMapRenderStarted(_logger, layerId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -295,6 +303,12 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value.DateTime);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             OgcMapsLog.DatasetMapRenderStarted(_logger, resolvedLayerCount, renderRequest.Value.Width, renderRequest.Value.Height);
 
             // Render the dataset map
@@ -387,6 +401,12 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var editionError = RequireProEditionForDatetime(context, renderRequest.Value.DateTime);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, renderRequest.Value.Width, renderRequest.Value.Height);
 
             // Render the styled map
@@ -431,6 +451,30 @@ internal sealed class OgcMapsRenderingHandler
         => context is not null
             ? StandardErrorHelpers.CreateBadRequest(context, message)
             : Results.BadRequest(message);
+
+    private static IResult? RequireProEditionForDatetime(HttpContext? context, DateTimeOffset? timestamp)
+    {
+        if (context == null || !timestamp.HasValue)
+        {
+            return null;
+        }
+
+        var licenseProvider = context.RequestServices.GetService<ILicenseStatusProvider>();
+        if (licenseProvider == null)
+        {
+            return null;
+        }
+
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        if (edition >= HonuaEdition.Pro)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateForbidden(
+            context,
+            $"Temporal raster mosaic requires the Pro edition or higher. Current edition: {edition}.");
+    }
 
     /// <summary>
     /// Creates a not-found result using StandardErrorHelpers when context is available,

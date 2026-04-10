@@ -93,6 +93,8 @@ internal sealed class ImageServerCatalogQuery
 
     public int Limit { get; init; }
 
+    public DateTimeOffset? Time { get; init; }
+
     public bool ReturnGeometry { get; init; } = true;
 
     public bool ReturnIdsOnly { get; init; }
@@ -148,6 +150,26 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         foreach (var raster in rasters)
         {
             projected.Add((ProjectRaster(raster, query), raster));
+        }
+
+        if (query.Time.HasValue)
+        {
+            var selectedAcquisition = projected
+                .Select(p => p.Item.AcquisitionDate)
+                .Where(t => t.HasValue && t.Value <= query.Time.Value)
+                .OrderByDescending(t => t)
+                .FirstOrDefault();
+
+            if (selectedAcquisition.HasValue)
+            {
+                projected = projected
+                    .Where(p => p.Item.AcquisitionDate == selectedAcquisition)
+                    .ToList();
+            }
+            else
+            {
+                projected.Clear();
+            }
         }
 
         // Apply objectIds filter (cheap; usually provided alongside or instead of where).
@@ -271,7 +293,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             ZOrder = 0,
             ShapeLength = shapeLength,
             ShapeArea = shapeArea,
-            AcquisitionDate = raster.CreatedAt,
+            AcquisitionDate = raster.AcquisitionDate ?? raster.CreatedAt,
             FootprintRings = rings,
             FootprintSrid = extent?.Srid
         };

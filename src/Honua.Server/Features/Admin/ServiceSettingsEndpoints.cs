@@ -400,10 +400,23 @@ internal static class ServiceSettingsEndpoints
                 };
             }
 
+            RasterMosaicSettings? updatedRasterMosaic = existingMetadata.RasterMosaic;
+            if (request.RasterMosaic is not null)
+            {
+                var existingRm = existingMetadata.RasterMosaic ?? new RasterMosaicSettings();
+                updatedRasterMosaic = existingRm with
+                {
+                    MergeStrategy = request.RasterMosaic.MergeStrategy is ""
+                        ? null
+                        : (request.RasterMosaic.MergeStrategy ?? existingRm.MergeStrategy)
+                };
+            }
+
             var metadata = existingMetadata with
             {
                 AccessPolicy = updatedAccessPolicy,
-                TimeInfo = updatedTimeInfo
+                TimeInfo = updatedTimeInfo,
+                RasterMosaic = updatedRasterMosaic
             };
 
             await layerMetadataUpdater.UpdateLayerMetadataAsync(layerId, metadata, context.RequestAborted);
@@ -482,6 +495,10 @@ internal static class ServiceSettingsEndpoints
                 StartTimeField = timeInfo.StartTimeField,
                 EndTimeField = timeInfo.EndTimeField,
                 TrackIdField = timeInfo.TrackIdField
+            } : null,
+            RasterMosaic = metadata.RasterMosaic is not null ? new RasterMosaicResponse
+            {
+                MergeStrategy = metadata.RasterMosaic.MergeStrategy
             } : null
         };
     }

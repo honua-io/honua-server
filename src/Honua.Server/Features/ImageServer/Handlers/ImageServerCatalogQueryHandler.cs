@@ -74,6 +74,12 @@ internal sealed class ImageServerCatalogQueryHandler
                     parseError ?? "Invalid query parameter.");
             }
 
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, query.Time);
+            if (editionError != null)
+            {
+                return editionError;
+            }
+
             ImageServerCatalogPage page;
             try
             {
@@ -140,6 +146,12 @@ internal sealed class ImageServerCatalogQueryHandler
             }
         }
 
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeError))
+        {
+            error = timeError;
+            return false;
+        }
+
         if (!TryParseInt(GetString(values, "resultOffset"), out var offset, defaultValue: 0))
         {
             error = "resultOffset must be a non-negative integer.";
@@ -177,6 +189,7 @@ internal sealed class ImageServerCatalogQueryHandler
             Where = where,
             ObjectIds = objectIds,
             OutputSrid = outputSrid,
+            Time = time,
             Offset = offset,
             Limit = limit,
             ReturnGeometry = returnGeometry,

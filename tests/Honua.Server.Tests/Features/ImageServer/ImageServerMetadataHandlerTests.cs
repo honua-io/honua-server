@@ -71,11 +71,12 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_NullExtent_ReturnsServerError()
     {
-        SetupLayerAndRasters();
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns([CreateTestRasterInfo() with { Extent = null }]);
         _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
             .Returns(Array.Empty<RasterStatistics>());
-        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
-            .Returns((RasterExtent?)null);
 
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
@@ -215,10 +216,8 @@ public class ImageServerMetadataHandlerTests
 
         var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
         jsonResult.Should().NotBeNull();
-        // Extent width = 360, raster width = 1024, pixelSizeX = 360/1024
-        jsonResult!.Value!.PixelSizeX.Should().BeApproximately(360.0 / 1024, 0.0001);
-        // Extent height = 180, raster height = 1024, pixelSizeY = 180/1024
-        jsonResult.Value.PixelSizeY.Should().BeApproximately(180.0 / 1024, 0.0001);
+        jsonResult!.Value!.PixelSizeX.Should().BeApproximately(1.0, 0.0001);
+        jsonResult.Value.PixelSizeY.Should().BeApproximately(1.0, 0.0001);
     }
 
     [UnitTest]
