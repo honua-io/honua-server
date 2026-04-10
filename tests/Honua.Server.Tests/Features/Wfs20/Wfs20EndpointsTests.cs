@@ -16,6 +16,7 @@ namespace Honua.Server.Tests.Features.Wfs20;
 [Protocol(Protocols.Wfs20)]
 public sealed class Wfs20EndpointsTests : IAsyncLifetime
 {
+    private const string GetFeatureByIdStoredQueryId = "urn:ogc:def:query:OGC-WFS::GetFeatureById";
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -26,7 +27,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
-    public async Task Wfs_GetCapabilities_ReturnsXmlWithoutTransactionOperation()
+    public async Task Wfs_GetCapabilities_ReturnsXmlWithTransactionOperation()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
@@ -36,13 +37,21 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("WFS_Capabilities");
         content.Should().Contain("updateSequence=\"20260325\"");
-        content.Should().Contain("<Operation name=\"GetFeature\">");
-        content.Should().Contain("<Operation name=\"GetPropertyValue\">");
-        content.Should().NotContain("<Operation name=\"Transaction\">");
+        content.Should().Contain("xmlns:honua=\"http://honua.io/wfs\"");
+        content.Should().Contain("Operation name=\"GetFeature\"");
+        content.Should().Contain("Operation name=\"GetPropertyValue\"");
+        content.Should().Contain("Operation name=\"Transaction\"");
+        content.Should().Contain("Operation name=\"ListStoredQueries\"");
+        content.Should().Contain("Operation name=\"DescribeStoredQueries\"");
         content.Should().Contain("name=\"ImplementsBasicWFS\"");
+        content.Should().Contain("name=\"ImplementsTransactionalWFS\"");
         content.Should().Contain("name=\"KVPEncoding\"");
         content.Should().Contain("name=\"XMLEncoding\"");
         content.Should().Contain("ImplementsSpatialFilter");
+        Regex.IsMatch(
+            content,
+            "name=\"ImplementsTransactionalWFS\"[\\s\\S]*?<[^>]*DefaultValue>TRUE</",
+            RegexOptions.CultureInvariant).Should().BeTrue(content);
         content.Should().Contain(">TRUE<");
         content.Should().Contain("SpatialOperator name=\"Intersects\"");
         content.Should().Contain("SpatialOperator name=\"DWithin\"");
@@ -325,13 +334,49 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_UnsupportedOperation_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=ListStoredQueries&VERSION=2.0.0");
+            "/wfs?SERVICE=WFS&REQUEST=LockFeature&VERSION=2.0.0");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ExceptionReport");
         content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "ListStoredQueries")]
+    public async Task Wfs_ListStoredQueries_ReturnsGetFeatureByIdDefinition()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=ListStoredQueries&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ListStoredQueriesResponse");
+        content.Should().Contain($"id=\"{GetFeatureByIdStoredQueryId}\"");
+        content.Should().Contain("<wfs:ReturnFeatureType>honua:test_layer</wfs:ReturnFeatureType>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "DescribeStoredQueries")]
+    public async Task Wfs_DescribeStoredQueries_ReturnsGetFeatureByIdDefinition()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=DescribeStoredQueries&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("DescribeStoredQueriesResponse");
+        content.Should().Contain($"StoredQueryDescription id=\"{GetFeatureByIdStoredQueryId}\"");
+        content.Should().Contain("Parameter name=\"id\" type=\"xsd:string\"");
+        content.Should().Contain("QueryExpressionText");
+        content.Should().Contain("rid=\"${id}\"");
     }
 
     [IntegrationTest]
@@ -352,15 +397,370 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
-    public async Task Wfs_Transaction_ReturnsNotImplementedExceptionReport()
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Insert_ReturnsTransactionResponseAndCreatesFeature()
     {
-        var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=Transaction&VERSION=2.0.0");
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert handle="insert-feature">
+                <honua:test_layer>
+                  <honua:name>WFS Transaction Insert</honua:name>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.123 -122.456</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
+        content.Should().Contain("handle=\"insert-feature\"");
+
+        var resourceIdMatch = Regex.Match(content, "rid=\"(?<rid>test_layer\\.\\d+)\"", RegexOptions.CultureInvariant);
+        resourceIdMatch.Success.Should().BeTrue(content);
+        var resourceId = resourceIdMatch.Groups["rid"].Value;
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={resourceId}");
+        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
+        queryContent.Should().Contain("WFS Transaction Insert");
+        queryContent.Should().Contain(resourceId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    public async Task Wfs_Transaction_WithInsertUpdateAndDelete_ReturnsTransactionSummary()
+    {
+        var updateId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Transaction Update Target");
+        var deleteId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Transaction Delete Target");
+
+        var requestBody = $$"""
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert>
+                <honua:test_layer>
+                  <honua:name>WFS Transaction Mixed Insert</honua:name>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.124 -122.457</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+              <wfs:Update typeName="test_layer">
+                <wfs:Property>
+                  <wfs:ValueReference>name</wfs:ValueReference>
+                  <wfs:Value>WFS Transaction Updated</wfs:Value>
+                </wfs:Property>
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{updateId}}" />
+                </fes:Filter>
+              </wfs:Update>
+              <wfs:Delete typeName="test_layer">
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{deleteId}}" />
+                </fes:Filter>
+              </wfs:Delete>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        responseBody.Should().Contain("TransactionResponse");
+        responseBody.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
+        responseBody.Should().Contain("<wfs:totalUpdated>1</wfs:totalUpdated>");
+        responseBody.Should().Contain("<wfs:totalDeleted>1</wfs:totalDeleted>");
+
+        var updatedFeatureResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.{updateId}");
+        var updatedFeatureBody = await updatedFeatureResponse.Content.ReadAsStringAsync();
+        updatedFeatureResponse.StatusCode.Should().Be(HttpStatusCode.OK, updatedFeatureBody);
+        updatedFeatureBody.Should().Contain("WFS Transaction Updated");
+
+        var deletedFeatureResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.{deleteId}");
+        var deletedFeatureBody = await deletedFeatureResponse.Content.ReadAsStringAsync();
+        deletedFeatureResponse.StatusCode.Should().Be(HttpStatusCode.OK, deletedFeatureBody);
+        deletedFeatureBody.Should().Contain("numberMatched=\"0\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_WithNamedFeature_IncludesGmlName()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<gml:name>Test Feature</gml:name>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_GetFeatureByIdStoredQuery_Kvp_ReturnsSingleFeatureElement()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        content.Should().Contain("<honua:test_layer");
+        content.Should().Contain("gml:id=\"test_layer.1\"");
+        content.Should().Contain("<gml:name>Test Feature</gml:name>");
+        content.Should().NotContain("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_Post_GetFeature_GetFeatureByIdStoredQuery_ReturnsSingleFeatureElement()
+    {
+        var requestBody = $$"""
+            <wfs:GetFeature service="WFS" version="2.0.0" count="1"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0">
+              <wfs:StoredQuery id="{{GetFeatureByIdStoredQueryId}}">
+                <wfs:Parameter name="id">test_layer.1</wfs:Parameter>
+              </wfs:StoredQuery>
+            </wfs:GetFeature>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        responseBody.Should().Contain("<honua:test_layer");
+        responseBody.Should().Contain("gml:id=\"test_layer.1\"");
+        responseBody.Should().NotContain("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_GetFeatureByIdStoredQuery_UnknownId_Returns404ExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.999999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ExceptionReport");
-        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+        content.Should().Contain("exceptionCode=\"NotFound\"");
+        content.Should().Contain("locator=\"id\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_GetFeature_UnknownStoredQuery_ReturnsOperationParsingFailedException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::UnknownQuery&ID=test_layer.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"OperationParsingFailed\"");
+        content.Should().Contain("locator=\"storedquery_id\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_UpdateGmlNameXPathReference_UpdatesStoredQueryResult()
+    {
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS XPath Name Original");
+
+        var requestBody = $$"""
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Update typeName="test_layer">
+                <wfs:Property>
+                  <wfs:ValueReference>gml:name[1]</wfs:ValueReference>
+                  <wfs:Value>WFS XPath Name Updated</wfs:Value>
+                </wfs:Property>
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                </fes:Filter>
+              </wfs:Update>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<wfs:totalUpdated>1</wfs:totalUpdated>");
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
+        queryContent.Should().Contain("<honua:test_layer");
+        queryContent.Should().Contain("<gml:name>WFS XPath Name Updated</gml:name>");
+        queryContent.Should().NotContain("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Replace_ReturnsReplaceSummaryAndUpdatesFeature()
+    {
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Replace Original");
+        var replacementIdentifier = Guid.NewGuid().ToString();
+
+        var requestBody = $$"""
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Replace>
+                <honua:test_layer gml:id="test_layer.{{featureId}}">
+                  <gml:description>WFS Replace Description</gml:description>
+                  <gml:identifier>{{replacementIdentifier}}</gml:identifier>
+                  <gml:name>WFS Replace Name</gml:name>
+                  <honua:name>WFS Replace Name</honua:name>
+                </honua:test_layer>
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                </fes:Filter>
+              </wfs:Replace>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
+        content.Should().Contain("<wfs:ReplaceResults>");
+        content.Should().Contain($"rid=\"test_layer.{featureId}\"");
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
+        queryContent.Should().Contain("<honua:test_layer");
+        queryContent.Should().Contain("WFS Replace Name");
+        queryContent.Should().Contain("WFS Replace Description");
+        queryContent.Should().Contain($"<gml:identifier>{replacementIdentifier}</gml:identifier>");
+        queryContent.Should().NotContain("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_Delete_DeletedFeatureStoredQueryReturns404ExceptionReport()
+    {
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS Delete Target");
+
+        var requestBody = $$"""
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Delete typeName="test_layer">
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{featureId}}" />
+                </fes:Filter>
+              </wfs:Delete>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<wfs:totalDeleted>1</wfs:totalDeleted>");
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID={Uri.EscapeDataString(GetFeatureByIdStoredQueryId)}&ID=test_layer.{featureId}");
+        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.NotFound, queryContent);
+        queryResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        queryContent.Should().Contain("ExceptionReport");
+        queryContent.Should().Contain("exceptionCode=\"NotFound\"");
+        queryContent.Should().Contain("locator=\"id\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_UpdateBoundedBy_WithInvalidValue_ReturnsInvalidValueException()
+    {
+        var updateId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS BoundedBy Target");
+
+        var requestBody = $$"""
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:kml="http://www.opengis.net/kml/2.2">
+              <wfs:Update typeName="test_layer">
+                <wfs:Property>
+                  <wfs:ValueReference>gml:boundedBy</wfs:ValueReference>
+                  <wfs:Value>
+                    <kml:Point>
+                      <kml:coordinates>-122.456,37.123</kml:coordinates>
+                    </kml:Point>
+                  </wfs:Value>
+                </wfs:Property>
+                <fes:Filter>
+                  <fes:ResourceId rid="test_layer.{{updateId}}" />
+                </fes:Filter>
+              </wfs:Update>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"InvalidValue\"");
     }
 
     [IntegrationTest]

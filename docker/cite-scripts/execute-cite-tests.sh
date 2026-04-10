@@ -75,6 +75,7 @@ curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors -L \
     -o /tmp/teamengine-console-bin.zip \
     "$TEAMENGINE_CONSOLE_URL"
 unzip -q /tmp/teamengine-console-bin.zip -d /tmp/te-console
+unzip -qo /root/teamengine-web-6.0.0-RC2-common-libs.zip -d "$TE_BASE_DIR/resources/lib" || true
 unzip -qo -j /root/ets-wfs20-1.43-deps.zip -d "$TE_BASE_DIR/resources/lib" || true
 unzip -qo /root/ets-wfs20-1.43-ctl.zip -d "$TE_BASE_DIR/scripts" || true
 
@@ -93,6 +94,67 @@ cat > "$RESULTS_DIR/test-params.xml" << EOF
 </values>
 EOF
 
+generate_transactional_suite() {
+    suite_path="$1"
+
+    cat > "$suite_path" << EOF_SUITE
+<?xml version="1.0" encoding="UTF-8"?>
+<suite name="wfs20-1.43-transactional" verbose="0" configfailurepolicy="skip">
+  <parameter name="wfs" value="$ESCAPED_WFS_CAPABILITIES_URL"/>
+  <listeners>
+    <listener class-name="org.opengis.cite.iso19142.SuiteFixtureListener" />
+  </listeners>
+  <test name="Preconditions">
+    <classes>
+      <class name="org.opengis.cite.iso19142.SuitePreconditions"/>
+    </classes>
+  </test>
+  <test name="All GML application schemas">
+    <classes>
+      <class name="org.opengis.cite.iso19136.general.XMLSchemaTests" />
+      <class name="org.opengis.cite.iso19136.general.GeneralSchemaTests" />
+      <class name="org.opengis.cite.iso19136.general.ModelAndSyntaxTests" />
+      <class name="org.opengis.cite.iso19136.general.ComplexPropertyTests" />
+    </classes>
+  </test>
+  <test name="GML application schemas defining features">
+    <classes>
+      <class name="org.opengis.cite.iso19136.components.FeatureComponentTests" />
+    </classes>
+  </test>
+  <test name="Transactional WFS">
+    <classes>
+      <class name="org.opengis.cite.iso19142.transaction.TransactionCapabilitiesTests" />
+      <class name="org.opengis.cite.iso19142.transaction.Update" />
+      <class name="org.opengis.cite.iso19142.transaction.InsertTests" />
+      <class name="org.opengis.cite.iso19142.transaction.ReplaceTests" />
+      <class name="org.opengis.cite.iso19142.transaction.DeleteTests" />
+    </classes>
+  </test>
+</suite>
+EOF_SUITE
+}
+
+run_transactional_suite() {
+    suite_path="$RESULTS_DIR/testng-transactional.xml"
+    output_dir="$RESULTS_DIR/test-output"
+    generate_transactional_suite "$suite_path"
+    rm -rf "$output_dir"
+    mkdir -p "$output_dir"
+
+    classpath="/tmp/te-console/lib/*:$TE_BASE_DIR/resources/lib/*"
+
+    set +e
+    java -cp "$classpath" org.testng.TestNG -d "$output_dir" "$suite_path" > "$CONSOLE_LOG" 2>&1
+    TEST_EXIT_CODE=$?
+    set -e
+
+    if [ -d "$output_dir" ]; then
+        mkdir -p "$RESULTS_DIR/html-report"
+        cp -R "$output_dir/." "$RESULTS_DIR/html-report/" 2>/dev/null || true
+    fi
+}
+
 echo -e "${YELLOW}Executing WFS 2.0 conformance tests...${NC}"
 echo "Session: $SESSION_NAME"
 echo "This may take 10-30 minutes depending on the advertised WFS capabilities..."
@@ -101,15 +163,20 @@ TEST_EXECUTION_START=$(date +%s)
 TEST_EXIT_CODE=0
 CONSOLE_LOG="$RESULTS_DIR/cite-console.log"
 
-set +e
-/tmp/te-console/bin/unix/test.sh \
-    -source="$TE_BASE_DIR/scripts/wfs/2.0.0/ctl/wfs-suite.ctl" \
-    -form="$RESULTS_DIR/test-params.xml" \
-    -logdir=users/cite/logs \
-    -session="$SESSION_NAME" \
-    > "$CONSOLE_LOG" 2>&1
-TEST_EXIT_CODE=$?
-set -e
+if [ "$TEST_PROFILE" = "transactional" ]; then
+    echo "Running the transactional WFS TestNG suite only."
+    run_transactional_suite
+else
+    set +e
+    /tmp/te-console/bin/unix/test.sh \
+        -source="$TE_BASE_DIR/scripts/wfs/2.0.0/ctl/wfs-suite.ctl" \
+        -form="$RESULTS_DIR/test-params.xml" \
+        -logdir=users/cite/logs \
+        -session="$SESSION_NAME" \
+        > "$CONSOLE_LOG" 2>&1
+    TEST_EXIT_CODE=$?
+    set -e
+fi
 
 cat "$CONSOLE_LOG"
 
@@ -118,14 +185,19 @@ EXECUTION_TIME=$((TEST_EXECUTION_END - TEST_EXECUTION_START))
 
 echo -e "${GREEN}✅ CITE test execution completed${NC}"
 echo "Execution time: ${EXECUTION_TIME}s"
-echo "test.sh exit code: ${TEST_EXIT_CODE}"
+echo "Runner exit code: ${TEST_EXIT_CODE}"
 
 echo -e "${YELLOW}Collecting CITE test results...${NC}"
 mkdir -p "$RESULTS_DIR/te-logs"
 cp -R "$TE_BASE_DIR/users/cite/logs/." "$RESULTS_DIR/te-logs/" 2>/dev/null || true
 
-TESTNG_RESULTS=$(find "$TE_BASE_DIR/users/cite/logs" -name 'testng-results.xml' | sort | tail -n 1)
-HTML_REPORT=$(find "$TE_BASE_DIR/users/cite/logs" -path '*/html/index.html' | sort | tail -n 1)
+if [ "$TEST_PROFILE" = "transactional" ]; then
+    TESTNG_RESULTS="$RESULTS_DIR/test-output/testng-results.xml"
+    HTML_REPORT="$RESULTS_DIR/test-output/index.html"
+else
+    TESTNG_RESULTS=$(find "$TE_BASE_DIR/users/cite/logs" -name 'testng-results.xml' | sort | tail -n 1)
+    HTML_REPORT=$(find "$TE_BASE_DIR/users/cite/logs" -path '*/html/index.html' | sort | tail -n 1)
+fi
 
 if [ -n "$TESTNG_RESULTS" ] && [ -f "$TESTNG_RESULTS" ]; then
     cp "$TESTNG_RESULTS" "$RESULTS_DIR/testng-results.xml"
@@ -151,7 +223,7 @@ if [ -n "$TESTNG_RESULTS" ] && [ -f "$TESTNG_RESULTS" ]; then
     PASSED=$(extract_count "passed" "$TESTNG_RESULTS")
     FAILED=$(extract_count "failed" "$TESTNG_RESULTS")
     SKIPPED=$(extract_count "skipped" "$TESTNG_RESULTS")
-    TOTAL=$((PASSED + FAILED))
+    TOTAL=$((PASSED + FAILED + SKIPPED))
 else
     PASSED=0
     FAILED=0
@@ -170,7 +242,7 @@ if [ "$TOTAL" -le 0 ]; then
     exit 1
 fi
 
-if [ "$FAILED" -eq 0 ]; then
+if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
     COMPLIANCE_STATUS="COMPLIANT"
 elif [ "$PASSED" -gt 0 ]; then
     COMPLIANCE_STATUS="PARTIAL"
@@ -192,14 +264,20 @@ cat > "$RESULTS_DIR/cite-compliance-report.xml" << EOF_REPORT
 </testReport>
 EOF_REPORT
 
-if [ "$FAILED" -eq 0 ]; then
+HOST_UID=${HOST_UID:-}
+HOST_GID=${HOST_GID:-}
+if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
+    chown -R "$HOST_UID:$HOST_GID" "$RESULTS_DIR" 2>/dev/null || true
+fi
+
+if [ "$FAILED" -eq 0 ] && [ "$SKIPPED" -eq 0 ]; then
     echo -e "${GREEN}🎉 FULL WFS 2.0 CITE COMPLIANCE ACHIEVED!${NC}"
     exit 0
 fi
 
 if [ "$PASSED" -gt 0 ]; then
     echo -e "${YELLOW}⚠️ Partial WFS 2.0 CITE compliance${NC}"
-    echo "Some tests failed - see detailed results for specific issues"
+    echo "Some tests failed or were skipped - see detailed results for specific issues"
     exit 0
 fi
 

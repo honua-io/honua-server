@@ -114,7 +114,8 @@ internal sealed class StacMappingService
             if (!string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase))
+                !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
+                !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
             {
                 if (selectedPropertiesLookup is not null &&
                     !selectedPropertiesLookup.Contains(kvp.Key))

@@ -67,6 +67,8 @@ internal static class Wfs20Utilities
         public const string GetFeature = "GetFeature";
         public const string GetPropertyValue = "GetPropertyValue";
         public const string Transaction = "Transaction";
+        public const string ListStoredQueries = "ListStoredQueries";
+        public const string DescribeStoredQueries = "DescribeStoredQueries";
         public const string LockFeature = "LockFeature";
         public const string GetFeatureWithLock = "GetFeatureWithLock";
     }
@@ -153,6 +155,7 @@ internal static class Wfs20Utilities
         public const string FeatureId = "FEATUREID";
         public const string ResultType = "RESULTTYPE";
         public const string StoredQueryId = "STOREDQUERY_ID";
+        public const string Id = "ID";
         public const string PropertyName = "PROPERTYNAME";
         public const string ValueReference = "VALUEREFERENCE";
         public const string Srs = "SRS";
@@ -207,6 +210,7 @@ internal static class Wfs20Utilities
             ParameterNames.FeatureId,
             ParameterNames.ResultType,
             ParameterNames.StoredQueryId,
+            ParameterNames.Id,
             ParameterNames.PropertyName,
             ParameterNames.Srs,
             ParameterNames.SrsName);

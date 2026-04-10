@@ -10,6 +10,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
@@ -121,7 +122,9 @@ internal static partial class FeatureServerEndpoints
         var objectIdField = layer.PrimaryKeyField?.Name ?? "objectid";
         var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
         {
-            Attributes = new Dictionary<string, object?>(feature.Attributes),
+            Attributes = feature.Attributes
+                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                 feature.Geometry, null, null, false, false)
         }).ToArray();

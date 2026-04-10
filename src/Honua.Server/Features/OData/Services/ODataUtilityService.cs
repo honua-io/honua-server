@@ -560,6 +560,11 @@ internal static class ODataUtilityService
             return true;
         }
 
+        if (FeatureAttributeVisibility.IsInternalAttribute(propertyName))
+        {
+            return true;
+        }
+
         return _reservedFeatureProperties.Contains(propertyName);
     }
 

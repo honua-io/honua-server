@@ -36,6 +36,16 @@ internal static class Wfs20DispatcherEndpoint
 
         public bool HasMultipleXmlQueries => XmlQueryCount > 1;
 
+        public bool Contains(string primaryName, params string[] aliases)
+        {
+            if (_values.ContainsKey(primaryName))
+            {
+                return true;
+            }
+
+            return aliases.Any(alias => _values.ContainsKey(alias));
+        }
+
         public string? Get(string primaryName, params string[] aliases)
         {
             if (_values.TryGetValue(primaryName, out var primaryValue) &&
@@ -70,6 +80,9 @@ internal static class Wfs20DispatcherEndpoint
             ["DescribeFeatureType"] = HandleDescribeFeatureType,
             ["GetFeature"] = HandleGetFeature,
             ["GetPropertyValue"] = HandleGetPropertyValue,
+            ["Transaction"] = HandleTransaction,
+            ["ListStoredQueries"] = HandleListStoredQueries,
+            ["DescribeStoredQueries"] = HandleDescribeStoredQueries,
         };
 
     /// <summary>
@@ -91,7 +104,7 @@ internal static class Wfs20DispatcherEndpoint
             .WithDisplayName("WFS 2.0 Service")
             .WithName("Wfs20Service")
             .WithSummary("OGC Web Feature Service 2.0")
-            .WithDescription("Handles all WFS 2.0 operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction")
+            .WithDescription("Handles all WFS 2.0 operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries")
             .WithTags("WFS 2.0", "OGC")
             .Produces<object>(200, "application/xml")
             .Produces<ExceptionReport>(400, "application/xml")
@@ -119,7 +132,7 @@ internal static class Wfs20DispatcherEndpoint
                 return Wfs20ErrorResults.CreateBadRequest(
                     context,
                     "MissingParameterValue",
-                    "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction",
+                    "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries",
                     "request");
             }
 
@@ -129,17 +142,10 @@ internal static class Wfs20DispatcherEndpoint
                 return await operationHandler(context, parameters, handler, logger);
             }
 
-            // Transaction is a known but unimplemented stub — kept out of _operationHandlers
-            // so it does not appear in ImplementedOperations or trigger coverage requirements.
-            if (string.Equals(requestParam, "TRANSACTION", StringComparison.OrdinalIgnoreCase))
-            {
-                return await HandleTransaction(context, parameters, handler, logger);
-            }
-
             return Wfs20ErrorResults.CreateNotImplemented(
                 context,
                 "OperationNotSupported",
-                $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction",
+                $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries",
                 "request");
         }
         catch (InvalidDataException ex)
@@ -264,6 +270,15 @@ internal static class Wfs20DispatcherEndpoint
 
             return Results.Content(schema, "application/xml", System.Text.Encoding.UTF8);
         }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "DescribeFeatureType validation failed");
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                ex.Message,
+                "typeNames");
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to process DescribeFeatureType request");
@@ -316,11 +331,24 @@ internal static class Wfs20DispatcherEndpoint
             var resourceId = parameters.Get(
                 Wfs20Utilities.ParameterNames.ResourceId,
                 Wfs20Utilities.ParameterNames.FeatureId);
+            var storedQueryId = parameters.Get(Wfs20Utilities.ParameterNames.StoredQueryId);
+            var storedQueryFeatureId = parameters.Get(Wfs20Utilities.ParameterNames.Id, "id");
             var propertyName = parameters.Get(Wfs20Utilities.ParameterNames.PropertyName);
             var srsName = parameters.Get(
                 Wfs20Utilities.ParameterNames.SrsName,
                 Wfs20Utilities.ParameterNames.Srs);
             var resultType = parameters.Get(Wfs20Utilities.ParameterNames.ResultType);
+
+            if (!string.IsNullOrWhiteSpace(storedQueryId))
+            {
+                return await handler.HandleStoredQueryGetFeatureAsync(
+                    context,
+                    storedQueryId,
+                    storedQueryFeatureId,
+                    outputFormat,
+                    count,
+                    context.RequestAborted);
+            }
 
             // Handle the request
             return await handler.HandleGetFeatureAsync(
@@ -372,6 +400,9 @@ internal static class Wfs20DispatcherEndpoint
             var valueReference = parameters.Get(
                 Wfs20Utilities.ParameterNames.ValueReference,
                 Wfs20Utilities.ParameterNames.PropertyName);
+            var valueReferenceSpecified = parameters.Contains(
+                Wfs20Utilities.ParameterNames.ValueReference,
+                Wfs20Utilities.ParameterNames.PropertyName);
             var count = parameters.Get(
                 Wfs20Utilities.ParameterNames.Count,
                 Wfs20Utilities.ParameterNames.MaxFeatures);
@@ -387,7 +418,7 @@ internal static class Wfs20DispatcherEndpoint
 
             // Handle the request
             return await handler.HandleGetPropertyValueAsync(
-                context, typeNames, valueReference, outputFormat, count, startIndex, bbox, filter, resourceId, srsName,
+                context, typeNames, valueReference, valueReferenceSpecified, outputFormat, count, startIndex, bbox, filter, resourceId, srsName,
                 context.RequestAborted);
         }
         catch (Exception ex)
@@ -400,19 +431,89 @@ internal static class Wfs20DispatcherEndpoint
     /// <summary>
     /// Handles Transaction operation
     /// </summary>
-    private static Task<IResult> HandleTransaction(
+    private static async Task<IResult> HandleTransaction(
         HttpContext context,
         WfsRequestParameters parameters,
         Wfs20Handler handler,
         ILogger logger)
     {
-        // TODO: Implement Transaction operation
-        logger.LogWarning("Transaction operation not yet implemented");
-        return Task.FromResult(Wfs20ErrorResults.CreateNotImplemented(
-            context,
-            "OperationNotSupported",
-            "Transaction operation not yet implemented",
-            "request"));
+        try
+        {
+            var validationError = ValidateOperationRequestParameters(parameters);
+
+            if (validationError is not null)
+            {
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    validationError.ExceptionCode,
+                    validationError.Detail,
+                    validationError.Locator);
+            }
+
+            return await handler.HandleTransactionAsync(context, context.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to process Transaction request");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process Transaction request");
+        }
+    }
+
+    private static async Task<IResult> HandleListStoredQueries(
+        HttpContext context,
+        WfsRequestParameters parameters,
+        Wfs20Handler handler,
+        ILogger logger)
+    {
+        try
+        {
+            var validationError = ValidateOperationRequestParameters(parameters);
+
+            if (validationError is not null)
+            {
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    validationError.ExceptionCode,
+                    validationError.Detail,
+                    validationError.Locator);
+            }
+
+            return await handler.HandleListStoredQueriesAsync(context, context.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to process ListStoredQueries request");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process ListStoredQueries request");
+        }
+    }
+
+    private static async Task<IResult> HandleDescribeStoredQueries(
+        HttpContext context,
+        WfsRequestParameters parameters,
+        Wfs20Handler handler,
+        ILogger logger)
+    {
+        try
+        {
+            var validationError = ValidateOperationRequestParameters(parameters);
+
+            if (validationError is not null)
+            {
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    validationError.ExceptionCode,
+                    validationError.Detail,
+                    validationError.Locator);
+            }
+
+            var storedQueryIds = parameters.Get(Wfs20Utilities.ParameterNames.StoredQueryId);
+            return await handler.HandleDescribeStoredQueriesAsync(context, storedQueryIds, context.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to process DescribeStoredQueries request");
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DescribeStoredQueries request");
+        }
     }
 
     private static WfsValidationError? ValidateCapabilitiesRequestParameters(WfsRequestParameters parameters)
@@ -496,10 +597,7 @@ internal static class Wfs20DispatcherEndpoint
         foreach (var key in context.Request.Query.Keys)
         {
             var value = context.Request.Query[key].FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                values[key] = value;
-            }
+            values[key] = value?.Trim() ?? string.Empty;
         }
 
         if (!HttpMethods.IsPost(context.Request.Method))
@@ -553,6 +651,7 @@ internal static class Wfs20DispatcherEndpoint
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.UpdateSequence, "updateSequence");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.TypeNames, "typeNames");
         CopyAttribute(root, values, Wfs20Utilities.ParameterNames.TypeName, "typeName");
+        CopyAttribute(root, values, Wfs20Utilities.ParameterNames.StoredQueryId, "storedQueryId");
 
         var typeNames = root
             .Elements()
@@ -569,54 +668,84 @@ internal static class Wfs20DispatcherEndpoint
             .Elements()
             .Where(element => string.Equals(element.Name.LocalName, "Query", StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        if (queries.Length == 0)
+        if (queries.Length > 0)
         {
-            CopyElementValue(root, values, Wfs20Utilities.ParameterNames.ValueReference, "ValueReference");
-            return 0;
+            var queryTypeNames = queries
+                .SelectMany(query => query.Attributes()
+                    .Where(attribute => string.Equals(attribute.Name.LocalName, "typeNames", StringComparison.OrdinalIgnoreCase))
+                    .Select(attribute => attribute.Value.Trim()))
+                .Where(value => value.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (queryTypeNames.Length > 0)
+            {
+                SetValue(values, Wfs20Utilities.ParameterNames.TypeNames, string.Join(",", queryTypeNames));
+            }
+
+            var propertyNames = queries
+                .SelectMany(query => query.Elements()
+                    .Where(element => string.Equals(element.Name.LocalName, "PropertyName", StringComparison.OrdinalIgnoreCase))
+                    .Select(element => element.Value.Trim()))
+                .Where(value => value.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (propertyNames.Length > 0)
+            {
+                SetValue(values, Wfs20Utilities.ParameterNames.PropertyName, string.Join(",", propertyNames));
+            }
+
+            var srsName = queries
+                .SelectMany(query => query.Attributes()
+                    .Where(attribute => string.Equals(attribute.Name.LocalName, "srsName", StringComparison.OrdinalIgnoreCase))
+                    .Select(attribute => attribute.Value.Trim()))
+                .FirstOrDefault(value => value.Length > 0);
+            if (!string.IsNullOrWhiteSpace(srsName))
+            {
+                SetValue(values, Wfs20Utilities.ParameterNames.SrsName, srsName);
+            }
+
+            var filter = queries
+                .SelectMany(query => query.Elements()
+                    .Where(element => string.Equals(element.Name.LocalName, "Filter", StringComparison.OrdinalIgnoreCase))
+                    .Select(element => element.ToString(SaveOptions.DisableFormatting)))
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                SetValue(values, Wfs20Utilities.ParameterNames.Filter, filter);
+            }
         }
 
-        var queryTypeNames = queries
-            .SelectMany(query => query.Attributes()
-                .Where(attribute => string.Equals(attribute.Name.LocalName, "typeNames", StringComparison.OrdinalIgnoreCase))
-                .Select(attribute => attribute.Value.Trim()))
+        var storedQuery = root.Elements()
+            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "StoredQuery", StringComparison.OrdinalIgnoreCase));
+        if (storedQuery != null)
+        {
+            CopyAttribute(storedQuery, values, Wfs20Utilities.ParameterNames.StoredQueryId, "id");
+
+            var storedQueryFeatureId = storedQuery.Elements()
+                .FirstOrDefault(element =>
+                    string.Equals(element.Name.LocalName, "Parameter", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(
+                        element.Attributes()
+                            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "name", StringComparison.OrdinalIgnoreCase))
+                            ?.Value,
+                        "id",
+                        StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+            if (!string.IsNullOrWhiteSpace(storedQueryFeatureId))
+            {
+                SetValue(values, Wfs20Utilities.ParameterNames.Id, storedQueryFeatureId);
+            }
+        }
+
+        var storedQueryIds = root
+            .Elements()
+            .Where(element => string.Equals(element.Name.LocalName, "StoredQueryId", StringComparison.OrdinalIgnoreCase))
+            .Select(element => element.Value.Trim())
             .Where(value => value.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (queryTypeNames.Length > 0)
+        if (storedQueryIds.Length > 0)
         {
-            SetValue(values, Wfs20Utilities.ParameterNames.TypeNames, string.Join(",", queryTypeNames));
-        }
-
-        var propertyNames = queries
-            .SelectMany(query => query.Elements()
-                .Where(element => string.Equals(element.Name.LocalName, "PropertyName", StringComparison.OrdinalIgnoreCase))
-                .Select(element => element.Value.Trim()))
-            .Where(value => value.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (propertyNames.Length > 0)
-        {
-            SetValue(values, Wfs20Utilities.ParameterNames.PropertyName, string.Join(",", propertyNames));
-        }
-
-        var srsName = queries
-            .SelectMany(query => query.Attributes()
-                .Where(attribute => string.Equals(attribute.Name.LocalName, "srsName", StringComparison.OrdinalIgnoreCase))
-                .Select(attribute => attribute.Value.Trim()))
-            .FirstOrDefault(value => value.Length > 0);
-        if (!string.IsNullOrWhiteSpace(srsName))
-        {
-            SetValue(values, Wfs20Utilities.ParameterNames.SrsName, srsName);
-        }
-
-        var filter = queries
-            .SelectMany(query => query.Elements()
-                .Where(element => string.Equals(element.Name.LocalName, "Filter", StringComparison.OrdinalIgnoreCase))
-                .Select(element => element.ToString(SaveOptions.DisableFormatting)))
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-        if (!string.IsNullOrWhiteSpace(filter))
-        {
-            SetValue(values, Wfs20Utilities.ParameterNames.Filter, filter);
+            SetValue(values, Wfs20Utilities.ParameterNames.StoredQueryId, string.Join(",", storedQueryIds));
         }
 
         CopyElementValue(root, values, Wfs20Utilities.ParameterNames.ValueReference, "ValueReference");
@@ -634,9 +763,9 @@ internal static class Wfs20DispatcherEndpoint
             var value = element.Attributes()
                 .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, attributeName, StringComparison.OrdinalIgnoreCase))
                 ?.Value;
-            if (!string.IsNullOrWhiteSpace(value))
+            if (value is not null)
             {
-                SetValue(values, targetName, value);
+                SetRawValue(values, targetName, value);
                 return;
             }
         }
@@ -651,9 +780,9 @@ internal static class Wfs20DispatcherEndpoint
         var value = root.Elements()
             .FirstOrDefault(element => string.Equals(element.Name.LocalName, elementName, StringComparison.OrdinalIgnoreCase))
             ?.Value;
-        if (!string.IsNullOrWhiteSpace(value))
+        if (value is not null)
         {
-            SetValue(values, targetName, value);
+            SetRawValue(values, targetName, value);
         }
     }
 
@@ -664,6 +793,9 @@ internal static class Wfs20DispatcherEndpoint
             values[key] = value.Trim();
         }
     }
+
+    private static void SetRawValue(Dictionary<string, string> values, string key, string value)
+        => values[key] = value.Trim();
 
     /// <summary>
     /// Serializes an object to XML and returns as IResult

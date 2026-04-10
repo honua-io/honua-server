@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 
@@ -613,6 +614,11 @@ internal static class OgcResponseFormatter
         foreach (var (key, value) in properties)
         {
             if (value == null)
+            {
+                continue;
+            }
+
+            if (FeatureAttributeVisibility.IsInternalAttribute(key))
             {
                 continue;
             }

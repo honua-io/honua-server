@@ -123,9 +123,18 @@ cleanup() {
 # Set trap for cleanup
 trap cleanup EXIT
 
+# Reset results directory even if a previous run left root-owned artifacts behind.
+reset_results_dir() {
+    mkdir -p "$CITE_RESULTS_DIR"
+
+    docker run --rm \
+        -v "$(pwd)/$CITE_RESULTS_DIR:/results" \
+        alpine:3.22 \
+        sh -c "rm -rf /results/* /results/.[!.]* /results/..?* 2>/dev/null || true; chown -R $(id -u):$(id -g) /results"
+}
+
 # Create results directory
-mkdir -p "$CITE_RESULTS_DIR"
-rm -rf "$CITE_RESULTS_DIR"/*
+reset_results_dir
 
 # Start the CITE test environment
 echo -e "${YELLOW}Starting WFS 2.0 CITE test environment...${NC}"
@@ -133,6 +142,8 @@ $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null
 
 # Export profile for docker-compose
 export CITE_PROFILE="$PROFILE"
+export HOST_UID="$(id -u)"
+export HOST_GID="$(id -g)"
 
 # Start all services
 if [[ "$VERBOSE" == "true" ]]; then

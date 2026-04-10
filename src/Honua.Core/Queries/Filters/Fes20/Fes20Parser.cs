@@ -7,6 +7,7 @@ using System.IO;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Shared.Models;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -89,6 +90,7 @@ public static class Fes20Parser
             "PropertyIsLessThanOrEqualTo" => ParseComparison(element, BinaryOperator.LessThanOrEqual),
             "PropertyIsGreaterThanOrEqualTo" => ParseComparison(element, BinaryOperator.GreaterThanOrEqual),
             "PropertyIsLike" => ParseLike(element),
+            "PropertyIsNil" => ParseIsNull(element),
             "PropertyIsNull" => ParseIsNull(element),
             "PropertyIsBetween" => ParseBetween(element),
 
@@ -285,20 +287,31 @@ public static class Fes20Parser
     private static SpatialPredicate ParseBBox(XElement element)
     {
         var children = element.Elements().ToArray();
-        if (children.Length != 2)
+        if (children.Length is not 1 and not 2)
         {
-            throw new Fes20ParseException("BBOX element must contain exactly 2 child elements");
+            throw new Fes20ParseException("BBOX element must contain an Envelope and an optional ValueReference.");
         }
 
-        var propertyRef = children[0];
-        var envelope = children[1];
-
-        if (propertyRef.Name.LocalName != "ValueReference")
+        XElement envelope;
+        FilterExpression property;
+        if (children.Length == 1)
         {
-            throw new Fes20ParseException("First child of BBOX must be ValueReference");
+            property = new PropertyReference("geometry");
+            envelope = children[0];
+        }
+        else
+        {
+            var propertyRef = children[0];
+            envelope = children[1];
+
+            if (propertyRef.Name.LocalName != "ValueReference")
+            {
+                throw new Fes20ParseException("First child of BBOX must be ValueReference when specified.");
+            }
+
+            property = new PropertyReference(propertyRef.Value.Trim());
         }
 
-        var property = new PropertyReference(propertyRef.Value.Trim());
         var geometry = ParseGeometry(envelope);
 
         return new SpatialPredicate(SpatialOperator.Intersects, property, geometry);
@@ -402,11 +415,31 @@ public static class Fes20Parser
     /// <summary>
     /// Parses temporal operations (basic support)
     /// </summary>
-    private static FilterExpression ParseTemporal(XElement element)
+    private static TemporalPredicate ParseTemporal(XElement element)
     {
-        // TODO: Implement temporal filter parsing
-        // For now, throw exception as temporal filters are not yet supported
-        throw new Fes20ParseException($"Temporal operator {element.Name.LocalName} is not yet supported");
+        var children = element.Elements().ToArray();
+        if (children.Length != 2)
+        {
+            throw new Fes20ParseException($"{element.Name.LocalName} element must contain exactly 2 child elements");
+        }
+
+        if (children[0].Name.LocalName != "ValueReference")
+        {
+            throw new Fes20ParseException($"First child of {element.Name.LocalName} must be ValueReference");
+        }
+
+        var property = new PropertyReference(children[0].Value.Trim());
+        var temporalOperand = ParseTemporalOperand(children[1]);
+
+        var op = element.Name.LocalName switch
+        {
+            "After" => TemporalOperator.After,
+            "Before" => TemporalOperator.Before,
+            "During" => TemporalOperator.During,
+            _ => throw new Fes20ParseException($"Unsupported temporal operator {element.Name.LocalName}")
+        };
+
+        return new TemporalPredicate(op, property, temporalOperand);
     }
 
     /// <summary>
@@ -463,6 +496,8 @@ public static class Fes20Parser
     private static GeometryLiteral ParseEnvelope(XElement element)
     {
         var srsName = element.Attribute("srsName")?.Value ?? "EPSG:4326";
+        var srid = ParseSrid(srsName);
+        var axisOrder = ResolveAxisOrder(srsName, srid);
         var lowerCorner = element.Elements().FirstOrDefault(e => e.Name.LocalName == "lowerCorner")?.Value;
         var upperCorner = element.Elements().FirstOrDefault(e => e.Name.LocalName == "upperCorner")?.Value;
 
@@ -487,15 +522,19 @@ public static class Fes20Parser
             throw new Fes20ParseException("Invalid envelope coordinates");
         }
 
-        // Convert to WKB polygon
-        // TODO: Implement proper envelope to WKB conversion
-        // For now, create a simple polygon representation
-        var wkbGeometry = CreateEnvelopeWkb(minX, minY, maxX, maxY);
+        var lower = CreateCoordinate(minX, minY, axisOrder);
+        var upper = CreateCoordinate(maxX, maxY, axisOrder);
+        var wkbGeometry = CreateEnvelopeWkb(
+            Math.Min(lower.X, upper.X),
+            Math.Min(lower.Y, upper.Y),
+            Math.Max(lower.X, upper.X),
+            Math.Max(lower.Y, upper.Y),
+            srid);
 
         return new GeometryLiteral(
             wkbGeometry,
-            ParseSrid(srsName),
-            "FES:Envelope");
+            srid,
+            element.ToString(SaveOptions.DisableFormatting));
     }
 
     /// <summary>
@@ -503,9 +542,211 @@ public static class Fes20Parser
     /// </summary>
     private static GeometryLiteral ParseGmlGeometry(XElement element)
     {
-        // TODO: Implement GML geometry parsing
-        // For now, throw exception as full GML parsing is complex
-        throw new Fes20ParseException($"GML geometry parsing is not yet implemented for {element.Name.LocalName}");
+        var srsName = element.Attribute("srsName")?.Value ?? "EPSG:4326";
+        var srid = ParseSrid(srsName);
+        var axisOrder = ResolveAxisOrder(srsName, srid);
+        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
+
+        Geometry geometry = element.Name.LocalName switch
+        {
+            "Point" => geometryFactory.CreatePoint(ParseSingleCoordinate(element, axisOrder)),
+            "LineString" or "Curve" => geometryFactory.CreateLineString(ParseCoordinateSequence(element, axisOrder)),
+            "Polygon" or "Surface" => ParsePolygonGeometry(element, geometryFactory, axisOrder),
+            _ => throw new Fes20ParseException($"GML geometry parsing is not yet implemented for {element.Name.LocalName}")
+        };
+
+        return new GeometryLiteral(
+            new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(geometry),
+            srid,
+            element.ToString(SaveOptions.DisableFormatting));
+    }
+
+    private static FilterExpression ParseTemporalOperand(XElement element)
+    {
+        if (element.Name.NamespaceName != GmlNamespace)
+        {
+            throw new Fes20ParseException($"Unsupported temporal operand namespace: {element.Name.NamespaceName}");
+        }
+
+        return element.Name.LocalName switch
+        {
+            "TimeInstant" => ParseTimeInstant(element),
+            "TimePeriod" => ParseTimePeriod(element),
+            _ => throw new Fes20ParseException($"Unsupported temporal operand: {element.Name.LocalName}")
+        };
+    }
+
+    private static Literal ParseTimeInstant(XElement element)
+    {
+        var timePosition = element.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == "timePosition")
+            ?.Value;
+        if (string.IsNullOrWhiteSpace(timePosition))
+        {
+            throw new Fes20ParseException("TimeInstant must contain a gml:timePosition element.");
+        }
+
+        return ParseTemporalPosition(timePosition);
+    }
+
+    private static IntervalLiteral ParseTimePeriod(XElement element)
+    {
+        var beginPosition = element.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName is "beginPosition" or "timePosition" &&
+                                         candidate.Parent?.Name.LocalName is "TimePeriod" or "begin" or "TimeInstant")
+            ?.Value;
+        var endPosition = element.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName is "endPosition" or "timePosition" &&
+                                         candidate.Parent?.Name.LocalName is "TimePeriod" or "end" or "TimeInstant")
+            ?.Value;
+
+        if (string.IsNullOrWhiteSpace(beginPosition) || string.IsNullOrWhiteSpace(endPosition))
+        {
+            throw new Fes20ParseException("TimePeriod must contain both begin and end positions.");
+        }
+
+        return new IntervalLiteral(
+            ParseTemporalPosition(beginPosition),
+            ParseTemporalPosition(endPosition));
+    }
+
+    private static Literal ParseTemporalPosition(string value)
+    {
+        if (DateOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateOnly))
+        {
+            return new Literal(dateOnly, LiteralType.Date);
+        }
+
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+        {
+            return new Literal(timestamp, LiteralType.DateTime);
+        }
+
+        throw new Fes20ParseException($"Invalid temporal position '{value}'.");
+    }
+
+    private static Polygon ParsePolygonGeometry(
+        XElement element,
+        GeometryFactory geometryFactory,
+        AxisOrder axisOrder)
+    {
+        var exterior = element.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == "exterior")
+            ?? throw new Fes20ParseException($"{element.Name.LocalName} must contain an exterior ring.");
+        var shell = geometryFactory.CreateLinearRing(ParseRingCoordinates(exterior, axisOrder));
+        var holes = element.Descendants()
+            .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                candidate.Name.LocalName == "interior")
+            .Select(candidate => geometryFactory.CreateLinearRing(ParseRingCoordinates(candidate, axisOrder)))
+            .ToArray();
+
+        return geometryFactory.CreatePolygon(shell, holes);
+    }
+
+    private static Coordinate[] ParseRingCoordinates(XElement ringContainer, AxisOrder axisOrder)
+    {
+        var ring = ringContainer.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == "LinearRing")
+            ?? ringContainer;
+        return ParseCoordinateSequence(ring, axisOrder);
+    }
+
+    private static Coordinate ParseSingleCoordinate(XElement element, AxisOrder axisOrder)
+    {
+        var pos = element.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == "pos")
+            ?.Value;
+        if (string.IsNullOrWhiteSpace(pos))
+        {
+            throw new Fes20ParseException($"{element.Name.LocalName} must contain a gml:pos element.");
+        }
+
+        return ParseCoordinate(pos, axisOrder);
+    }
+
+    private static Coordinate[] ParseCoordinateSequence(XElement element, AxisOrder axisOrder)
+    {
+        var posList = element.Descendants()
+            .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                         candidate.Name.LocalName == "posList")
+            ?.Value;
+        if (!string.IsNullOrWhiteSpace(posList))
+        {
+            return ParsePosList(posList, axisOrder);
+        }
+
+        var positions = element.Descendants()
+            .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
+                                candidate.Name.LocalName == "pos")
+            .Select(candidate => ParseCoordinate(candidate.Value, axisOrder))
+            .ToArray();
+        if (positions.Length == 0)
+        {
+            throw new Fes20ParseException($"{element.Name.LocalName} must contain coordinate positions.");
+        }
+
+        return positions;
+    }
+
+    private static Coordinate[] ParsePosList(string rawPosList, AxisOrder axisOrder)
+    {
+        var ordinates = rawPosList
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        if (ordinates.Length < 2 || ordinates.Length % 2 != 0)
+        {
+            throw new Fes20ParseException("gml:posList must contain an even number of ordinates.");
+        }
+
+        var coordinates = new Coordinate[ordinates.Length / 2];
+        for (var i = 0; i < ordinates.Length; i += 2)
+        {
+            coordinates[i / 2] = CreateCoordinate(ordinates[i], ordinates[i + 1], axisOrder);
+        }
+
+        return coordinates;
+    }
+
+    private static Coordinate ParseCoordinate(string rawPosition, AxisOrder axisOrder)
+    {
+        var ordinates = rawPosition
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (ordinates.Length < 2)
+        {
+            throw new Fes20ParseException("Coordinate position must contain at least two ordinates.");
+        }
+
+        if (!double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
+            !double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second))
+        {
+            throw new Fes20ParseException("Coordinate position contains invalid numeric ordinates.");
+        }
+
+        return CreateCoordinate(first, second, axisOrder);
+    }
+
+    private static Coordinate CreateCoordinate(double first, double second, AxisOrder axisOrder)
+        => axisOrder == AxisOrder.NorthEast
+            ? new Coordinate(second, first)
+            : new Coordinate(first, second);
+
+    private static AxisOrder ResolveAxisOrder(string srsName, int srid)
+    {
+        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            return AxisOrder.EastNorth;
+        }
+
+        return SpatialReference.Create(srid).IsGeographic
+            ? AxisOrder.NorthEast
+            : AxisOrder.EastNorth;
     }
 
     /// <summary>
@@ -688,9 +929,9 @@ public static class Fes20Parser
     /// <summary>
     /// Creates WKB representation for an envelope/bbox
     /// </summary>
-    private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
+    private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY, int srid)
     {
-        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
+        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
         var polygon = geometryFactory.CreatePolygon(
         [
             new Coordinate(minX, minY),

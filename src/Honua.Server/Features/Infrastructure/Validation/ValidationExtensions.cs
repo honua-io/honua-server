@@ -17,6 +17,10 @@ namespace Honua.Server.Features.Infrastructure.Validation;
 /// </summary>
 public static class ValidationExtensions
 {
+    internal const string WfsGmlIdentifierAttributeName = "__honua_wfs_gml_identifier";
+    internal const string WfsGmlNameAttributeName = "__honua_wfs_gml_name";
+    internal const string WfsGmlDescriptionAttributeName = "__honua_wfs_gml_description";
+
     /// <summary>
     /// Attribute validation behavior by protocol.
     /// </summary>
@@ -186,6 +190,12 @@ public static class ValidationExtensions
 
         foreach (var (key, rawValue) in attributes)
         {
+            if (IsReservedMutationAttribute(key))
+            {
+                builder[key] = NormalizeAttributeValue(rawValue);
+                continue;
+            }
+
             if (!fieldsByName.TryGetValue(key, out var field))
             {
                 if (mode == AttributeValidationMode.GeoServices)
@@ -217,6 +227,13 @@ public static class ValidationExtensions
         }
 
         return ValidationResult<ImmutableDictionary<string, object?>>.Success(builder.ToImmutable());
+    }
+
+    internal static bool IsReservedMutationAttribute(string attributeName)
+    {
+        return attributeName.Equals(WfsGmlIdentifierAttributeName, StringComparison.Ordinal) ||
+               attributeName.Equals(WfsGmlNameAttributeName, StringComparison.Ordinal) ||
+               attributeName.Equals(WfsGmlDescriptionAttributeName, StringComparison.Ordinal);
     }
 
     /// <summary>

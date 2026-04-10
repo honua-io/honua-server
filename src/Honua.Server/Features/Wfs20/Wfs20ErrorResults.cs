@@ -39,6 +39,20 @@ internal static class Wfs20ErrorResults
             locator);
     }
 
+    internal static IResult CreateNotFound(
+        HttpContext context,
+        string exceptionCode,
+        string detail,
+        string? locator = null,
+        IReadOnlyList<string>? additionalDetails = null)
+    {
+        return Create(
+            context,
+            StandardErrorResponse.NotFound(detail, additionalDetails),
+            exceptionCode,
+            locator);
+    }
+
     private static IResult Create(
         HttpContext context,
         StandardErrorResponse errorResponse,

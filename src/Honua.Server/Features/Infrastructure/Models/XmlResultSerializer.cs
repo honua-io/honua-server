@@ -8,6 +8,11 @@ using System.Xml.Serialization;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
+internal interface IXmlNamespaceProvider
+{
+    XmlSerializerNamespaces Namespaces { get; }
+}
+
 internal static class XmlResultSerializer
 {
     // XML serialization is isolated here so protocol endpoints keep their reflection-aware
@@ -28,7 +33,15 @@ internal static class XmlResultSerializer
 
         using var stringWriter = new Utf8StringWriter();
         using var xmlWriter = XmlWriter.Create(stringWriter, settings);
-        serializer.Serialize(xmlWriter, value);
+        if (value is IXmlNamespaceProvider namespaceProvider)
+        {
+            serializer.Serialize(xmlWriter, value, namespaceProvider.Namespaces);
+        }
+        else
+        {
+            serializer.Serialize(xmlWriter, value);
+        }
+
         return stringWriter.ToString();
     }
 
