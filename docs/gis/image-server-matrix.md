@@ -18,17 +18,17 @@ Sources:
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Service metadata | `/rest/services/{serviceName}/ImageServer` | GET | Implemented | `GET /rest/services/{id}/ImageServer` | Returns metadata for the primary raster in the addressed layer. Metadata responses are cached with the `ImageServerMetadata` output-cache policy. |
-| Image tile | `/rest/services/{serviceName}/ImageServer/tile/{level}/{row}/{col}` | GET | Implemented | `GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}` | Returns raster map tiles. Supports `png` (default), `jpeg`, and `tiff` output; zoom levels are limited to `0-28`. |
+| Service metadata | `/rest/services/{serviceName}/ImageServer` | GET | Implemented | `GET /rest/services/{id}/ImageServer` | Returns metadata for the addressed layer mosaic, including aggregate extent/time metadata when multiple rasters are present. Metadata responses are cached with the `ImageServerMetadata` output-cache policy. |
+| Image tile | `/rest/services/{serviceName}/ImageServer/tile/{level}/{row}/{col}` | GET | Implemented | `GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}` | Returns raster map tiles. Supports `png` (default), `jpeg`, and `tiff` output; zoom levels are limited to `0-28`. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. |
 
 ### Partial
 
 | Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Returns a JSON envelope with a temporary `href` to the rendered image. Only a subset of Esri export parameters are applied, and `f=image` byte streaming is not supported. |
-| Identify | `/rest/services/{serviceName}/ImageServer/identify` | GET | Partial | `GET /rest/services/{id}/ImageServer/identify` | Supports point-only identify requests and JSON responses. Several Esri response-shaping and raster-processing parameters are currently ignored. |
-| Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/query` | Returns the layer's raster catalog as Esri-compatible features with `OBJECTID`, footprint geometry, and pixel-size attributes. Supports `where`, `objectIds`, `outSR`, `resultOffset`, `resultRecordCount`, and the `returnGeometry`/`returnIdsOnly`/`returnCountOnly`/`returnExtentOnly` shaping flags. The MVP applies WHERE filters via the GeoServices SQL parser in-memory and does not reproject footprint geometry — `outSR` is honoured for the response envelope only. |
-| Compute Statistics and Histograms | `/rest/services/{serviceName}/ImageServer/computeStatisticsHistograms` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/computeStatisticsHistograms` | Returns per-band statistics and histograms for one or more rasters in the catalog. Supports `rasterIds` (catalog object IDs), the Honua-specific `bandIds` selector, and `histogramParameters.size` for bin count. AOI clipping (`geometry`/`mosaicRule`/`renderingRule`) is not yet honoured — analysis always covers the full raster. |
+| Export Image | `/rest/services/{serviceName}/ImageServer/exportImage` | GET | Partial | `GET /rest/services/{id}/ImageServer/exportImage` | Returns a JSON envelope with a temporary `href` to the rendered image. Spatially intersecting rasters are exported as a mosaic, with optional `mosaicRule` and single-instant `time` support. `f=image` byte streaming is not supported. |
+| Identify | `/rest/services/{serviceName}/ImageServer/identify` | GET | Partial | `GET /rest/services/{id}/ImageServer/identify` | Supports point-only identify requests and JSON responses. When multiple rasters overlap the identify point, Honua returns the mosaic value and can include all participating catalog items. Several Esri response-shaping and raster-processing parameters remain unsupported. |
+| Query | `/rest/services/{serviceName}/ImageServer/query` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/query` | Returns the layer's raster catalog as Esri-compatible features with `OBJECTID`, footprint geometry, pixel-size attributes, and `AcquisitionDate`. Supports `where`, `objectIds`, `outSR`, `time`, `resultOffset`, `resultRecordCount`, and the `returnGeometry`/`returnIdsOnly`/`returnCountOnly`/`returnExtentOnly` shaping flags. The MVP applies WHERE filters via the GeoServices SQL parser in-memory and does not reproject footprint geometry — `outSR` is honoured for the response envelope only. |
+| Compute Statistics and Histograms | `/rest/services/{serviceName}/ImageServer/computeStatisticsHistograms` | GET, POST | Partial | `GET\|POST /rest/services/{id}/ImageServer/computeStatisticsHistograms` | Returns per-band statistics and histograms for one or more rasters in the catalog. Supports `rasterIds` (catalog object IDs), the Honua-specific `bandIds` selector, `mosaicRule`, single-instant `time`, and `histogramParameters.size` for bin count. AOI clipping via `geometry`/`geometryType` is not yet honoured — analysis always covers the full selected raster or mosaic. |
 
 ### Not implemented
 
@@ -60,7 +60,7 @@ Sources:
 
 | Esri child resource | Esri path | Honua status | Notes |
 | --- | --- | --- | --- |
-| Legend | `.../ImageServer/legend` | Partial | `GET /rest/services/{id}/ImageServer/legend` returns Esri-shaped `layers[].legend[]` swatches as base64 PNGs (`image/png`). The MVP renders a fixed 5-class equal-interval ramp keyed off the primary raster's band-1 statistics (`min`, `max`); per-layer renderer persistence and classification overrides via `renderingRule` are not yet honoured. Only `f=json`/`f=pjson` is accepted. |
+| Legend | `.../ImageServer/legend` | Partial | `GET /rest/services/{id}/ImageServer/legend` returns Esri-shaped `layers[].legend[]` swatches as base64 PNGs (`image/png`). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics (`min`, `max`); per-layer renderer persistence and classification overrides via `renderingRule` are not yet honoured. Only `f=json`/`f=pjson` is accepted. |
 
 ### Not implemented
 
@@ -89,7 +89,7 @@ Sources:
 
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
-| `bbox` | Implemented | Envelope clipping region. When omitted, Honua uses the primary raster extent. |
+| `bbox` | Implemented | Envelope clipping region. When omitted, Honua uses the selected raster mosaic extent. |
 | `imageSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `bboxSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`. Esri formats such as `png8`, `png24`, `bmp`, and `gif` are not supported. |
@@ -103,6 +103,8 @@ Sources:
 | --- | --- | --- |
 | `size` | Partial | Honua accepts a single integer and treats it as output width, deriving proportional height from raster aspect ratio. Esri expects `width,height`. |
 | `pixelType` | Partial | Input is validated, but the export handler does not apply pixel-type conversion. |
+| `mosaicRule` | Partial | Accepts simple tokens (`newest`, `oldest`, `average`, `max`, `min`) or an Esri-style JSON object with `mergeStrategy`/`operation`. Applied only when the request intersects multiple rasters. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp. |
 
 #### Ignored or not implemented
 
@@ -110,7 +112,6 @@ Sources:
 | --- | --- |
 | `compression` | Validated to `0-100`, but the export handler currently drops the value and does not map it to TIFF compression behavior. |
 | `bandIds` | Accepted by the request model but not applied by the export handler. |
-| `mosaicRule` | Accepted by the request model but not applied. |
 | `renderingRule` | Accepted by the request model but not applied. |
 | `noData` | Accepted by the request model but not applied. |
 | `noDataInterpretation` | Accepted by the request model but not applied. |
@@ -124,17 +125,22 @@ Sources:
 | `geometry` | Implemented | Supports comma-separated `x,y` input or JSON point objects. |
 | `geometryType` | Partial | Only `esriGeometryPoint` is supported. |
 | `sr` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
-| `returnCatalogItems` | Implemented | When `true`, returns the primary raster catalog item in `catalogItems[]`. |
+| `returnCatalogItems` | Implemented | When `true`, returns the raster catalog items participating in the identify result in `catalogItems[]`. |
 | `f` | Partial | Only `json` and `pjson` are supported. |
+
+#### Partial or behavior differences
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `mosaicRule` | Partial | Accepts the same merge-strategy tokens as `exportImage` and is applied when the identify point intersects multiple rasters. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp before running identify. |
 
 #### Ignored or not implemented
 
 | Esri parameter | Notes |
 | --- | --- |
-| `mosaicRule` | Accepted by the request model but not applied. |
 | `renderingRule` | Accepted by the request model but not applied. |
 | `pixelSize` | Accepted by the request model but not applied. |
-| `time` | Accepted by the request model but not applied. |
 | `returnGeometry` | Accepted by the request model but not applied; the response always includes `location`. |
 | Non-point `geometryType` values | Rejected with `400 Bad Request`. |
 
@@ -144,6 +150,8 @@ Sources:
 | --- | --- | --- |
 | `format` | Implemented | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`; defaults to `png`. |
 | `{level}` / `{row}` / `{col}` | Implemented | Validated as Web Mercator tile coordinates with zoom levels `0-28`. |
+| `mosaicRule` | Partial | Accepts the same merge-strategy tokens as `exportImage` and is applied when multiple rasters overlap the requested tile. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp before rendering the tile. |
 
 ### Query (`GET|POST .../ImageServer/query`)
 
@@ -162,6 +170,12 @@ Sources:
 | `returnCountOnly` | Implemented | Returns `count`-only response. |
 | `returnExtentOnly` | Implemented | Returns the aggregate extent (computed after `where`/`objectIds` filters but before pagination). |
 
+#### Partial or behavior differences
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua filters the catalog to the latest `AcquisitionDate` at or before the supplied timestamp. |
+
 #### Ignored or not implemented
 
 | Esri parameter | Notes |
@@ -169,7 +183,6 @@ Sources:
 | `geometry` / `geometryType` / `inSR` / `spatialRel` | Spatial filtering against arbitrary client geometries is not yet supported by the catalog reader. |
 | `outFields` | Catalog responses always include the full attribute set; per-field projection is not yet honoured. |
 | `orderByFields` | Ordering is currently the catalog's natural order. |
-| `time` | Temporal filtering is not yet honoured. |
 | `pixelSize` | Not honoured. |
 
 ### Compute Statistics and Histograms (`GET|POST .../ImageServer/computeStatisticsHistograms`)
@@ -179,15 +192,22 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `f` | Partial | Only `json` and `pjson` are supported. |
-| `rasterIds` | Implemented | Accepts CSV (`1,3`) or JSON array (`[1,3]`) of catalog object IDs. When omitted, defaults to the layer's primary raster. Unknown IDs return `400 Bad Request`. |
+| `rasterIds` | Implemented | Accepts CSV (`1,3`) or JSON array (`[1,3]`) of catalog object IDs. When omitted, defaults to the spatially/temporally selected layer mosaic rather than a single primary raster. Unknown IDs return `400 Bad Request`. |
 | `bandIds` | Implemented (Honua extension) | Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector. |
 | `histogramParameters.size` | Implemented | Bin count, capped at `1024`. Default is `256` when omitted. |
+
+#### Partial or behavior differences
+
+| Esri parameter | Honua status | Notes |
+| --- | --- | --- |
+| `mosaicRule` | Partial | Applied when `rasterIds` is omitted and multiple rasters participate in the selected mosaic. |
+| `time` | Partial | Accepts a single ISO 8601 instant. On Pro editions, Honua selects the latest acquisition at or before the supplied timestamp before computing statistics/histograms. |
 
 #### Ignored or not implemented
 
 | Esri parameter | Notes |
 | --- | --- |
-| `geometry` / `geometryType` / `mosaicRule` | AOI clipping is not yet honoured — analysis always covers the full raster. |
+| `geometry` / `geometryType` | AOI clipping is not yet honoured — analysis always covers the full selected raster or mosaic. |
 | `renderingRule` | Not honoured. |
 | `pixelSize` | Not honoured. |
 
@@ -200,7 +220,7 @@ The Esri `BandStatistic` and `BandHistogram` shapes do not carry a `band` field,
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `f` | Partial | Only `json` and `pjson` are supported. Other formats return `400 Bad Request`. |
-| `renderingRule` | Not honoured | Classification overrides through a custom rendering rule are ignored — swatches are always rendered from a fixed 5-class equal-interval viridis ramp keyed off the primary raster's band-1 statistics (`min`, `max`). |
+| `renderingRule` | Not honoured | Classification overrides through a custom rendering rule are ignored — swatches are always rendered from a fixed 5-class equal-interval viridis ramp keyed off the resolved layer mosaic's band-1 statistics (`min`, `max`). |
 
 ## Honua extensions
 
@@ -225,16 +245,16 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 | --- | --- | --- |
 | `currentVersion` | Implemented | `10.81` |
 | `serviceDescription`, `name`, `description` | Implemented | Derived from layer metadata. |
-| `extent`, `spatialReference` | Implemented | Derived from the primary raster extent and SRID. |
-| `pixelSizeX`, `pixelSizeY` | Implemented | Calculated from primary raster dimensions and extent. |
-| `bandCount`, `pixelType` | Implemented | Derived from the primary raster. |
-| `minValues`, `maxValues`, `meanValues`, `stdvValues` | Implemented | Derived from raster statistics for the primary raster. |
+| `extent`, `spatialReference` | Implemented | Derived from the aggregate extent and SRID across the layer mosaic. |
+| `pixelSizeX`, `pixelSizeY` | Implemented | Calculated from the aggregate mosaic extent using the finest pixel size observed across the selected rasters. |
+| `bandCount`, `pixelType` | Implemented | Derived from the representative raster used to describe the layer mosaic. |
+| `minValues`, `maxValues`, `meanValues`, `stdvValues` | Implemented | Derived from mosaic statistics when the layer contains multiple rasters. |
 | `capabilities` | Implemented | Advertised as `Catalog,Image,Metadata,Pixels,Statistics,Tilemap`. `Mensuration` is intentionally omitted until the `/measure` endpoint ships so the capability list stays in lockstep with routed operations. |
 | `maxImageHeight`, `maxImageWidth`, `maxRecordCount` | Implemented | Static Honua metadata limits. |
 | `singleFusedMapCache`, `cacheType` | Implemented | Always reports `true` / `Map` to advertise the rendered tile cache surface. |
 | `tileInfo` | Implemented | Generated from a fixed Web Mercator (EPSG:3857) LOD grid (256×256 tiles, 96 DPI, PNG) sized for `MaxTileZoom`. |
 | `hasHistograms` | Implemented | Always `true`; ImageServer exposes `computeStatisticsHistograms` for the catalog. |
-| `timeInfo` | Partial | Surfaced only when the layer metadata declares any of `startTimeField`/`endTimeField`/`trackIdField`. The temporal extent is intentionally omitted because raster catalog items do not yet carry per-item timestamps. |
+| `timeInfo` | Partial | Surfaced when the layer metadata declares temporal fields or when raster catalog items carry acquisition timestamps. When acquisition dates are available, Honua emits `AcquisitionDate` as the default start field and includes aggregate `timeExtent`. |
 | `hasMultidimensions` | Implemented | Always emitted; defaults to `false` until cube ingestion ships. |
 | `multidimensionalInfo` | Partial | Skeleton type exists in the response model but is omitted (`JsonIgnoreCondition.WhenWritingNull`) until multidimensional ingestion lands. |
 
@@ -249,9 +269,10 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 ## Known limitations
 
 - The current Honua route shape is layer-scoped: `GET /rest/services/{id}/ImageServer`, where `{id}` is the addressed raster layer identifier rather than a FeatureServer/MapServer-style `{serviceId}`.
-- Metadata, export, and identify all operate on the primary raster for the layer. Honua does not currently expose full mosaic-dataset catalog/query behavior.
 - Export responses always return JSON with a temporary file URL. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.
+- Catalog filtering still happens in memory after the raster catalog is read; arbitrary geometry filters and `orderByFields` are not pushed to PostGIS yet.
 - `exportImage` and `identify` accept more request fields than they currently honor. Unsupported fields are intentionally documented here so they are not mistaken for full parity.
+- Rendered `exportImage`/`tile` byte output still depends on the PostGIS raster output drivers configured in the database.
 - Tile access returns rendered raster tiles only. Honua does not expose ImageServer WMTS or offline tile-export workflows.
 
 ## Implementation evidence
@@ -266,5 +287,5 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 - Legend implementation: [ImageServerLegendHandler](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs)
 - Raster function chain analysis (`computeClass`): [ImageServerAnalyzeHandler](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs), [ImageServerRasterFunctionPlanner](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs)
 - Request/response models: [ImageServerModels](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Models/ImageServerModels.cs)
-- Integration tests: [ImageServerBasicTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerBasicTests.cs), [ImageServerParameterValidationTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs), [ImageServerErrorHandlingTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs), [ImageServerEndpointsTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs)
+- Integration tests: [ImageServerBasicTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerBasicTests.cs), [ImageServerParameterValidationTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerParameterValidationTests.cs), [ImageServerErrorHandlingTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerErrorHandlingTests.cs), [ImageServerEndpointsTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerEndpointsTests.cs), [ImageServerMosaicIntegrationTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs)
 - Handler unit tests: [ImageServerCatalogQueryHandlerTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerCatalogQueryHandlerTests.cs), [ImageServerStatisticsHistogramsHandlerTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs), [ImageServerLegendHandlerTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerLegendHandlerTests.cs), [ImageServerAnalyzeHandlerTests](../../tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerAnalyzeHandlerTests.cs)

@@ -551,6 +551,9 @@ public sealed class ExportImageRequest
     [StringLength(1000, ErrorMessage = "RenderingRule is too long")]
     public string? RenderingRule { get; init; }
 
+    [StringLength(100, ErrorMessage = "Time is too long")]
+    public string? Time { get; init; }
+
     [RegularExpression(@"^(json|pjson|image)$", ErrorMessage = "Format parameter must be 'json', 'pjson', or 'image'")]
     public string? F { get; init; } = "json";
 }

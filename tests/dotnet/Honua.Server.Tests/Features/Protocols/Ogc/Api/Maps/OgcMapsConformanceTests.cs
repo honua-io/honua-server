@@ -118,12 +118,12 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_DoesNotOverclaimDatetimeConformance()
+    public async Task GetConformance_IncludesDatetimeConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
-            "datetime is parsed but not currently enforced by the raster renderer");
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
+            "datetime is now enforced and rendered by the raster map pipeline");
     }
 
     [IntegrationTest]

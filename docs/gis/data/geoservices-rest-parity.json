@@ -1177,7 +1177,7 @@
               "GET /rest/services/{id}/ImageServer/query",
               "POST /rest/services/{id}/ImageServer/query"
             ],
-            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/AcquisitionDate). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, time, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
+            "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/AcquisitionDate). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outSR (envelope-only stamping; geometry is NOT reprojected), single-instant time filtering, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown, outFields projection, orderByFields, pixelSize, and arbitrary geometry/spatialRel filters are not yet honoured."
           },
           {
             "name": "Compute Statistics and Histograms",
@@ -1190,7 +1190,7 @@
               "GET /rest/services/{id}/ImageServer/computeStatisticsHistograms",
               "POST /rest/services/{id}/ImageServer/computeStatisticsHistograms"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the layer's primary raster), the Honua-extension bandIds selector (1-based), and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/mosaicRule/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full raster."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. AOI clipping (geometry/geometryType/renderingRule) and pixelSize are accepted as request fields but not yet applied — analysis always covers the full selected raster or mosaic."
           }
         ],
         "notImplemented": [
@@ -1315,7 +1315,7 @@
             "honuaEndpoints": [
               "GET /rest/services/{id}/ImageServer/legend"
             ],
-            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the primary raster's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
+            "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). The MVP renders a fixed 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics; per-layer renderer persistence and renderingRule overrides are not yet honoured. Only f=json/f=pjson is accepted."
           }
         ],
         "notImplemented": [
@@ -1368,8 +1368,13 @@
             "notes": "Validated to 0-100 but not mapped to RasterQuery.TiffCompression."
           },
           {
-            "name": "bandIds, mosaicRule, renderingRule, noData, noDataInterpretation",
+            "name": "bandIds, renderingRule, noData, noDataInterpretation",
             "status": "ignored"
+          },
+          {
+            "name": "mosaicRule, time",
+            "status": "partial",
+            "notes": "mosaicRule accepts merge-strategy tokens or an Esri-style JSON object and is applied when multiple rasters intersect the request. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
           }
         ],
         "identify": [
@@ -1389,7 +1394,12 @@
             "notes": "Only json and pjson are supported."
           },
           {
-            "name": "mosaicRule, renderingRule, pixelSize, time, returnGeometry",
+            "name": "mosaicRule, time",
+            "status": "partial",
+            "notes": "mosaicRule is applied when the identify point intersects multiple rasters. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
+          },
+          {
+            "name": "renderingRule, pixelSize, returnGeometry",
             "status": "ignored"
           }
         ],
@@ -1431,16 +1441,21 @@
             "notes": "Only json and pjson are supported."
           },
           {
-            "name": "geometry, geometryType, inSR, spatialRel, outFields, orderByFields, time, pixelSize",
+            "name": "geometry, geometryType, inSR, spatialRel, outFields, orderByFields, pixelSize",
             "status": "ignored",
-            "notes": "Spatial filtering against arbitrary client geometries, per-field projection, ordering, temporal filtering, and pixel-size hints are not yet honoured."
+            "notes": "Spatial filtering against arbitrary client geometries, per-field projection, ordering, and pixel-size hints are not yet honoured."
+          },
+          {
+            "name": "time",
+            "status": "partial",
+            "notes": "Accepts a single ISO 8601 instant and filters the catalog to the latest AcquisitionDate at or before the supplied timestamp on Pro editions."
           }
         ],
         "computeStatisticsHistograms": [
           {
             "name": "rasterIds",
             "status": "implemented",
-            "notes": "Accepts CSV (1,3) or JSON array ([1,3]) of catalog object IDs. When omitted, defaults to the layer's primary raster. Unknown IDs return 400 Bad Request."
+            "notes": "Accepts CSV (1,3) or JSON array ([1,3]) of catalog object IDs. When omitted, defaults to the selected layer mosaic rather than a single primary raster. Unknown IDs return 400 Bad Request."
           },
           {
             "name": "bandIds",
@@ -1458,9 +1473,14 @@
             "notes": "Only json and pjson are supported."
           },
           {
-            "name": "geometry, geometryType, mosaicRule, renderingRule, pixelSize",
+            "name": "mosaicRule, time",
+            "status": "partial",
+            "notes": "mosaicRule is applied when rasterIds is omitted and multiple rasters participate in the selected mosaic. time accepts a single ISO 8601 instant and selects the latest acquisition at or before the supplied timestamp on Pro editions."
+          },
+          {
+            "name": "geometry, geometryType, renderingRule, pixelSize",
             "status": "ignored",
-            "notes": "AOI clipping is not yet honoured — analysis always covers the full raster."
+            "notes": "AOI clipping is not yet honoured — analysis always covers the full selected raster or mosaic."
           }
         ],
         "legend": [
@@ -1490,13 +1510,14 @@
       },
       "knownLimitations": [
         "The route shape is layer-scoped: /rest/services/{id}/ImageServer.",
-        "Metadata, export, and identify operate on the layer's primary raster.",
+        "Metadata, export, identify, tile, and statistics operate on the selected raster mosaic rather than a single primary raster.",
         "Export responses always return JSON with a temporary file URL.",
         "The query catalog reader applies WHERE/objectIds filters in-memory and does not reproject footprint geometry to outSR.",
-        "computeStatisticsHistograms always analyses the full raster — geometry/mosaicRule/renderingRule are not yet honoured.",
+        "computeStatisticsHistograms always analyses the full selected raster or mosaic — geometry clipping and renderingRule are not yet honoured.",
         "computeClass currently only validates and plans the raster function chain; it does not yet execute the chain into exportImage / computeStatisticsHistograms.",
         "Legend swatches use a fixed 5-class equal-interval ramp; per-layer renderer persistence and renderingRule overrides are not yet wired up.",
-        "Service info exposes timeInfo only when the layer metadata declares startTimeField/endTimeField/trackIdField; the temporal extent is intentionally omitted because raster catalog items do not yet carry per-item timestamps.",
+        "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
+        "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "Honua does not currently expose ImageServer WMTS or offline tile export."
       ]

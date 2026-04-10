@@ -41,6 +41,9 @@ internal sealed class OgcMapsConformanceHandler
                 // Collections selection (collections parameter for dataset maps)
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collections-selection",
 
+                // Datetime selection for temporal raster mosaics
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
+
                 // Supported CRS
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
 

@@ -80,15 +80,22 @@ internal sealed class ImageServerLegendHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-            if (primaryRaster is null)
+            var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
+            if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
-            var primary = primaryRaster.Value;
 
-            var statistics = await _rasterStore.GetStatisticsAsync(layerId, primary.Id, bands: null, cancellationToken);
+            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, mosaicRule: null);
+            var statistics = rasters.Length == 1
+                ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken)
+                : await _rasterStore.GetMosaicStatisticsAsync(
+                    layerId,
+                    rasters.Select(r => r.Id).ToArray(),
+                    mergeStrategy,
+                    bands: null,
+                    cancellationToken);
             var swatches = BuildSwatches(statistics);
 
             var response = new LegendResponse

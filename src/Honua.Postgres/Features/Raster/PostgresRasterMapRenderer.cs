@@ -73,19 +73,26 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         // Build raster expression with optional bbox clip
         var rasterExpr = "raster";
+        var selectionPredicate = "";
         var extraParams = new List<(string Name, object Value)>();
 
         if (request.BoundingBox is { Length: 4 })
         {
+            var bboxGeomExpr = bboxSrid.HasValue
+                ? "ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(raster))"
+                : "ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(raster))";
+
             if (bboxSrid.HasValue)
             {
-                rasterExpr = "ST_Clip(raster, ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(raster)))";
+                rasterExpr = $"ST_Clip(raster, {bboxGeomExpr})";
                 extraParams.Add(("@bboxSrid", bboxSrid.Value));
             }
             else
             {
-                rasterExpr = "ST_Clip(raster, ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(raster)))";
+                rasterExpr = $"ST_Clip(raster, {bboxGeomExpr})";
             }
+
+            selectionPredicate = $" AND ST_Intersects(ST_ConvexHull(raster), {bboxGeomExpr})";
 
             extraParams.Add(("@bboxMinX", request.BoundingBox[0]));
             extraParams.Add(("@bboxMinY", request.BoundingBox[1]));
@@ -97,6 +104,36 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         {
             rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
             extraParams.Add(("@outputSrid", requestedOutputSrid.Value));
+        }
+
+        var timeCte = string.Empty;
+        var sourceTimeFilter = string.Empty;
+        if (request.DateTime.HasValue)
+        {
+            timeCte = """
+                selected_time AS (
+                    SELECT MAX(effective_acquisition) AS target_acquisition
+                    FROM source
+                    WHERE effective_acquisition <= @timestamp
+                ),
+                filtered AS (
+                    SELECT rast, effective_acquisition, created_at, id
+                    FROM source
+                    WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time)
+                )
+                """;
+            sourceTimeFilter = "filtered";
+            extraParams.Add(("@timestamp", request.DateTime.Value.UtcDateTime));
+        }
+        else
+        {
+            timeCte = """
+                filtered AS (
+                    SELECT rast, effective_acquisition, created_at, id
+                    FROM source
+                )
+                """;
+            sourceTimeFilter = "filtered";
         }
 
         // Build parameterized layer_id IN clause
@@ -115,13 +152,17 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH source AS (
-                SELECT {rasterExpr} AS rast
+                SELECT {rasterExpr} AS rast,
+                       id,
+                       created_at,
+                       COALESCE(acquisition_date, created_at) AS effective_acquisition
                 FROM {_rasterDataTable}
-                WHERE layer_id IN ({string.Join(", ", layerParams)})
+                WHERE layer_id IN ({string.Join(", ", layerParams)}){selectionPredicate}
             ),
+            {timeCte},
             merged AS (
-                SELECT ST_Union(rast) AS rast
-                FROM source
+                SELECT ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC) AS rast
+                FROM {sourceTimeFilter}
                 WHERE rast IS NOT NULL
             ),
             resized AS (

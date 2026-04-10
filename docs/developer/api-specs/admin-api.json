@@ -4521,6 +4521,18 @@
           },
           "timeInfo": {
             "$ref": "#/components/schemas/TimeInfoResponse"
+          },
+          "rasterMosaic": {
+            "$ref": "#/components/schemas/RasterMosaicResponse"
+          }
+        }
+      },
+      "RasterMosaicResponse": {
+        "type": "object",
+        "properties": {
+          "mergeStrategy": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -4629,6 +4641,18 @@
           },
           "timeInfo": {
             "$ref": "#/components/schemas/UpdateTimeInfoRequest"
+          },
+          "rasterMosaic": {
+            "$ref": "#/components/schemas/UpdateRasterMosaicRequest"
+          }
+        }
+      },
+      "UpdateRasterMosaicRequest": {
+        "type": "object",
+        "properties": {
+          "mergeStrategy": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

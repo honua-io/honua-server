@@ -366,8 +366,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         if (request.Srid.HasValue && request.Format is SupportedRasterFormat.GeoTiff or SupportedRasterFormat.CloudOptimizedGeoTiff)
         {
             command.CommandText = $"""
-                INSERT INTO {_rasterDataTable} (layer_id, name, description, raster)
-                VALUES (@layerId, @name, @description,
+                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, raster)
+                VALUES (@layerId, @name, @description, @acquisitionDate,
                     ST_SetSRID(ST_FromGDALRaster(@rasterData), @srid))
                 RETURNING id
                 """;
@@ -376,8 +376,8 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         else
         {
             command.CommandText = $"""
-                INSERT INTO {_rasterDataTable} (layer_id, name, description, raster)
-                VALUES (@layerId, @name, @description, ST_FromGDALRaster(@rasterData))
+                INSERT INTO {_rasterDataTable} (layer_id, name, description, acquisition_date, raster)
+                VALUES (@layerId, @name, @description, @acquisitionDate, ST_FromGDALRaster(@rasterData))
                 RETURNING id
                 """;
         }
@@ -385,6 +385,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         command.AddParameter("@layerId", request.LayerId);
         command.AddParameter("@name", request.Name);
         command.AddParameter("@description", (object?)request.Description ?? DBNull.Value);
+        command.AddParameter("@acquisitionDate", (object?)request.AcquisitionDate ?? DBNull.Value);
         command.AddParameter("@rasterData", fileBytes);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

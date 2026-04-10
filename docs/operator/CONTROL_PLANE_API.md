@@ -199,7 +199,7 @@ Content-Type: application/json
 | `/api/v1/admin/services/{serviceName}/mapserver` | PUT | Update MapServer defaults/limits for a service |
 | `/api/v1/admin/services/{serviceName}/access-policy` | PUT | Update service access policy (read/write role + anonymous controls) |
 | `/api/v1/admin/services/{serviceName}/timeinfo` | PUT | Update service-level temporal metadata |
-| `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | PUT | Patch layer-level access policy and time info |
+| `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | PUT | Patch layer-level access policy, time info, and raster mosaic defaults |
 
 ---
 
@@ -347,7 +347,7 @@ The artifact includes:
 | `/api/v1/admin/import/raster` | POST | Import a raster file (GeoTIFF, PNG world-file, JPEG world-file) into PostGIS |
 | `/api/v1/admin/import/raster/formats` | GET | List supported raster file formats and extensions |
 
-Raster import accepts multipart form-data with a primary raster file and optional sidecar files (`.pgw`/`.jgw`/`.tfw`/`.wld` for georeferencing, `.prj` for CRS). GeoTIFF files contain embedded georeferencing; PNG and JPEG formats require a world file. An explicit `srid` field can override CRS detection.
+Raster import accepts multipart form-data with a primary raster file and optional sidecar files (`.pgw`/`.jgw`/`.tfw`/`.wld` for georeferencing, `.prj` for CRS). GeoTIFF files contain embedded georeferencing; PNG and JPEG formats require a world file. An explicit `srid` field can override CRS detection. Optional `acquisitionDate` stores a per-raster timestamp used by ImageServer and OGC temporal mosaic selection, and `tileZoomLevels` controls which cache levels are pre-generated.
 
 ---
 

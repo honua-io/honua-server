@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -291,6 +292,18 @@ internal static partial class RasterImportEndpoints
             int? srid = fields.TryGetValue("srid", out var sridStr) && int.TryParse(sridStr, out var parsedSrid)
                 ? parsedSrid
                 : null;
+            DateTimeOffset? acquisitionDate = null;
+            if (fields.TryGetValue("acquisitionDate", out var acquisitionDateRaw) &&
+                !string.IsNullOrWhiteSpace(acquisitionDateRaw))
+            {
+                if (!DateTimeOffset.TryParse(acquisitionDateRaw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedAcquisitionDate))
+                {
+                    MultipartParsingHelpers.TryDeleteFile(stagedFilePath);
+                    return RasterImportParseResult.Failure("'acquisitionDate' must be a valid ISO 8601 timestamp.", StatusCodes.Status400BadRequest);
+                }
+
+                acquisitionDate = parsedAcquisitionDate;
+            }
 
             int[] tileZoomLevels = [0, 1, 2, 3, 4, 5, 6, 7, 8];
             if (fields.TryGetValue("tileZoomLevels", out var zoomStr) && !string.IsNullOrWhiteSpace(zoomStr))
@@ -325,6 +338,7 @@ internal static partial class RasterImportEndpoints
                 FileName = stagedFileName,
                 Format = detectedFormat,
                 Srid = srid,
+                AcquisitionDate = acquisitionDate,
                 WorldFileContent = worldFileContent,
                 PrjFileContent = prjFileContent,
                 TileZoomLevels = tileZoomLevels

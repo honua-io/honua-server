@@ -62,8 +62,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns((RasterInfo?)null);
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
         var request = CreateRequest();
@@ -227,18 +227,84 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithMosaicRule_ReturnsNotImplemented()
+    public async Task ExportImageAsync_WithMosaicRule_ExportsMosaic()
     {
-        SetupLayerAndRasters();
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(
+            [
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "second-raster" }
+            ]);
+
+        long[]? capturedRasterIds = null;
+        RasterMergeStrategy? capturedMergeStrategy = null;
+        _rasterStore.ExportMosaicAsync(
+                1,
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedRasterIds = callInfo.ArgAt<long[]>(1);
+                capturedMergeStrategy = callInfo.ArgAt<RasterMergeStrategy>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(mosaicRule: "{\"mergeStrategy\":\"max\"}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedRasterIds.Should().NotBeNull();
+        capturedRasterIds!.Should().Equal(100L, 101L);
+        capturedMergeStrategy.Should().NotBeNull();
+        capturedMergeStrategy!.Value.Should().Be(RasterMergeStrategy.Max);
+        await _rasterStore.Received(1)
+            .ExportMosaicAsync(
+                1,
+                Arg.Any<long[]>(),
+                RasterMergeStrategy.Max,
+                Arg.Any<RasterQuery>(),
+                Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithMosaicRuleAndSingleRaster_AllowsExport()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo() with { Width = 100, Height = 20000 }]);
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult());
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
 
         var context = CreateImageServerContext();
         var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[8]}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
-        await _rasterStore.DidNotReceive()
-            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
     }
 
     [UnitTest]
@@ -428,7 +494,7 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_NullExtent_UsesDefaultExtent()
+    public async Task ExportImageAsync_NullExtent_FallsBackToSelectedRasterExtent()
     {
         SetupLayerAndRasters();
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -449,11 +515,10 @@ public class ImageServerExportHandlerTests
 
         var jsonResult = result as JsonHttpResult<ExportImageResponse>;
         jsonResult.Should().NotBeNull();
-        // When extent is null, defaults to 0,0,1,1
-        jsonResult!.Value!.Extent.XMin.Should().Be(0);
-        jsonResult.Value.Extent.YMin.Should().Be(0);
-        jsonResult.Value.Extent.XMax.Should().Be(1);
-        jsonResult.Value.Extent.YMax.Should().Be(1);
+        jsonResult!.Value!.Extent.XMin.Should().Be(-180);
+        jsonResult.Value.Extent.YMin.Should().Be(-90);
+        jsonResult.Value.Extent.XMax.Should().Be(180);
+        jsonResult.Value.Extent.YMax.Should().Be(90);
     }
 
     [UnitTest]
@@ -571,8 +636,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestRasterInfo());
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
     }
 
     private void SetupSuccessfulExport()
