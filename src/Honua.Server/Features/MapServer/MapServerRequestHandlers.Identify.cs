@@ -300,6 +300,11 @@ internal static partial class MapServerEndpoints
                     var attributes = new Dictionary<string, object?>();
                     foreach (var kvp in feature.Attributes)
                     {
+                        if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                        {
+                            continue;
+                        }
+
                         attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
                     }
 

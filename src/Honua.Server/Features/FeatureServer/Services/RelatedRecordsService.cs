@@ -10,6 +10,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -247,9 +248,12 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         GeometryLimits geometryLimits)
     {
         var attributes = outFields == null
-            ? feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+            ? feature.Attributes
+                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
             : feature.Attributes
-                .Where(kvp => outFields.Contains(kvp.Key))
+                .Where(kvp => outFields.Contains(kvp.Key) &&
+                              !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
         return new GeoServicesFeature

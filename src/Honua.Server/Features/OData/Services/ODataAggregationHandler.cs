@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.OData.Models;
 
 namespace Honua.Server.Features.OData.Services;
@@ -708,6 +709,11 @@ internal sealed class ODataAggregationHandler
 
         foreach (var kvp in feature.Attributes)
         {
+            if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+            {
+                continue;
+            }
+
             dict[kvp.Key] = kvp.Value;
         }
 

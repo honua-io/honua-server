@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -188,6 +189,11 @@ internal static class GrpcConversionHelpers
 
         foreach (var (key, value) in feature.Attributes)
         {
+            if (FeatureAttributeVisibility.IsInternalAttribute(key))
+            {
+                continue;
+            }
+
             proto.Attributes[key] = ToAttributeValue(value);
         }
 

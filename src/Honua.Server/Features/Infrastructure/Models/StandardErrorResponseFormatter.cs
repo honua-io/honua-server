@@ -135,7 +135,7 @@ internal static class StandardErrorResponseFormatter
 
         var xmlContent = $$"""
             <?xml version="1.0" encoding="UTF-8"?>
-            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="1.1.0">
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="2.0.0">
               <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
                 <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
               </ows:Exception>

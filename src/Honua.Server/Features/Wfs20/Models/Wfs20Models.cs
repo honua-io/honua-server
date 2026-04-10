@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Xml;
 using System.Xml.Serialization;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Wfs20.Models;
 
@@ -13,13 +15,30 @@ namespace Honua.Server.Features.Wfs20.Models;
 /// WFS 2.0 GetCapabilities response
 /// </summary>
 [XmlRoot("WFS_Capabilities", Namespace = Wfs20Utilities.WfsNamespace)]
-public sealed class WfsCapabilities
+public sealed class WfsCapabilities : IXmlNamespaceProvider
 {
+    [XmlNamespaceDeclarations]
+    public XmlSerializerNamespaces Namespaces { get; } = new(
+        new[]
+        {
+            new XmlQualifiedName(string.Empty, Wfs20Utilities.WfsNamespace),
+            new XmlQualifiedName("ows", Wfs20Utilities.OwsNamespace),
+            new XmlQualifiedName("fes", Wfs20Utilities.FesNamespace),
+            new XmlQualifiedName("gml", Wfs20Utilities.GmlNamespace),
+            new XmlQualifiedName("honua", "http://honua.io/wfs"),
+            new XmlQualifiedName("xlink", Wfs20Utilities.XLinkNamespace),
+            new XmlQualifiedName("xsi", Wfs20Utilities.XsiNamespace),
+        });
+
     [XmlAttribute("version")]
     public string Version { get; set; } = Wfs20Utilities.Version;
 
     [XmlAttribute("updateSequence")]
     public string? UpdateSequence { get; set; }
+
+    [XmlAttribute("schemaLocation", Namespace = Wfs20Utilities.XsiNamespace)]
+    public string SchemaLocation { get; set; } =
+        $"{Wfs20Utilities.WfsNamespace} http://schemas.opengis.net/wfs/2.0/wfs.xsd";
 
     [XmlElement("ServiceIdentification", Namespace = Wfs20Utilities.OwsNamespace)]
     public ServiceIdentification? ServiceIdentification { get; set; }
@@ -55,9 +74,8 @@ public sealed class ServiceIdentification
     [XmlElement("ServiceType", Namespace = Wfs20Utilities.OwsNamespace)]
     public string ServiceType { get; set; } = Wfs20Utilities.ServiceType;
 
-    [XmlArray("ServiceTypeVersion", Namespace = Wfs20Utilities.OwsNamespace)]
-    [XmlArrayItem("ServiceTypeVersion", Namespace = Wfs20Utilities.OwsNamespace)]
-    public string[] ServiceTypeVersion { get; set; } = { Wfs20Utilities.Version };
+    [XmlElement("ServiceTypeVersion", Namespace = Wfs20Utilities.OwsNamespace)]
+    public string[] ServiceTypeVersion { get; set; } = [Wfs20Utilities.Version];
 
     [XmlElement("Fees", Namespace = Wfs20Utilities.OwsNamespace)]
     public string Fees { get; set; } = "NONE";
@@ -98,8 +116,8 @@ public sealed class ServiceContact
     [XmlElement("IndividualName", Namespace = Wfs20Utilities.OwsNamespace)]
     public string? IndividualName { get; set; }
 
-    [XmlElement("OrganisationName", Namespace = Wfs20Utilities.OwsNamespace)]
-    public string OrganisationName { get; set; } = "Honua";
+    [XmlElement("PositionName", Namespace = Wfs20Utilities.OwsNamespace)]
+    public string? PositionName { get; set; }
 
     [XmlElement("ContactInfo", Namespace = Wfs20Utilities.OwsNamespace)]
     public ContactInfo? ContactInfo { get; set; }
@@ -212,11 +230,11 @@ public sealed class Parameter
     [XmlElement("AllowedValues", Namespace = Wfs20Utilities.OwsNamespace)]
     public AllowedValues? AllowedValues { get; set; }
 
-    [XmlElement("NoValues", Namespace = Wfs20Utilities.OwsNamespace)]
-    public object? NoValues { get; set; }
-
     [XmlElement("AnyValue", Namespace = Wfs20Utilities.OwsNamespace)]
     public object? AnyValue { get; set; }
+
+    [XmlElement("NoValues", Namespace = Wfs20Utilities.OwsNamespace)]
+    public object? NoValues { get; set; }
 }
 
 /// <summary>
@@ -236,17 +254,17 @@ public sealed class Constraint
     [XmlAttribute("name")]
     public required string Name { get; set; }
 
-    [XmlElement("DefaultValue", Namespace = Wfs20Utilities.OwsNamespace)]
-    public string? DefaultValue { get; set; }
-
     [XmlElement("AllowedValues", Namespace = Wfs20Utilities.OwsNamespace)]
     public AllowedValues? AllowedValues { get; set; }
+
+    [XmlElement("AnyValue", Namespace = Wfs20Utilities.OwsNamespace)]
+    public object? AnyValue { get; set; }
 
     [XmlElement("NoValues", Namespace = Wfs20Utilities.OwsNamespace)]
     public object? NoValues { get; set; }
 
-    [XmlElement("AnyValue", Namespace = Wfs20Utilities.OwsNamespace)]
-    public object? AnyValue { get; set; }
+    [XmlElement("DefaultValue", Namespace = Wfs20Utilities.OwsNamespace)]
+    public string? DefaultValue { get; set; }
 }
 
 /// <summary>
@@ -369,6 +387,12 @@ public sealed class FesConstraint
     [XmlAttribute("name")]
     public required string Name { get; set; }
 
+    [XmlElement("AllowedValues", Namespace = Wfs20Utilities.OwsNamespace)]
+    public AllowedValues? AllowedValues { get; set; }
+
+    [XmlElement("AnyValue", Namespace = Wfs20Utilities.OwsNamespace)]
+    public object? AnyValue { get; set; }
+
     [XmlElement("NoValues", Namespace = Wfs20Utilities.OwsNamespace)]
     public object? NoValues { get; set; }
 
@@ -451,7 +475,7 @@ public sealed class GeometryOperands
 public sealed class GeometryOperand
 {
     [XmlAttribute("name")]
-    public required string Name { get; set; }
+    public required XmlQualifiedName Name { get; set; }
 }
 
 /// <summary>
@@ -499,7 +523,7 @@ public sealed class TemporalOperands
 public sealed class TemporalOperand
 {
     [XmlAttribute("name")]
-    public required string Name { get; set; }
+    public required XmlQualifiedName Name { get; set; }
 }
 
 /// <summary>
@@ -527,7 +551,7 @@ public sealed class TemporalOperator
 public sealed class ExceptionReport
 {
     [XmlAttribute("version")]
-    public string Version { get; set; } = "1.1.0";
+    public string Version { get; set; } = Wfs20Utilities.Version;
 
     [XmlElement("Exception", Namespace = Wfs20Utilities.OwsNamespace)]
     public required ExceptionType[] Exceptions { get; set; }

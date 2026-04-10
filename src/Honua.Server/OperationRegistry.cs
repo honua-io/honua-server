@@ -14,8 +14,8 @@ namespace Honua.Server;
 /// (WFS 2.0) and non-HTTP protocol surfaces (gRPC).
 /// </para>
 /// <para>
-/// Unimplemented operations (e.g. WFS Transaction) are intentionally excluded.
-/// Add them here only when the implementation ships.
+/// Add new dispatched operations here when the implementation ships so the
+/// architecture tests can enforce integration coverage.
 /// </para>
 /// </remarks>
 public static class OperationRegistry
@@ -37,6 +37,9 @@ public static class OperationRegistry
         new(Wfs20, "DescribeFeatureType"),
         new(Wfs20, "GetFeature"),
         new(Wfs20, "GetPropertyValue"),
+        new(Wfs20, "Transaction"),
+        new(Wfs20, "ListStoredQueries"),
+        new(Wfs20, "DescribeStoredQueries"),
 
         // gRPC FeatureService methods (geospatial.v1.FeatureService)
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),

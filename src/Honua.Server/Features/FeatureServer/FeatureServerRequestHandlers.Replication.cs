@@ -684,7 +684,9 @@ internal static partial class FeatureServerEndpoints
     {
         return new GeoServicesFeature
         {
-            Attributes = new Dictionary<string, object?>(feature.Attributes),
+            Attributes = feature.Attributes
+                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                 feature.Geometry, null, null, false, false)
         };

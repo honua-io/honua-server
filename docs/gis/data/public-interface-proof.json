@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-03T00:00:00Z",
+  "updatedUtc": "2026-04-09T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -949,7 +949,10 @@
         "WFS-2.0::GetCapabilities",
         "WFS-2.0::DescribeFeatureType",
         "WFS-2.0::GetFeature",
-        "WFS-2.0::GetPropertyValue"
+        "WFS-2.0::GetPropertyValue",
+        "WFS-2.0::Transaction",
+        "WFS-2.0::ListStoredQueries",
+        "WFS-2.0::DescribeStoredQueries"
       ],
       "proofs": [
         {

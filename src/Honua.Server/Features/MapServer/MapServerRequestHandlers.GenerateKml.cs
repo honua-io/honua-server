@@ -386,6 +386,11 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
+            if (FeatureAttributeVisibility.IsInternalAttribute(key))
+            {
+                continue;
+            }
+
             writer.WriteStartElement("Data");
             writer.WriteAttributeString("name", key);
             writer.WriteElementString("value", ConvertToAttributeString(value));

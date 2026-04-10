@@ -92,7 +92,7 @@ internal sealed partial class FeatureDataAccess
 
     private static void AddParameterValue(NpgsqlCommand command, ref int parameterIndex, object? value)
     {
-        var parameterValue = value ?? DBNull.Value;
+        var parameterValue = NormalizeParameterValue(value);
 
         if (command.Parameters.Count > parameterIndex)
         {
@@ -104,5 +104,15 @@ internal sealed partial class FeatureDataAccess
         }
 
         parameterIndex++;
+    }
+
+    private static object NormalizeParameterValue(object? value)
+    {
+        return value switch
+        {
+            null => DBNull.Value,
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            _ => value
+        };
     }
 }
