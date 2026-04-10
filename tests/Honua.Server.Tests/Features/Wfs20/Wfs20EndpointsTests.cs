@@ -509,14 +509,15 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
-    public async Task Wfs_GetFeature_WithNamedFeature_IncludesGmlName()
+    public async Task Wfs_GetFeature_WithNamedFeature_UsesApplicationNameWithoutDuplicateGmlName()
     {
         var response = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<gml:name>Test Feature</gml:name>");
+        content.Should().Contain("<honua:name>Test Feature</honua:name>");
+        content.Should().NotContain("<gml:name>Test Feature</gml:name>");
     }
 
     [IntegrationTest]

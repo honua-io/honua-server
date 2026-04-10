@@ -4118,7 +4118,10 @@ internal sealed class Wfs20Handler
 
         writer.WriteAttributeString("gml", "id", Wfs20Utilities.GmlNamespace, BuildFeatureId(plan.Descriptor, feature.Id));
 
-        if (TryGetGmlDescriptionValue(plan.Descriptor.Layer, feature.Attributes, out var gmlDescription))
+        // Keep collection members aligned to the application schema; duplicating gml:name/description
+        // alongside matching feature properties causes GDAL/OGR to surface list-valued fields.
+        if (!includeMemberWrapper &&
+            TryGetGmlDescriptionValue(plan.Descriptor.Layer, feature.Attributes, out var gmlDescription))
         {
             writer.WriteElementString("gml", "description", Wfs20Utilities.GmlNamespace, gmlDescription);
         }
@@ -4128,7 +4131,8 @@ internal sealed class Wfs20Handler
             writer.WriteElementString("gml", "identifier", Wfs20Utilities.GmlNamespace, gmlIdentifier);
         }
 
-        if (TryGetGmlNameValue(plan.Descriptor.Layer, feature.Attributes, out var gmlName))
+        if (!includeMemberWrapper &&
+            TryGetGmlNameValue(plan.Descriptor.Layer, feature.Attributes, out var gmlName))
         {
             writer.WriteElementString("gml", "name", Wfs20Utilities.GmlNamespace, gmlName);
         }
