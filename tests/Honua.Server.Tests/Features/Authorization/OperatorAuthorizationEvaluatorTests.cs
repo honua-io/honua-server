@@ -312,6 +312,60 @@ public sealed class OperatorAuthorizationEvaluatorTests
         }).IsAllowed.Should().BeFalse();
     }
 
+    [UnitTest]
+    public void Evaluate_StandardRoleClaim_AdminBypassed()
+    {
+        var principal = CreatePrincipalWithStandardRoleClaim("user-1", "admin");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        };
+
+        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_StandardRoleClaim_GrantMatched()
+    {
+        _roleStore.AddGrant("operator", "process", "*", "execute");
+        var principal = CreatePrincipalWithStandardRoleClaim("user-1", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute
+        };
+
+        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_MixedRoleClaims_CombinesPermissions()
+    {
+        _roleStore.AddGrant("reader", "catalog", "*", "read");
+        _roleStore.AddGrant("executor", "process", "*", "execute");
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "user-1"),
+            new("roles", "reader"),
+            new(ClaimTypes.Role, "executor")
+        };
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestScheme"));
+
+        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Read
+        }).IsAllowed.Should().BeTrue();
+
+        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute
+        }).IsAllowed.Should().BeTrue();
+    }
+
     private static ClaimsPrincipal CreatePrincipal(string userId, params string[] roles)
     {
         var claims = new List<Claim>
@@ -322,6 +376,22 @@ public sealed class OperatorAuthorizationEvaluatorTests
         foreach (var role in roles)
         {
             claims.Add(new Claim("roles", role));
+        }
+
+        var identity = new ClaimsIdentity(claims, "TestScheme");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private static ClaimsPrincipal CreatePrincipalWithStandardRoleClaim(string userId, params string[] roles)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId)
+        };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
         var identity = new ClaimsIdentity(claims, "TestScheme");

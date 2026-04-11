@@ -26,13 +26,17 @@ internal sealed class OperatorAuthorizationEvaluator(
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? principal.FindFirstValue("sub");
         var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
+        var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
 
         bool isAdmin = false;
         List<string>? roleNames = null;
 
         foreach (var claim in principal.Claims)
         {
-            if (!string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase))
+            var isRoleClaim = string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
+                || (checkStandardRoleClaim && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase));
+
+            if (!isRoleClaim || string.IsNullOrWhiteSpace(claim.Value))
                 continue;
 
             if (string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
