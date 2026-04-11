@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -252,6 +253,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             nameof(ExportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress),
             nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
             nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
+            nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
             _ => null
         };
     }
@@ -268,6 +270,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             ExportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.ExportProgress),
             PrintProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PrintProgress),
             RasterImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.RasterImportProgress),
+            GeoprocessingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoprocessingProgress),
             _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
         };
 
@@ -625,6 +628,10 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(PrintProgress))]
 [JsonSerializable(typeof(RasterImportProgress))]
 [JsonSerializable(typeof(RasterImportPhase))]
+[JsonSerializable(typeof(GeoprocessingProgress))]
+[JsonSerializable(typeof(GeoprocessingWorkflowStatus))]
+[JsonSerializable(typeof(GeoprocessingStageKind))]
+[JsonSerializable(typeof(GeoprocessingStageStatus))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

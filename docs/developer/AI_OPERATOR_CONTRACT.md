@@ -502,8 +502,8 @@ Conceptual shape:
   ],
   "artifacts": [],
   "workspaceRefs": [],
-  "mapPackage": {},
-  "appPackage": null,
+  "mapPackageId": null,
+  "appPackageId": null,
   "provenance": {}
 }
 ```

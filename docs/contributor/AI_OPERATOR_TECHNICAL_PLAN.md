@@ -751,7 +751,7 @@ Required fields:
 - `assumptions`
 - `artifacts`
 - `workspaceRefs`
-- `mapPackage`
+- `mapPackageId` (string reference; full `MapPackage` type deferred to #730)
 - `provenance`
 
 #### PublishingResultPackage

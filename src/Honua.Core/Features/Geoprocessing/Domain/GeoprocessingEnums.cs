@@ -111,6 +111,11 @@ public enum GeoprocessingStageKind
 public enum GeoprocessingStageStatus
 {
     /// <summary>
+    /// Stage has not started or is currently in progress.
+    /// </summary>
+    Pending,
+
+    /// <summary>
     /// Stage completed successfully.
     /// </summary>
     Completed,

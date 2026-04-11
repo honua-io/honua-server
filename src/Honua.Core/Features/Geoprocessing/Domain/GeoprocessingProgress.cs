@@ -115,6 +115,7 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
             OperationId = operationId,
             WorkflowStatus = GeoprocessingWorkflowStatus.Draft,
             CurrentStage = GeoprocessingStageKind.CaptureIntent,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending,
             StartedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Capturing intent"
         };

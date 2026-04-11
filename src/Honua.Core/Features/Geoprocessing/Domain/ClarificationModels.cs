@@ -77,7 +77,9 @@ public sealed record ClarificationResponse
     public required string IntentId { get; init; }
 
     /// <summary>
-    /// Answers keyed by question identifier.
+    /// Answers keyed by question identifier. Each answer is a list of values to support
+    /// multi-select questions. Single-select, free-text, and confirmation answers use a
+    /// single-element list.
     /// </summary>
-    public required IReadOnlyDictionary<string, string> Answers { get; init; }
+    public required IReadOnlyDictionary<string, IReadOnlyList<string>> Answers { get; init; }
 }

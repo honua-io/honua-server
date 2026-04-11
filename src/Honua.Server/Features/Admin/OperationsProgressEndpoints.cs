@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -98,6 +99,7 @@ internal static class OperationsProgressEndpoints
             ExportProgress exportProgress => Results.Json(exportProgress, OperationsProgressJsonContext.Default.ExportProgress),
             PrintProgress printProgress => Results.Json(printProgress, OperationsProgressJsonContext.Default.PrintProgress),
             RasterImportProgress rasterImportProgress => Results.Json(rasterImportProgress, OperationsProgressJsonContext.Default.RasterImportProgress),
+            GeoprocessingProgress geoprocessingProgress => Results.Json(geoprocessingProgress, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
     }
@@ -406,6 +408,10 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(PrintProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportPhase))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingWorkflowStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageKind))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageStatus))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
