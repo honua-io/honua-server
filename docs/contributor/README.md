@@ -12,6 +12,7 @@ This section is for people **building or extending** Honua (core contributors, a
 ## Architecture
 
 - [Architecture Overview](ARCHITECTURE.md) — system design and component interaction
+- [AI-First Operator Architecture](AI_OPERATOR_ARCHITECTURE.md) — forward-looking analyst/operator architecture for MCP, gRPC, and result packaging
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
 - [Esri Migration Platform Plan](ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
 - [Pilot Evidence Kit](migration/README.md) — Scorecards, checklists, and readout templates for lighthouse migration pilots

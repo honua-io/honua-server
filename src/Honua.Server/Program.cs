@@ -577,6 +577,14 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.O
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.RbacOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.RbacOptions.SectionName));
 
+// Configure operator authorization and approval
+builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IOperatorAuthorizationEvaluator,
+    Honua.Server.Features.Infrastructure.Authentication.OperatorAuthorizationEvaluator>();
+builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator,
+    Honua.Server.Features.Infrastructure.Authentication.DefaultOperatorApprovalEvaluator>();
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions.SectionName));
+
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
 
@@ -655,7 +663,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Export.ExportJsonContext.Default,
         Honua.Server.Features.Stac.StacJsonContext.Default,
         Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
-        Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default);
+        Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation

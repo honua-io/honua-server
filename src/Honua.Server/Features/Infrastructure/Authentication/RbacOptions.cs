@@ -33,6 +33,11 @@ internal sealed class RbacOptions
     public string DataEditorServicePrefix { get; set; } = "data-editor:";
 
     /// <summary>
+    /// Gets or sets the claim type used to resolve workspace scope membership for shared workspaces.
+    /// </summary>
+    public string WorkspaceScopeClaimType { get; set; } = "groups";
+
+    /// <summary>
     /// Gets the normalized role claim type for matching.
     /// </summary>
     internal string EffectiveRoleClaimType => string.IsNullOrWhiteSpace(RoleClaimType) ? ClaimTypes.Role : RoleClaimType;

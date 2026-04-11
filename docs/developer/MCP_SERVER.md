@@ -2,7 +2,19 @@
 
 Honua ships an MCP server package in the `honua-sdk-js` repository (path `mcp`, package `@honua/mcp-server`) so AI clients can safely discover services, inspect layer schema, and run filtered geospatial queries.
 
+That SDK-hosted package is the current focused discovery/query MCP surface. The
+forward-looking AI operator MCP surface for planning, execution, publishing,
+packaging, and deployment is expected to be owned canonically by
+`honua-server` as the server-side implementation of the `geospatial-mcp`
+standard. The SDK MCP package may proxy or federate that server-owned surface
+later, but it is not the semantic source of truth for operator workflows.
+
 This document covers the public/open-core MCP data-access surface. It does **not** describe Honua's private operator tooling or AI DevOps rollout automation layer.
+
+For the forward-looking AI-first analyst and builder contract, see:
+
+- [AI Operator Contract](AI_OPERATOR_CONTRACT.md)
+- [Deterministic Operator Workflow Results](DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
 
 ## Capabilities
 

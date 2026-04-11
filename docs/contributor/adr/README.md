@@ -31,6 +31,9 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0023](0023-metadata-architecture.md) | Metadata Resource Model and GitOps-Ready Storage | Accepted | 2025-12 |
 | [0024](0024-open-core-edition-model.md) | Open-Core Edition Model | Accepted | 2026-03 |
 | [0025](0025-multi-provider-operation-architecture.md) | Multi-Provider Operation Architecture | Accepted | 2026-03 |
+| [0026](0026-ai-first-operator-contract.md) | AI-First Operator Contract as Primary Public Contract | Proposed | 2026-04 |
+| [0027](0027-deterministic-intent-clarification-workflow.md) | Deterministic Intent, Clarification, and Plan Validation Workflow | Proposed | 2026-04 |
+| [0028](0028-ai-data-editing-not-allowed.md) | AI-Driven Data Editing Is Not Allowed | Accepted | 2026-04 |
 
 ## Template
 
