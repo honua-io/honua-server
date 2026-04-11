@@ -81,10 +81,10 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
     /// </summary>
     public string? CurrentPhase { get; init; }
 
-    // IOperationProgress explicit implementation
-    string IOperationProgress.OperationId => OperationId;
-    OperationType IOperationProgress.Type => OperationType.Geoprocessing;
-    OperationStatus IOperationProgress.Status => WorkflowStatus switch
+    /// <summary>
+    /// Unified operation status projected from <see cref="WorkflowStatus"/>.
+    /// </summary>
+    public OperationStatus Status => WorkflowStatus switch
     {
         GeoprocessingWorkflowStatus.Draft => OperationStatus.Queued,
         GeoprocessingWorkflowStatus.AwaitingClarification => OperationStatus.Processing,
@@ -97,11 +97,16 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
         _ => OperationStatus.Queued
     };
 
+    // IOperationProgress explicit implementation
+    string IOperationProgress.OperationId => OperationId;
+    OperationType IOperationProgress.Type => OperationType.Geoprocessing;
+
     /// <inheritdoc />
     public IOperationProgress WithCancellation(DateTimeOffset completedAt, string? currentPhase)
         => this with
         {
             WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+            CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
             CompletedAt = completedAt,
             CurrentPhase = currentPhase
         };
