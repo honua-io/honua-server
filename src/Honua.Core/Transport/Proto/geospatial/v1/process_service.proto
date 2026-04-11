@@ -1,0 +1,311 @@
+// Copyright 2026 gRPC Geospatial Standard Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package geospatial.v1;
+
+option csharp_namespace = "Geospatial.V1";
+option go_package = "github.com/grpc-geospatial/protobuf/geospatial/v1";
+option java_package = "io.geospatial.v1";
+option java_multiple_files = true;
+option java_outer_classname = "ProcessServiceProto";
+
+// ProcessService provides typed geoprocessing execution, dry-run estimation,
+// and asynchronous job lifecycle management.
+service ProcessService {
+  // Validates an analysis plan for structural and policy correctness.
+  rpc ValidatePlan(ValidatePlanRequest) returns (ValidatePlanResponse);
+
+  // Performs a dry run of an analysis plan without side effects.
+  rpc DryRunPlan(DryRunPlanRequest) returns (DryRunPlanResponse);
+
+  // Executes an analysis plan synchronously and returns results.
+  rpc ExecutePlan(ExecutePlanRequest) returns (ExecutePlanResponse);
+
+  // Submits an analysis plan for asynchronous execution and returns a job reference.
+  rpc SubmitPlanJob(SubmitPlanJobRequest) returns (ExecutionJob);
+
+  // Retrieves the current state of an execution job.
+  rpc GetJob(GetJobRequest) returns (ExecutionJob);
+
+  // Retrieves the result package for a completed execution job.
+  rpc GetJobResults(GetJobResultsRequest) returns (AnalysisResultPackage);
+
+  // Requests cancellation of an in-flight execution job.
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Request and response messages
+// ---------------------------------------------------------------------------
+
+message ValidatePlanRequest {
+  AnalysisPlan plan = 1;
+}
+
+message ValidatePlanResponse {
+  bool is_executable = 1;
+  bool requires_approval = 2;
+  repeated ValidationFailure violations = 3;
+  repeated string warnings = 4;
+}
+
+message DryRunPlanRequest {
+  AnalysisPlan plan = 1;
+}
+
+message DryRunPlanResponse {
+  double estimated_duration_seconds = 1;
+  repeated ArtifactKind estimated_artifacts = 2;
+  repeated string side_effects = 3;
+}
+
+message ExecutePlanRequest {
+  AnalysisPlan plan = 1;
+}
+
+message ExecutePlanResponse {
+  string job_id = 1;
+  repeated ArtifactRef artifacts = 2;
+  repeated WorkspaceRef workspace_refs = 3;
+}
+
+message SubmitPlanJobRequest {
+  AnalysisPlan plan = 1;
+  string idempotency_key = 2;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+}
+
+message GetJobResultsRequest {
+  string job_id = 1;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobResponse {
+}
+
+// ---------------------------------------------------------------------------
+// Domain projection messages
+// ---------------------------------------------------------------------------
+
+// An executable analysis plan compiled from a grounded intent.
+message AnalysisPlan {
+  string plan_id = 1;
+  string intent_id = 2;
+  repeated AnalysisPlanStep steps = 3;
+  repeated ArtifactKind outputs = 4;
+  repeated string warnings = 5;
+}
+
+// A single step within an analysis plan.
+message AnalysisPlanStep {
+  string step_id = 1;
+  PlanStepKind kind = 2;
+  optional string process_id = 3;
+  map<string, string> inputs = 4;
+  repeated string depends_on = 5;
+}
+
+// Durable execution job state for asynchronous plan execution.
+message ExecutionJob {
+  string job_id = 1;
+  JobStatus status = 2;
+  optional double percent_complete = 3;
+  optional string current_phase = 4;
+  int64 created_at = 5;
+  int64 updated_at = 6;
+  optional int64 completed_at = 7;
+  optional string error_message = 8;
+  repeated string warnings = 9;
+}
+
+// Final result envelope for a completed geoprocessing workflow.
+message AnalysisResultPackage {
+  string result_package_id = 1;
+  WorkflowStatus status = 2;
+  ResultSummary summary = 3;
+  repeated string assumptions = 4;
+  repeated ArtifactRef artifacts = 5;
+  repeated WorkspaceRef workspace_refs = 6;
+  optional string map_package_id = 7;
+  optional string app_package_id = 8;
+  ProvenanceRecord provenance = 9;
+  repeated GeoprocessingError errors = 10;
+}
+
+// Typed reference to an output artifact produced by a geoprocessing workflow.
+message ArtifactRef {
+  string artifact_id = 1;
+  ArtifactKind kind = 2;
+  string label = 3;
+  optional string uri = 4;
+  optional string content_type = 5;
+  map<string, string> metadata = 6;
+}
+
+// Reference to a managed workspace used during geoprocessing.
+message WorkspaceRef {
+  string workspace_id = 1;
+  WorkspaceKind kind = 2;
+  string label = 3;
+  optional string uri = 4;
+  optional int64 expires_at = 5;
+}
+
+// Audit trail for a geoprocessing result.
+message ProvenanceRecord {
+  repeated ProvenanceSource sources = 1;
+  repeated string process_definitions = 2;
+  repeated string assumptions = 3;
+  int32 clarifications_asked = 4;
+  int32 clarifications_answered = 5;
+  optional int64 executed_at = 6;
+  repeated string generated_artifact_ids = 7;
+}
+
+// A data source referenced by a provenance record.
+message ProvenanceSource {
+  string source_id = 1;
+  optional string version = 2;
+  optional string description = 3;
+}
+
+// Human-readable summary of a geoprocessing result.
+message ResultSummary {
+  string title = 1;
+  optional string description = 2;
+}
+
+// Error information from a geoprocessing workflow.
+message GeoprocessingError {
+  ErrorKind kind = 1;
+  string message = 2;
+  optional string step_id = 3;
+  repeated ValidationFailure violations = 4;
+}
+
+// A single validation failure within a geoprocessing error.
+message ValidationFailure {
+  string code = 1;
+  string message = 2;
+  optional string field_path = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// Workflow-level lifecycle status for a geoprocessing operation.
+enum WorkflowStatus {
+  WORKFLOW_STATUS_UNSPECIFIED = 0;
+  WORKFLOW_STATUS_DRAFT = 1;
+  WORKFLOW_STATUS_AWAITING_CLARIFICATION = 2;
+  WORKFLOW_STATUS_VALIDATED = 3;
+  WORKFLOW_STATUS_AWAITING_APPROVAL = 4;
+  WORKFLOW_STATUS_RUNNING = 5;
+  WORKFLOW_STATUS_COMPLETED = 6;
+  WORKFLOW_STATUS_FAILED = 7;
+  WORKFLOW_STATUS_CANCELLED = 8;
+}
+
+// Deterministic workflow stage identifiers.
+enum StageKind {
+  STAGE_KIND_UNSPECIFIED = 0;
+  STAGE_KIND_CAPTURE_INTENT = 1;
+  STAGE_KIND_GROUND_CANDIDATES = 2;
+  STAGE_KIND_CLARIFY = 3;
+  STAGE_KIND_COMPILE_PLAN = 4;
+  STAGE_KIND_VALIDATE_PLAN = 5;
+  STAGE_KIND_DRY_RUN = 6;
+  STAGE_KIND_EXECUTE = 7;
+  STAGE_KIND_COMPOSE_MAP = 8;
+  STAGE_KIND_COMPOSE_APP = 9;
+  STAGE_KIND_PUBLISH = 10;
+}
+
+// Per-stage status within a geoprocessing workflow.
+enum StageStatus {
+  STAGE_STATUS_UNSPECIFIED = 0;
+  STAGE_STATUS_PENDING = 1;
+  STAGE_STATUS_COMPLETED = 2;
+  STAGE_STATUS_NEEDS_USER_INPUT = 3;
+  STAGE_STATUS_BLOCKED = 4;
+  STAGE_STATUS_FAILED = 5;
+  STAGE_STATUS_SKIPPED = 6;
+  STAGE_STATUS_CANCELLED = 7;
+}
+
+// Categories of steps within an analysis plan.
+enum PlanStepKind {
+  PLAN_STEP_KIND_UNSPECIFIED = 0;
+  PLAN_STEP_KIND_QUERY_FEATURES = 1;
+  PLAN_STEP_KIND_GEOPROCESS = 2;
+  PLAN_STEP_KIND_AGGREGATE = 3;
+  PLAN_STEP_KIND_RENDER_MAP = 4;
+  PLAN_STEP_KIND_EXPORT = 5;
+}
+
+// Categories of output artifacts produced by geoprocessing workflows.
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;
+  ARTIFACT_KIND_SCALAR = 1;
+  ARTIFACT_KIND_FEATURE_LAYER = 2;
+  ARTIFACT_KIND_TABLE = 3;
+  ARTIFACT_KIND_RASTER = 4;
+  ARTIFACT_KIND_FILE = 5;
+  ARTIFACT_KIND_REPORT = 6;
+  ARTIFACT_KIND_MAP = 7;
+  ARTIFACT_KIND_APP_BUNDLE = 8;
+}
+
+// Lifetime classes for managed workspaces.
+enum WorkspaceKind {
+  WORKSPACE_KIND_UNSPECIFIED = 0;
+  WORKSPACE_KIND_SCRATCH = 1;
+  WORKSPACE_KIND_PERSISTENT = 2;
+  WORKSPACE_KIND_TEMP_LAYER = 3;
+  WORKSPACE_KIND_SAVED_LAYER = 4;
+  WORKSPACE_KIND_RESULT_COLLECTION = 5;
+}
+
+// Categories of errors in geoprocessing workflows.
+enum ErrorKind {
+  ERROR_KIND_UNSPECIFIED = 0;
+  ERROR_KIND_VALIDATION_FAILED = 1;
+  ERROR_KIND_AUTHORIZATION_DENIED = 2;
+  ERROR_KIND_UNKNOWN_DATASET = 3;
+  ERROR_KIND_UNKNOWN_PROCESS = 4;
+  ERROR_KIND_EXECUTION_FAILED = 5;
+  ERROR_KIND_TIMEOUT = 6;
+  ERROR_KIND_CANCELLED = 7;
+  ERROR_KIND_OUTPUT_BINDING_FAILED = 8;
+}
+
+// Status values for provider-backed execution jobs.
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_QUEUED = 1;
+  JOB_STATUS_PROVISIONING = 2;
+  JOB_STATUS_RUNNING = 3;
+  JOB_STATUS_SUCCEEDED = 4;
+  JOB_STATUS_FAILED = 5;
+  JOB_STATUS_CANCELLED = 6;
+}
