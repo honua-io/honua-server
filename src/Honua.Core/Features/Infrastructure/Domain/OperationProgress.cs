@@ -139,5 +139,10 @@ public enum OperationType
     /// <summary>
     /// Print/map composition operation (PDF, PNG, JPG).
     /// </summary>
-    Print
+    Print,
+
+    /// <summary>
+    /// Geoprocessing analysis or operator workflow operation.
+    /// </summary>
+    Geoprocessing
 }
