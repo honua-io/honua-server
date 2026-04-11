@@ -10,7 +10,7 @@ namespace Honua.Core.Features.Authorization.Domain;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(OperatorPolicyCatalog))]
 [JsonSerializable(typeof(ApprovalRequirement))]
-[JsonSerializable(typeof(OperatorPermission))]
+[JsonSerializable(typeof(OperatorGrant))]
 [JsonSerializable(typeof(OperatorResourceType))]
 [JsonSerializable(typeof(OperatorOperation))]
 [JsonSerializable(typeof(WorkspaceVisibility))]

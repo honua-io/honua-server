@@ -5,7 +5,7 @@ namespace Honua.Core.Features.Authorization.Domain;
 /// Uses enums for resource type and operation (two integer comparisons on the hot path).
 /// Only ResourceId is a string because resource identifiers are unbounded.
 /// </summary>
-public sealed record OperatorPermission
+public sealed record OperatorGrant
 {
     /// <summary>
     /// The kind of resource this permission applies to.
