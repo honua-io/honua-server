@@ -94,22 +94,26 @@ Conceptual shape:
 
 ```json
 {
+  "intentId": "intent_456",
   "goal": "Find parcels within 500 meters of schools and rank by flood risk.",
   "mode": "analysis",
   "requestedOutputs": [
     "feature_layer",
-    "map",
-    "csv_export"
+    "map"
   ],
   "constraints": {
-    "aoi": null,
-    "timeWindow": null,
+    "areaOfInterest": null,
+    "timeWindowStart": null,
+    "timeWindowEnd": null,
     "units": "meters"
   },
   "inputs": [],
   "assumptionPolicy": "ask_when_material"
 }
 ```
+
+`requestedOutputs` uses `ArtifactKind` values: `scalar`, `feature_layer`, `table`,
+`raster`, `file`, `report`, `map`, `app_bundle`.
 
 ### ClarificationRequest
 
@@ -142,6 +146,21 @@ Conceptual shape:
 
 Captures the user's answers or accepted defaults.
 
+Conceptual shape:
+
+```json
+{
+  "intentId": "intent_123",
+  "answers": {
+    "q_dataset": ["schools_public"],
+    "q_confirm_aoi": ["yes"]
+  }
+}
+```
+
+Each answer is a list of values to support multi-select questions. Single-select,
+free-text, and confirmation answers use a single-element list.
+
 ### AnalysisPlan
 
 Represents a typed, executable graph.
@@ -151,13 +170,15 @@ Conceptual shape:
 ```json
 {
   "planId": "plan_123",
+  "intentId": "intent_456",
   "steps": [
     {
       "stepId": "load_parcels",
       "kind": "query_features",
       "inputs": {
         "dataset": "parcels"
-      }
+      },
+      "dependsOn": []
     },
     {
       "stepId": "buffer_schools",
@@ -165,9 +186,10 @@ Conceptual shape:
       "processId": "buffer",
       "inputs": {
         "source": "schools_all",
-        "distance": 500,
+        "distance": "500",
         "distanceUnit": "meters"
-      }
+      },
+      "dependsOn": []
     },
     {
       "stepId": "rank_results",
@@ -175,23 +197,29 @@ Conceptual shape:
       "inputs": {
         "source": "candidate_parcels",
         "metric": "flood_risk_score"
-      }
+      },
+      "dependsOn": ["load_parcels", "buffer_schools"]
     },
     {
       "stepId": "compose_map",
       "kind": "render_map",
       "inputs": {
         "template": "analysis_default"
-      }
+      },
+      "dependsOn": ["rank_results"]
     }
   ],
   "outputs": [
     "feature_layer",
-    "map_package",
-    "csv_export"
-  ]
+    "map"
+  ],
+  "warnings": []
 }
 ```
+
+Steps form a directed acyclic graph. `dependsOn` lists step identifiers that must
+complete before the step can execute. `inputs` values are strings; callers encode
+structured values as string representations.
 
 ### BuilderPlan
 
@@ -225,28 +253,42 @@ Conceptual shape:
 
 ### ArtifactRef
 
-References a concrete output.
+References a concrete output artifact.
 
-Supported artifact classes should include:
+Conceptual shape:
 
-- scalar values
-- feature layers
-- tables
-- rasters
-- files
-- reports
-- maps
-- app bundles
+```json
+{
+  "artifactId": "artifact_candidate_parcels",
+  "kind": "feature_layer",
+  "label": "Candidate Parcels",
+  "uri": "honua://workspaces/ws_123/layers/candidate_parcels",
+  "contentType": "application/geo+json",
+  "metadata": {}
+}
+```
+
+Supported `kind` values: `scalar`, `feature_layer`, `table`, `raster`, `file`,
+`report`, `map`, `app_bundle`.
 
 ### WorkspaceRef
 
-References managed working state:
+References a managed working-state container.
 
-- scratch workspace
-- persistent project workspace
-- temp layer
-- saved layer
-- result collection
+Conceptual shape:
+
+```json
+{
+  "id": "ws_123",
+  "kind": "scratch",
+  "label": "Analysis scratch workspace",
+  "uri": "honua://workspaces/ws_123",
+  "expiresAt": "2026-04-10T18:00:00Z"
+}
+```
+
+Supported `kind` values: `scratch`, `persistent`, `temp_layer`, `saved_layer`,
+`result_collection`.
 
 ### StyleRef
 
@@ -474,14 +516,27 @@ Required deployment responsibilities should include:
 
 ### ProvenanceRecord
 
-Captures:
+Audit trail recording the lineage of a geoprocessing result.
 
-- source datasets and versions
-- process definitions and versions
-- assumptions
-- clarifications asked and answered
-- execution timestamps
-- generated outputs
+Conceptual shape:
+
+```json
+{
+  "sources": [
+    {
+      "sourceId": "parcels",
+      "version": "2026-04-09",
+      "description": "City parcels dataset"
+    }
+  ],
+  "processDefinitions": ["buffer", "spatial_join"],
+  "assumptions": ["Used public schools dataset."],
+  "clarificationsAsked": ["q_dataset"],
+  "clarificationsAnswered": ["q_dataset"],
+  "executedAt": "2026-04-09T18:05:00Z",
+  "generatedArtifactIds": ["artifact_candidate_parcels"]
+}
+```
 
 ### AnalysisResultPackage
 
@@ -504,9 +559,41 @@ Conceptual shape:
   "workspaceRefs": [],
   "mapPackageId": null,
   "appPackageId": null,
-  "provenance": {}
+  "provenance": {},
+  "errors": []
 }
 ```
+
+`mapPackageId` and `appPackageId` are deferred references. The `MapPackage` and
+`AppPackage` types are defined in downstream tickets (#730, #731).
+
+The package exposes factory methods `CreateCompleted` and `CreateFailed` for
+terminal construction.
+
+### GeoprocessingError
+
+Structured error produced during a geoprocessing workflow.
+
+Conceptual shape:
+
+```json
+{
+  "kind": "validation_failed",
+  "message": "Buffer distance must be positive.",
+  "stepId": "buffer_schools",
+  "violations": [
+    {
+      "code": "positive_required",
+      "message": "Distance must be greater than zero.",
+      "fieldPath": "inputs.distance"
+    }
+  ]
+}
+```
+
+Supported `kind` values: `validation_failed`, `authorization_denied`,
+`unknown_dataset`, `unknown_process`, `execution_failed`, `timeout`, `cancelled`,
+`output_binding_failed`.
 
 ## gRPC Contract Families
 

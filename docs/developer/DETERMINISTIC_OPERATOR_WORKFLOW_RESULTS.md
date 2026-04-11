@@ -273,6 +273,31 @@ Claude and Codex evaluations should score:
 - whether a usable `MapPackage` was produced
 - whether provenance recorded assumptions and clarifications correctly
 
+## Progress Tracking
+
+Geoprocessing workflows report progress through the unified operation progress
+interface (`IOperationProgress`). The `GeoprocessingProgress` type tracks:
+
+- `workflowStatus` — lifecycle status mapped to the workflow status vocabulary
+- `currentStage` — the active deterministic stage
+- `currentStageStatus` — per-stage status from the stage status vocabulary
+- `stepsCompleted` / `totalSteps` — plan step progress
+- `percentComplete` — computed from step counts
+
+The workflow status maps to the unified `OperationStatus`:
+
+| Workflow status | Unified status |
+|---|---|
+| `draft` | `queued` |
+| `awaiting_clarification`, `validated`, `awaiting_approval`, `running` | `processing` |
+| `completed` | `completed` |
+| `failed` | `failed` |
+| `cancelled` | `cancelled` |
+
+Progress is observable through the admin operations endpoints
+(`/api/v{version}/admin/operations/`) and supports cancellation via
+`ICancellableOperationProgress`.
+
 ## Related Documents
 
 - [AI Operator Contract](AI_OPERATOR_CONTRACT.md)
