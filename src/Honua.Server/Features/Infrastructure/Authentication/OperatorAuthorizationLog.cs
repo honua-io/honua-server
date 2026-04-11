@@ -93,4 +93,11 @@ internal static partial class OperatorAuthorizationLog
         Level = LogLevel.Warning,
         Message = "Operator authorization denied: workspace request from principal {PrincipalId} missing visibility context")]
     public static partial void WorkspaceMissingVisibility(ILogger logger, string? principalId);
+
+    [LoggerMessage(
+        EventId = 4713,
+        Level = LogLevel.Information,
+        Message = "Operator authorization denied: principal {PrincipalId} attempted {Operation} on read-only public workspace")]
+    public static partial void PublicWorkspaceMutationDenied(
+        ILogger logger, string? principalId, OperatorOperation operation);
 }

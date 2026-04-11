@@ -419,6 +419,29 @@ public sealed class OperatorAuthorizationEvaluatorTests
         decision.RequiresAuthentication.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(OperatorOperation.Create)]
+    [InlineData(OperatorOperation.Execute)]
+    [InlineData(OperatorOperation.Promote)]
+    [InlineData(OperatorOperation.Publish)]
+    public void Evaluate_PublicWorkspaceMutation_AuthenticatedWithGrant_Denied(OperatorOperation operation)
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "*");
+        var principal = CreatePrincipal("user-1", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = operation,
+            WorkspaceVisibility = WorkspaceVisibility.Public,
+            ResourceId = "ws-public-1"
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
     [UnitTest]
     public void Evaluate_SharedWorkspace_MatchingScope_Allowed()
     {

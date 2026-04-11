@@ -74,6 +74,11 @@ internal sealed class OperatorAuthorizationEvaluator(
                     OperatorAuthorizationLog.WorkspaceMissingVisibility(logger, userId);
                     return AccessDecision.Forbidden("Workspace access denied: visibility context is required.");
 
+                case WorkspaceVisibility.Public
+                    when request.Operation is not (OperatorOperation.Read or OperatorOperation.Discover):
+                    OperatorAuthorizationLog.PublicWorkspaceMutationDenied(logger, userId, request.Operation);
+                    return AccessDecision.Forbidden("Public workspaces are read-only.");
+
                 case WorkspaceVisibility.Personal:
                     if (request.WorkspaceOwnerId is null)
                     {
