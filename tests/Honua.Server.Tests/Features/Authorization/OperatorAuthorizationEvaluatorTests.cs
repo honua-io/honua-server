@@ -137,7 +137,10 @@ public sealed class OperatorAuthorizationEvaluatorTests
             var request = new OperatorAuthorizationRequest
             {
                 ResourceType = resourceType,
-                Operation = OperatorOperation.Read
+                Operation = OperatorOperation.Read,
+                WorkspaceVisibility = resourceType == OperatorResourceType.Workspace
+                    ? WorkspaceVisibility.Organization
+                    : null
             };
 
             _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue(
@@ -464,6 +467,24 @@ public sealed class OperatorAuthorizationEvaluatorTests
             Operation = OperatorOperation.Read,
             WorkspaceVisibility = WorkspaceVisibility.Shared,
             WorkspaceScopeId = null
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_Workspace_MissingVisibility_Denied()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipal("user-1", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = null
         };
 
         var decision = _evaluator.Evaluate(principal, request);

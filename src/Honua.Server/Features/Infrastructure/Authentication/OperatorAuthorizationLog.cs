@@ -87,4 +87,10 @@ internal static partial class OperatorAuthorizationLog
         Message = "Operator authorization denied: principal {PrincipalId} is not in workspace scope {WorkspaceScopeId}")]
     public static partial void SharedWorkspaceScopeDenied(
         ILogger logger, string? principalId, string workspaceScopeId);
+
+    [LoggerMessage(
+        EventId = 4712,
+        Level = LogLevel.Warning,
+        Message = "Operator authorization denied: workspace request from principal {PrincipalId} missing visibility context")]
+    public static partial void WorkspaceMissingVisibility(ILogger logger, string? principalId);
 }

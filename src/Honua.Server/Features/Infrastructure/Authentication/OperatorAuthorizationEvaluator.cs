@@ -70,6 +70,10 @@ internal sealed class OperatorAuthorizationEvaluator(
         {
             switch (request.WorkspaceVisibility)
             {
+                case null:
+                    OperatorAuthorizationLog.WorkspaceMissingVisibility(logger, userId);
+                    return AccessDecision.Forbidden("Workspace access denied: visibility context is required.");
+
                 case WorkspaceVisibility.Personal:
                     if (request.WorkspaceOwnerId is null)
                     {
