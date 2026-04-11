@@ -54,13 +54,20 @@ internal sealed class OperatorAuthorizationEvaluator(
         if (request is
             {
                 ResourceType: OperatorResourceType.Workspace,
-                WorkspaceVisibility: WorkspaceVisibility.Personal,
-                WorkspaceOwnerId: not null
-            }
-            && !string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal))
+                WorkspaceVisibility: WorkspaceVisibility.Personal
+            })
         {
-            OperatorAuthorizationLog.WorkspaceOwnershipDenied(logger, userId, request.WorkspaceOwnerId);
-            return AccessDecision.Forbidden("Personal workspace access denied: principal is not the workspace owner.");
+            if (request.WorkspaceOwnerId is null)
+            {
+                OperatorAuthorizationLog.PersonalWorkspaceMissingOwner(logger, userId);
+                return AccessDecision.Forbidden("Personal workspace access denied: owner context is required.");
+            }
+
+            if (!string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal))
+            {
+                OperatorAuthorizationLog.WorkspaceOwnershipDenied(logger, userId, request.WorkspaceOwnerId);
+                return AccessDecision.Forbidden("Personal workspace access denied: principal is not the workspace owner.");
+            }
         }
 
         if (roleNames is not { Count: > 0 })

@@ -61,4 +61,10 @@ internal static partial class OperatorAuthorizationLog
         Message = "Operator approval not required: principal {PrincipalId} for {ResourceType}.{Operation}")]
     public static partial void ApprovalNotRequired(
         ILogger logger, string? principalId, OperatorResourceType resourceType, OperatorOperation operation);
+
+    [LoggerMessage(
+        EventId = 4708,
+        Level = LogLevel.Warning,
+        Message = "Operator authorization denied: personal workspace request from principal {PrincipalId} missing owner context")]
+    public static partial void PersonalWorkspaceMissingOwner(ILogger logger, string? principalId);
 }

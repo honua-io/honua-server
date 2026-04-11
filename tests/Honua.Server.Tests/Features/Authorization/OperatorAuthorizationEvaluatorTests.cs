@@ -108,6 +108,25 @@ public sealed class OperatorAuthorizationEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_PersonalWorkspace_MissingOwnerDenied()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipal("user-1", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Personal,
+            WorkspaceOwnerId = null
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Evaluate_WildcardGrant_MatchesAllResourceTypes()
     {
         _roleStore.AddGrant("viewer", "*", "*", "read");
