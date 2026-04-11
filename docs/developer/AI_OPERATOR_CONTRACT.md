@@ -108,6 +108,7 @@ Conceptual shape:
   ],
   "constraints": {
     "areaOfInterest": null,
+    "spatialReferenceId": null,
     "timeWindowStart": null,
     "timeWindowEnd": null,
     "units": "meters"
@@ -127,6 +128,10 @@ values:
 - `AskWhenMaterial` — ask only when the assumption materially affects results
   (default)
 - `UseDefaults` — use sensible defaults without asking
+
+`spatialReferenceId` is an optional EPSG SRID that qualifies `areaOfInterest`.
+When `null`, WGS 84 (EPSG:4326) is assumed. This matches the `SpatialReferenceId`
+convention used by the shared `BoundingBox` model.
 
 ### ClarificationRequest
 

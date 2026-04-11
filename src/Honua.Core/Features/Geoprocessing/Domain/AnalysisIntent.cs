@@ -56,6 +56,11 @@ public sealed record IntentConstraints
     public string? AreaOfInterest { get; init; }
 
     /// <summary>
+    /// EPSG SRID for the area of interest. When <c>null</c>, WGS 84 (EPSG:4326) is assumed.
+    /// </summary>
+    public int? SpatialReferenceId { get; init; }
+
+    /// <summary>
     /// Start of the time window for temporal filtering.
     /// </summary>
     public DateTimeOffset? TimeWindowStart { get; init; }
