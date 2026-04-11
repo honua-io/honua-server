@@ -59,6 +59,11 @@ to hand an agent or application a runnable map definition.
 
 ## Canonical Objects
 
+> **Serialization note:** JSON examples below show canonical C# member names as
+> identifiers. Actual wire-format serialization (casing, string vs numeric) is
+> determined by each transport adapter (REST, gRPC, MCP). These examples
+> illustrate the semantic contract, not a prescribed wire encoding.
+
 ### CapabilityCatalog
 
 Describes the discoverable universe available to the operator:
@@ -98,8 +103,8 @@ Conceptual shape:
   "goal": "Find parcels within 500 meters of schools and rank by flood risk.",
   "mode": "analysis",
   "requestedOutputs": [
-    "feature_layer",
-    "map"
+    "FeatureLayer",
+    "Map"
   ],
   "constraints": {
     "areaOfInterest": null,
@@ -108,12 +113,12 @@ Conceptual shape:
     "units": "meters"
   },
   "inputs": [],
-  "assumptionPolicy": "ask_when_material"
+  "assumptionPolicy": "AskWhenMaterial"
 }
 ```
 
-`requestedOutputs` uses `ArtifactKind` values: `scalar`, `feature_layer`, `table`,
-`raster`, `file`, `report`, `map`, `app_bundle`.
+`requestedOutputs` uses `ArtifactKind` values: `Scalar`, `FeatureLayer`, `Table`,
+`Raster`, `File`, `Report`, `Map`, `AppBundle`.
 
 ### ClarificationRequest
 
@@ -125,13 +130,13 @@ Conceptual shape:
 {
   "intentId": "intent_123",
   "reasonCodes": [
-    "missing_required_input",
-    "ambiguous_dataset"
+    "MissingRequiredInput",
+    "AmbiguousDataset"
   ],
   "questions": [
     {
       "questionId": "q_dataset",
-      "kind": "single_select",
+      "kind": "SingleSelect",
       "prompt": "Which school dataset should be used?",
       "options": [
         { "id": "schools_public", "label": "Public schools" },
@@ -174,7 +179,7 @@ Conceptual shape:
   "steps": [
     {
       "stepId": "load_parcels",
-      "kind": "query_features",
+      "kind": "QueryFeatures",
       "inputs": {
         "dataset": "parcels"
       },
@@ -182,7 +187,7 @@ Conceptual shape:
     },
     {
       "stepId": "buffer_schools",
-      "kind": "geoprocess",
+      "kind": "Geoprocess",
       "processId": "buffer",
       "inputs": {
         "source": "schools_all",
@@ -193,7 +198,7 @@ Conceptual shape:
     },
     {
       "stepId": "rank_results",
-      "kind": "aggregate",
+      "kind": "Aggregate",
       "inputs": {
         "source": "candidate_parcels",
         "metric": "flood_risk_score"
@@ -202,7 +207,7 @@ Conceptual shape:
     },
     {
       "stepId": "compose_map",
-      "kind": "render_map",
+      "kind": "RenderMap",
       "inputs": {
         "template": "analysis_default"
       },
@@ -210,8 +215,8 @@ Conceptual shape:
     }
   ],
   "outputs": [
-    "feature_layer",
-    "map"
+    "FeatureLayer",
+    "Map"
   ],
   "warnings": []
 }
@@ -220,6 +225,10 @@ Conceptual shape:
 Steps form a directed acyclic graph. `dependsOn` lists step identifiers that must
 complete before the step can execute. `inputs` values are strings; callers encode
 structured values as string representations.
+
+Supported step `kind` values: `QueryFeatures`, `Geoprocess`, `Aggregate`,
+`RenderMap`, `Export`. Geoprocess steps should include a `processId` identifying
+the operation to execute.
 
 ### BuilderPlan
 
@@ -243,7 +252,7 @@ Conceptual shape:
 {
   "jobId": "job_123",
   "planId": "plan_123",
-  "status": "running",
+  "status": "Running",
   "progressPercent": 42,
   "currentStepId": "buffer_schools",
   "messages": [],
@@ -260,7 +269,7 @@ Conceptual shape:
 ```json
 {
   "artifactId": "artifact_candidate_parcels",
-  "kind": "feature_layer",
+  "kind": "FeatureLayer",
   "label": "Candidate Parcels",
   "uri": "honua://workspaces/ws_123/layers/candidate_parcels",
   "contentType": "application/geo+json",
@@ -268,8 +277,8 @@ Conceptual shape:
 }
 ```
 
-Supported `kind` values: `scalar`, `feature_layer`, `table`, `raster`, `file`,
-`report`, `map`, `app_bundle`.
+Supported `kind` values: `Scalar`, `FeatureLayer`, `Table`, `Raster`, `File`,
+`Report`, `Map`, `AppBundle`.
 
 ### WorkspaceRef
 
@@ -279,16 +288,16 @@ Conceptual shape:
 
 ```json
 {
-  "id": "ws_123",
-  "kind": "scratch",
+  "workspaceId": "ws_123",
+  "kind": "Scratch",
   "label": "Analysis scratch workspace",
   "uri": "honua://workspaces/ws_123",
   "expiresAt": "2026-04-10T18:00:00Z"
 }
 ```
 
-Supported `kind` values: `scratch`, `persistent`, `temp_layer`, `saved_layer`,
-`result_collection`.
+Supported `kind` values: `Scratch`, `Persistent`, `TempLayer`, `SavedLayer`,
+`ResultCollection`.
 
 ### StyleRef
 
@@ -547,7 +556,7 @@ Conceptual shape:
 ```json
 {
   "resultPackageId": "result_123",
-  "status": "completed",
+  "status": "Completed",
   "summary": {
     "title": "Candidate parcels ranked by flood risk",
     "description": "342 parcels found within 500 meters of schools."
@@ -578,7 +587,7 @@ Conceptual shape:
 
 ```json
 {
-  "kind": "validation_failed",
+  "kind": "ValidationFailed",
   "message": "Buffer distance must be positive.",
   "stepId": "buffer_schools",
   "violations": [
@@ -591,9 +600,9 @@ Conceptual shape:
 }
 ```
 
-Supported `kind` values: `validation_failed`, `authorization_denied`,
-`unknown_dataset`, `unknown_process`, `execution_failed`, `timeout`, `cancelled`,
-`output_binding_failed`.
+Supported `kind` values: `ValidationFailed`, `AuthorizationDenied`,
+`UnknownDataset`, `UnknownProcess`, `ExecutionFailed`, `Timeout`, `Cancelled`,
+`OutputBindingFailed`.
 
 ## gRPC Contract Families
 
