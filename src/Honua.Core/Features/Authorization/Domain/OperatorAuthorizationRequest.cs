@@ -29,4 +29,10 @@ public sealed record OperatorAuthorizationRequest
     /// The owner principal identifier for personal workspace checks.
     /// </summary>
     public string? WorkspaceOwnerId { get; init; }
+
+    /// <summary>
+    /// Whether the requested action is destructive. Used by approval evaluation
+    /// to distinguish destructive operations from routine execution.
+    /// </summary>
+    public bool IsDestructive { get; init; }
 }

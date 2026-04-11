@@ -146,13 +146,14 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     }
 
     [UnitTest]
-    public void Evaluate_ExecuteOperation_RequiresApprovalWhenEnabled()
+    public void Evaluate_DestructiveExecute_RequiresApprovalWhenEnabled()
     {
         var evaluator = CreateEvaluator(destructiveActionsRequireApproval: true);
         var request = new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
-            Operation = OperatorOperation.Execute
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
         };
 
         var result = evaluator.Evaluate(CreatePrincipal(), request);
@@ -163,13 +164,30 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     }
 
     [UnitTest]
-    public void Evaluate_ExecuteOperation_NoApprovalWhenDisabled()
+    public void Evaluate_DestructiveExecute_NoApprovalWhenDisabled()
     {
         var evaluator = CreateEvaluator(destructiveActionsRequireApproval: false);
         var request = new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Process,
-            Operation = OperatorOperation.Execute
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        };
+
+        var result = evaluator.Evaluate(CreatePrincipal(), request);
+
+        result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NonDestructiveExecute_NoApprovalEvenWhenEnabled()
+    {
+        var evaluator = CreateEvaluator(destructiveActionsRequireApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = false
         };
 
         var result = evaluator.Evaluate(CreatePrincipal(), request);
