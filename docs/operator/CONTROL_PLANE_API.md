@@ -407,6 +407,9 @@ Geoprocessing operations report workflow-specific progress including the current
 deterministic stage and plan step counts. Cancellation is supported through the
 cancel endpoint; the server re-reads progress before writing terminal state to
 mitigate TOCTOU races with worker-owned state transitions.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
 | `/api/v1/admin/performance/database/query-cache/statistics` | GET | Query cache performance statistics |
 | `/api/v1/admin/observability/errors` | GET | Recent in-memory error buffer |
 | `/api/v1/admin/observability/telemetry` | GET | Tracing/OTLP telemetry status |
