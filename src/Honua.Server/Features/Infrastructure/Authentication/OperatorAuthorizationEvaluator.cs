@@ -1,0 +1,134 @@
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Server.Features.Infrastructure.Authentication;
+
+/// <summary>
+/// Evaluates operator-scoped resource authorization using convention mapping from
+/// the existing <see cref="IRoleStore"/> permission grants.
+/// </summary>
+internal sealed class OperatorAuthorizationEvaluator(
+    IRoleStore roleStore,
+    IOptions<RbacOptions> rbacOptions,
+    ILogger<OperatorAuthorizationEvaluator> logger) : IOperatorAuthorizationEvaluator
+{
+    public AccessDecision Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+    {
+        if (principal.Identity is not { IsAuthenticated: true })
+        {
+            OperatorAuthorizationLog.AuthenticationRequired(logger, request.ResourceType, request.Operation);
+            return AccessDecision.RequiresAuth("Authentication is required for operator resources.");
+        }
+
+        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                  ?? principal.FindFirstValue("sub");
+        var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
+
+        bool isAdmin = false;
+        List<string>? roleNames = null;
+
+        foreach (var claim in principal.Claims)
+        {
+            if (!string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (string.Equals(claim.Value, "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                isAdmin = true;
+                break;
+            }
+
+            roleNames ??= [];
+            roleNames.Add(claim.Value);
+        }
+
+        if (isAdmin)
+        {
+            OperatorAuthorizationLog.AdminBypassed(logger, userId, request.ResourceType, request.Operation);
+            return AccessDecision.Allowed();
+        }
+
+        if (request is
+            {
+                ResourceType: OperatorResourceType.Workspace,
+                WorkspaceVisibility: WorkspaceVisibility.Personal,
+                WorkspaceOwnerId: not null
+            }
+            && !string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal))
+        {
+            OperatorAuthorizationLog.WorkspaceOwnershipDenied(logger, userId, request.WorkspaceOwnerId);
+            return AccessDecision.Forbidden("Personal workspace access denied: principal is not the workspace owner.");
+        }
+
+        if (roleNames is not { Count: > 0 })
+        {
+            OperatorAuthorizationLog.PermissionDenied(logger, userId, request.ResourceType, request.Operation, request.ResourceId);
+            return AccessDecision.Forbidden("No operator-eligible roles assigned.");
+        }
+
+        // IRoleStore is singleton (InMemoryRoleStore) and returns completed tasks.
+        // When a persistent store is introduced (#498), a per-request caching layer
+        // should resolve permissions once and pass them through scoped context.
+        var effective = roleStore.GetEffectivePermissionsAsync(
+            userId ?? string.Empty, roleNames).GetAwaiter().GetResult();
+
+        var permissions = effective.Permissions;
+        for (var i = 0; i < permissions.Count; i++)
+        {
+            if (MatchesOperatorGrant(permissions[i], request))
+            {
+                OperatorAuthorizationLog.PermissionGranted(
+                    logger, userId, request.ResourceType, request.Operation, request.ResourceId);
+                return AccessDecision.Allowed();
+            }
+        }
+
+        OperatorAuthorizationLog.PermissionDenied(
+            logger, userId, request.ResourceType, request.Operation, request.ResourceId);
+        return AccessDecision.Forbidden(
+            $"No matching operator permission for {request.ResourceType}.{request.Operation}.");
+    }
+
+    private bool MatchesOperatorGrant(PermissionGrant grant, OperatorAuthorizationRequest request)
+    {
+        if (!IsResourceTypeMatch(grant.Service, request.ResourceType))
+            return false;
+
+        if (!IsOperationMatch(grant.Operation, request.Operation))
+            return false;
+
+        if (grant.Layer.Length == 1 && grant.Layer[0] == '*')
+            return true;
+
+        if (request.ResourceId is null)
+            return true;
+
+        return string.Equals(grant.Layer, request.ResourceId, StringComparison.Ordinal);
+    }
+
+    private bool IsResourceTypeMatch(string service, OperatorResourceType requested)
+    {
+        if (service.Length == 1 && service[0] == '*')
+            return true;
+
+        if (!Enum.TryParse<OperatorResourceType>(service, ignoreCase: true, out var parsed))
+        {
+            OperatorAuthorizationLog.UnrecognizedResourceType(logger, service);
+            return false;
+        }
+
+        return parsed == requested;
+    }
+
+    private static bool IsOperationMatch(string operation, OperatorOperation requested)
+    {
+        if (operation.Length == 1 && operation[0] == '*')
+            return true;
+
+        return Enum.TryParse<OperatorOperation>(operation, ignoreCase: true, out var parsed)
+            && parsed == requested;
+    }
+}

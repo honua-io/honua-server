@@ -1,0 +1,349 @@
+using System.Security.Claims;
+using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+
+namespace Honua.Server.Tests.Features.Authorization;
+
+public sealed class OperatorAuthorizationEvaluatorTests
+{
+    private readonly TestRoleStore _roleStore = new();
+    private readonly OperatorAuthorizationEvaluator _evaluator;
+
+    public OperatorAuthorizationEvaluatorTests()
+    {
+        var rbacOptions = Options.Create(new RbacOptions { RoleClaimType = "roles" });
+        _evaluator = new OperatorAuthorizationEvaluator(
+            _roleStore,
+            rbacOptions,
+            NullLogger<OperatorAuthorizationEvaluator>.Instance);
+    }
+
+    [UnitTest]
+    public void Evaluate_UnauthenticatedPrincipal_RequiresAuth()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_AdminRole_AllowedForAnyResource()
+    {
+        var principal = CreatePrincipal("user-1", "admin");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_AdminRoleCaseInsensitive_AllowedForAnyResource()
+    {
+        var principal = CreatePrincipal("user-1", "Admin");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Package,
+            Operation = OperatorOperation.Create
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_PersonalWorkspace_OwnerAllowed()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipal("user-1", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Personal,
+            WorkspaceOwnerId = "user-1"
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_PersonalWorkspace_NonOwnerDenied()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipal("user-2", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Personal,
+            WorkspaceOwnerId = "user-1"
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_WildcardGrant_MatchesAllResourceTypes()
+    {
+        _roleStore.AddGrant("viewer", "*", "*", "read");
+        var principal = CreatePrincipal("user-1", "viewer");
+
+        foreach (var resourceType in Enum.GetValues<OperatorResourceType>())
+        {
+            var request = new OperatorAuthorizationRequest
+            {
+                ResourceType = resourceType,
+                Operation = OperatorOperation.Read
+            };
+
+            _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue(
+                $"wildcard grant should match {resourceType}.Read");
+        }
+    }
+
+    [UnitTest]
+    public void Evaluate_SpecificResourceTypeGrant_MatchesOnly()
+    {
+        _roleStore.AddGrant("executor", "process", "*", "execute");
+        var principal = CreatePrincipal("user-1", "executor");
+
+        var allowed = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute
+        };
+        _evaluator.Evaluate(principal, allowed).IsAllowed.Should().BeTrue();
+
+        var denied = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Execute
+        };
+        _evaluator.Evaluate(principal, denied).IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_SpecificResourceId_MatchesExact()
+    {
+        _roleStore.AddGrant("scoped", "process", "proc-42", "execute");
+        var principal = CreatePrincipal("user-1", "scoped");
+
+        var matchingRequest = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            ResourceId = "proc-42",
+            Operation = OperatorOperation.Execute
+        };
+        _evaluator.Evaluate(principal, matchingRequest).IsAllowed.Should().BeTrue();
+
+        var nonMatchingRequest = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            ResourceId = "proc-99",
+            Operation = OperatorOperation.Execute
+        };
+        _evaluator.Evaluate(principal, nonMatchingRequest).IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NullResourceId_MatchesTypeLevelGrant()
+    {
+        _roleStore.AddGrant("scoped", "process", "proc-42", "execute");
+        var principal = CreatePrincipal("user-1", "scoped");
+
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            ResourceId = null,
+            Operation = OperatorOperation.Execute
+        };
+
+        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_NoRoles_Forbidden()
+    {
+        var principal = CreatePrincipal("user-1");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Discover
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_UnrecognizedServiceString_DeniesGracefully()
+    {
+        _roleStore.AddGrant("tester", "unknown-service", "*", "read");
+        var principal = CreatePrincipal("user-1", "tester");
+
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Read
+        };
+
+        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_WildcardOperationGrant_MatchesAllOperations()
+    {
+        _roleStore.AddGrant("full-process", "process", "*", "*");
+        var principal = CreatePrincipal("user-1", "full-process");
+
+        foreach (var op in Enum.GetValues<OperatorOperation>())
+        {
+            var request = new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Process,
+                Operation = op
+            };
+
+            _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue(
+                $"wildcard operation grant should match Process.{op}");
+        }
+    }
+
+    [UnitTest]
+    public void Evaluate_CaseInsensitiveConventionMapping_Works()
+    {
+        _roleStore.AddGrant("caser", "Catalog", "*", "Discover");
+        var principal = CreatePrincipal("user-1", "caser");
+
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Discover
+        };
+
+        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_MultipleRoles_CombinesPermissions()
+    {
+        _roleStore.AddGrant("reader", "catalog", "*", "read");
+        _roleStore.AddGrant("executor", "process", "*", "execute");
+        var principal = CreatePrincipal("user-1", "reader", "executor");
+
+        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Read
+        }).IsAllowed.Should().BeTrue();
+
+        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute
+        }).IsAllowed.Should().BeTrue();
+
+        _evaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        }).IsAllowed.Should().BeFalse();
+    }
+
+    private static ClaimsPrincipal CreatePrincipal(string userId, params string[] roles)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId)
+        };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim("roles", role));
+        }
+
+        var identity = new ClaimsIdentity(claims, "TestScheme");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private sealed class TestRoleStore : IRoleStore
+    {
+        private readonly Dictionary<string, List<PermissionGrant>> _roleGrants = new(StringComparer.OrdinalIgnoreCase);
+
+        public void AddGrant(string roleName, string service, string layer, string operation)
+        {
+            if (!_roleGrants.TryGetValue(roleName, out var grants))
+            {
+                grants = [];
+                _roleGrants[roleName] = grants;
+            }
+
+            grants.Add(new PermissionGrant { Service = service, Layer = layer, Operation = operation });
+        }
+
+        public Task<EffectivePermissions> GetEffectivePermissionsAsync(
+            string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
+        {
+            var permissions = roles
+                .Where(r => _roleGrants.ContainsKey(r))
+                .SelectMany(r => _roleGrants[r])
+                .ToList();
+
+            return Task.FromResult(new EffectivePermissions
+            {
+                UserId = userId,
+                Roles = roles,
+                Permissions = permissions
+            });
+        }
+
+        public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RoleDefinition>>([]);
+
+        public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult(role);
+
+        public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(role);
+
+        public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>([]);
+
+        public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
+            Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
+            => Task.FromResult(permissions);
+    }
+}
