@@ -49,6 +49,8 @@
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [MCP Server](developer/MCP_SERVER.md)
+- [AI Operator Contract](developer/AI_OPERATOR_CONTRACT.md)
+- [Deterministic Operator Workflow Results](developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
 - [Versioning Policy](developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 - [Migration Guide](developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 
@@ -58,6 +60,7 @@
 - [Getting Started](contributor/development/getting-started.md)
 - [Contributing](contributor/development/contributing.md)
 - [Architecture](contributor/ARCHITECTURE.md)
+- [AI-First Operator Architecture](contributor/AI_OPERATOR_ARCHITECTURE.md)
 - [ADRs](contributor/adr/README.md)
 - [TestKit](contributor/testkit.md)
 - [Public Interface Quality Model](contributor/public-interface-quality-model.md)

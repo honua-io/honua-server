@@ -185,9 +185,11 @@ MCP Surface
 Semantic Core
   - AnalysisIntent
   - ClarificationRequest
+  - ClarificationResponse
   - AnalysisPlan
   - BuilderPlan
-  - Provenance
+  - AnalysisResultPackage
+  - ProvenanceRecord
     |
     v
 Deterministic Core Services
@@ -342,16 +344,18 @@ Resources provide context chosen by the application:
 Tools should operate at the semantic level, not the desktop-command level:
 
 - `plan_analysis`
-- `ground_datasets`
-- `request_clarification`
+- `ground_candidates`
+- `clarify_intent`
 - `validate_plan`
 - `execute_plan`
 - `create_map_package`
 - `refine_map_package`
+- `apply_style_preset`
+- `compose_mixed_protocol_map`
 - `preview_map_package`
 - `create_app_package`
 - `preview_app_package`
-- `publish_artifact`
+- `publish_result`
 
 ### Prompts
 
@@ -398,7 +402,8 @@ At minimum, the package should contain:
 - provenance
 - output artifacts
 - workspace references
-- a `MapPackage`
+- a `MapPackage` (target-state; deferred to #730 — `MapPackageId` is nullable
+  until the concrete type lands)
 
 Where requested or appropriate, it should also contain:
 

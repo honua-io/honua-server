@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -14,8 +17,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Honua.Server.Features.Admin;
 
 /// <summary>
-/// Unified operation progress endpoints for tracking any operation type
-/// (upload, import, ingest, external import, tile cache, export, print).
+/// Unified operation progress endpoints for tracking any tracked operation type.
 /// Replaces legacy progress endpoints with a single, consistent API.
 /// </summary>
 internal static class OperationsProgressEndpoints
@@ -36,7 +38,7 @@ internal static class OperationsProgressEndpoints
         _ = group.MapGet("/{operationId}", HandleGetOperationStatus)
             .WithName("GetOperationStatus")
             .WithSummary("Get the status of any operation by ID")
-            .WithDescription("Returns progress information for any tracked operation (upload, import, ingest, external import, tile cache, export, print)");
+            .WithDescription("Returns progress information for any tracked operation type");
 
         // Cancel operation
         _ = group.MapPost("/{operationId}/cancel", HandleCancelOperation)
@@ -98,8 +100,35 @@ internal static class OperationsProgressEndpoints
             ExportProgress exportProgress => Results.Json(exportProgress, OperationsProgressJsonContext.Default.ExportProgress),
             PrintProgress printProgress => Results.Json(printProgress, OperationsProgressJsonContext.Default.PrintProgress),
             RasterImportProgress rasterImportProgress => Results.Json(rasterImportProgress, OperationsProgressJsonContext.Default.RasterImportProgress),
+            GeoprocessingProgress geoprocessingProgress => Results.Json(geoprocessingProgress, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
+    }
+
+    private static JsonElement SerializeOperationToElement(IOperationProgress progress)
+    {
+        var serialized = progress switch
+        {
+            UploadProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.UploadProgress),
+            ImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ImportProgress),
+            IngestProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.IngestProgress),
+            GeoservicesImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
+            TileOperationProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.TileOperationProgress),
+            ExportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ExportProgress),
+            PrintProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PrintProgress),
+            RasterImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.RasterImportProgress),
+            GeoprocessingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoprocessingProgress),
+            _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
+        };
+
+        var operation = JsonNode.Parse(serialized.GetRawText())?.AsObject() ?? [];
+
+        // List payloads need stable cross-operation keys for generic admin clients
+        // while still preserving the type-specific fields from each concrete progress DTO.
+        operation.TryAdd("operationId", progress.OperationId);
+        operation.TryAdd("type", (int)progress.Type);
+
+        return JsonSerializer.SerializeToElement(operation);
     }
 
     /// <summary>
@@ -268,7 +297,7 @@ internal static class OperationsProgressEndpoints
         }
 
         var operationIds = await progressStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
-        var operations = new List<IOperationProgress>();
+        var operations = new List<JsonElement>();
 
         foreach (var operationId in operationIds)
         {
@@ -276,7 +305,7 @@ internal static class OperationsProgressEndpoints
             if (progress != null &&
                 progress.Status is OperationStatus.Queued or OperationStatus.Processing)
             {
-                operations.Add(progress);
+                operations.Add(SerializeOperationToElement(progress));
             }
         }
 
@@ -307,14 +336,14 @@ internal static class OperationsProgressEndpoints
         }
 
         var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);
-        var operations = new List<IOperationProgress>(operationIds.Count);
+        var operations = new List<JsonElement>(operationIds.Count);
 
         foreach (var operationId in operationIds)
         {
             var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
             if (progress != null && progress.Type == parsedType)
             {
-                operations.Add(progress);
+                operations.Add(SerializeOperationToElement(progress));
             }
         }
 
@@ -356,9 +385,10 @@ internal sealed record CancelOperationResponse
 internal sealed record ActiveOperationsResponse
 {
     /// <summary>
-    /// List of active operations.
+    /// List of active operations, each serialized with its concrete progress type
+    /// plus stable operationId/type fields for generic clients.
     /// </summary>
-    public required IOperationProgress[] Operations { get; init; }
+    public required JsonElement[] Operations { get; init; }
 
     /// <summary>
     /// Total count of active operations.
@@ -382,9 +412,10 @@ internal sealed record OperationsByTypeResponse
     public required OperationType OperationType { get; init; }
 
     /// <summary>
-    /// List of operations of this type.
+    /// List of operations of this type, each serialized with its concrete progress type
+    /// plus stable operationId/type fields for generic clients.
     /// </summary>
-    public required IOperationProgress[] Operations { get; init; }
+    public required JsonElement[] Operations { get; init; }
 
     /// <summary>
     /// Total count of operations.
@@ -406,6 +437,10 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(PrintProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportPhase))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingWorkflowStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageKind))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageStatus))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]

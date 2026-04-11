@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -121,6 +122,42 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var operations = GetOperationsArray(json.RootElement);
         operations.GetArrayLength().Should().Be(1);
         GetPropertyCaseInsensitive(operations[0], "operationId").GetString().Should().Be(uploadId);
+        GetPropertyCaseInsensitive(operations[0], "type").GetInt32().Should().Be((int)OperationType.Upload);
+        GetPropertyCaseInsensitive(operations[0], "uploadId").GetString().Should().Be(uploadId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_WhenMixedTypesPresent_PreservesUnifiedOperationIdentityFields()
+    {
+        var uploadId = Guid.NewGuid().ToString("N");
+        var uploadProgress = UploadProgress.CreateInitial(uploadId, "mixed.geojson", 50) with
+        {
+            Status = OperationStatus.Processing
+        };
+        await _progressStore.SetProgressAsync(uploadId, uploadProgress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(uploadId);
+
+        var geoprocessingId = Guid.NewGuid().ToString("N");
+        var geoprocessingProgress = GeoprocessingProgress.CreateInitial(geoprocessingId);
+        await _progressStore.SetProgressAsync(geoprocessingId, geoprocessingProgress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(geoprocessingId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/active");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement).EnumerateArray().ToList();
+        operations.Should().Contain(op =>
+            GetPropertyCaseInsensitive(op, "operationId").GetString() == uploadId &&
+            GetPropertyCaseInsensitive(op, "type").GetInt32() == (int)OperationType.Upload &&
+            GetPropertyCaseInsensitive(op, "uploadId").GetString() == uploadId);
+        operations.Should().Contain(op =>
+            GetPropertyCaseInsensitive(op, "operationId").GetString() == geoprocessingId &&
+            GetPropertyCaseInsensitive(op, "type").GetInt32() == (int)OperationType.Geoprocessing &&
+            GetPropertyCaseInsensitive(op, "currentStage").ValueKind != JsonValueKind.Undefined);
     }
 
     [IntegrationTest]
@@ -146,6 +183,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var operations = GetOperationsArray(json.RootElement);
         operations.GetArrayLength().Should().Be(1);
         GetPropertyCaseInsensitive(operations[0], "operationId").GetString().Should().Be(importId);
+        GetPropertyCaseInsensitive(operations[0], "type").GetInt32().Should().Be((int)OperationType.Import);
+        GetPropertyCaseInsensitive(operations[0], "jobId").GetString().Should().Be(importId);
     }
 
     [IntegrationTest]
@@ -191,6 +230,33 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_GeoprocessingType_ReturnsWorkflowFields()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var progress = GeoprocessingProgress.CreateInitial(operationId);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Geoprocessing");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+
+        var op = operations[0];
+        GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(op, "workflowStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        GetPropertyCaseInsensitive(op, "currentStage").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        GetPropertyCaseInsensitive(op, "currentStageStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        GetPropertyCaseInsensitive(op, "stepsCompleted").GetInt32().Should().Be(0);
     }
 
     [IntegrationTest]

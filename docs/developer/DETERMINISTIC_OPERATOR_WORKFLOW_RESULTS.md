@@ -36,16 +36,16 @@ Receive Request
 
 | Stage | Purpose | Model role | Deterministic role | Result |
 |---|---|---|---|---|
-| `capture_intent` | Form partial user goal | interpret language | enforce schema shape | `IntentCaptureResult` |
-| `ground_candidates` | Find datasets, processes, templates | rank candidates | fetch catalog and permissions | `GroundingResult` |
-| `clarify` | Gather missing high-value inputs | draft questions | enforce policy for when clarification is required | `ClarificationResult` |
-| `compile_plan` | Build executable graph | propose steps | normalize structure | `PlanCompilationResult` |
-| `validate_plan` | Check executability and safety | none | validate schema, capability, auth, policy | `PlanValidationResult` |
-| `dry_run` | Estimate work and side effects | optional suggestions | compute estimates | `DryRunResult` |
-| `execute` | Produce artifacts | none | run plan through services and jobs | `ExecutionResult` |
-| `compose_map` | Produce map deliverable | suggest style/layout | bind artifacts, render preview, package map | `MapCompositionResult` |
-| `compose_app` | Produce app scaffold | suggest app structure | bind package, generate files, preview | `AppCompositionResult` |
-| `publish` | Persist or deploy output | optional recommendations | approvals, publication state machine | `PublicationResult` |
+| `CaptureIntent` | Form partial user goal | interpret language | enforce schema shape | `IntentCaptureResult` |
+| `GroundCandidates` | Find datasets, processes, templates | rank candidates | fetch catalog and permissions | `GroundingResult` |
+| `Clarify` | Gather missing high-value inputs | draft questions | enforce policy for when clarification is required | `ClarificationResult` |
+| `CompilePlan` | Build executable graph | propose steps | normalize structure | `PlanCompilationResult` |
+| `ValidatePlan` | Check executability and safety | none | validate schema, capability, auth, policy | `PlanValidationResult` |
+| `DryRun` | Estimate work and side effects | optional suggestions | compute estimates | `DryRunResult` |
+| `Execute` | Produce artifacts | none | run plan through services and jobs | `ExecutionResult` |
+| `ComposeMap` | Produce map deliverable | suggest style/layout | bind artifacts, render preview, package map | `MapCompositionResult` |
+| `ComposeApp` | Produce app scaffold | suggest app structure | bind package, generate files, preview | `AppCompositionResult` |
+| `Publish` | Persist or deploy output | optional recommendations | approvals, publication state machine | `PublicationResult` |
 
 ## Clarification Policy
 
@@ -65,17 +65,22 @@ Clarification may be skipped when:
 - the assumption is recorded in the result package
 - the workflow is running in draft or exploratory mode
 
+> **Serialization note:** JSON examples below show canonical C# member names as
+> identifiers. Actual wire-format serialization (casing, string vs numeric) is
+> determined by each transport adapter (REST, gRPC, MCP). These examples
+> illustrate the semantic contract, not a prescribed wire encoding.
+
 ## Stage Results
 
 ### IntentCaptureResult
 
 ```json
 {
-  "stage": "capture_intent",
-  "status": "completed",
+  "stage": "CaptureIntent",
+  "status": "Completed",
   "intent": {},
   "missingFields": [
-    "aoi"
+    "areaOfInterest"
   ]
 }
 ```
@@ -84,8 +89,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "ground_candidates",
-  "status": "completed",
+  "stage": "GroundCandidates",
+  "status": "Completed",
   "datasetCandidates": [],
   "processCandidates": [],
   "templateCandidates": [],
@@ -97,11 +102,11 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "clarify",
-  "status": "needs_user_input",
+  "stage": "Clarify",
+  "status": "NeedsUserInput",
   "required": true,
   "reasonCodes": [
-    "missing_required_input"
+    "MissingRequiredInput"
   ],
   "questions": []
 }
@@ -111,8 +116,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "compile_plan",
-  "status": "completed",
+  "stage": "CompilePlan",
+  "status": "Completed",
   "plan": {},
   "warnings": []
 }
@@ -122,8 +127,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "validate_plan",
-  "status": "completed",
+  "stage": "ValidatePlan",
+  "status": "Completed",
   "isExecutable": true,
   "requiresApproval": false,
   "violations": [],
@@ -135,12 +140,12 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "dry_run",
-  "status": "completed",
+  "stage": "DryRun",
+  "status": "Completed",
   "estimatedDurationSeconds": 45,
   "estimatedArtifacts": [
-    "feature_layer",
-    "map_package"
+    "FeatureLayer",
+    "Map"
   ],
   "sideEffects": []
 }
@@ -150,8 +155,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "execute",
-  "status": "completed",
+  "stage": "Execute",
+  "status": "Completed",
   "jobId": "job_123",
   "artifacts": [],
   "workspaceRefs": []
@@ -162,8 +167,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "compose_map",
-  "status": "completed",
+  "stage": "ComposeMap",
+  "status": "Completed",
   "mapPackage": {},
   "previewArtifactId": "artifact_preview_png"
 }
@@ -173,8 +178,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "compose_app",
-  "status": "skipped",
+  "stage": "ComposeApp",
+  "status": "Skipped",
   "reason": "not_requested"
 }
 ```
@@ -183,8 +188,8 @@ Clarification may be skipped when:
 
 ```json
 {
-  "stage": "publish",
-  "status": "completed",
+  "stage": "Publish",
+  "status": "Completed",
   "deployment": {
     "deploymentId": "dep_123",
     "deploymentKind": "app_package",
@@ -205,7 +210,7 @@ Conceptual shape:
 ```json
 {
   "workflowId": "wf_123",
-  "status": "completed",
+  "status": "Completed",
   "stageResults": [],
   "resultPackage": {},
   "assumptions": [],
@@ -215,39 +220,58 @@ Conceptual shape:
 
 ## Status Vocabulary
 
-Recommended common stage statuses:
+Deterministic stage kinds (`GeoprocessingStageKind`):
 
-- `completed`
-- `needs_user_input`
-- `blocked`
-- `failed`
-- `skipped`
-- `cancelled`
+- `CaptureIntent`
+- `GroundCandidates`
+- `Clarify`
+- `CompilePlan`
+- `ValidatePlan`
+- `DryRun`
+- `Execute`
+- `ComposeMap`
+- `ComposeApp`
+- `Publish`
 
-Recommended workflow statuses:
+Recommended common stage statuses (`GeoprocessingStageStatus`):
 
-- `draft`
-- `awaiting_clarification`
-- `validated`
-- `awaiting_approval`
-- `running`
-- `completed`
-- `failed`
-- `cancelled`
+- `Pending`
+- `Completed`
+- `NeedsUserInput`
+- `Blocked`
+- `Failed`
+- `Skipped`
+- `Cancelled`
+
+Recommended workflow statuses (`GeoprocessingWorkflowStatus`):
+
+- `Draft`
+- `AwaitingClarification`
+- `Validated`
+- `AwaitingApproval`
+- `Running`
+- `Completed`
+- `Failed`
+- `Cancelled`
 
 ## Result Package Requirements
 
-The final `AnalysisResultPackage` should require:
+The final `AnalysisResultPackage` requires:
 
+- `resultPackageId`
 - `status`
 - `summary`
+- `provenance`
+
+The following fields default to empty collections when not supplied:
+
 - `assumptions`
 - `artifacts`
 - `workspaceRefs`
-- `mapPackage`
-- `provenance`
+- `errors`
 
-`appPackage` is optional but recommended for builder flows.
+`mapPackageId` and `appPackageId` are deferred optional references whose package
+types are defined in downstream tickets (#730, #731).
 
 ## Deterministic Rules
 
@@ -271,6 +295,31 @@ Claude and Codex evaluations should score:
 - whether outputs matched the requested result types
 - whether a usable `MapPackage` was produced
 - whether provenance recorded assumptions and clarifications correctly
+
+## Progress Tracking
+
+Geoprocessing workflows report progress through the unified operation progress
+interface (`IOperationProgress`). The `GeoprocessingProgress` type tracks:
+
+- `workflowStatus` — lifecycle status mapped to the workflow status vocabulary
+- `currentStage` — the active deterministic stage
+- `currentStageStatus` — per-stage status from the stage status vocabulary
+- `stepsCompleted` / `totalSteps` — plan step progress
+- `percentComplete` — computed from step counts
+
+The workflow status maps to the unified `OperationStatus`:
+
+| Workflow status | Unified status |
+|---|---|
+| `Draft` | `Queued` |
+| `AwaitingClarification`, `Validated`, `AwaitingApproval`, `Running` | `Processing` |
+| `Completed` | `Completed` |
+| `Failed` | `Failed` |
+| `Cancelled` | `Cancelled` |
+
+Progress is observable through the admin operations endpoints
+(`/api/v{version}/admin/operations/`) and supports cancellation via
+`ICancellableOperationProgress`.
 
 ## Related Documents
 

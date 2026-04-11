@@ -59,6 +59,11 @@ to hand an agent or application a runnable map definition.
 
 ## Canonical Objects
 
+> **Serialization note:** JSON examples below show canonical C# member names as
+> identifiers. Actual wire-format serialization (casing, string vs numeric) is
+> determined by each transport adapter (REST, gRPC, MCP). These examples
+> illustrate the semantic contract, not a prescribed wire encoding.
+
 ### CapabilityCatalog
 
 Describes the discoverable universe available to the operator:
@@ -94,22 +99,39 @@ Conceptual shape:
 
 ```json
 {
+  "intentId": "intent_456",
   "goal": "Find parcels within 500 meters of schools and rank by flood risk.",
   "mode": "analysis",
   "requestedOutputs": [
-    "feature_layer",
-    "map",
-    "csv_export"
+    "FeatureLayer",
+    "Map"
   ],
   "constraints": {
-    "aoi": null,
-    "timeWindow": null,
+    "areaOfInterest": null,
+    "spatialReferenceId": null,
+    "timeWindowStart": null,
+    "timeWindowEnd": null,
     "units": "meters"
   },
   "inputs": [],
-  "assumptionPolicy": "ask_when_material"
+  "assumptionPolicy": "AskWhenMaterial"
 }
 ```
+
+`requestedOutputs` uses `ArtifactKind` values: `Scalar`, `FeatureLayer`, `Table`,
+`Raster`, `File`, `Report`, `Map`, `AppBundle`.
+
+`assumptionPolicy` controls clarification behavior. Supported `AssumptionPolicy`
+values:
+
+- `AskAlways` — always ask the user before making assumptions
+- `AskWhenMaterial` — ask only when the assumption materially affects results
+  (default)
+- `UseDefaults` — use sensible defaults without asking
+
+`spatialReferenceId` is an optional EPSG SRID that qualifies `areaOfInterest`.
+When `null`, WGS 84 (EPSG:4326) is assumed. This matches the `SpatialReferenceId`
+convention used by the shared `BoundingBox` model.
 
 ### ClarificationRequest
 
@@ -121,13 +143,13 @@ Conceptual shape:
 {
   "intentId": "intent_123",
   "reasonCodes": [
-    "missing_required_input",
-    "ambiguous_dataset"
+    "MissingRequiredInput",
+    "AmbiguousDataset"
   ],
   "questions": [
     {
       "questionId": "q_dataset",
-      "kind": "single_select",
+      "kind": "SingleSelect",
       "prompt": "Which school dataset should be used?",
       "options": [
         { "id": "schools_public", "label": "Public schools" },
@@ -138,9 +160,31 @@ Conceptual shape:
 }
 ```
 
+Supported `ClarificationReasonCode` values: `MissingRequiredInput`,
+`AmbiguousDataset`, `AmbiguousProcess`, `DestructiveAction`, `PublishAction`,
+`PolicyBoundary`, `LowConfidence`.
+
+Supported `ClarificationQuestionKind` values: `SingleSelect`, `MultiSelect`,
+`FreeText`, `Confirmation`.
+
 ### ClarificationResponse
 
 Captures the user's answers or accepted defaults.
+
+Conceptual shape:
+
+```json
+{
+  "intentId": "intent_123",
+  "answers": {
+    "q_dataset": ["schools_public"],
+    "q_confirm_aoi": ["yes"]
+  }
+}
+```
+
+Each answer is a list of values to support multi-select questions. Single-select,
+free-text, and confirmation answers use a single-element list.
 
 ### AnalysisPlan
 
@@ -151,47 +195,60 @@ Conceptual shape:
 ```json
 {
   "planId": "plan_123",
+  "intentId": "intent_456",
   "steps": [
     {
       "stepId": "load_parcels",
-      "kind": "query_features",
+      "kind": "QueryFeatures",
       "inputs": {
         "dataset": "parcels"
-      }
+      },
+      "dependsOn": []
     },
     {
       "stepId": "buffer_schools",
-      "kind": "geoprocess",
+      "kind": "Geoprocess",
       "processId": "buffer",
       "inputs": {
         "source": "schools_all",
-        "distance": 500,
+        "distance": "500",
         "distanceUnit": "meters"
-      }
+      },
+      "dependsOn": []
     },
     {
       "stepId": "rank_results",
-      "kind": "aggregate",
+      "kind": "Aggregate",
       "inputs": {
         "source": "candidate_parcels",
         "metric": "flood_risk_score"
-      }
+      },
+      "dependsOn": ["load_parcels", "buffer_schools"]
     },
     {
       "stepId": "compose_map",
-      "kind": "render_map",
+      "kind": "RenderMap",
       "inputs": {
         "template": "analysis_default"
-      }
+      },
+      "dependsOn": ["rank_results"]
     }
   ],
   "outputs": [
-    "feature_layer",
-    "map_package",
-    "csv_export"
-  ]
+    "FeatureLayer",
+    "Map"
+  ],
+  "warnings": []
 }
 ```
+
+Steps form a directed acyclic graph. `dependsOn` lists step identifiers that must
+complete before the step can execute. `inputs` values are strings; callers encode
+structured values as string representations.
+
+Supported step `kind` values: `QueryFeatures`, `Geoprocess`, `Aggregate`,
+`RenderMap`, `Export`. Geoprocess steps should include a `processId` identifying
+the operation to execute.
 
 ### BuilderPlan
 
@@ -215,7 +272,7 @@ Conceptual shape:
 {
   "jobId": "job_123",
   "planId": "plan_123",
-  "status": "running",
+  "status": "Running",
   "progressPercent": 42,
   "currentStepId": "buffer_schools",
   "messages": [],
@@ -225,28 +282,42 @@ Conceptual shape:
 
 ### ArtifactRef
 
-References a concrete output.
+References a concrete output artifact.
 
-Supported artifact classes should include:
+Conceptual shape:
 
-- scalar values
-- feature layers
-- tables
-- rasters
-- files
-- reports
-- maps
-- app bundles
+```json
+{
+  "artifactId": "artifact_candidate_parcels",
+  "kind": "FeatureLayer",
+  "label": "Candidate Parcels",
+  "uri": "honua://workspaces/ws_123/layers/candidate_parcels",
+  "contentType": "application/geo+json",
+  "metadata": {}
+}
+```
+
+Supported `kind` values: `Scalar`, `FeatureLayer`, `Table`, `Raster`, `File`,
+`Report`, `Map`, `AppBundle`.
 
 ### WorkspaceRef
 
-References managed working state:
+References a managed working-state container.
 
-- scratch workspace
-- persistent project workspace
-- temp layer
-- saved layer
-- result collection
+Conceptual shape:
+
+```json
+{
+  "workspaceId": "ws_123",
+  "kind": "Scratch",
+  "label": "Analysis scratch workspace",
+  "uri": "honua://workspaces/ws_123",
+  "expiresAt": "2026-04-10T18:00:00Z"
+}
+```
+
+Supported `kind` values: `Scratch`, `Persistent`, `TempLayer`, `SavedLayer`,
+`ResultCollection`.
 
 ### StyleRef
 
@@ -312,6 +383,8 @@ Supported source families should include:
 ### MapPackage
 
 `MapPackage` is required for analysis workflows that produce spatial output.
+The concrete `MapPackage` type is defined in downstream ticket #730; until then,
+`AnalysisResultPackage.MapPackageId` is a nullable deferred reference.
 
 Conceptual shape:
 
@@ -474,14 +547,27 @@ Required deployment responsibilities should include:
 
 ### ProvenanceRecord
 
-Captures:
+Audit trail recording the lineage of a geoprocessing result.
 
-- source datasets and versions
-- process definitions and versions
-- assumptions
-- clarifications asked and answered
-- execution timestamps
-- generated outputs
+Conceptual shape:
+
+```json
+{
+  "sources": [
+    {
+      "sourceId": "parcels",
+      "version": "2026-04-09",
+      "description": "City parcels dataset"
+    }
+  ],
+  "processDefinitions": ["buffer", "spatial_join"],
+  "assumptions": ["Used public schools dataset."],
+  "clarificationsAsked": ["q_dataset"],
+  "clarificationsAnswered": ["q_dataset"],
+  "executedAt": "2026-04-09T18:05:00Z",
+  "generatedArtifactIds": ["artifact_candidate_parcels"]
+}
+```
 
 ### AnalysisResultPackage
 
@@ -492,7 +578,7 @@ Conceptual shape:
 ```json
 {
   "resultPackageId": "result_123",
-  "status": "completed",
+  "status": "Completed",
   "summary": {
     "title": "Candidate parcels ranked by flood risk",
     "description": "342 parcels found within 500 meters of schools."
@@ -502,11 +588,45 @@ Conceptual shape:
   ],
   "artifacts": [],
   "workspaceRefs": [],
-  "mapPackage": {},
-  "appPackage": null,
-  "provenance": {}
+  "mapPackageId": null,
+  "appPackageId": null,
+  "provenance": {},
+  "errors": []
 }
 ```
+
+`mapPackageId` and `appPackageId` are nullable deferred references. The concrete
+`MapPackage` and `AppPackage` types are defined in downstream tickets (#730,
+#731). In this example `mapPackageId` is null because the `MapPackage` type does
+not yet exist; once #730 lands, spatial results will carry a non-null reference.
+
+The package exposes factory methods `CreateCompleted` and `CreateFailed` for
+terminal construction.
+
+### GeoprocessingError
+
+Structured error produced during a geoprocessing workflow.
+
+Conceptual shape:
+
+```json
+{
+  "kind": "ValidationFailed",
+  "message": "Buffer distance must be positive.",
+  "stepId": "buffer_schools",
+  "violations": [
+    {
+      "code": "positive_required",
+      "message": "Distance must be greater than zero.",
+      "fieldPath": "inputs.distance"
+    }
+  ]
+}
+```
+
+Supported `kind` values: `ValidationFailed`, `AuthorizationDenied`,
+`UnknownDataset`, `UnknownProcess`, `ExecutionFailed`, `Timeout`, `Cancelled`,
+`OutputBindingFailed`.
 
 ## gRPC Contract Families
 
