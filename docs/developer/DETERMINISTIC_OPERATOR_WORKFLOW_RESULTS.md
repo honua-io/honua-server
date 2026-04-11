@@ -65,6 +65,11 @@ Clarification may be skipped when:
 - the assumption is recorded in the result package
 - the workflow is running in draft or exploratory mode
 
+> **Serialization note:** JSON examples below show canonical C# member names as
+> identifiers. Actual wire-format serialization (casing, string vs numeric) is
+> determined by each transport adapter (REST, gRPC, MCP). These examples
+> illustrate the semantic contract, not a prescribed wire encoding.
+
 ## Stage Results
 
 ### IntentCaptureResult

@@ -15,8 +15,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Honua.Server.Features.Admin;
 
 /// <summary>
-/// Unified operation progress endpoints for tracking any operation type
-/// (upload, import, ingest, external import, tile cache, export, print).
+/// Unified operation progress endpoints for tracking any tracked operation type.
 /// Replaces legacy progress endpoints with a single, consistent API.
 /// </summary>
 internal static class OperationsProgressEndpoints
@@ -37,7 +36,7 @@ internal static class OperationsProgressEndpoints
         _ = group.MapGet("/{operationId}", HandleGetOperationStatus)
             .WithName("GetOperationStatus")
             .WithSummary("Get the status of any operation by ID")
-            .WithDescription("Returns progress information for any tracked operation (upload, import, ingest, external import, tile cache, export, print)");
+            .WithDescription("Returns progress information for any tracked operation type");
 
         // Cancel operation
         _ = group.MapPost("/{operationId}/cancel", HandleCancelOperation)
