@@ -598,6 +598,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(TileOperationProgress) => OperationType.TileCache,
             nameof(ExportProgress) => OperationType.Export,
             nameof(PrintProgress) => OperationType.Print,
+            nameof(GeoprocessingProgress) => OperationType.Geoprocessing,
             _ => null
         };
     }

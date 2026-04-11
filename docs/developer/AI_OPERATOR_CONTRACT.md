@@ -363,6 +363,8 @@ Supported source families should include:
 ### MapPackage
 
 `MapPackage` is required for analysis workflows that produce spatial output.
+The concrete `MapPackage` type is defined in downstream ticket #730; until then,
+`AnalysisResultPackage.MapPackageId` is a nullable deferred reference.
 
 Conceptual shape:
 
@@ -573,8 +575,10 @@ Conceptual shape:
 }
 ```
 
-`mapPackageId` and `appPackageId` are deferred references. The `MapPackage` and
-`AppPackage` types are defined in downstream tickets (#730, #731).
+`mapPackageId` and `appPackageId` are nullable deferred references. The concrete
+`MapPackage` and `AppPackage` types are defined in downstream tickets (#730,
+#731). In this example `mapPackageId` is null because the `MapPackage` type does
+not yet exist; once #730 lands, spatial results will carry a non-null reference.
 
 The package exposes factory methods `CreateCompleted` and `CreateFailed` for
 terminal construction.
