@@ -35,6 +35,14 @@ internal sealed class DefaultOperatorApprovalEvaluator(
             return result;
         }
 
+        if (request.Operation == OperatorOperation.Execute && options.Value.DestructiveActionsRequireApproval)
+        {
+            var result = ApprovalRequirement.Required("operator.destructive", "destructive-action-requires-approval");
+            OperatorAuthorizationLog.ApprovalRequired(
+                logger, userId, request.ResourceType, request.Operation, result.PolicyRef);
+            return result;
+        }
+
         OperatorAuthorizationLog.ApprovalNotRequired(
             logger, userId, request.ResourceType, request.Operation);
         return ApprovalRequirement.NotRequired();
