@@ -190,10 +190,26 @@ public sealed class OperatorAuthorizationEvaluatorTests
     }
 
     [UnitTest]
-    public void Evaluate_NullResourceId_MatchesTypeLevelGrant()
+    public void Evaluate_NullResourceId_ScopedGrant_Denied()
     {
         _roleStore.AddGrant("scoped", "process", "proc-42", "execute");
         var principal = CreatePrincipal("user-1", "scoped");
+
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            ResourceId = null,
+            Operation = OperatorOperation.Execute
+        };
+
+        _evaluator.Evaluate(principal, request).IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NullResourceId_WildcardGrant_Allowed()
+    {
+        _roleStore.AddGrant("executor", "process", "*", "execute");
+        var principal = CreatePrincipal("user-1", "executor");
 
         var request = new OperatorAuthorizationRequest
         {

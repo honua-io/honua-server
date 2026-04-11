@@ -111,7 +111,7 @@ internal sealed class OperatorAuthorizationEvaluator(
             return true;
 
         if (request.ResourceId is null)
-            return true;
+            return false;
 
         return string.Equals(grant.Layer, request.ResourceId, StringComparison.Ordinal);
     }
