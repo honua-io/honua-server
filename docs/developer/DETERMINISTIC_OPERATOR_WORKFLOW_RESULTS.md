@@ -243,17 +243,22 @@ Recommended workflow statuses (`GeoprocessingWorkflowStatus`):
 
 ## Result Package Requirements
 
-The final `AnalysisResultPackage` should require:
+The final `AnalysisResultPackage` requires:
 
+- `resultPackageId`
 - `status`
 - `summary`
+- `provenance`
+
+The following fields default to empty collections when not supplied:
+
 - `assumptions`
 - `artifacts`
 - `workspaceRefs`
-- `mapPackageId`
-- `provenance`
+- `errors`
 
-`appPackageId` is optional but recommended for builder flows.
+`mapPackageId` and `appPackageId` are deferred optional references whose package
+types are defined in downstream tickets (#730, #731).
 
 ## Deterministic Rules
 
