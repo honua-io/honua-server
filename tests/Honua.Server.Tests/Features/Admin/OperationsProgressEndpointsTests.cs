@@ -158,6 +158,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             GetPropertyCaseInsensitive(op, "operationId").GetString() == geoprocessingId &&
             GetPropertyCaseInsensitive(op, "type").GetInt32() == (int)OperationType.Geoprocessing &&
             GetPropertyCaseInsensitive(op, "currentStage").ValueKind != JsonValueKind.Undefined);
+        operations.Should().OnlyContain(op => CountPropertiesIgnoringCase(op, "operationId") == 1);
     }
 
     [IntegrationTest]
@@ -257,6 +258,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         GetPropertyCaseInsensitive(op, "currentStage").ValueKind.Should().NotBe(JsonValueKind.Undefined);
         GetPropertyCaseInsensitive(op, "currentStageStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
         GetPropertyCaseInsensitive(op, "stepsCompleted").GetInt32().Should().Be(0);
+        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
     }
 
     [IntegrationTest]
@@ -301,5 +303,24 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         }
 
         throw new KeyNotFoundException($"Property '{propertyName}' not found in JSON payload.");
+    }
+
+    private static int CountPropertiesIgnoringCase(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException($"Expected JSON object for property '{propertyName}'.");
+        }
+
+        var count = 0;
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 }
