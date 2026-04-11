@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -100,6 +101,23 @@ internal static class OperationsProgressEndpoints
             RasterImportProgress rasterImportProgress => Results.Json(rasterImportProgress, OperationsProgressJsonContext.Default.RasterImportProgress),
             GeoprocessingProgress geoprocessingProgress => Results.Json(geoprocessingProgress, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
+        };
+    }
+
+    private static JsonElement SerializeOperationToElement(IOperationProgress progress)
+    {
+        return progress switch
+        {
+            UploadProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.UploadProgress),
+            ImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ImportProgress),
+            IngestProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.IngestProgress),
+            GeoservicesImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
+            TileOperationProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.TileOperationProgress),
+            ExportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ExportProgress),
+            PrintProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PrintProgress),
+            RasterImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.RasterImportProgress),
+            GeoprocessingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoprocessingProgress),
+            _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
     }
 
@@ -269,7 +287,7 @@ internal static class OperationsProgressEndpoints
         }
 
         var operationIds = await progressStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
-        var operations = new List<IOperationProgress>();
+        var operations = new List<JsonElement>();
 
         foreach (var operationId in operationIds)
         {
@@ -277,7 +295,7 @@ internal static class OperationsProgressEndpoints
             if (progress != null &&
                 progress.Status is OperationStatus.Queued or OperationStatus.Processing)
             {
-                operations.Add(progress);
+                operations.Add(SerializeOperationToElement(progress));
             }
         }
 
@@ -308,14 +326,14 @@ internal static class OperationsProgressEndpoints
         }
 
         var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);
-        var operations = new List<IOperationProgress>(operationIds.Count);
+        var operations = new List<JsonElement>(operationIds.Count);
 
         foreach (var operationId in operationIds)
         {
             var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
             if (progress != null && progress.Type == parsedType)
             {
-                operations.Add(progress);
+                operations.Add(SerializeOperationToElement(progress));
             }
         }
 
@@ -357,9 +375,9 @@ internal sealed record CancelOperationResponse
 internal sealed record ActiveOperationsResponse
 {
     /// <summary>
-    /// List of active operations.
+    /// List of active operations, each serialized with its concrete progress type.
     /// </summary>
-    public required IOperationProgress[] Operations { get; init; }
+    public required JsonElement[] Operations { get; init; }
 
     /// <summary>
     /// Total count of active operations.
@@ -383,9 +401,9 @@ internal sealed record OperationsByTypeResponse
     public required OperationType OperationType { get; init; }
 
     /// <summary>
-    /// List of operations of this type.
+    /// List of operations of this type, each serialized with its concrete progress type.
     /// </summary>
-    public required IOperationProgress[] Operations { get; init; }
+    public required JsonElement[] Operations { get; init; }
 
     /// <summary>
     /// Total count of operations.
