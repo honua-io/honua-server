@@ -120,6 +120,14 @@ Conceptual shape:
 `requestedOutputs` uses `ArtifactKind` values: `Scalar`, `FeatureLayer`, `Table`,
 `Raster`, `File`, `Report`, `Map`, `AppBundle`.
 
+`assumptionPolicy` controls clarification behavior. Supported `AssumptionPolicy`
+values:
+
+- `AskAlways` — always ask the user before making assumptions
+- `AskWhenMaterial` — ask only when the assumption materially affects results
+  (default)
+- `UseDefaults` — use sensible defaults without asking
+
 ### ClarificationRequest
 
 Represents the minimal structured questions needed to proceed safely.
@@ -146,6 +154,13 @@ Conceptual shape:
   ]
 }
 ```
+
+Supported `ClarificationReasonCode` values: `MissingRequiredInput`,
+`AmbiguousDataset`, `AmbiguousProcess`, `DestructiveAction`, `PublishAction`,
+`PolicyBoundary`, `LowConfidence`.
+
+Supported `ClarificationQuestionKind` values: `SingleSelect`, `MultiSelect`,
+`FreeText`, `Confirmation`.
 
 ### ClarificationResponse
 

@@ -220,6 +220,19 @@ Conceptual shape:
 
 ## Status Vocabulary
 
+Deterministic stage kinds (`GeoprocessingStageKind`):
+
+- `CaptureIntent`
+- `GroundCandidates`
+- `Clarify`
+- `CompilePlan`
+- `ValidatePlan`
+- `DryRun`
+- `Execute`
+- `ComposeMap`
+- `ComposeApp`
+- `Publish`
+
 Recommended common stage statuses (`GeoprocessingStageStatus`):
 
 - `Pending`

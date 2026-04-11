@@ -402,7 +402,8 @@ At minimum, the package should contain:
 - provenance
 - output artifacts
 - workspace references
-- a `MapPackage`
+- a `MapPackage` (target-state; deferred to #730 — `MapPackageId` is nullable
+  until the concrete type lands)
 
 Where requested or appropriate, it should also contain:
 
