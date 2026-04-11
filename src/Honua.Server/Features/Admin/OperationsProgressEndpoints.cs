@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -106,7 +107,7 @@ internal static class OperationsProgressEndpoints
 
     private static JsonElement SerializeOperationToElement(IOperationProgress progress)
     {
-        return progress switch
+        var serialized = progress switch
         {
             UploadProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.UploadProgress),
             ImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.ImportProgress),
@@ -119,6 +120,15 @@ internal static class OperationsProgressEndpoints
             GeoprocessingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
+
+        var operation = JsonNode.Parse(serialized.GetRawText())?.AsObject() ?? [];
+
+        // List payloads need stable cross-operation keys for generic admin clients
+        // while still preserving the type-specific fields from each concrete progress DTO.
+        operation.TryAdd("operationId", progress.OperationId);
+        operation.TryAdd("type", (int)progress.Type);
+
+        return JsonSerializer.SerializeToElement(operation);
     }
 
     /// <summary>
@@ -375,7 +385,8 @@ internal sealed record CancelOperationResponse
 internal sealed record ActiveOperationsResponse
 {
     /// <summary>
-    /// List of active operations, each serialized with its concrete progress type.
+    /// List of active operations, each serialized with its concrete progress type
+    /// plus stable operationId/type fields for generic clients.
     /// </summary>
     public required JsonElement[] Operations { get; init; }
 
@@ -401,7 +412,8 @@ internal sealed record OperationsByTypeResponse
     public required OperationType OperationType { get; init; }
 
     /// <summary>
-    /// List of operations of this type, each serialized with its concrete progress type.
+    /// List of operations of this type, each serialized with its concrete progress type
+    /// plus stable operationId/type fields for generic clients.
     /// </summary>
     public required JsonElement[] Operations { get; init; }
 
