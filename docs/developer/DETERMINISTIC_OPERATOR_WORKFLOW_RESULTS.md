@@ -217,6 +217,7 @@ Conceptual shape:
 
 Recommended common stage statuses:
 
+- `pending`
 - `completed`
 - `needs_user_input`
 - `blocked`
@@ -244,10 +245,10 @@ The final `AnalysisResultPackage` should require:
 - `assumptions`
 - `artifacts`
 - `workspaceRefs`
-- `mapPackage`
+- `mapPackageId`
 - `provenance`
 
-`appPackage` is optional but recommended for builder flows.
+`appPackageId` is optional but recommended for builder flows.
 
 ## Deterministic Rules
 
