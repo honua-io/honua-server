@@ -366,6 +366,146 @@ public sealed class OperatorAuthorizationEvaluatorTests
         }).IsAllowed.Should().BeTrue();
     }
 
+    [UnitTest]
+    public void Evaluate_PublicWorkspaceRead_UnauthenticatedAllowed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Public,
+            ResourceId = "ws-public-1"
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_PublicWorkspaceDiscover_UnauthenticatedAllowed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Discover,
+            WorkspaceVisibility = WorkspaceVisibility.Public
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_PublicWorkspaceCreate_UnauthenticatedRequiresAuth()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity());
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Create,
+            WorkspaceVisibility = WorkspaceVisibility.Public
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_SharedWorkspace_MatchingScope_Allowed()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipalWithScopeClaim("user-1", "team-alpha", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Shared,
+            WorkspaceScopeId = "team-alpha"
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Evaluate_SharedWorkspace_NonMatchingScope_Denied()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipalWithScopeClaim("user-1", "team-alpha", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Shared,
+            WorkspaceScopeId = "team-beta"
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_SharedWorkspace_MissingScopeId_Denied()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipalWithScopeClaim("user-1", "team-alpha", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Shared,
+            WorkspaceScopeId = null
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_OrganizationWorkspace_AuthenticatedWithGrant_Allowed()
+    {
+        _roleStore.AddGrant("operator", "workspace", "*", "read");
+        var principal = CreatePrincipal("user-1", "operator");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Organization
+        };
+
+        var decision = _evaluator.Evaluate(principal, request);
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    private static ClaimsPrincipal CreatePrincipalWithScopeClaim(string userId, string scopeGroup, params string[] roles)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId),
+            new("groups", scopeGroup)
+        };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim("roles", role));
+        }
+
+        var identity = new ClaimsIdentity(claims, "TestScheme");
+        return new ClaimsPrincipal(identity);
+    }
+
     private static ClaimsPrincipal CreatePrincipal(string userId, params string[] roles)
     {
         var claims = new List<Claim>

@@ -17,6 +17,17 @@ internal sealed class OperatorAuthorizationEvaluator(
 {
     public AccessDecision Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
     {
+        if (request is
+            {
+                ResourceType: OperatorResourceType.Workspace,
+                WorkspaceVisibility: WorkspaceVisibility.Public,
+                Operation: OperatorOperation.Read or OperatorOperation.Discover
+            })
+        {
+            OperatorAuthorizationLog.PublicWorkspaceAllowed(logger, request.Operation, request.ResourceId);
+            return AccessDecision.Allowed();
+        }
+
         if (principal.Identity is not { IsAuthenticated: true })
         {
             OperatorAuthorizationLog.AuthenticationRequired(logger, request.ResourceType, request.Operation);
@@ -55,22 +66,39 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.Allowed();
         }
 
-        if (request is
-            {
-                ResourceType: OperatorResourceType.Workspace,
-                WorkspaceVisibility: WorkspaceVisibility.Personal
-            })
+        if (request.ResourceType == OperatorResourceType.Workspace)
         {
-            if (request.WorkspaceOwnerId is null)
+            switch (request.WorkspaceVisibility)
             {
-                OperatorAuthorizationLog.PersonalWorkspaceMissingOwner(logger, userId);
-                return AccessDecision.Forbidden("Personal workspace access denied: owner context is required.");
-            }
+                case WorkspaceVisibility.Personal:
+                    if (request.WorkspaceOwnerId is null)
+                    {
+                        OperatorAuthorizationLog.PersonalWorkspaceMissingOwner(logger, userId);
+                        return AccessDecision.Forbidden("Personal workspace access denied: owner context is required.");
+                    }
 
-            if (!string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal))
-            {
-                OperatorAuthorizationLog.WorkspaceOwnershipDenied(logger, userId, request.WorkspaceOwnerId);
-                return AccessDecision.Forbidden("Personal workspace access denied: principal is not the workspace owner.");
+                    if (!string.Equals(userId, request.WorkspaceOwnerId, StringComparison.Ordinal))
+                    {
+                        OperatorAuthorizationLog.WorkspaceOwnershipDenied(logger, userId, request.WorkspaceOwnerId);
+                        return AccessDecision.Forbidden("Personal workspace access denied: principal is not the workspace owner.");
+                    }
+
+                    break;
+
+                case WorkspaceVisibility.Shared:
+                    if (request.WorkspaceScopeId is null)
+                    {
+                        OperatorAuthorizationLog.SharedWorkspaceMissingScope(logger, userId);
+                        return AccessDecision.Forbidden("Shared workspace access denied: scope context is required.");
+                    }
+
+                    if (!HasScopeClaim(principal, rbacOptions.Value.WorkspaceScopeClaimType, request.WorkspaceScopeId))
+                    {
+                        OperatorAuthorizationLog.SharedWorkspaceScopeDenied(logger, userId, request.WorkspaceScopeId);
+                        return AccessDecision.Forbidden("Shared workspace access denied: principal is not in the workspace scope.");
+                    }
+
+                    break;
             }
         }
 
@@ -141,5 +169,19 @@ internal sealed class OperatorAuthorizationEvaluator(
 
         return Enum.TryParse<OperatorOperation>(operation, ignoreCase: true, out var parsed)
             && parsed == requested;
+    }
+
+    private static bool HasScopeClaim(ClaimsPrincipal principal, string claimType, string scopeId)
+    {
+        foreach (var claim in principal.Claims)
+        {
+            if (string.Equals(claim.Type, claimType, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(claim.Value, scopeId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

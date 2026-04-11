@@ -31,6 +31,11 @@ public sealed record OperatorAuthorizationRequest
     public string? WorkspaceOwnerId { get; init; }
 
     /// <summary>
+    /// The scope group identifier for shared workspace checks.
+    /// </summary>
+    public string? WorkspaceScopeId { get; init; }
+
+    /// <summary>
     /// Whether the requested action is destructive. Used by approval evaluation
     /// to distinguish destructive operations from routine execution.
     /// </summary>

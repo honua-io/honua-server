@@ -67,4 +67,24 @@ internal static partial class OperatorAuthorizationLog
         Level = LogLevel.Warning,
         Message = "Operator authorization denied: personal workspace request from principal {PrincipalId} missing owner context")]
     public static partial void PersonalWorkspaceMissingOwner(ILogger logger, string? principalId);
+
+    [LoggerMessage(
+        EventId = 4709,
+        Level = LogLevel.Debug,
+        Message = "Operator authorization granted: public workspace {Operation} on resource {ResourceId}")]
+    public static partial void PublicWorkspaceAllowed(
+        ILogger logger, OperatorOperation operation, string? resourceId);
+
+    [LoggerMessage(
+        EventId = 4710,
+        Level = LogLevel.Warning,
+        Message = "Operator authorization denied: shared workspace request from principal {PrincipalId} missing scope context")]
+    public static partial void SharedWorkspaceMissingScope(ILogger logger, string? principalId);
+
+    [LoggerMessage(
+        EventId = 4711,
+        Level = LogLevel.Information,
+        Message = "Operator authorization denied: principal {PrincipalId} is not in workspace scope {WorkspaceScopeId}")]
+    public static partial void SharedWorkspaceScopeDenied(
+        ILogger logger, string? principalId, string workspaceScopeId);
 }
