@@ -147,6 +147,42 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
         legendAfter.Should().NotBe(legendBefore);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
+    public async Task UpdateLayerStyle_InvalidatesCachedTileResponses()
+    {
+        var anonymousClient = _fixture.CreateClient();
+        var adminClient = _fixture.CreateAdminClient();
+
+        var tileBefore = await GetTileImageAsync(anonymousClient);
+
+        var layer = LayerDefinition.CreateBasic(
+            WebAppFixture.TestLayerId,
+            "Test Layer",
+            GeometryType.Point);
+        var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
+        var styleLayers = (List<Dictionary<string, object?>>)style["layers"]!;
+        var paint = (Dictionary<string, object?>)styleLayers[0]["paint"]!;
+        paint["circle-color"] = "#00ff00";
+        paint["circle-radius"] = 14d;
+
+        var request = new LayerStyleUpdateRequest
+        {
+            MapLibreStyle = JsonSerializer.SerializeToElement(style)
+        };
+
+        var updateResponse = await adminClient.PutAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
+            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+
+        updateResponse.Be200Ok();
+
+        var tileAfter = await GetTileImageAsync(anonymousClient);
+        tileAfter.Should().NotBeEquivalentTo(tileBefore);
+    }
+
     private async Task<string> GetFirstLegendImageAsync(HttpClient client)
     {
         var response = await client.GetAsync(
@@ -161,5 +197,15 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
         legend!.Layers.Should().NotBeNullOrEmpty();
         legend.Layers![0].Legend.Should().NotBeNullOrEmpty();
         return legend.Layers[0].Legend![0].ImageData!;
+    }
+
+    private async Task<byte[]> GetTileImageAsync(HttpClient client)
+    {
+        var response = await client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/0/0/0");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        return await response.Content.ReadAsByteArrayAsync();
     }
 }

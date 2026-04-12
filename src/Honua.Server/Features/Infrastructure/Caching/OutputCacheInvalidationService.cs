@@ -53,6 +53,8 @@ internal sealed partial class OutputCacheInvalidationService
         {
             tags.Add($"layer:{layerId.Value}");
             tags.Add($"collection:{layerId.Value}");
+            tags.Add("service-metadata");
+            tags.Add("tiles");
             tags.Add("layer-metadata");
             tags.Add("layer-styles");
             tags.Add("ogc-maps");
@@ -143,6 +145,7 @@ internal sealed partial class OutputCacheInvalidationService
         {
             "service-directory",
             "service-metadata",
+            "tiles",
             "layer-metadata",
             "layer-styles",
             "metadata",

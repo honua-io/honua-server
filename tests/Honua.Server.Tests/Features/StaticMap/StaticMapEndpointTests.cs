@@ -223,6 +223,17 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_WithInvalidRequestedLayer_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?layers={WebAppFixture.TestLayerId},999999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
     public async Task CenterZoom_WithInvalidLayers_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

@@ -711,6 +711,14 @@ internal static partial class StaticMapEndpoints
             return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(context, $"Invalid layers parameter '{layerParam}'."));
         }
 
+        var accessibleLayerIds = accessibleLayers.Select(layer => layer.Id).ToHashSet();
+        if (requestedIds.Any(id => !accessibleLayerIds.Contains(id)))
+        {
+            return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(
+                context,
+                "layers parameter references an invalid or inaccessible layer."));
+        }
+
         return (accessibleLayers
             .Where(l => requestedIds.Contains(l.Id))
             .Select(l => l.Id)

@@ -22,6 +22,7 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
         services.AddPerformanceMonitoring();
+        services.AddSingleton<ProductionMetricsCollector>();
         services.Configure<RecentErrorBufferOptions>(
             configuration.GetSection(RecentErrorBufferOptions.SectionName));
         services.AddSingleton<RecentErrorBuffer>();

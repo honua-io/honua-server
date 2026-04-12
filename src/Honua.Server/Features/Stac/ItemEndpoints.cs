@@ -201,23 +201,10 @@ internal static class ItemEndpoints
             }
 
             var layer = validation.Layer!;
-            Feature? feature;
-            if (long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(featureReader, layer.Id, itemId, cancellationToken);
+            if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 feature = await featureReader.GetAsync(layer.Id, objectId, cancellationToken);
-            }
-            else
-            {
-                var query = new FeatureQuery
-                {
-                    SqlFilter = new SqlFragment(
-                        "objectid::text = @p0 OR attributes->>'id' = @p0 OR attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0",
-                        [itemId]),
-                    Limit = 2
-                };
-
-                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
-                feature = result.Items.FirstOrDefault();
             }
 
             if (feature is null)
@@ -252,5 +239,23 @@ internal static class ItemEndpoints
         if (!string.IsNullOrWhiteSpace(datetime))
             query += $"&datetime={Uri.EscapeDataString(datetime)}";
         return query;
+    }
+
+    private static async Task<Feature?> TryGetFeatureByCanonicalItemIdAsync(
+        IFeatureReader featureReader,
+        int layerId,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment(
+                "attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0 OR attributes->>'id' = @p0",
+                [itemId]),
+            Limit = 2
+        };
+
+        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+        return result.Items.FirstOrDefault();
     }
 }

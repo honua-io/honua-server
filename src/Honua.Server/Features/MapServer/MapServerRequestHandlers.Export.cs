@@ -283,7 +283,12 @@ internal static partial class MapServerEndpoints
                     RasterRenderCapacityLimiter.RetryAfterSeconds);
             }
 
-            var renderLayers = ResolveRenderLayers(service, parameters.Layers, dynamicLayers, context);
+            var (renderLayers, renderLayersError) = ResolveRenderLayers(service, parameters.Layers, dynamicLayers, context);
+            if (renderLayersError is not null)
+            {
+                return renderLayersError;
+            }
+
             if (renderLayers.Length == 0)
             {
                 using var renderer = new SkiaMapRenderer();
@@ -1830,21 +1835,50 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    private static RenderLayer[] ResolveRenderLayers(
+    private static (RenderLayer[] Layers, IResult? Error) ResolveRenderLayers(
         ServiceDefinition service,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context)
     {
+        var layerLookup = service.Layers.ToDictionary(layer => layer.Id);
         if (dynamicLayers.Count == 0)
         {
-            return ResolveVisibleLayers(service, layersParam, context)
-                .Select(layer => new RenderLayer(layer, layer.Id, null))
+            var accessibleLayers = service.Layers
+                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
                 .ToArray();
+
+            if (string.IsNullOrWhiteSpace(layersParam))
+            {
+                return (accessibleLayers
+                    .Where(layer => layer.DefaultVisibility)
+                    .Select(layer => new RenderLayer(layer, layer.Id, null))
+                    .ToArray(), null);
+            }
+
+            var spec = layersParam.Trim();
+            var requestedIds = ParseLayerIds(spec);
+            if (requestedIds.Count == 0)
+            {
+                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
+            }
+
+            var accessibleLayerIds = accessibleLayers.Select(layer => layer.Id).ToHashSet();
+            if (requestedIds.Any(id => !accessibleLayerIds.Contains(id)))
+            {
+                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
+            }
+
+            return (accessibleLayers
+                .Where(layer => requestedIds.Contains(layer.Id))
+                .Select(layer => new RenderLayer(layer, layer.Id, null))
+                .ToArray(), null);
         }
 
-        var layerLookup = service.Layers.ToDictionary(layer => layer.Id);
         IEnumerable<DynamicLayerDefinition> selected = dynamicLayers;
+        HashSet<int>? requestedIds = null;
 
         if (!string.IsNullOrWhiteSpace(layersParam))
         {
@@ -1852,16 +1886,19 @@ internal static partial class MapServerEndpoints
             if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
             {
                 var ids = ParseLayerIds(spec["show:".Length..]);
+                requestedIds = ids;
                 selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
             }
             else if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
             {
                 var ids = ParseLayerIds(spec["hide:".Length..]);
+                requestedIds = ids;
                 selected = dynamicLayers.Where(layer => !ids.Contains(layer.Id));
             }
             else if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
             {
                 var ids = ParseLayerIds(spec["include:".Length..]);
+                requestedIds = ids;
                 selected = dynamicLayers.Where(layer =>
                 {
                     if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
@@ -1875,6 +1912,7 @@ internal static partial class MapServerEndpoints
             else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
             {
                 var ids = ParseLayerIds(spec["exclude:".Length..]);
+                requestedIds = ids;
                 selected = dynamicLayers.Where(layer =>
                 {
                     if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
@@ -1888,7 +1926,32 @@ internal static partial class MapServerEndpoints
             else
             {
                 var ids = ParseLayerIds(spec);
+                requestedIds = ids;
                 selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
+            }
+
+            if (requestedIds is { Count: > 0 })
+            {
+                var dynamicLayerIds = dynamicLayers.Select(layer => layer.Id).ToHashSet();
+                if (requestedIds.Any(id => !dynamicLayerIds.Contains(id)))
+                {
+                    return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "layers parameter references an invalid or inaccessible layer."));
+                }
+
+                foreach (var requestedId in requestedIds)
+                {
+                    var dynamicLayer = dynamicLayers.FirstOrDefault(layer => layer.Id == requestedId);
+                    if (dynamicLayer is null ||
+                        !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
+                        !AccessPolicyHelpers.IsLayerAccessible(context, requestedMapLayer, service))
+                    {
+                        return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "layers parameter references an invalid or inaccessible layer."));
+                    }
+                }
             }
         }
 
@@ -1897,18 +1960,22 @@ internal static partial class MapServerEndpoints
         {
             if (!layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var layer))
             {
-                continue;
+                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
             }
 
             if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
             {
-                continue;
+                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
             }
 
             renderLayers.Add(new RenderLayer(layer, dynamicLayer.Id, dynamicLayer.DefinitionExpression));
         }
 
-        return renderLayers.ToArray();
+        return (renderLayers.ToArray(), null);
     }
 
     private static string? NormalizeTimeRelation(string? timeRelation)

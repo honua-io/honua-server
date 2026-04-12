@@ -194,7 +194,7 @@ internal sealed class StacMappingService
 
     private static string ResolveItemId(Feature feature)
     {
-        foreach (var key in new[] { "id", "stac_id", "item_id" })
+        foreach (var key in new[] { "stac_id", "item_id", "id" })
         {
             if (!feature.Attributes.TryGetValue(key, out var value) || value is null)
             {

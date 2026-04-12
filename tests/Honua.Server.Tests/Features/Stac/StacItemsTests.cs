@@ -320,6 +320,29 @@ public sealed class StacItemsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
+    public async Task GetItem_ByNumericLookingStacId_ReturnsStacItemBeforeObjectIdFallback()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC Numeric ID Item");
+        var numericStacId = "9000000001";
+        await PromoteStacItemIdAsync(featureId, numericStacId);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items/{numericStacId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("id").GetString().Should().Be(numericStacId);
+        json.RootElement.GetProperty("assets").GetProperty("geojson")
+            .GetProperty("href").GetString().Should().Contain($"/items/{numericStacId}");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_NotFound_Returns404()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
