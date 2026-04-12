@@ -373,7 +373,9 @@ overridden via the `Geoprocessing:Workspace` configuration section
 `MaxTimeToLive` and `AllowPromotionBeforeCleanup` are not config-overridable;
 they are fixed in `RetentionPolicy.Defaults`. TTL overrides are validated at
 startup and rejected if they exceed the `MaxTimeToLive` ceiling for their kind
-(e.g. `ScratchDefaultTtl` cannot exceed 24 hours).
+(e.g. `ScratchDefaultTtl` cannot exceed 24 hours). Per-request `customTtl`
+values passed to `CreateWorkspaceAsync` are silently clamped to the
+`MaxTimeToLive` ceiling rather than rejected.
 Workspaces with no TTL do not expire automatically.
 
 ### Workspace Quota
@@ -427,7 +429,8 @@ Eligibility rules:
   cleanup grace period has been reached (`>=`) is no longer eligible —
   promotion must happen within the grace window.
 - Target workspace kind must be durable (`Persistent` or `SavedLayer`).
-- Target workspace must be `Active`.
+- Target workspace must be `Active` and must not have passed its `ExpiresAt`
+  by clock (same real-time expiration guard applied to artifact additions).
 - Artifact must not be in `Deleted` or `Promoted` state.
 - On success, the source artifact transitions to `Promoted` and a new artifact
   is created in the target workspace with state `Available`.
@@ -837,7 +840,9 @@ Authorization and approval checks are enforced on all mutating RPCs.
 **Implementation status** (as of #725):
 
 `IWorkspaceLifecycleService` defines the orchestration surface. `CreateWorkspace`
-applies retention policy and creates workspaces with automatic expiration.
+applies retention policy and creates workspaces with automatic expiration;
+callers can supply a `customTtl` that is clamped to the per-kind
+`MaxTimeToLive` ceiling.
 `AddArtifact` validates that the target workspace exists, is `Active`,
 and has not passed its expiration time by clock before creating artifacts
 in the `Available` state. `PromoteArtifact`

@@ -68,7 +68,8 @@ internal sealed class WorkspaceCleanupService : BackgroundService
         WorkspaceCleanupLog.SweepStarted(_logger);
         var result = await lifecycleService.RunCleanupAsync(cancellationToken);
 
-        if (result.WorkspacesExpired > 0 || result.WorkspacesDeleted > 0)
+        if (result.WorkspacesExpired > 0 || result.WorkspacesDeleted > 0
+            || result.ArtifactsDeleted > 0)
         {
             WorkspaceCleanupLog.SweepCompleted(_logger,
                 result.WorkspacesExpired, result.WorkspacesDeleted,

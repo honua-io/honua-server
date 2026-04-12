@@ -802,6 +802,31 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task PromoteArtifact_TargetExpiredByClockButActive_Fails()
+    {
+        // Target workspace is Active in the store but past its ExpiresAt.
+        // Promotion should be rejected, consistent with AddArtifactAsync.
+        SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        var target = CreateWorkspace("target", WorkspaceKind.Persistent,
+            WorkspaceLifecycleState.Active, expiresAt: Now.AddMinutes(-10));
+        _workspaceStore.GetAsync("target", Arg.Any<CancellationToken>()).Returns(target);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Active)
+            .Returns(true);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Target workspace has expired", result.FailureReason);
+        await _artifactStore.DidNotReceive().GetAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task PromoteArtifact_ExpiredAtExactGraceBoundary_Fails()
     {
         // Grace period is 1 hour (default). Expired exactly 1 hour ago → at boundary.

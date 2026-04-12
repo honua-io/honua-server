@@ -143,6 +143,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                 $"Target workspace kind {targetWorkspace.Kind} is not a durable promotion destination");
 
         var now = _timeProvider.GetUtcNow();
+        if (targetWorkspace.IsExpired(now))
+            return ArtifactPromotionResult.Failure("Target workspace has expired");
+
         var effectiveState = sourceWorkspace.State == WorkspaceLifecycleState.Active && sourceWorkspace.IsExpired(now)
             ? WorkspaceLifecycleState.Expired
             : sourceWorkspace.State;

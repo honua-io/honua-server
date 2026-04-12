@@ -205,7 +205,9 @@ All settings live under `Geoprocessing:Workspace` (env prefix
 Nullable TTL and quota settings fall back to built-in defaults when unset.
 `MaxTimeToLive` and `AllowPromotionBeforeCleanup` per workspace kind are not
 config-overridable. TTL overrides are validated at startup; values exceeding
-the `MaxTimeToLive` ceiling for the kind are rejected.
+the `MaxTimeToLive` ceiling for the kind are rejected. Per-request TTL values
+supplied during workspace creation are silently clamped to the ceiling rather
+than rejected.
 
 Quota enforcement is caller-initiated: the lifecycle service does not
 automatically check quotas during workspace creation. gRPC endpoints and
