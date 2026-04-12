@@ -816,10 +816,10 @@ Authorization and approval checks are enforced on all mutating RPCs.
 ### WorkspaceService
 
 - `CreateWorkspace`
-- `GetWorkspace`
-- `ListWorkspaces`
+- `GetWorkspace` *(planned — not yet implemented)*
+- `ListWorkspaces` *(planned — not yet implemented)*
 - `AddArtifact`
-- `ListArtifacts`
+- `ListArtifacts` *(planned — not yet implemented)*
 - `PromoteArtifact`
 - `ExtendWorkspaceExpiration`
 - `RunCleanup`

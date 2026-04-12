@@ -44,6 +44,12 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         TimeSpan? customTtl = null,
         CancellationToken cancellationToken = default)
     {
+        if (customTtl.HasValue && customTtl.Value <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(customTtl), customTtl.Value, "Custom TTL must be a positive duration.");
+        }
+
         var now = _timeProvider.GetUtcNow();
         var expiration = customTtl.HasValue
             ? _retentionPolicy.ClampExpiration(kind, now, now + customTtl.Value)
@@ -132,6 +138,14 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             return ArtifactPromotionResult.Failure(
                 $"Artifacts in {sourceWorkspace.Kind} workspace with state {sourceWorkspace.State} are not eligible for promotion");
 
+        if (sourceWorkspace.State == WorkspaceLifecycleState.Expired
+            && sourceWorkspace.ExpiresAt.HasValue
+            && _timeProvider.GetUtcNow() > sourceWorkspace.ExpiresAt.Value + _options.CleanupGracePeriod)
+        {
+            return ArtifactPromotionResult.Failure(
+                "Source workspace has exceeded the cleanup grace period; promotion is no longer allowed");
+        }
+
         var artifact = await _artifactStore.GetAsync(request.ArtifactId, cancellationToken);
         if (artifact is null)
             return ArtifactPromotionResult.Failure("Artifact not found");
@@ -219,6 +233,12 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         TimeSpan extension,
         CancellationToken cancellationToken = default)
     {
+        if (extension <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(extension), extension, "Extension must be a positive duration.");
+        }
+
         var workspace = await _workspaceStore.GetAsync(workspaceId, cancellationToken);
         if (workspace is null || workspace.State != WorkspaceLifecycleState.Active)
             return false;
