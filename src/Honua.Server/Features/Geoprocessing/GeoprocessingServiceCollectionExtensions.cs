@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Geoprocessing;
@@ -26,8 +27,12 @@ internal static class GeoprocessingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         // Workspace lifecycle (ticket #725)
-        services.Configure<WorkspaceOptions>(
-            configuration.GetSection(WorkspaceOptions.SectionName));
+        services
+            .AddOptions<WorkspaceOptions>()
+            .Bind(configuration.GetSection(WorkspaceOptions.SectionName))
+            .ValidateOnStart();
+
+        services.AddSingleton<IValidateOptions<WorkspaceOptions>, WorkspaceOptionsValidator>();
 
         services.AddSingleton<IRetentionPolicyEvaluator, RetentionPolicyEvaluator>();
         services.TryAddSingleton(TimeProvider.System);

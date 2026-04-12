@@ -41,7 +41,9 @@ public interface IWorkspaceStore
     Task<bool> ExtendExpirationAsync(string workspaceId, DateTimeOffset newExpiration, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a workspace and all its artifacts from storage.
+    /// Deletes the workspace record from storage. Artifact cleanup is handled
+    /// by the lifecycle orchestration layer before this call; implementations
+    /// should not cascade-delete artifacts.
     /// </summary>
     Task<bool> DeleteAsync(string workspaceId, CancellationToken cancellationToken = default);
 

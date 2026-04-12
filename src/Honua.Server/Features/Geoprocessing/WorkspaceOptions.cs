@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Microsoft.Extensions.Options;
+
 namespace Honua.Server.Features.Geoprocessing;
 
 /// <summary>
@@ -63,4 +65,66 @@ public sealed class WorkspaceOptions
     /// Maximum storage bytes per owner. Null uses the built-in default.
     /// </summary>
     public long? MaxStorageBytes { get; init; }
+}
+
+/// <summary>
+/// Validates <see cref="WorkspaceOptions"/> at startup to surface configuration errors early.
+/// </summary>
+internal sealed class WorkspaceOptionsValidator : IValidateOptions<WorkspaceOptions>
+{
+    public ValidateOptionsResult Validate(string? name, WorkspaceOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var failures = new List<string>();
+
+        if (options.CleanupInterval <= TimeSpan.Zero)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:CleanupInterval must be a positive duration.");
+        }
+
+        if (options.CleanupGracePeriod < TimeSpan.Zero)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:CleanupGracePeriod must not be negative.");
+        }
+
+        if (options.MaxCleanupBatchSize <= 0)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:MaxCleanupBatchSize must be a positive integer.");
+        }
+
+        if (options.ScratchDefaultTtl.HasValue && options.ScratchDefaultTtl.Value <= TimeSpan.Zero)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:ScratchDefaultTtl must be a positive duration when specified.");
+        }
+
+        if (options.TempLayerDefaultTtl.HasValue && options.TempLayerDefaultTtl.Value <= TimeSpan.Zero)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:TempLayerDefaultTtl must be a positive duration when specified.");
+        }
+
+        if (options.ResultCollectionDefaultTtl.HasValue && options.ResultCollectionDefaultTtl.Value <= TimeSpan.Zero)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:ResultCollectionDefaultTtl must be a positive duration when specified.");
+        }
+
+        if (options.MaxWorkspaceCount.HasValue && options.MaxWorkspaceCount.Value <= 0)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:MaxWorkspaceCount must be a positive integer when specified.");
+        }
+
+        if (options.MaxArtifactCount.HasValue && options.MaxArtifactCount.Value <= 0)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:MaxArtifactCount must be a positive integer when specified.");
+        }
+
+        if (options.MaxStorageBytes.HasValue && options.MaxStorageBytes.Value <= 0)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:MaxStorageBytes must be a positive value when specified.");
+        }
+
+        return failures.Count > 0
+            ? ValidateOptionsResult.Fail(failures)
+            : ValidateOptionsResult.Success;
+    }
 }
