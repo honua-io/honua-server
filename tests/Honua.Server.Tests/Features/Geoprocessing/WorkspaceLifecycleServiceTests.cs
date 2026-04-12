@@ -130,6 +130,23 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task PromoteArtifact_TargetNotDurableKind_Fails()
+    {
+        SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        SetupWorkspace("target", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("not a durable promotion destination", result.FailureReason);
+    }
+
+    [Fact]
     public async Task PromoteArtifact_NotEligible_Fails()
     {
         SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
@@ -215,6 +232,8 @@ public class WorkspaceLifecycleServiceTests
             .Returns(sourceArtifact);
         _artifactStore.TransitionStateAsync("art-1", ArtifactLifecycleState.Promoted, Arg.Any<CancellationToken>())
             .Returns(false);
+        _artifactStore.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
         {
@@ -226,6 +245,43 @@ public class WorkspaceLifecycleServiceTests
         Assert.False(result.Succeeded);
         Assert.Contains("Failed to mark source artifact as promoted", result.FailureReason);
         await _artifactStore.Received(1).DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PromoteArtifact_TransitionFails_RollbackDeleteFails_ReturnsRollbackFailure()
+    {
+        SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Active)
+            .Returns(true);
+
+        var sourceArtifact = new Artifact
+        {
+            ArtifactId = "art-1",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "source-layer",
+            State = ArtifactLifecycleState.Available,
+            SizeBytes = 1024,
+            CreatedAt = Now.AddMinutes(-30),
+            WorkspaceId = "source"
+        };
+        _artifactStore.GetAsync("art-1", Arg.Any<CancellationToken>())
+            .Returns(sourceArtifact);
+        _artifactStore.TransitionStateAsync("art-1", ArtifactLifecycleState.Promoted, Arg.Any<CancellationToken>())
+            .Returns(false);
+        _artifactStore.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("rollback of promoted copy also failed", result.FailureReason);
+        Assert.Contains("manual cleanup", result.FailureReason);
     }
 
     [Fact]

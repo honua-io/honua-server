@@ -13,11 +13,13 @@ namespace Honua.Server.Features.Geoprocessing;
 internal sealed class RetentionPolicyEvaluator : IRetentionPolicyEvaluator
 {
     private readonly Dictionary<WorkspaceKind, RetentionPolicy> _policies;
+    private readonly WorkspaceQuota _configuredQuota;
 
     public RetentionPolicyEvaluator(IOptions<WorkspaceOptions> options)
     {
         ArgumentNullException.ThrowIfNull(options);
         _policies = BuildPolicies(options.Value);
+        _configuredQuota = BuildQuota(options.Value);
     }
 
     public DateTimeOffset? ComputeExpiration(WorkspaceKind kind, DateTimeOffset createdAt)
@@ -42,6 +44,10 @@ internal sealed class RetentionPolicyEvaluator : IRetentionPolicyEvaluator
         if (!_policies.TryGetValue(sourceKind, out var policy))
             return false;
 
+        // Only temporary workspace kinds are valid promotion sources.
+        if (sourceKind is not (WorkspaceKind.Scratch or WorkspaceKind.TempLayer or WorkspaceKind.ResultCollection))
+            return false;
+
         return sourceState switch
         {
             WorkspaceLifecycleState.Active => true,
@@ -49,6 +55,8 @@ internal sealed class RetentionPolicyEvaluator : IRetentionPolicyEvaluator
             _ => false
         };
     }
+
+    public WorkspaceQuota GetConfiguredQuota() => _configuredQuota;
 
     public QuotaEvaluation EvaluateQuota(WorkspaceUsageSummary usage, WorkspaceQuota quota)
     {
@@ -98,4 +106,11 @@ internal sealed class RetentionPolicyEvaluator : IRetentionPolicyEvaluator
 
         return policies;
     }
+
+    private static WorkspaceQuota BuildQuota(WorkspaceOptions options) => new()
+    {
+        MaxWorkspaceCount = options.MaxWorkspaceCount ?? WorkspaceQuota.Default.MaxWorkspaceCount,
+        MaxArtifactCount = options.MaxArtifactCount ?? WorkspaceQuota.Default.MaxArtifactCount,
+        MaxStorageBytes = options.MaxStorageBytes ?? WorkspaceQuota.Default.MaxStorageBytes
+    };
 }

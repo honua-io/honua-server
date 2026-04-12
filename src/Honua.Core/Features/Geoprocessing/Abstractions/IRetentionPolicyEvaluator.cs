@@ -32,6 +32,12 @@ public interface IRetentionPolicyEvaluator
     /// Evaluates whether adding a workspace would exceed the quota for the given usage summary.
     /// </summary>
     QuotaEvaluation EvaluateQuota(WorkspaceUsageSummary usage, WorkspaceQuota quota);
+
+    /// <summary>
+    /// Returns the configured workspace quota, using defaults for any values not overridden
+    /// via configuration.
+    /// </summary>
+    WorkspaceQuota GetConfiguredQuota();
 }
 
 /// <summary>

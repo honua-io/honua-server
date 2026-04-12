@@ -328,6 +328,130 @@ Conceptual shape:
 Supported `kind` values: `Scratch`, `Persistent`, `TempLayer`, `SavedLayer`,
 `ResultCollection`.
 
+### Workspace Lifecycle
+
+Workspaces follow a deterministic state machine:
+
+```text
+Active ──> Expired ──> Deleted
+  │
+  └──> Archived
+```
+
+| State | Description |
+|---|---|
+| `Active` | Workspace is available for use. Artifacts can be added and promoted. |
+| `Expired` | Past its expiration time, pending cleanup. Promotion may still be allowed depending on the retention policy. |
+| `Archived` | Preserved but no longer directly accessible. Reserved for future use — no transitions into or out of this state are implemented in #725. |
+| `Deleted` | Storage reclaimed. Terminal state. Cleanup deletes workspaces via `IWorkspaceStore.DeleteAsync`; whether the store records a terminal state row or physically removes storage is provider-specific. |
+
+Artifacts within a workspace track their own lifecycle:
+
+| State | Description |
+|---|---|
+| `Pending` | Being created by an in-progress workflow. The lifecycle service creates artifacts directly as `Available`; callers that need a two-phase create can set `Pending` via `IArtifactStore` directly. |
+| `Available` | Materialized and accessible. Default state for artifacts added through `IWorkspaceLifecycleService.AddArtifactAsync`. |
+| `Promoted` | Copied to a durable workspace. Source artifact is no longer eligible for re-promotion. |
+| `Expired` | Past its retention period, pending cleanup. |
+| `Deleted` | Storage reclaimed. Terminal state. |
+
+### Retention Policy
+
+Each workspace kind has default retention rules:
+
+| Kind | Default TTL | Max TTL | Promotion before cleanup |
+|---|---|---|---|
+| `Scratch` | 1 hour | 24 hours | Yes |
+| `TempLayer` | 24 hours | 7 days | Yes |
+| `Persistent` | none | none | No |
+| `SavedLayer` | none | none | No |
+| `ResultCollection` | 7 days | 30 days | Yes |
+
+`DefaultTimeToLive` for `Scratch`, `TempLayer`, and `ResultCollection` can be
+overridden via the `Geoprocessing:Workspace` configuration section
+(`ScratchDefaultTtl`, `TempLayerDefaultTtl`, `ResultCollectionDefaultTtl`).
+`MaxTimeToLive` and `AllowPromotionBeforeCleanup` are not config-overridable;
+they are fixed in `RetentionPolicy.Defaults`.
+Workspaces with no TTL do not expire automatically.
+
+### Workspace Quota
+
+Default per-owner quota limits:
+
+| Resource | Default limit |
+|---|---|
+| Active workspaces | 100 |
+| Total artifacts | 1,000 |
+| Total storage | 10 GB |
+
+Quota limits can be overridden via configuration (`MaxWorkspaceCount`,
+`MaxArtifactCount`, `MaxStorageBytes` in the `Geoprocessing:Workspace`
+section). When set, these values replace the corresponding defaults in the
+quota returned by `IRetentionPolicyEvaluator.GetConfiguredQuota()`. Unset
+values fall back to the built-in defaults above. Quota evaluation uses the
+`>=` threshold — the operation is rejected when usage meets or exceeds the
+limit.
+
+Quota enforcement is caller-initiated: `IRetentionPolicyEvaluator.EvaluateQuota`
+checks usage against limits, but `CreateWorkspaceAsync` does not call it
+automatically. Callers (e.g. gRPC endpoints, workflow orchestrators) should
+call `GetConfiguredQuota()` for the effective limits and then pass the result
+to `EvaluateQuota` before creating workspaces.
+
+### Artifact Promotion
+
+Promotion copies an artifact from a temporary workspace to a durable
+destination.
+
+Conceptual request shape:
+
+```json
+{
+  "artifactId": "artifact_candidate_parcels",
+  "sourceWorkspaceId": "ws_scratch_123",
+  "targetWorkspaceId": "ws_persistent_456",
+  "newLabel": "Final Candidate Parcels"
+}
+```
+
+Eligibility rules:
+
+- Source workspace kind must be temporary (`Scratch`, `TempLayer`, or
+  `ResultCollection`). Durable kinds are not valid promotion sources.
+- Source workspace must be `Active`, or `Expired` with `AllowPromotionBeforeCleanup`
+  enabled for its kind.
+- Target workspace kind must be durable (`Persistent` or `SavedLayer`).
+- Target workspace must be `Active`.
+- Artifact must not be in `Deleted` or `Promoted` state.
+- On success, the source artifact transitions to `Promoted` and a new artifact
+  is created in the target workspace with state `Available`.
+- On transition failure, the promoted copy is rolled back so the caller can
+  safely retry. If rollback also fails, the failure message indicates that
+  manual cleanup may be required.
+
+### Cleanup
+
+The `WorkspaceCleanupService` runs periodic background sweeps:
+
+1. **Expire** — active workspaces past their `ExpiresAt` transition to `Expired`.
+2. **Delete** — expired workspaces past the grace period have their artifacts
+   deleted and then the workspace itself is removed.
+
+Cleanup is non-destructive during the grace period, allowing artifact promotion
+from recently-expired workspaces.
+
+Default configuration (overridable via `Geoprocessing:Workspace`):
+
+| Parameter | Default |
+|---|---|
+| Cleanup interval | 15 minutes |
+| Grace period | 1 hour |
+| Batch size | 100 workspaces per sweep |
+| Automatic cleanup | enabled |
+
+Cleanup only activates when concrete `IWorkspaceStore` and `IArtifactStore`
+implementations are registered.
+
 ### StyleRef
 
 References a reusable style asset or renderer bundle.
@@ -709,8 +833,12 @@ workspaces and deletes those past the grace period.
 
 `IWorkspaceStore` and `IArtifactStore` abstractions are defined but require
 concrete storage-provider implementations before the lifecycle service is
-activated at runtime. `IRetentionPolicyEvaluator` is fully functional with
-configurable TTL, quota evaluation, and promotion eligibility rules.
+activated at runtime. DI registration of `IWorkspaceLifecycleService` and
+`WorkspaceCleanupService` is conditional — both are skipped when no store
+implementations are in the container. `IRetentionPolicyEvaluator` is fully
+functional with configurable TTL, quota evaluation, and promotion eligibility
+rules. Quota enforcement is caller-initiated (see
+[Workspace Quota](#workspace-quota)).
 
 `WorkspaceCleanupService` runs periodic background sweeps when store
 implementations are registered and `EnableAutomaticCleanup` is true (default).

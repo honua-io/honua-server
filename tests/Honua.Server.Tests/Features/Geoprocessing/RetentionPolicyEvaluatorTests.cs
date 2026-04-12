@@ -108,8 +108,14 @@ public class RetentionPolicyEvaluatorTests
     [InlineData(WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired, true)]
     [InlineData(WorkspaceKind.Scratch, WorkspaceLifecycleState.Deleted, false)]
     [InlineData(WorkspaceKind.Scratch, WorkspaceLifecycleState.Archived, false)]
-    [InlineData(WorkspaceKind.Persistent, WorkspaceLifecycleState.Active, true)]
+    [InlineData(WorkspaceKind.TempLayer, WorkspaceLifecycleState.Active, true)]
+    [InlineData(WorkspaceKind.TempLayer, WorkspaceLifecycleState.Expired, true)]
+    [InlineData(WorkspaceKind.ResultCollection, WorkspaceLifecycleState.Active, true)]
+    [InlineData(WorkspaceKind.ResultCollection, WorkspaceLifecycleState.Expired, true)]
+    [InlineData(WorkspaceKind.Persistent, WorkspaceLifecycleState.Active, false)]
     [InlineData(WorkspaceKind.Persistent, WorkspaceLifecycleState.Expired, false)]
+    [InlineData(WorkspaceKind.SavedLayer, WorkspaceLifecycleState.Active, false)]
+    [InlineData(WorkspaceKind.SavedLayer, WorkspaceLifecycleState.Expired, false)]
     public void IsEligibleForPromotion_ReturnsExpected(
         WorkspaceKind kind, WorkspaceLifecycleState state, bool expected)
     {
@@ -176,5 +182,49 @@ public class RetentionPolicyEvaluatorTests
 
         Assert.False(result.IsWithinQuota);
         Assert.Equal(3, result.Violations.Count);
+    }
+
+    [Fact]
+    public void GetConfiguredQuota_NoOverrides_ReturnsDefaults()
+    {
+        var evaluator = CreateEvaluator();
+
+        var quota = evaluator.GetConfiguredQuota();
+
+        Assert.Equal(WorkspaceQuota.Default.MaxWorkspaceCount, quota.MaxWorkspaceCount);
+        Assert.Equal(WorkspaceQuota.Default.MaxArtifactCount, quota.MaxArtifactCount);
+        Assert.Equal(WorkspaceQuota.Default.MaxStorageBytes, quota.MaxStorageBytes);
+    }
+
+    [Fact]
+    public void GetConfiguredQuota_WithOverrides_UsesConfiguredValues()
+    {
+        var evaluator = CreateEvaluator(new WorkspaceOptions
+        {
+            MaxWorkspaceCount = 50,
+            MaxArtifactCount = 500,
+            MaxStorageBytes = 5L * 1024 * 1024 * 1024
+        });
+
+        var quota = evaluator.GetConfiguredQuota();
+
+        Assert.Equal(50, quota.MaxWorkspaceCount);
+        Assert.Equal(500, quota.MaxArtifactCount);
+        Assert.Equal(5L * 1024 * 1024 * 1024, quota.MaxStorageBytes);
+    }
+
+    [Fact]
+    public void GetConfiguredQuota_PartialOverrides_MergesWithDefaults()
+    {
+        var evaluator = CreateEvaluator(new WorkspaceOptions
+        {
+            MaxWorkspaceCount = 25
+        });
+
+        var quota = evaluator.GetConfiguredQuota();
+
+        Assert.Equal(25, quota.MaxWorkspaceCount);
+        Assert.Equal(WorkspaceQuota.Default.MaxArtifactCount, quota.MaxArtifactCount);
+        Assert.Equal(WorkspaceQuota.Default.MaxStorageBytes, quota.MaxStorageBytes);
     }
 }

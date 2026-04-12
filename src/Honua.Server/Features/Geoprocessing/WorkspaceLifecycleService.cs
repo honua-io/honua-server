@@ -110,6 +110,10 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         if (targetWorkspace.State != WorkspaceLifecycleState.Active)
             return ArtifactPromotionResult.Failure("Target workspace is not active");
 
+        if (targetWorkspace.Kind is not (WorkspaceKind.Persistent or WorkspaceKind.SavedLayer))
+            return ArtifactPromotionResult.Failure(
+                $"Target workspace kind {targetWorkspace.Kind} is not a durable promotion destination");
+
         if (!_retentionPolicy.IsEligibleForPromotion(sourceWorkspace.Kind, sourceWorkspace.State))
             return ArtifactPromotionResult.Failure(
                 $"Artifacts in {sourceWorkspace.Kind} workspace with state {sourceWorkspace.State} are not eligible for promotion");
@@ -145,7 +149,15 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         if (!transitioned)
         {
             // Roll back the promoted copy so the caller can safely retry.
-            await _artifactStore.DeleteAsync(created.ArtifactId, cancellationToken);
+            var rolledBack = await _artifactStore.DeleteAsync(created.ArtifactId, cancellationToken);
+            if (!rolledBack)
+            {
+                WorkspaceLifecycleLog.PromotionRollbackFailed(
+                    _logger, request.ArtifactId, created.ArtifactId);
+                return ArtifactPromotionResult.Failure(
+                    "Failed to mark source artifact as promoted and rollback of promoted copy also failed; manual cleanup may be required");
+            }
+
             WorkspaceLifecycleLog.PromotionTransitionFailed(_logger, request.ArtifactId);
             return ArtifactPromotionResult.Failure("Failed to mark source artifact as promoted");
         }
@@ -304,4 +316,10 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Warning,
         Message = "Failed to mark source artifact {ArtifactId} as promoted; promoted copy rolled back")]
     public static partial void PromotionTransitionFailed(ILogger logger, string artifactId);
+
+    [LoggerMessage(
+        EventId = 9907,
+        Level = LogLevel.Error,
+        Message = "Failed to roll back promoted copy {PromotedArtifactId} after source {SourceArtifactId} transition failed; duplicate artifact may exist")]
+    public static partial void PromotionRollbackFailed(ILogger logger, string sourceArtifactId, string promotedArtifactId);
 }
