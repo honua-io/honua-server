@@ -64,7 +64,7 @@ internal static class StacFilterHelpers
     public static SpatialFilter? ParseBbox(string bbox)
     {
         var parts = bbox.Split(',');
-        if (parts.Length < 4)
+        if (parts.Length != 4)
         {
             return null;
         }
@@ -86,12 +86,32 @@ internal static class StacFilterHelpers
     /// </summary>
     public static SpatialFilter CreateBboxSpatialFilter(double west, double south, double east, double north)
     {
-        var envelope = new Envelope(west, east, south, north);
-        var geometry = Wgs84Factory.ToGeometry(envelope);
+        Geometry geometry;
+        if (west > east)
+        {
+            var eastHemisphere = CreateBboxPolygon(west, south, 180.0, north);
+            var westHemisphere = CreateBboxPolygon(-180.0, south, east, north);
+            geometry = Wgs84Factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+        }
+        else
+        {
+            geometry = Wgs84Factory.ToGeometry(new Envelope(west, east, south, north));
+        }
+
         var wkb = GetWkbWriter().Write(geometry);
 
         return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: 4326);
     }
+
+    private static Polygon CreateBboxPolygon(double minX, double minY, double maxX, double maxY)
+        => Wgs84Factory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(minX, maxY),
+                new Coordinate(minX, minY)
+            ]);
 
     /// <summary>
     /// Parses a GeoJSON geometry from a STAC intersects parameter into a spatial filter.

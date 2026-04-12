@@ -352,8 +352,14 @@ internal static class SearchEndpoints
         selectedProperties = null;
         error = null;
 
-        if (request.Bbox is { IsDefault: false } bboxArr && bboxArr.Length >= 4)
+        if (request.Bbox is { IsDefault: false } bboxArr)
         {
+            if (bboxArr.Length != 4)
+            {
+                error = "3D bbox values are not supported.";
+                return false;
+            }
+
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
@@ -855,6 +861,13 @@ internal static class SearchEndpoints
         {
             values = default;
             error = "bbox must contain four or six numeric values.";
+            return false;
+        }
+
+        if (parts.Length == 6)
+        {
+            values = default;
+            error = "3D bbox values are not supported.";
             return false;
         }
 

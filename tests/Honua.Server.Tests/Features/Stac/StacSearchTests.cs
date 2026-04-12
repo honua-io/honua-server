@@ -127,6 +127,33 @@ public sealed class StacSearchTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithThreeDimensionalBbox_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/search?bbox=170,-10,-170,10,5,6");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithThreeDimensionalBbox_ReturnsBadRequest()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            bbox = new[] { 170.0, -10.0, -170.0, 10.0, 5.0, 6.0 }
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
     [Endpoint("POST /stac/search")]
     public async Task SearchPost_AllItemsHaveStacFields()
     {

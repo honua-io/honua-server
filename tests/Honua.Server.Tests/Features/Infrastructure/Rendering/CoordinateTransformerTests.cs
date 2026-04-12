@@ -81,6 +81,21 @@ public class CoordinateTransformerTests
     }
 
     [UnitTest]
+    public void TransformExtent_4326To3857_DatelineCrossing_ReturnsOrderedBounds()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(170, -10, -170, 10);
+
+        var result = CoordinateTransformer.TransformExtent(extent, 4326, 3857);
+        var (expectedMinX, expectedMinY) = CoordinateTransformer.LonLatToWebMercator(-170, -10);
+        var (expectedMaxX, expectedMaxY) = CoordinateTransformer.LonLatToWebMercator(170, 10);
+
+        result.MinX.Should().BeApproximately(expectedMinX, 1.0);
+        result.MinY.Should().BeApproximately(expectedMinY, 1.0);
+        result.MaxX.Should().BeApproximately(expectedMaxX, 1.0);
+        result.MaxY.Should().BeApproximately(expectedMaxY, 1.0);
+    }
+
+    [UnitTest]
     public void TransformPoint_WebMercatorAliasTo4326_TransformsCorrectly()
     {
         var (x, y) = CoordinateTransformer.TransformPoint(0.0, 6_711_455.0, 102100, 4326);
@@ -155,6 +170,16 @@ public class CoordinateTransformerTests
         var scale = CoordinateTransformer.CalculateScaleDenominator(extent, 256, 96, 4326);
 
         scale.Should().BeGreaterThan(0);
+    }
+
+    [UnitTest]
+    public void CalculateScaleDenominator_GeocentricSrid_UsesProjectedUnits()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(0, 0, 10, 10);
+
+        var scale = CoordinateTransformer.CalculateScaleDenominator(extent, 10, 96, 4978);
+
+        scale.Should().BeApproximately(3_779.527559, 0.001);
     }
 
     [UnitTest]

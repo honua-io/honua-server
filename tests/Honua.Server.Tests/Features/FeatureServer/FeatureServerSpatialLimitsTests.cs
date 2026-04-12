@@ -55,6 +55,20 @@ public sealed class FeatureServerSpatialLimitsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithDatelineCrossingEnvelope_ReturnsSuccess()
+    {
+        var geometry = Uri.EscapeDataString("""{"xmin":170,"ymin":-10,"xmax":-170,"ymax":10}""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?geometry={geometry}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithProjectedFeetInputSridWithoutUnitMetadata_ReturnsExplicitBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

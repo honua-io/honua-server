@@ -45,6 +45,15 @@ public class SharedModelTests
     }
 
     [Fact]
+    public void SpatialReference_Create_WithGeocentricSrid_IsNotGeographic()
+    {
+        var spatialRef = SpatialReference.Create(4978);
+
+        spatialRef.IsGeographic.Should().BeFalse();
+        spatialRef.IsProjected.Should().BeTrue();
+    }
+
+    [Fact]
     public void ServiceError_Create_WithCodeAndMessage_SetsCorrectValues()
     {
         // Arrange & Act

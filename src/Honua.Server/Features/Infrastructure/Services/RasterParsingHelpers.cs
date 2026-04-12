@@ -82,14 +82,18 @@ internal static class RasterParsingHelpers
             maxY = fourth;
         }
 
+        var looksGeographic = IsGeographicBoundingBox(minX, minY, maxX, maxY);
+        var crossesAntimeridian = minX > maxX && looksGeographic;
+
         if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
-            minX >= maxX || minY >= maxY)
+            minY >= maxY ||
+            (minX >= maxX && !(isGeographic || crossesAntimeridian)))
         {
             return false;
         }
 
-        if (isGeographic &&
+        if ((isGeographic || crossesAntimeridian) &&
             (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
              !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
         {
@@ -113,6 +117,10 @@ internal static class RasterParsingHelpers
     private static bool IsValidLongitude(double coordinate) => coordinate >= -180.0 && coordinate <= 180.0;
 
     private static bool IsValidLatitude(double coordinate) => coordinate >= -90.0 && coordinate <= 90.0;
+
+    private static bool IsGeographicBoundingBox(double minX, double minY, double maxX, double maxY)
+        => IsValidLongitude(minX) && IsValidLongitude(maxX) &&
+           IsValidLatitude(minY) && IsValidLatitude(maxY);
 
     /// <summary>
     /// Parses a format string to the corresponding <see cref="RasterFormat"/> enum value.

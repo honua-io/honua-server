@@ -100,6 +100,44 @@ public class RasterParsingHelpersTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void TryParseBoundingBox_GeographicDatelineCrossing_ReturnsTrue()
+    {
+        var result = RasterParsingHelpers.TryParseBoundingBox(
+            "170,-10,-170,10",
+            AxisOrder.EastNorth,
+            isGeographic: true,
+            out var minX,
+            out var minY,
+            out var maxX,
+            out var maxY);
+
+        result.Should().BeTrue();
+        minX.Should().Be(170);
+        minY.Should().Be(-10);
+        maxX.Should().Be(-170);
+        maxY.Should().Be(10);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseBoundingBox_DefaultOverload_DatelineCrossing_ReturnsTrue()
+    {
+        var result = RasterParsingHelpers.TryParseBoundingBox(
+            "170,-10,-170,10",
+            out var minX,
+            out var minY,
+            out var maxX,
+            out var maxY);
+
+        result.Should().BeTrue();
+        minX.Should().Be(170);
+        minY.Should().Be(-10);
+        maxX.Should().Be(-170);
+        maxY.Should().Be(10);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void TryParseBoundingBox_NullInput_ReturnsFalse()
     {
         var result = RasterParsingHelpers.TryParseBoundingBox(
@@ -172,9 +210,9 @@ public class RasterParsingHelpersTests
     [Operation(Operations.Query)]
     public void TryParseBoundingBox_InvertedXCoordinates_ReturnsFalse()
     {
-        // maxX < minX
+        // maxX < minX in a projected CRS
         var result = RasterParsingHelpers.TryParseBoundingBox(
-            "180,-90,-180,90", out _, out _, out _, out _);
+            "5000000,-90,-5000000,90", out _, out _, out _, out _);
 
         result.Should().BeFalse();
     }
@@ -561,6 +599,18 @@ public class RasterParsingHelpersTests
     {
         var result = SpatialReferenceHelpers.TryParseSrid("http://www.opengis.net/def/crs/EPSG/0/4326/extra");
         result.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseCrsDefinition_Epsg4978_ReturnsProjectedDefinition()
+    {
+        var result = SpatialReferenceHelpers.TryParseCrsDefinition("EPSG:4978", out var definition);
+
+        result.Should().BeTrue();
+        definition.Srid.Should().Be(4978);
+        definition.IsGeographic.Should().BeFalse();
+        definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
     #endregion

@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Text.Json;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite;
@@ -135,8 +136,12 @@ internal static class GeoServicesGeometryConverter
         if (geometry.Xmin.HasValue && geometry.Ymin.HasValue &&
             geometry.Xmax.HasValue && geometry.Ymax.HasValue)
         {
-            var envelope = new Envelope(geometry.Xmin.Value, geometry.Xmax.Value, geometry.Ymin.Value, geometry.Ymax.Value);
-            return factory.ToGeometry(envelope);
+            return CreateEnvelopeGeometry(
+                factory,
+                geometry.Xmin.Value,
+                geometry.Ymin.Value,
+                geometry.Xmax.Value,
+                geometry.Ymax.Value);
         }
 
         if (geometry.X.HasValue && geometry.Y.HasValue)
@@ -212,6 +217,43 @@ internal static class GeoServicesGeometryConverter
 
         return null;
     }
+
+    private static Geometry CreateEnvelopeGeometry(
+        GeometryFactory factory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+    {
+        if (IsGeographicSrid(factory.SRID) && minX > maxX)
+        {
+            var eastHemisphere = CreateEnvelopePolygon(factory, minX, minY, 180.0, maxY);
+            var westHemisphere = CreateEnvelopePolygon(factory, -180.0, minY, maxX, maxY);
+            return factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+        }
+
+        return factory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
+    }
+
+    private static Polygon CreateEnvelopePolygon(
+        GeometryFactory factory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+    {
+        return factory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(minX, maxY),
+                new Coordinate(minX, minY)
+            ]);
+    }
+
+    private static bool IsGeographicSrid(int srid)
+        => SpatialReference.Create(srid).IsGeographic;
 
     private static Coordinate CreateCoordinate(double[] ordinates, bool? hasZ = null, bool? hasM = null)
     {

@@ -89,17 +89,13 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
     {
         if (IsWgs84Srid(fromSrid) && IsWebMercatorSrid(toSrid))
         {
-            var (rMinX, rMinY) = LonLatToWebMercator(minX, minY);
-            var (rMaxX, rMaxY) = LonLatToWebMercator(maxX, maxY);
-            result = (rMinX, rMinY, rMaxX, rMaxY);
+            result = TransformSampledExtent(minX, minY, maxX, maxY, LonLatToWebMercator);
             return true;
         }
 
         if (IsWebMercatorSrid(fromSrid) && IsWgs84Srid(toSrid))
         {
-            var (rMinX, rMinY) = WebMercatorToLonLat(minX, minY);
-            var (rMaxX, rMaxY) = WebMercatorToLonLat(maxX, maxY);
-            result = (rMinX, rMinY, rMaxX, rMaxY);
+            result = TransformSampledExtent(minX, minY, maxX, maxY, WebMercatorToLonLat);
             return true;
         }
 
@@ -141,6 +137,45 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         var lon = x / EarthRadius * 180.0 / Math.PI;
         var lat = Math.Atan(Math.Exp(y / EarthRadius)) * 360.0 / Math.PI - 90.0;
         return (lon, lat);
+    }
+
+    private static (double MinX, double MinY, double MaxX, double MaxY) TransformSampledExtent(
+        double minX, double minY, double maxX, double maxY,
+        Func<double, double, (double X, double Y)> transform)
+    {
+        var transformedMinX = double.PositiveInfinity;
+        var transformedMinY = double.PositiveInfinity;
+        var transformedMaxX = double.NegativeInfinity;
+        var transformedMaxY = double.NegativeInfinity;
+
+        foreach (var (x, y) in EnumerateSampledExtentPoints(minX, minY, maxX, maxY))
+        {
+            var (tx, ty) = transform(x, y);
+            transformedMinX = Math.Min(transformedMinX, tx);
+            transformedMinY = Math.Min(transformedMinY, ty);
+            transformedMaxX = Math.Max(transformedMaxX, tx);
+            transformedMaxY = Math.Max(transformedMaxY, ty);
+        }
+
+        return (transformedMinX, transformedMinY, transformedMaxX, transformedMaxY);
+    }
+
+    private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(
+        double minX, double minY, double maxX, double maxY)
+    {
+        for (var i = 0; i <= ExtentSampleSegmentsPerEdge; i++)
+        {
+            var t = (double)i / ExtentSampleSegmentsPerEdge;
+            var x = minX + ((maxX - minX) * t);
+            var y = minY + ((maxY - minY) * t);
+
+            yield return (x, minY);
+            yield return (x, maxY);
+            yield return (minX, y);
+            yield return (maxX, y);
+        }
+
+        yield return ((minX + maxX) / 2.0, (minY + maxY) / 2.0);
     }
 
     private async Task<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentWithPostGisAsync(

@@ -155,6 +155,24 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    public async Task TransformExtentAsync_AntimeridianCrossing_Wgs84ToWebMercator_ReturnsOrderedBounds()
+    {
+        var result = await _service!.TransformExtentAsync(
+            170.0, -10.0, -170.0, 10.0,
+            4326, 3857);
+
+        result.Should().NotBeNull();
+
+        var (expectedMinX, expectedMinY) = ProjectLonLatToWebMercator(-170.0, -10.0);
+        var (expectedMaxX, expectedMaxY) = ProjectLonLatToWebMercator(170.0, 10.0);
+
+        result!.Value.MinX.Should().BeApproximately(expectedMinX, 1.0);
+        result.Value.MinY.Should().BeApproximately(expectedMinY, 1.0);
+        result.Value.MaxX.Should().BeApproximately(expectedMaxX, 1.0);
+        result.Value.MaxY.Should().BeApproximately(expectedMaxY, 1.0);
+    }
+
+    [IntegrationTest]
     public async Task TransformExtentAsync_SameSrid_ReturnsIdentity()
     {
         var result = await _service!.TransformExtentAsync(
@@ -259,5 +277,16 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         parameter.ParameterName = name;
         parameter.Value = value;
         command.Parameters.Add(parameter);
+    }
+
+    private static (double X, double Y) ProjectLonLatToWebMercator(double longitude, double latitude)
+    {
+        const double earthRadius = 6_378_137.0;
+        const double maxLatitude = 85.05112877980659;
+
+        var clampedLat = Math.Clamp(latitude, -maxLatitude, maxLatitude);
+        var x = longitude * Math.PI / 180.0 * earthRadius;
+        var y = Math.Log(Math.Tan((90.0 + clampedLat) * Math.PI / 360.0)) * earthRadius;
+        return (x, y);
     }
 }

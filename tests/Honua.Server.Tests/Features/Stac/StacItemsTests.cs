@@ -156,6 +156,41 @@ public sealed class StacItemsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_WithDatelineCrossingBbox_ReturnsMatchingItem()
+    {
+        var featureId = await InsertDatelineFeatureAsync(179.9, 0.0, "Dateline STAC Item");
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?bbox={Uri.EscapeDataString("170,-10,-170,10")}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        features.Should().Contain(feature =>
+            feature.GetProperty("id").GetString() == featureId.ToString(System.Globalization.CultureInfo.InvariantCulture) &&
+            feature.GetProperty("properties").GetProperty("name").GetString() == "Dateline STAC Item");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_WithThreeDimensionalBbox_Returns400()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?bbox=170,-10,-170,10,5,6");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_InvalidDatetime_Returns400()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -274,5 +309,28 @@ public sealed class StacItemsTests : IAsyncLifetime
     {
         var updater = _fixture.GetService<ILayerMetadataUpdater>();
         return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
+    }
+
+    private async Task<long> InsertDatelineFeatureAsync(double lon, double lat, string name)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            VALUES (
+                @layerId,
+                ST_SetSRID(ST_MakePoint(@lon, @lat), 4326),
+                jsonb_build_object('name', @name)
+            )
+            RETURNING objectid;
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("lon", lon);
+        command.Parameters.AddWithValue("lat", lat);
+        command.Parameters.AddWithValue("name", name);
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
     }
 }

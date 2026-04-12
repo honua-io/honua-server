@@ -90,7 +90,8 @@ public readonly record struct SpatialReference
         Wkt?.Contains("GEOGCRS", StringComparison.Ordinal) == true ||
         Wkt?.Contains("GEODCRS", StringComparison.Ordinal) == true;
 
-    private static bool IsGeographicByWkid(int wkid) => wkid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+    private static bool IsGeographicByWkid(int wkid)
+        => wkid is 4326 or 4269 or 4267 or 4258 or 4979;
 
     /// <summary>
     /// Whether this is a projected coordinate system

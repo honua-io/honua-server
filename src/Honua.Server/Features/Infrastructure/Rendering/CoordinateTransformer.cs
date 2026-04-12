@@ -13,6 +13,7 @@ internal static class CoordinateTransformer
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
+    private const int ExtentSampleSegmentsPerEdge = 4;
 
     /// <summary>
     /// Converts a bounding box from one SRID to another.
@@ -31,17 +32,13 @@ internal static class CoordinateTransformer
         // geographic -> web mercator
         if (IsWgs84Srid(fromSrid) && IsWebMercatorSrid(toSrid))
         {
-            var (minX, minY) = LonLatToWebMercator(extent.MinX, extent.MinY);
-            var (maxX, maxY) = LonLatToWebMercator(extent.MaxX, extent.MaxY);
-            return new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
+            return TransformSampledExtent(extent, LonLatToWebMercator);
         }
 
         // web mercator -> geographic
         if (IsWebMercatorSrid(fromSrid) && IsWgs84Srid(toSrid))
         {
-            var (minLon, minLat) = WebMercatorToLonLat(extent.MinX, extent.MinY);
-            var (maxLon, maxLat) = WebMercatorToLonLat(extent.MaxX, extent.MaxY);
-            return new SkiaMapRenderer.RenderExtent(minLon, minLat, maxLon, maxLat);
+            return TransformSampledExtent(extent, WebMercatorToLonLat);
         }
 
         throw new NotSupportedException(
@@ -91,12 +88,49 @@ internal static class CoordinateTransformer
     private static bool IsWgs84Srid(int srid)
         => srid == 4326;
 
-    // Approximation: all geographic CRSs in the 4000-4999 range are treated
-    // as WGS 84 (R = 6 378 137 m) for scale and extent calculations.  SRIDs that
-    // use other ellipsoids (e.g. EPSG:4267 / NAD 27 on Clarke 1866) introduce a
-    // sub-metre-per-degree error that is negligible for print-service rendering.
+    // Defer to the shared SRID classifier so scale math stays aligned with the
+    // rest of the server and geocentric CRS codes such as EPSG:4978 are not
+    // misclassified as lat/lon.
     private static bool IsGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+        => SpatialReference.Create(srid).IsGeographic;
+
+    private static SkiaMapRenderer.RenderExtent TransformSampledExtent(
+        SkiaMapRenderer.RenderExtent extent,
+        Func<double, double, (double X, double Y)> transform)
+    {
+        var minX = double.PositiveInfinity;
+        var minY = double.PositiveInfinity;
+        var maxX = double.NegativeInfinity;
+        var maxY = double.NegativeInfinity;
+
+        foreach (var (x, y) in EnumerateSampledExtentPoints(extent))
+        {
+            var (tx, ty) = transform(x, y);
+            minX = Math.Min(minX, tx);
+            minY = Math.Min(minY, ty);
+            maxX = Math.Max(maxX, tx);
+            maxY = Math.Max(maxY, ty);
+        }
+
+        return new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
+    }
+
+    private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(SkiaMapRenderer.RenderExtent extent)
+    {
+        for (var i = 0; i <= ExtentSampleSegmentsPerEdge; i++)
+        {
+            var t = (double)i / ExtentSampleSegmentsPerEdge;
+            var x = extent.MinX + ((extent.MaxX - extent.MinX) * t);
+            var y = extent.MinY + ((extent.MaxY - extent.MinY) * t);
+
+            yield return (x, extent.MinY);
+            yield return (x, extent.MaxY);
+            yield return (extent.MinX, y);
+            yield return (extent.MaxX, y);
+        }
+
+        yield return ((extent.MinX + extent.MaxX) / 2.0, (extent.MinY + extent.MaxY) / 2.0);
+    }
 
     /// <summary>
     /// Converts longitude/latitude (EPSG:4326) to Web Mercator (EPSG:3857).
