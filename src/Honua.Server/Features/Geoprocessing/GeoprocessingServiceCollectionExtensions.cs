@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -35,6 +36,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<WorkspaceOptions>, WorkspaceOptionsValidator>();
 
         services.AddSingleton<IRetentionPolicyEvaluator, RetentionPolicyEvaluator>();
+        services.AddSingleton<IConfigurationDocumentationContributor, GeoprocessingConfigurationDocumentationContributor>();
         services.TryAddSingleton(TimeProvider.System);
 
         // Lifecycle orchestration and cleanup require concrete store implementations.

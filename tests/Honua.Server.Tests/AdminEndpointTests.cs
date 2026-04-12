@@ -140,6 +140,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         sectionNames.Should().Contain("Cache");
         sectionNames.Should().Contain("Limits.Query");
         sectionNames.Should().Contain("Security");
+        sectionNames.Should().Contain("Geoprocessing:Workspace");
     }
 
     [IntegrationTest]
@@ -179,6 +180,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         envVars.Should().Contain(e => e.Name == "ConnectionStrings__DefaultConnection");
         envVars.Should().Contain(e => e.Name == "HONUA_ADMIN_UI");
         envVars.Should().Contain(e => e.Name == "Cache__Enabled");
+        envVars.Should().Contain(e => e.Name == "Geoprocessing__Workspace__CleanupInterval");
     }
 
     [IntegrationTest]
