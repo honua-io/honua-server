@@ -373,6 +373,7 @@ internal static class GeoprocessingConversionHelpers
         GeoprocessingWorkflowStatus.AwaitingClarification => Proto.WorkflowStatus.AwaitingClarification,
         GeoprocessingWorkflowStatus.Validated => Proto.WorkflowStatus.Validated,
         GeoprocessingWorkflowStatus.AwaitingApproval => Proto.WorkflowStatus.AwaitingApproval,
+        GeoprocessingWorkflowStatus.AwaitingExecution => Proto.WorkflowStatus.AwaitingExecution,
         GeoprocessingWorkflowStatus.Running => Proto.WorkflowStatus.Running,
         GeoprocessingWorkflowStatus.Completed => Proto.WorkflowStatus.Completed,
         GeoprocessingWorkflowStatus.Failed => Proto.WorkflowStatus.Failed,

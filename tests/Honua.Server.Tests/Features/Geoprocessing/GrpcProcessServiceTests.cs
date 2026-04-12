@@ -450,7 +450,7 @@ public sealed class GrpcProcessServiceTests
         await _progressStore.Received(1).SetProgressAsync(
             Arg.Any<string>(),
             Arg.Is<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingProgress>(p =>
-                p.WorkflowStatus == Honua.Core.Features.Geoprocessing.Domain.GeoprocessingWorkflowStatus.Validated &&
+                p.WorkflowStatus == Honua.Core.Features.Geoprocessing.Domain.GeoprocessingWorkflowStatus.AwaitingExecution &&
                 p.CurrentStage == Honua.Core.Features.Geoprocessing.Domain.GeoprocessingStageKind.Execute &&
                 p.CurrentPhase == "Queued" &&
                 p.PlanId == "plan-1"),

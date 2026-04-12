@@ -22,6 +22,8 @@ namespace Honua.Server.Features.Geoprocessing;
 /// </summary>
 internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
+    private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
+
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IJobCancellationNotifier _cancellationNotifier;
@@ -204,7 +206,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
 
         var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, domainPlan.PlanId);
-        await _progressStore.SetProgressAsync(jobId, progress, cancellationToken: context.CancellationToken)
+        await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, context.CancellationToken)
             .ConfigureAwait(false);
 
         GeoprocessingServiceLog.JobSubmitted(_logger, jobId, domainPlan.PlanId);
@@ -336,7 +338,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         {
             var cancelledProgress = progress.WithCancellation(now, "Cancelled");
             await _progressStore.SetProgressAsync(
-                request.JobId, cancelledProgress, cancellationToken: context.CancellationToken).ConfigureAwait(false);
+                request.JobId, cancelledProgress, ProgressRetention, context.CancellationToken).ConfigureAwait(false);
         }
 
         GeoprocessingServiceLog.JobCancelled(_logger, request.JobId);

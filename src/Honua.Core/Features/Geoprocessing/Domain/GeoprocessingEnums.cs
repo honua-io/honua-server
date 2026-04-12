@@ -29,6 +29,11 @@ public enum GeoprocessingWorkflowStatus
     AwaitingApproval,
 
     /// <summary>
+    /// Plan is validated and submitted but waiting for an execution slot.
+    /// </summary>
+    AwaitingExecution,
+
+    /// <summary>
     /// Execution is in progress.
     /// </summary>
     Running,

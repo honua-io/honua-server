@@ -90,6 +90,7 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
         GeoprocessingWorkflowStatus.AwaitingClarification => OperationStatus.Processing,
         GeoprocessingWorkflowStatus.Validated => OperationStatus.Processing,
         GeoprocessingWorkflowStatus.AwaitingApproval => OperationStatus.Processing,
+        GeoprocessingWorkflowStatus.AwaitingExecution => OperationStatus.Queued,
         GeoprocessingWorkflowStatus.Running => OperationStatus.Processing,
         GeoprocessingWorkflowStatus.Completed => OperationStatus.Completed,
         GeoprocessingWorkflowStatus.Failed => OperationStatus.Failed,
@@ -132,7 +133,7 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
         => new()
         {
             OperationId = operationId,
-            WorkflowStatus = GeoprocessingWorkflowStatus.Validated,
+            WorkflowStatus = GeoprocessingWorkflowStatus.AwaitingExecution,
             CurrentStage = GeoprocessingStageKind.Execute,
             CurrentStageStatus = GeoprocessingStageStatus.Pending,
             PlanId = planId,
