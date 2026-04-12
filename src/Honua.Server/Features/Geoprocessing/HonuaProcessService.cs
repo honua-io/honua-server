@@ -464,32 +464,53 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
     private static string CreateRequestFingerprint(AnalysisPlan plan)
     {
-        var normalizedSteps = plan.Steps.Select(step => new
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
-            stepId = step.StepId,
-            kind = step.Kind.ToString(),
-            processId = step.ProcessId ?? "",
-            inputs = step.Inputs
-                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-                .Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value))
-                .ToArray(),
-            dependsOn = step.DependsOn
-                .OrderBy(d => d, StringComparer.Ordinal)
-                .ToArray()
-        }).ToArray();
+            writer.WriteStartObject();
+            writer.WriteString("planId", plan.PlanId);
+            writer.WriteString("intentId", plan.IntentId);
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            planId = plan.PlanId,
-            intentId = plan.IntentId,
-            steps = normalizedSteps,
-            outputs = plan.Outputs
-                .Select(o => o.ToString())
-                .OrderBy(o => o, StringComparer.Ordinal)
-                .ToArray()
-        });
+            writer.WriteStartArray("steps");
+            foreach (var step in plan.Steps)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("stepId", step.StepId);
+                writer.WriteString("kind", step.Kind.ToString());
+                writer.WriteString("processId", step.ProcessId ?? "");
 
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+                writer.WriteStartArray("inputs");
+                foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("Key", kv.Key);
+                    writer.WriteString("Value", kv.Value);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+
+                writer.WriteStartArray("dependsOn");
+                foreach (var d in step.DependsOn.OrderBy(d => d, StringComparer.Ordinal))
+                {
+                    writer.WriteStringValue(d);
+                }
+                writer.WriteEndArray();
+
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("outputs");
+            foreach (var o in plan.Outputs.Select(o => o.ToString()).OrderBy(o => o, StringComparer.Ordinal))
+            {
+                writer.WriteStringValue(o);
+            }
+            writer.WriteEndArray();
+
+            writer.WriteEndObject();
+        }
+
+        return Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant();
     }
 
     private static void EnsureMatchingIdempotentRequest(ExecutionJobRecord existing, string requestFingerprint)

@@ -738,34 +738,54 @@ public sealed class GrpcProcessServiceTests
     {
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
 
-        var normalizedSteps = domainPlan.Steps.Select(step => new
+        using var buffer = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(buffer))
         {
-            stepId = step.StepId,
-            kind = step.Kind.ToString(),
-            processId = step.ProcessId ?? "",
-            inputs = step.Inputs
-                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-                .Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value))
-                .ToArray(),
-            dependsOn = step.DependsOn
-                .OrderBy(d => d, StringComparer.Ordinal)
-                .ToArray()
-        }).ToArray();
+            writer.WriteStartObject();
+            writer.WriteString("planId", domainPlan.PlanId);
+            writer.WriteString("intentId", domainPlan.IntentId);
 
-        var payload = System.Text.Json.JsonSerializer.Serialize(new
-        {
-            planId = domainPlan.PlanId,
-            intentId = domainPlan.IntentId,
-            steps = normalizedSteps,
-            outputs = domainPlan.Outputs
-                .Select(o => o.ToString())
-                .OrderBy(o => o, StringComparer.Ordinal)
-                .ToArray()
-        });
+            writer.WriteStartArray("steps");
+            foreach (var step in domainPlan.Steps)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("stepId", step.StepId);
+                writer.WriteString("kind", step.Kind.ToString());
+                writer.WriteString("processId", step.ProcessId ?? "");
+
+                writer.WriteStartArray("inputs");
+                foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("Key", kv.Key);
+                    writer.WriteString("Value", kv.Value);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+
+                writer.WriteStartArray("dependsOn");
+                foreach (var d in step.DependsOn.OrderBy(d => d, StringComparer.Ordinal))
+                {
+                    writer.WriteStringValue(d);
+                }
+                writer.WriteEndArray();
+
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("outputs");
+            foreach (var o in domainPlan.Outputs.Select(o => o.ToString()).OrderBy(o => o, StringComparer.Ordinal))
+            {
+                writer.WriteStringValue(o);
+            }
+            writer.WriteEndArray();
+
+            writer.WriteEndObject();
+        }
 
         return Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+            System.Security.Cryptography.SHA256.HashData(buffer.ToArray())).ToLowerInvariant();
     }
 
     private static ExecutionJobRecord CreateTestJobRecord(string jobId, ExecutionJobStatus status)
