@@ -328,7 +328,7 @@ internal static class GeoprocessingConversionHelpers
         Proto.PlanStepKind.Aggregate => AnalysisPlanStepKind.Aggregate,
         Proto.PlanStepKind.RenderMap => AnalysisPlanStepKind.RenderMap,
         Proto.PlanStepKind.Export => AnalysisPlanStepKind.Export,
-        _ => AnalysisPlanStepKind.QueryFeatures
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, $"Unsupported plan step kind: {kind}")
     };
 
     private static ArtifactKind ToDomainArtifactKind(Proto.ArtifactKind kind) => kind switch
@@ -341,7 +341,7 @@ internal static class GeoprocessingConversionHelpers
         Proto.ArtifactKind.Report => ArtifactKind.Report,
         Proto.ArtifactKind.Map => ArtifactKind.Map,
         Proto.ArtifactKind.AppBundle => ArtifactKind.AppBundle,
-        _ => ArtifactKind.Scalar
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, $"Unsupported artifact kind: {kind}")
     };
 
     private static Proto.ArtifactKind ToProtoArtifactKind(ArtifactKind kind) => kind switch

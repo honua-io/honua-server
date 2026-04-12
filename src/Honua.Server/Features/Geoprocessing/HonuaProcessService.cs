@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -20,7 +22,7 @@ namespace Honua.Server.Features.Geoprocessing;
 /// </summary>
 internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
-    private readonly IExecutionJobStore _jobStore;
+    private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IJobCancellationNotifier _cancellationNotifier;
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
@@ -29,12 +31,12 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
     [ActivatorUtilitiesConstructor]
     public HonuaProcessService(
-        IExecutionJobStore jobStore,
         IUniversalProgressStore progressStore,
         IJobCancellationNotifier cancellationNotifier,
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
-        ILogger<HonuaProcessService> logger)
+        ILogger<HonuaProcessService> logger,
+        IExecutionJobStore? jobStore = null)
     {
         _jobStore = jobStore;
         _progressStore = progressStore;
@@ -50,8 +52,8 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         IJobCancellationNotifier cancellationNotifier,
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator)
-        : this(jobStore, progressStore, cancellationNotifier, authEvaluator, approvalEvaluator,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance)
+        : this(progressStore, cancellationNotifier, authEvaluator, approvalEvaluator,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance, jobStore)
     {
     }
 
@@ -154,9 +156,12 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         var plan = request.Plan;
         ValidatePlanStructure(plan);
 
+        var jobStore = RequireJobStore();
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(plan);
         var now = DateTimeOffset.UtcNow;
-        var jobId = $"gp-{Guid.NewGuid():N}";
+        var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey;
+        var jobId = CreateJobId(idempotencyKey);
+        var requestFingerprint = CreateRequestFingerprint(domainPlan);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -167,10 +172,9 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             CurrentPhase = "Queued",
             Audit = new OperationAuditInfo
             {
-                IdempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
-                    ? null
-                    : request.IdempotencyKey,
-                RequestedBy = context.GetHttpContext().User.Identity?.Name
+                IdempotencyKey = idempotencyKey,
+                RequestedBy = context.GetHttpContext().User.Identity?.Name,
+                RequestFingerprint = requestFingerprint
             },
             Spec = new ExecutionJobSpec
             {
@@ -181,8 +185,22 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             }
         };
 
-        await _jobStore.TryCreateAsync(jobRecord, cancellationToken: context.CancellationToken)
+        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.CancellationToken)
             .ConfigureAwait(false);
+
+        if (!created)
+        {
+            var existing = await jobStore.GetAsync(jobId, context.CancellationToken).ConfigureAwait(false);
+            if (existing != null)
+            {
+                EnsureMatchingIdempotentRequest(existing, requestFingerprint);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                return GeoprocessingConversionHelpers.ToProtoExecutionJob(existing);
+            }
+
+            throw new RpcException(new Status(StatusCode.Internal,
+                "Failed to create or locate execution job."));
+        }
 
         var progress = GeoprocessingProgress.CreateInitial(jobId);
         await _progressStore.SetProgressAsync(jobId, progress, cancellationToken: context.CancellationToken)
@@ -205,7 +223,8 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Job identifier is required."));
         }
 
-        var job = await _jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
+        var jobStore = RequireJobStore();
+        var job = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
         if (job == null)
         {
             GeoprocessingServiceLog.JobNotFound(_logger, request.JobId);
@@ -229,7 +248,8 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Job identifier is required."));
         }
 
-        var job = await _jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
+        var jobStore = RequireJobStore();
+        var job = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
         if (job == null)
         {
             GeoprocessingServiceLog.JobNotFound(_logger, request.JobId);
@@ -263,11 +283,25 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Job identifier is required."));
         }
 
-        var job = await _jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
+        var jobStore = RequireJobStore();
+        var job = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
         if (job == null)
         {
             GeoprocessingServiceLog.JobNotFound(_logger, request.JobId);
             throw new RpcException(new Status(StatusCode.NotFound, $"Job '{request.JobId}' not found."));
+        }
+
+        if (job.Status == ExecutionJobStatus.Cancelled)
+        {
+            return new Proto.CancelJobResponse();
+        }
+
+        if (IsTerminal(job.Status))
+        {
+            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, request.JobId, job.Status.ToString());
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"Job '{request.JobId}' is in terminal state '{job.Status}' and cannot be cancelled."));
         }
 
         _cancellationNotifier.Cancel(request.JobId);
@@ -281,7 +315,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             CurrentPhase = "Cancelled"
         };
 
-        await _jobStore.SetAsync(cancelled, cancellationToken: context.CancellationToken).ConfigureAwait(false);
+        await jobStore.SetAsync(cancelled, cancellationToken: context.CancellationToken).ConfigureAwait(false);
 
         var progress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
             request.JobId, context.CancellationToken).ConfigureAwait(false);
@@ -327,12 +361,67 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
                 : "You do not have permission to perform this operation."));
     }
 
+    private IExecutionJobStore RequireJobStore()
+        => _jobStore ?? throw new RpcException(new Status(
+            StatusCode.Unavailable,
+            "Job operations require Redis-backed durable storage. Ensure a valid Redis connection is configured."));
+
     private static void ValidatePlanStructure(Proto.AnalysisPlan? plan)
     {
         if (plan == null)
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Analysis plan is required."));
         }
+
+        foreach (var step in plan.Steps)
+        {
+            if (step.Kind is Proto.PlanStepKind.Unspecified || !Enum.IsDefined(step.Kind))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument,
+                    $"Step '{step.StepId}' has unsupported step kind '{step.Kind}'."));
+            }
+        }
+
+        foreach (var output in plan.Outputs)
+        {
+            if (output is Proto.ArtifactKind.Unspecified || !Enum.IsDefined(output))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument,
+                    $"Unsupported artifact kind '{output}'."));
+            }
+        }
+    }
+
+    private static string CreateJobId(string? idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return $"gp-{Guid.NewGuid():N}";
+        }
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim()));
+        return $"gp-{Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant()}";
+    }
+
+    private static string CreateRequestFingerprint(AnalysisPlan plan)
+    {
+        var stepKeys = string.Join(",", plan.Steps.Select(s => $"{s.StepId}:{s.Kind}"));
+        var outputKeys = string.Join(",", plan.Outputs);
+        var input = $"{plan.PlanId}\0{plan.IntentId}\0{stepKeys}\0{outputKeys}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
+    }
+
+    private static void EnsureMatchingIdempotentRequest(ExecutionJobRecord existing, string requestFingerprint)
+    {
+        var existingFingerprint = existing.Audit.RequestFingerprint;
+        if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
+            string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new RpcException(new Status(StatusCode.AlreadyExists,
+            "Idempotency key is already associated with a different request."));
     }
 
     private static void EnrichActivity(string operation)

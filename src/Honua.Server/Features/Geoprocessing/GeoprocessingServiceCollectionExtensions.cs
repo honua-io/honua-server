@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -22,7 +23,13 @@ internal static class GeoprocessingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.TryAddSingleton<IExecutionJobStore, RedisExecutionJobStore>();
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            services.TryAddSingleton<IExecutionJobStore>(sp =>
+                new RedisExecutionJobStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
+        }
 
         return services;
     }

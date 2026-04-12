@@ -53,4 +53,15 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string resourceType,
         string operation);
+
+    [LoggerMessage(8008, LogLevel.Information, "Job submitted (idempotent replay): JobId={JobId}")]
+    public static partial void JobSubmittedIdempotent(
+        ILogger logger,
+        string jobId);
+
+    [LoggerMessage(8009, LogLevel.Warning, "Cancel rejected for terminal job: JobId={JobId}, Status={Status}")]
+    public static partial void CancelRejectedTerminal(
+        ILogger logger,
+        string jobId,
+        string status);
 }

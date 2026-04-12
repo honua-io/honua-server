@@ -329,6 +329,156 @@ public sealed class GrpcProcessServiceTests
         ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public async Task ValidatePlan_WithUnspecifiedStepKind_ThrowsInvalidArgument()
+    {
+        var request = new Proto.ValidatePlanRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.ValidatePlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithUnspecifiedArtifactKind_ThrowsInvalidArgument()
+    {
+        var plan = CreateValidPlan();
+        plan.Outputs.Add(Proto.ArtifactKind.Unspecified);
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    // -----------------------------------------------------------------------
+    // CancelJob – terminal state handling
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
+    public async Task CancelJob_WithAlreadyCancelled_ReturnsIdempotentSuccess()
+    {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Cancelled);
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+
+        var request = new Proto.CancelJobRequest { JobId = "job-123" };
+
+        var response = await _sut.CancelJob(request, CreateCallContext());
+
+        response.Should().NotBeNull();
+        _cancellationNotifier.DidNotReceive().Cancel(Arg.Any<string>());
+        await _jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
+    public async Task CancelJob_WithSucceededJob_ThrowsFailedPrecondition()
+    {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Succeeded);
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+
+        var request = new Proto.CancelJobRequest { JobId = "job-123" };
+
+        var act = async () => await _sut.CancelJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    // -----------------------------------------------------------------------
+    // SubmitPlanJob – idempotency
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WithDuplicateIdempotencyKey_ReturnsExistingJob()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var plan = CreateValidPlan();
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = plan,
+            IdempotencyKey = "idem-key-dup"
+        };
+
+        var existingRecord = CreateTestJobRecord("placeholder", ExecutionJobStatus.Queued);
+        existingRecord = existingRecord with
+        {
+            Audit = new Honua.Core.Features.ControlPlane.Domain.OperationAuditInfo
+            {
+                IdempotencyKey = "idem-key-dup",
+                RequestFingerprint = ComputeExpectedFingerprint(plan)
+            }
+        };
+
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(existingRecord);
+
+        var response = await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        response.Should().NotBeNull();
+        await _progressStore.DidNotReceive().SetProgressAsync(
+            Arg.Any<string>(), Arg.Any<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingProgress>(),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WithMismatchedIdempotencyKey_ThrowsAlreadyExists()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var existingRecord = CreateTestJobRecord("placeholder", ExecutionJobStatus.Queued);
+        existingRecord = existingRecord with
+        {
+            Audit = new Honua.Core.Features.ControlPlane.Domain.OperationAuditInfo
+            {
+                IdempotencyKey = "idem-key-dup",
+                RequestFingerprint = "different-fingerprint"
+            }
+        };
+
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(existingRecord);
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = CreateValidPlan(),
+            IdempotencyKey = "idem-key-dup"
+        };
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.AlreadyExists);
+    }
+
     // -----------------------------------------------------------------------
     // Authorization
     // -----------------------------------------------------------------------
@@ -389,6 +539,17 @@ public sealed class GrpcProcessServiceTests
             Kind = Proto.PlanStepKind.Geoprocess,
             ProcessId = "buffer"
         };
+
+    private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)
+    {
+        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
+        var stepKeys = string.Join(",", domainPlan.Steps.Select(s => $"{s.StepId}:{s.Kind}"));
+        var outputKeys = string.Join(",", domainPlan.Outputs);
+        var input = $"{domainPlan.PlanId}\0{domainPlan.IntentId}\0{stepKeys}\0{outputKeys}";
+        return Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
+    }
 
     private static ExecutionJobRecord CreateTestJobRecord(string jobId, ExecutionJobStatus status)
     {
