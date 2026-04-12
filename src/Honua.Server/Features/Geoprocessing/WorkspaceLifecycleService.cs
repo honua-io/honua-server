@@ -169,7 +169,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         if (artifact.WorkspaceId != request.SourceWorkspaceId)
             return ArtifactPromotionResult.Failure("Artifact does not belong to the specified source workspace");
 
-        if (artifact.State is ArtifactLifecycleState.Deleted or ArtifactLifecycleState.Promoted)
+        if (artifact.State != ArtifactLifecycleState.Available)
             return ArtifactPromotionResult.Failure($"Artifact in state {artifact.State} cannot be promoted");
 
         var promoted = new Artifact
@@ -297,13 +297,14 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                     else
                     {
                         errors.Add($"Workspace {workspace.WorkspaceId}: failed to transition to Expired");
+                        continue;
                     }
-
-                    continue;
                 }
 
-                if (workspace.State == WorkspaceLifecycleState.Expired
-                    && workspace.ExpiresAt.HasValue
+                // At this point the workspace is expired: either it was already
+                // Expired or it was just transitioned from Active above
+                // (failed transitions continue out of the loop iteration).
+                if (workspace.ExpiresAt.HasValue
                     && now >= workspace.ExpiresAt.Value + _options.CleanupGracePeriod)
                 {
                     var artifacts = await _artifactStore.ListByWorkspaceAsync(workspace.WorkspaceId, cancellationToken);

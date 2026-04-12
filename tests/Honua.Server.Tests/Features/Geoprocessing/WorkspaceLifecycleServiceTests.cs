@@ -475,10 +475,79 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task PromoteArtifact_PendingArtifact_Fails()
+    {
+        SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Active)
+            .Returns(true);
+
+        var pendingArtifact = new Artifact
+        {
+            ArtifactId = "art-pending",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "in-progress-layer",
+            State = ArtifactLifecycleState.Pending,
+            SizeBytes = 512,
+            CreatedAt = Now.AddMinutes(-10),
+            WorkspaceId = "source"
+        };
+        _artifactStore.GetAsync("art-pending", Arg.Any<CancellationToken>()).Returns(pendingArtifact);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-pending",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Pending", result.FailureReason);
+        Assert.Contains("cannot be promoted", result.FailureReason);
+        await _artifactStore.DidNotReceive().CreateAsync(
+            Arg.Is<Artifact>(a => a.WorkspaceId == "target"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PromoteArtifact_ExpiredArtifact_Fails()
+    {
+        SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Active)
+            .Returns(true);
+
+        var expiredArtifact = new Artifact
+        {
+            ArtifactId = "art-expired",
+            Kind = ArtifactKind.File,
+            Label = "stale-file",
+            State = ArtifactLifecycleState.Expired,
+            SizeBytes = 256,
+            CreatedAt = Now.AddHours(-3),
+            WorkspaceId = "source"
+        };
+        _artifactStore.GetAsync("art-expired", Arg.Any<CancellationToken>()).Returns(expiredArtifact);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-expired",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Expired", result.FailureReason);
+        Assert.Contains("cannot be promoted", result.FailureReason);
+        await _artifactStore.DidNotReceive().CreateAsync(
+            Arg.Is<Artifact>(a => a.WorkspaceId == "target"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RunCleanup_ExpiresActiveWorkspaces()
     {
+        // Expired 30 min ago — within 1h grace period, so only transition occurs.
         var expired = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
-            expiresAt: Now.AddHours(-1));
+            expiresAt: Now.AddMinutes(-30));
         _workspaceStore.ListExpiredAsync(Now, Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([expired]);
         _workspaceStore.TransitionStateAsync("ws-1", WorkspaceLifecycleState.Expired, Arg.Any<CancellationToken>())
@@ -490,6 +559,42 @@ public class WorkspaceLifecycleServiceTests
         Assert.Equal(0, result.WorkspacesDeleted);
         await _workspaceStore.Received(1).TransitionStateAsync(
             "ws-1", WorkspaceLifecycleState.Expired, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunCleanup_OverdueActivePastGracePeriod_ExpiresAndDeletesInSameSweep()
+    {
+        // Active workspace whose ExpiresAt is already past grace period (service was down).
+        // The sweep should transition it to Expired AND delete it in the same iteration.
+        var overdue = CreateWorkspace("ws-overdue", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
+            expiresAt: Now.AddHours(-2));
+        _workspaceStore.ListExpiredAsync(Now, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([overdue]);
+        _workspaceStore.TransitionStateAsync("ws-overdue", WorkspaceLifecycleState.Expired, Arg.Any<CancellationToken>())
+            .Returns(true);
+        _artifactStore.ListByWorkspaceAsync("ws-overdue", Arg.Any<CancellationToken>())
+            .Returns([
+                new Artifact
+                {
+                    ArtifactId = "art-overdue",
+                    Kind = ArtifactKind.File,
+                    Label = "temp",
+                    State = ArtifactLifecycleState.Available,
+                    SizeBytes = 1024,
+                    CreatedAt = Now.AddHours(-3),
+                    WorkspaceId = "ws-overdue"
+                }
+            ]);
+        _artifactStore.DeleteAsync("art-overdue", Arg.Any<CancellationToken>()).Returns(true);
+        _workspaceStore.DeleteAsync("ws-overdue", Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await _service.RunCleanupAsync();
+
+        Assert.Equal(1, result.WorkspacesExpired);
+        Assert.Equal(1, result.WorkspacesDeleted);
+        Assert.Equal(1, result.ArtifactsDeleted);
+        Assert.Equal(1024, result.BytesReclaimed);
+        Assert.Empty(result.Errors);
     }
 
     [Fact]
@@ -590,10 +695,11 @@ public class WorkspaceLifecycleServiceTests
     [Fact]
     public async Task RunCleanup_ContinuesAfterIndividualError()
     {
+        // Within grace period so only transition is attempted.
         var ws1 = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
-            expiresAt: Now.AddHours(-1));
+            expiresAt: Now.AddMinutes(-30));
         var ws2 = CreateWorkspace("ws-2", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
-            expiresAt: Now.AddHours(-1));
+            expiresAt: Now.AddMinutes(-30));
 
         _workspaceStore.ListExpiredAsync(Now, Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([ws1, ws2]);
