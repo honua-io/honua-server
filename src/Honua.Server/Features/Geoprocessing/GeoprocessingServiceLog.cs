@@ -69,4 +69,14 @@ internal static partial class GeoprocessingServiceLog
     public static partial void SubmitRejectedApprovalRequired(
         ILogger logger,
         string policyRef);
+
+    [LoggerMessage(8011, LogLevel.Information, "Job cancellation delegated to worker: JobId={JobId}")]
+    public static partial void JobCancellationDelegated(
+        ILogger logger,
+        string jobId);
+
+    [LoggerMessage(8012, LogLevel.Debug, "Job result package unavailable: JobId={JobId}")]
+    public static partial void JobResultsUnavailable(
+        ILogger logger,
+        string jobId);
 }

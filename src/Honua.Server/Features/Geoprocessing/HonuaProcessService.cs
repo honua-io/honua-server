@@ -264,7 +264,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
                 $"Job '{request.JobId}' has not reached a terminal state (current: {job.Status})."));
         }
 
-        GeoprocessingServiceLog.JobResultsRetrieved(_logger, request.JobId);
+        GeoprocessingServiceLog.JobResultsUnavailable(_logger, request.JobId);
 
         throw new RpcException(new Status(
             StatusCode.NotFound,
@@ -305,10 +305,22 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
                 $"Job '{request.JobId}' is in terminal state '{job.Status}' and cannot be cancelled."));
         }
 
-        _cancellationNotifier.Cancel(request.JobId);
+        var workerOwnsTerminalState = _cancellationNotifier.Cancel(request.JobId);
+
+        if (workerOwnsTerminalState)
+        {
+            GeoprocessingServiceLog.JobCancellationDelegated(_logger, request.JobId);
+            return new Proto.CancelJobResponse();
+        }
+
+        var latest = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
+        if (latest != null && IsTerminal(latest.Status))
+        {
+            return new Proto.CancelJobResponse();
+        }
 
         var now = DateTimeOffset.UtcNow;
-        var cancelled = job with
+        var cancelled = (latest ?? job) with
         {
             Status = ExecutionJobStatus.Cancelled,
             UpdatedAt = now,

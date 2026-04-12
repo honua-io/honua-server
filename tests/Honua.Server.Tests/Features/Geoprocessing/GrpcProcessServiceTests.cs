@@ -297,11 +297,30 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Delete)]
     [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
-    public async Task CancelJob_WithExistingJob_CancelsAndReturns()
+    public async Task CancelJob_WhenWorkerOwnsJob_DelegatesWithoutPersisting()
     {
         var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
         _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
         _cancellationNotifier.Cancel("job-123").Returns(true);
+
+        var request = new Proto.CancelJobRequest { JobId = "job-123" };
+
+        var response = await _sut.CancelJob(request, CreateCallContext());
+
+        response.Should().NotBeNull();
+        _cancellationNotifier.Received(1).Cancel("job-123");
+        await _jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
+    public async Task CancelJob_WhenNoWorkerClaims_PersistsCancelled()
+    {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+        _cancellationNotifier.Cancel("job-123").Returns(false);
 
         var request = new Proto.CancelJobRequest { JobId = "job-123" };
 
