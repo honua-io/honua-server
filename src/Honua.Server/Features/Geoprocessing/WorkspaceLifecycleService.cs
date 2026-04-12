@@ -139,7 +139,16 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         };
 
         var created = await _artifactStore.CreateAsync(promoted, cancellationToken);
-        await _artifactStore.TransitionStateAsync(request.ArtifactId, ArtifactLifecycleState.Promoted, cancellationToken);
+        var transitioned = await _artifactStore.TransitionStateAsync(
+            request.ArtifactId, ArtifactLifecycleState.Promoted, cancellationToken);
+
+        if (!transitioned)
+        {
+            // Roll back the promoted copy so the caller can safely retry.
+            await _artifactStore.DeleteAsync(created.ArtifactId, cancellationToken);
+            WorkspaceLifecycleLog.PromotionTransitionFailed(_logger, request.ArtifactId);
+            return ArtifactPromotionResult.Failure("Failed to mark source artifact as promoted");
+        }
 
         WorkspaceLifecycleLog.ArtifactPromoted(_logger, request.ArtifactId, created.ArtifactId,
             request.SourceWorkspaceId, request.TargetWorkspaceId);
@@ -185,10 +194,18 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             {
                 if (workspace.State == WorkspaceLifecycleState.Active)
                 {
-                    await _workspaceStore.TransitionStateAsync(
+                    var expired = await _workspaceStore.TransitionStateAsync(
                         workspace.WorkspaceId, WorkspaceLifecycleState.Expired, cancellationToken);
-                    workspacesExpired++;
-                    WorkspaceLifecycleLog.WorkspaceExpired(_logger, workspace.WorkspaceId);
+                    if (expired)
+                    {
+                        workspacesExpired++;
+                        WorkspaceLifecycleLog.WorkspaceExpired(_logger, workspace.WorkspaceId);
+                    }
+                    else
+                    {
+                        errors.Add($"Workspace {workspace.WorkspaceId}: failed to transition to Expired");
+                    }
+
                     continue;
                 }
 
@@ -201,15 +218,29 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                     {
                         if (artifact.State is not ArtifactLifecycleState.Deleted)
                         {
-                            await _artifactStore.DeleteAsync(artifact.ArtifactId, cancellationToken);
-                            artifactsDeleted++;
-                            bytesReclaimed += artifact.SizeBytes;
+                            var deleted = await _artifactStore.DeleteAsync(artifact.ArtifactId, cancellationToken);
+                            if (deleted)
+                            {
+                                artifactsDeleted++;
+                                bytesReclaimed += artifact.SizeBytes;
+                            }
+                            else
+                            {
+                                errors.Add($"Workspace {workspace.WorkspaceId}: failed to delete artifact {artifact.ArtifactId}");
+                            }
                         }
                     }
 
-                    await _workspaceStore.DeleteAsync(workspace.WorkspaceId, cancellationToken);
-                    workspacesDeleted++;
-                    WorkspaceLifecycleLog.WorkspaceDeleted(_logger, workspace.WorkspaceId, artifacts.Count);
+                    var wsDeleted = await _workspaceStore.DeleteAsync(workspace.WorkspaceId, cancellationToken);
+                    if (wsDeleted)
+                    {
+                        workspacesDeleted++;
+                        WorkspaceLifecycleLog.WorkspaceDeleted(_logger, workspace.WorkspaceId, artifacts.Count);
+                    }
+                    else
+                    {
+                        errors.Add($"Workspace {workspace.WorkspaceId}: failed to delete workspace");
+                    }
                 }
             }
             catch (Exception ex)
@@ -267,4 +298,10 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Error,
         Message = "Error during cleanup of workspace {WorkspaceId}")]
     public static partial void CleanupError(ILogger logger, string workspaceId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 9906,
+        Level = LogLevel.Warning,
+        Message = "Failed to mark source artifact {ArtifactId} as promoted; promoted copy rolled back")]
+    public static partial void PromotionTransitionFailed(ILogger logger, string artifactId);
 }

@@ -690,9 +690,30 @@ Authorization and approval checks are enforced on all mutating RPCs.
 
 - `CreateWorkspace`
 - `GetWorkspace`
-- `SaveArtifact`
+- `ListWorkspaces`
+- `AddArtifact`
+- `ListArtifacts`
 - `PromoteArtifact`
-- `ExpireArtifact`
+- `ExtendWorkspaceExpiration`
+- `RunCleanup`
+
+**Implementation status** (as of #725):
+
+`IWorkspaceLifecycleService` defines the orchestration surface. `CreateWorkspace`
+applies retention policy and creates workspaces with automatic expiration.
+`AddArtifact` creates artifacts in the `Available` state. `PromoteArtifact`
+copies an artifact to a durable workspace and marks the source as promoted,
+with rollback on transition failure. `ExtendWorkspaceExpiration` extends
+active workspace TTL clamped to policy limits. `RunCleanup` expires overdue
+workspaces and deletes those past the grace period.
+
+`IWorkspaceStore` and `IArtifactStore` abstractions are defined but require
+concrete storage-provider implementations before the lifecycle service is
+activated at runtime. `IRetentionPolicyEvaluator` is fully functional with
+configurable TTL, quota evaluation, and promotion eligibility rules.
+
+`WorkspaceCleanupService` runs periodic background sweeps when store
+implementations are registered and `EnableAutomaticCleanup` is true (default).
 
 ### RenderService
 

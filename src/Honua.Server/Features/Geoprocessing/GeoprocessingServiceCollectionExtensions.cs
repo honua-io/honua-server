@@ -30,8 +30,17 @@ internal static class GeoprocessingServiceCollectionExtensions
             configuration.GetSection(WorkspaceOptions.SectionName));
 
         services.AddSingleton<IRetentionPolicyEvaluator, RetentionPolicyEvaluator>();
-        services.AddScoped<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
-        services.AddHostedService<WorkspaceCleanupService>();
+        services.TryAddSingleton(TimeProvider.System);
+
+        // Lifecycle orchestration and cleanup require concrete store implementations.
+        // Guard registration so the hosted service does not throw at startup when
+        // IWorkspaceStore / IArtifactStore are not yet provided by a storage provider.
+        if (services.Any(d => d.ServiceType == typeof(IWorkspaceStore))
+            && services.Any(d => d.ServiceType == typeof(IArtifactStore)))
+        {
+            services.AddScoped<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
+            services.AddHostedService<WorkspaceCleanupService>();
+        }
 
         // Execution job store (ticket #722)
         if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))

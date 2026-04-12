@@ -168,6 +168,8 @@ public class WorkspaceLifecycleServiceTests
         };
         _artifactStore.GetAsync("art-1", Arg.Any<CancellationToken>())
             .Returns(sourceArtifact);
+        _artifactStore.TransitionStateAsync("art-1", ArtifactLifecycleState.Promoted, Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
         {
@@ -192,12 +194,49 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task PromoteArtifact_TransitionFails_RollsBackAndReturnsFailed()
+    {
+        SetupWorkspace("source", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Active)
+            .Returns(true);
+
+        var sourceArtifact = new Artifact
+        {
+            ArtifactId = "art-1",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "source-layer",
+            State = ArtifactLifecycleState.Available,
+            SizeBytes = 1024,
+            CreatedAt = Now.AddMinutes(-30),
+            WorkspaceId = "source"
+        };
+        _artifactStore.GetAsync("art-1", Arg.Any<CancellationToken>())
+            .Returns(sourceArtifact);
+        _artifactStore.TransitionStateAsync("art-1", ArtifactLifecycleState.Promoted, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Failed to mark source artifact as promoted", result.FailureReason);
+        await _artifactStore.Received(1).DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RunCleanup_ExpiresActiveWorkspaces()
     {
         var expired = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
             expiresAt: Now.AddHours(-1));
         _workspaceStore.ListExpiredAsync(Now, Arg.Any<CancellationToken>())
             .Returns([expired]);
+        _workspaceStore.TransitionStateAsync("ws-1", WorkspaceLifecycleState.Expired, Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var result = await _service.RunCleanupAsync();
 
@@ -205,6 +244,53 @@ public class WorkspaceLifecycleServiceTests
         Assert.Equal(0, result.WorkspacesDeleted);
         await _workspaceStore.Received(1).TransitionStateAsync(
             "ws-1", WorkspaceLifecycleState.Expired, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunCleanup_TransitionFails_RecordsError()
+    {
+        var expired = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
+            expiresAt: Now.AddHours(-1));
+        _workspaceStore.ListExpiredAsync(Now, Arg.Any<CancellationToken>())
+            .Returns([expired]);
+        _workspaceStore.TransitionStateAsync("ws-1", WorkspaceLifecycleState.Expired, Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var result = await _service.RunCleanupAsync();
+
+        Assert.Equal(0, result.WorkspacesExpired);
+        Assert.Single(result.Errors);
+    }
+
+    [Fact]
+    public async Task RunCleanup_ArtifactDeleteFails_RecordsErrorAndSkipsBytes()
+    {
+        var expiredLongAgo = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired,
+            expiresAt: Now.AddHours(-2));
+        _workspaceStore.ListExpiredAsync(Now, Arg.Any<CancellationToken>())
+            .Returns([expiredLongAgo]);
+        _artifactStore.ListByWorkspaceAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns([
+                new Artifact
+                {
+                    ArtifactId = "art-1",
+                    Kind = ArtifactKind.File,
+                    Label = "temp",
+                    State = ArtifactLifecycleState.Available,
+                    SizeBytes = 512,
+                    CreatedAt = Now.AddHours(-3),
+                    WorkspaceId = "ws-1"
+                }
+            ]);
+        _artifactStore.DeleteAsync("art-1", Arg.Any<CancellationToken>()).Returns(false);
+        _workspaceStore.DeleteAsync("ws-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await _service.RunCleanupAsync();
+
+        Assert.Equal(0, result.ArtifactsDeleted);
+        Assert.Equal(0, result.BytesReclaimed);
+        Assert.Equal(1, result.WorkspacesDeleted);
+        Assert.Single(result.Errors);
     }
 
     [Fact]
