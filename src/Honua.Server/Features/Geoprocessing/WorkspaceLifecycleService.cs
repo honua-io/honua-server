@@ -96,6 +96,14 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                 $"Workspace '{workspaceId}' is in state {workspace.State}; only Active workspaces accept new artifacts");
         }
 
+        var now = _timeProvider.GetUtcNow();
+        if (workspace.IsExpired(now))
+        {
+            WorkspaceLifecycleLog.AddArtifactRejected(_logger, workspaceId, "expired (overdue)");
+            throw new InvalidOperationException(
+                $"Workspace '{workspaceId}' has passed its expiration time; only unexpired Active workspaces accept new artifacts");
+        }
+
         var artifact = new Artifact
         {
             ArtifactId = Guid.NewGuid().ToString("N"),
@@ -105,7 +113,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             Uri = uri,
             ContentType = contentType,
             SizeBytes = sizeBytes,
-            CreatedAt = _timeProvider.GetUtcNow(),
+            CreatedAt = now,
             Metadata = metadata ?? new Dictionary<string, string>(),
             WorkspaceId = workspaceId
         };
@@ -134,13 +142,18 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             return ArtifactPromotionResult.Failure(
                 $"Target workspace kind {targetWorkspace.Kind} is not a durable promotion destination");
 
-        if (!_retentionPolicy.IsEligibleForPromotion(sourceWorkspace.Kind, sourceWorkspace.State))
-            return ArtifactPromotionResult.Failure(
-                $"Artifacts in {sourceWorkspace.Kind} workspace with state {sourceWorkspace.State} are not eligible for promotion");
+        var now = _timeProvider.GetUtcNow();
+        var effectiveState = sourceWorkspace.State == WorkspaceLifecycleState.Active && sourceWorkspace.IsExpired(now)
+            ? WorkspaceLifecycleState.Expired
+            : sourceWorkspace.State;
 
-        if (sourceWorkspace.State == WorkspaceLifecycleState.Expired
+        if (!_retentionPolicy.IsEligibleForPromotion(sourceWorkspace.Kind, effectiveState))
+            return ArtifactPromotionResult.Failure(
+                $"Artifacts in {sourceWorkspace.Kind} workspace with state {effectiveState} are not eligible for promotion");
+
+        if (effectiveState == WorkspaceLifecycleState.Expired
             && sourceWorkspace.ExpiresAt.HasValue
-            && _timeProvider.GetUtcNow() > sourceWorkspace.ExpiresAt.Value + _options.CleanupGracePeriod)
+            && now >= sourceWorkspace.ExpiresAt.Value + _options.CleanupGracePeriod)
         {
             return ArtifactPromotionResult.Failure(
                 "Source workspace has exceeded the cleanup grace period; promotion is no longer allowed");
@@ -165,7 +178,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             Uri = artifact.Uri,
             ContentType = artifact.ContentType,
             SizeBytes = artifact.SizeBytes,
-            CreatedAt = _timeProvider.GetUtcNow(),
+            CreatedAt = now,
             Metadata = artifact.Metadata,
             WorkspaceId = request.TargetWorkspaceId
         };

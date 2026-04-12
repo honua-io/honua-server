@@ -204,7 +204,8 @@ All settings live under `Geoprocessing:Workspace` (env prefix
 
 Nullable TTL and quota settings fall back to built-in defaults when unset.
 `MaxTimeToLive` and `AllowPromotionBeforeCleanup` per workspace kind are not
-config-overridable.
+config-overridable. TTL overrides are validated at startup; values exceeding
+the `MaxTimeToLive` ceiling for the kind are rejected.
 
 ### Retention Defaults
 
@@ -227,7 +228,9 @@ Cleanup runs in two phases:
 Artifacts in expired workspaces can still be promoted to durable workspaces
 during the grace period when the retention policy allows it. Individual
 failures during a sweep are recorded without halting cleanup, so one failing
-workspace does not block subsequent workspaces.
+workspace does not block subsequent workspaces. If any artifact in a workspace
+fails to delete, the workspace itself is skipped for that sweep to prevent
+orphaned artifact records.
 
 For full lifecycle semantics, see the
 [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).

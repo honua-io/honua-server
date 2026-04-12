@@ -725,6 +725,105 @@ public class WorkspaceLifecycleServiceTests
             Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task AddArtifact_OverdueButStillActive_Throws()
+    {
+        var overdue = CreateWorkspace("ws-overdue", WorkspaceKind.Scratch,
+            WorkspaceLifecycleState.Active, expiresAt: Now.AddMinutes(-10));
+        _workspaceStore.GetAsync("ws-overdue", Arg.Any<CancellationToken>()).Returns(overdue);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AddArtifactAsync("ws-overdue", ArtifactKind.FeatureLayer, "layer"));
+
+        Assert.Contains("passed its expiration time", ex.Message);
+        await _artifactStore.DidNotReceive().CreateAsync(
+            Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PromoteArtifact_OverdueActiveWithinGracePeriod_Succeeds()
+    {
+        // Workspace is Active in the store but past ExpiresAt. Grace period is 1h (default).
+        // Expired 30 min ago → within grace window, effective state is Expired.
+        var source = CreateWorkspace("source", WorkspaceKind.Scratch,
+            WorkspaceLifecycleState.Active, expiresAt: Now.AddMinutes(-30));
+        _workspaceStore.GetAsync("source", Arg.Any<CancellationToken>()).Returns(source);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired)
+            .Returns(true);
+
+        var sourceArtifact = new Artifact
+        {
+            ArtifactId = "art-1",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "layer",
+            State = ArtifactLifecycleState.Available,
+            SizeBytes = 1024,
+            CreatedAt = Now.AddHours(-1),
+            WorkspaceId = "source"
+        };
+        _artifactStore.GetAsync("art-1", Arg.Any<CancellationToken>()).Returns(sourceArtifact);
+        _artifactStore.TransitionStateAsync("art-1", ArtifactLifecycleState.Promoted, Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task PromoteArtifact_OverdueActivePastGracePeriod_Fails()
+    {
+        // Workspace is Active in the store but past ExpiresAt and past grace period.
+        // Expired 2 hours ago, grace period is 1h (default) → beyond grace window.
+        var source = CreateWorkspace("source", WorkspaceKind.Scratch,
+            WorkspaceLifecycleState.Active, expiresAt: Now.AddHours(-2));
+        _workspaceStore.GetAsync("source", Arg.Any<CancellationToken>()).Returns(source);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired)
+            .Returns(true);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("grace period", result.FailureReason);
+        await _artifactStore.DidNotReceive().GetAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PromoteArtifact_ExpiredAtExactGraceBoundary_Fails()
+    {
+        // Grace period is 1 hour (default). Expired exactly 1 hour ago → at boundary.
+        // With >= check, promotion should be rejected at the boundary.
+        var source = CreateWorkspace("source", WorkspaceKind.Scratch,
+            WorkspaceLifecycleState.Expired, expiresAt: Now.AddHours(-1));
+        _workspaceStore.GetAsync("source", Arg.Any<CancellationToken>()).Returns(source);
+        SetupWorkspace("target", WorkspaceKind.Persistent, WorkspaceLifecycleState.Active);
+        _retentionPolicy.IsEligibleForPromotion(WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired)
+            .Returns(true);
+
+        var result = await _service.PromoteArtifactAsync(new ArtifactPromotionRequest
+        {
+            ArtifactId = "art-1",
+            SourceWorkspaceId = "source",
+            TargetWorkspaceId = "target"
+        });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("grace period", result.FailureReason);
+    }
+
     private void SetupWorkspace(string id, WorkspaceKind kind, WorkspaceLifecycleState state)
     {
         _workspaceStore.GetAsync(id, Arg.Any<CancellationToken>())

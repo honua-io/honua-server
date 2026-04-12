@@ -371,7 +371,9 @@ Each workspace kind has default retention rules:
 overridden via the `Geoprocessing:Workspace` configuration section
 (`ScratchDefaultTtl`, `TempLayerDefaultTtl`, `ResultCollectionDefaultTtl`).
 `MaxTimeToLive` and `AllowPromotionBeforeCleanup` are not config-overridable;
-they are fixed in `RetentionPolicy.Defaults`.
+they are fixed in `RetentionPolicy.Defaults`. TTL overrides are validated at
+startup and rejected if they exceed the `MaxTimeToLive` ceiling for their kind
+(e.g. `ScratchDefaultTtl` cannot exceed 24 hours).
 Workspaces with no TTL do not expire automatically.
 
 ### Workspace Quota
@@ -419,7 +421,9 @@ Eligibility rules:
 - Source workspace kind must be temporary (`Scratch`, `TempLayer`, or
   `ResultCollection`). Durable kinds are not valid promotion sources.
 - Source workspace must be `Active`, or `Expired` with `AllowPromotionBeforeCleanup`
-  enabled for its kind.
+  enabled for its kind. An `Expired` source whose expiration timestamp plus the
+  cleanup grace period has elapsed is no longer eligible — promotion must happen
+  within the grace window.
 - Target workspace kind must be durable (`Persistent` or `SavedLayer`).
 - Target workspace must be `Active`.
 - Artifact must not be in `Deleted` or `Promoted` state.
@@ -441,7 +445,9 @@ Cleanup is non-destructive during the grace period, allowing artifact promotion
 from recently-expired workspaces. Individual failures during a sweep (e.g. a
 store transition or delete returning `false`) are recorded in
 `CleanupResult.Errors` without halting the sweep, so one failing workspace does
-not block cleanup of subsequent workspaces.
+not block cleanup of subsequent workspaces. If any artifact in a workspace
+fails to delete, the workspace itself is not deleted in that sweep to prevent
+orphaned artifact records.
 
 Default configuration (overridable via `Geoprocessing:Workspace`):
 
