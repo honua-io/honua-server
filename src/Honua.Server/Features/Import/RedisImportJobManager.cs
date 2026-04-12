@@ -713,6 +713,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private volatile bool _isUsingFallback;
     private bool AllowsLocalFallback => _cache == null;
+    private bool CanUseRedisDirectly => _redis != null && _cache != null && !_isUsingFallback;
 
     public RedisProgressStore(
         IDistributedCache? cache,
@@ -760,6 +761,12 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         try
         {
+            if (CanUseRedisDirectly)
+            {
+                await SetProgressDirectAsync(jobId, progress, effectiveTtl, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             var json = JsonSerializer.Serialize(progress, _jsonTypeInfo);
             await _cache.SetStringAsync(key, json,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
@@ -809,6 +816,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         try
         {
+            if (CanUseRedisDirectly)
+            {
+                return await GetProgressDirectAsync(key, cancellationToken).ConfigureAwait(false);
+            }
+
             var json = await _cache.GetStringAsync(key, cancellationToken);
             if (json == null)
             {
@@ -841,10 +853,17 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         {
             try
             {
-                await _cache.RemoveAsync(key, cancellationToken);
-                if (_redis != null)
+                if (CanUseRedisDirectly)
                 {
-                    await _redis.GetDatabase().SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+                    await DeleteProgressDirectAsync(jobId, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _cache.RemoveAsync(key, cancellationToken);
+                    if (_redis != null)
+                    {
+                        await _redis.GetDatabase().SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+                    }
                 }
             }
             catch (Exception ex)
@@ -985,7 +1004,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (!_isUsingFallback && _redis != null)
+        if (CanUseRedisDirectly)
         {
             try
             {
@@ -1027,9 +1046,8 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
                 continue;
             }
 
-            // Verify job still exists in cache
-            var json = await _cache!.GetStringAsync($"{_keyPrefix}{jobId}", cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(json))
+            var payload = await db.StringGetAsync($"{_keyPrefix}{jobId}").ConfigureAwait(false);
+            if (!payload.HasValue || string.IsNullOrWhiteSpace(payload.ToString()))
             {
                 await db.SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
                 continue;
@@ -1039,6 +1057,54 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         }
 
         return ids;
+    }
+
+    private async Task SetProgressDirectAsync(string jobId, T progress, TimeSpan effectiveTtl, CancellationToken cancellationToken)
+    {
+        var key = $"{_keyPrefix}{jobId}";
+        var db = _redis!.GetDatabase();
+        var transaction = db.CreateTransaction();
+
+        var json = JsonSerializer.Serialize(progress, _jsonTypeInfo);
+        var writeTask = transaction.StringSetAsync(key, json, effectiveTtl);
+        var indexTask = transaction.SetAddAsync(_activeIdsKey, jobId);
+
+        var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+        if (!committed)
+        {
+            throw CreateDistributedStateUnavailableException("set progress");
+        }
+
+        await Task.WhenAll(writeTask, indexTask).ConfigureAwait(false);
+    }
+
+    private async Task<T?> GetProgressDirectAsync(string key, CancellationToken cancellationToken)
+    {
+        var db = _redis!.GetDatabase();
+        var payload = await db.StringGetAsync(key).ConfigureAwait(false);
+        if (!payload.HasValue)
+        {
+            return default;
+        }
+
+        return JsonSerializer.Deserialize(payload.ToString(), _jsonTypeInfo);
+    }
+
+    private async Task DeleteProgressDirectAsync(string jobId, CancellationToken cancellationToken)
+    {
+        var key = $"{_keyPrefix}{jobId}";
+        var db = _redis!.GetDatabase();
+        var transaction = db.CreateTransaction();
+
+        var removeTask = transaction.KeyDeleteAsync(key);
+        var indexTask = transaction.SetRemoveAsync(_activeIdsKey, jobId);
+        var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+        if (!committed)
+        {
+            throw CreateDistributedStateUnavailableException("delete progress");
+        }
+
+        await Task.WhenAll(removeTask, indexTask).ConfigureAwait(false);
     }
 
     private static partial class Log

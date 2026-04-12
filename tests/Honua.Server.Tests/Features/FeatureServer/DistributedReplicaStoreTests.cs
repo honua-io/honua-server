@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Server.Features.FeatureServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -39,6 +41,24 @@ public sealed class DistributedReplicaStoreTests
 
     [UnitTest]
     [Operation(Operations.CreateReplica)]
+    public async Task SetAsync_WhenDistributedCacheWriteFails_ThrowsServiceUnavailableException()
+    {
+        var cache = new ThrowingDistributedCache(throwOnSetAsync: true);
+        var store = new DistributedReplicaStore(
+            cache,
+            NullLogger<DistributedReplicaStore>.Instance);
+
+        var replica = CreateReplicaState("replica-write-fail", "svc-write-fail", DateTimeOffset.UtcNow);
+
+        await FluentActions
+            .Invoking(() => store.SetAsync(replica))
+            .Should()
+            .ThrowAsync<ServiceUnavailableException>()
+            .WithMessage("*Distributed replica state is unavailable*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.CreateReplica)]
     public async Task SetAsync_WithoutDistributedCache_UsesFallbackUntilExpiry()
     {
         var store = new DistributedReplicaStore(
@@ -60,9 +80,7 @@ public sealed class DistributedReplicaStoreTests
     [Operation(Operations.ExtractChanges)]
     public async Task GetAsync_WhenDistributedCacheThrows_DoesNotReturnNodeLocalFallback()
     {
-        var cache = new ThrowingDistributedCache(
-            throwOnGetAsync: true,
-            throwOnSetAsync: true);
+        var cache = new ThrowingDistributedCache(throwOnGetAsync: true);
         var store = new DistributedReplicaStore(
             cache,
             NullLogger<DistributedReplicaStore>.Instance);
@@ -81,7 +99,6 @@ public sealed class DistributedReplicaStoreTests
     {
         var cache = new ThrowingDistributedCache(
             throwOnGetAsync: true,
-            throwOnSetAsync: true,
             throwOnRemoveAsync: true);
         var store = new DistributedReplicaStore(
             cache,
@@ -160,6 +177,7 @@ public sealed class DistributedReplicaStoreTests
 
     private sealed class ThrowingDistributedCache : IDistributedCache
     {
+        private readonly ConcurrentDictionary<string, byte[]> _values = new(StringComparer.Ordinal);
         private readonly bool _throwOnGetAsync;
         private readonly bool _throwOnSetAsync;
         private readonly bool _throwOnRemoveAsync;
@@ -183,11 +201,18 @@ public sealed class DistributedReplicaStoreTests
                 throw new InvalidOperationException("Simulated get failure");
             }
 
-            return Task.FromResult<byte[]?>(null);
+            _values.TryGetValue(key, out var value);
+            return Task.FromResult<byte[]?>(value);
         }
 
         public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
         {
+            if (_throwOnSetAsync)
+            {
+                throw new InvalidOperationException("Simulated set failure");
+            }
+
+            _values[key] = value;
         }
 
         public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
@@ -197,6 +222,7 @@ public sealed class DistributedReplicaStoreTests
                 throw new InvalidOperationException("Simulated set failure");
             }
 
+            _values[key] = value;
             return Task.CompletedTask;
         }
 
@@ -211,6 +237,12 @@ public sealed class DistributedReplicaStoreTests
 
         public void Remove(string key)
         {
+            if (_throwOnRemoveAsync)
+            {
+                throw new InvalidOperationException("Simulated remove failure");
+            }
+
+            _values.TryRemove(key, out _);
         }
 
         public Task RemoveAsync(string key, CancellationToken token = default)
@@ -220,6 +252,7 @@ public sealed class DistributedReplicaStoreTests
                 throw new InvalidOperationException("Simulated remove failure");
             }
 
+            _values.TryRemove(key, out _);
             return Task.CompletedTask;
         }
     }

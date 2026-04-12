@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Server.Features.FeatureServer.Models;
 using Microsoft.Extensions.Caching.Distributed;
 
@@ -64,8 +65,10 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         }
         catch (Exception ex)
         {
-            _fallback.TryRemove(replica.ReplicaId, out _);
             Log.WriteReplicaFailed(_logger, replica.ReplicaId, ex);
+            throw new ServiceUnavailableException(
+                "Distributed replica state is unavailable while attempting to persist replica state.",
+                ex);
         }
     }
 

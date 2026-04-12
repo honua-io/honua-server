@@ -55,20 +55,12 @@ internal sealed partial class RedisWorkflowOperationStore(
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var payload = JsonSerializer.Serialize(operation, ControlPlaneJsonContext.Default.WorkflowOperationRecord);
-        var created = await _database.StringSetAsync(
-                GetOperationKey(operation.OperationId),
-                payload,
-                ttl ?? DefaultRetention,
-                when: When.NotExists)
-            .ConfigureAwait(false);
-
+        var created = await PersistAsync(operation, ttl ?? DefaultRetention, createOnly: true).ConfigureAwait(false);
         if (!created)
         {
             return false;
         }
 
-        await UpdateActiveIndexesAsync(operation).ConfigureAwait(false);
         Log.WorkflowOperationCreated(logger, operation.OperationId, operation.Kind.ToString(), operation.Status.ToString());
         return true;
     }
@@ -96,14 +88,7 @@ internal sealed partial class RedisWorkflowOperationStore(
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var payload = JsonSerializer.Serialize(operation, ControlPlaneJsonContext.Default.WorkflowOperationRecord);
-        await _database.StringSetAsync(
-                GetOperationKey(operation.OperationId),
-                payload,
-                ttl ?? DefaultRetention)
-            .ConfigureAwait(false);
-
-        await UpdateActiveIndexesAsync(operation).ConfigureAwait(false);
+        await PersistAsync(operation, ttl ?? DefaultRetention, createOnly: false).ConfigureAwait(false);
         Log.WorkflowOperationUpdated(logger, operation.OperationId, operation.Status.ToString());
     }
 
@@ -147,18 +132,44 @@ internal sealed partial class RedisWorkflowOperationStore(
             .ToArray();
     }
 
-    private async Task UpdateActiveIndexesAsync(WorkflowOperationRecord operation)
+    private async Task<bool> PersistAsync(
+        WorkflowOperationRecord operation,
+        TimeSpan retention,
+        bool createOnly)
+    {
+        var operationKey = GetOperationKey(operation.OperationId);
+        var transaction = _database.CreateTransaction();
+        if (createOnly)
+        {
+            transaction.AddCondition(Condition.KeyNotExists(operationKey));
+        }
+
+        var payload = JsonSerializer.Serialize(operation, ControlPlaneJsonContext.Default.WorkflowOperationRecord);
+        var writeTask = transaction.StringSetAsync(operationKey, payload, retention);
+        QueueActiveIndexUpdates(transaction, operation);
+
+        var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+        if (!committed)
+        {
+            return false;
+        }
+
+        await writeTask.ConfigureAwait(false);
+        return true;
+    }
+
+    private void QueueActiveIndexUpdates(ITransaction transaction, WorkflowOperationRecord operation)
     {
         var operationId = (RedisValue)operation.OperationId;
         if (IsTerminal(operation.Status))
         {
-            await _database.SetRemoveAsync(ActiveOperationsKey, operationId).ConfigureAwait(false);
-            await _database.SetRemoveAsync(GetKindActiveKey(operation.Kind), operationId).ConfigureAwait(false);
+            transaction.SetRemoveAsync(ActiveOperationsKey, operationId);
+            transaction.SetRemoveAsync(GetKindActiveKey(operation.Kind), operationId);
             return;
         }
 
-        await _database.SetAddAsync(ActiveOperationsKey, operationId).ConfigureAwait(false);
-        await _database.SetAddAsync(GetKindActiveKey(operation.Kind), operationId).ConfigureAwait(false);
+        transaction.SetAddAsync(ActiveOperationsKey, operationId);
+        transaction.SetAddAsync(GetKindActiveKey(operation.Kind), operationId);
     }
 
     private async Task RemoveStaleMembersAsync(string activeKey, IReadOnlyList<RedisValue> staleIds)

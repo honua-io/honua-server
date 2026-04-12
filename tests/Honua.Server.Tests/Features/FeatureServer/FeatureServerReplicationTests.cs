@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Server.Features.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -21,6 +22,36 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WhenPersistenceFails_ReturnsServiceUnavailable()
+    {
+        var fixture = new WebAppFixture().ReplaceService<IReplicaStore>(new ThrowingReplicaStore());
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                replicaName = "FailClosedReplica",
+                layers = "0",
+                syncModel = "perReplica",
+                f = "json"
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+                new StringContent(payload, Encoding.UTF8, "application/json"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]
@@ -414,5 +445,18 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("replicaID");
+    }
+
+    private sealed class ThrowingReplicaStore : IReplicaStore
+    {
+        public Task SetAsync(ReplicaState replica, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new ServiceUnavailableException(
+                "Distributed replica state is unavailable while attempting to persist replica state.");
+
+        public Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
+            => Task.FromResult<ReplicaState?>(null);
+
+        public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
     }
 }
