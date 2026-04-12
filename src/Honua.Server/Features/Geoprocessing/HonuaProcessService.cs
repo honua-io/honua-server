@@ -144,6 +144,9 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         Proto.ExecutePlanRequest request,
         ServerCallContext context)
     {
+        EnrichActivity("ExecutePlan");
+        EnsureAuthorized(context, OperatorResourceType.Process, OperatorOperation.Execute);
+
         throw new RpcException(new Status(
             StatusCode.Unimplemented,
             "Synchronous plan execution is not yet available. Use SubmitPlanJob for asynchronous execution."));

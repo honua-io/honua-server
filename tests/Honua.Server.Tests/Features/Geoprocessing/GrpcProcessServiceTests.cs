@@ -177,6 +177,23 @@ public sealed class GrpcProcessServiceTests
         ex.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
+    public async Task ExecutePlan_Unauthorized_ThrowsPermissionDenied()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.Forbidden());
+
+        var request = new Proto.ExecutePlanRequest { Plan = CreateValidPlan() };
+
+        var act = async () => await _sut.ExecutePlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
     // -----------------------------------------------------------------------
     // SubmitPlanJob
     // -----------------------------------------------------------------------
