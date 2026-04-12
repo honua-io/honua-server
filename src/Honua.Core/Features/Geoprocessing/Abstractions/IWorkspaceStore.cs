@@ -26,9 +26,10 @@ public interface IWorkspaceStore
     Task<IReadOnlyList<Workspace>> ListByOwnerAsync(string ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns all workspaces whose expiration time is at or before the given threshold.
+    /// Returns workspaces whose expiration time is at or before the given threshold,
+    /// limited to at most <paramref name="maxCount"/> results to bound memory usage.
     /// </summary>
-    Task<IReadOnlyList<Workspace>> ListExpiredAsync(DateTimeOffset threshold, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Workspace>> ListExpiredAsync(DateTimeOffset threshold, int maxCount, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Transitions a workspace to a new lifecycle state.

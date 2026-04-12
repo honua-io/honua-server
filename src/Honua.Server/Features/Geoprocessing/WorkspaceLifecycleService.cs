@@ -190,7 +190,19 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         string reason,
         CancellationToken cancellationToken)
     {
-        var rolledBack = await _artifactStore.DeleteAsync(promotedArtifactId, cancellationToken);
+        bool rolledBack;
+        try
+        {
+            rolledBack = await _artifactStore.DeleteAsync(promotedArtifactId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            WorkspaceLifecycleLog.PromotionRollbackDeleteThrew(
+                _logger, sourceArtifactId, promotedArtifactId, ex);
+            return ArtifactPromotionResult.Failure(
+                $"{reason} and rollback of promoted copy also failed; manual cleanup may be required");
+        }
+
         if (!rolledBack)
         {
             WorkspaceLifecycleLog.PromotionRollbackFailed(
@@ -221,7 +233,8 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
     public async Task<CleanupResult> RunCleanupAsync(CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
-        var expiredWorkspaces = await _workspaceStore.ListExpiredAsync(now, cancellationToken);
+        var expiredWorkspaces = await _workspaceStore.ListExpiredAsync(
+            now, _options.MaxCleanupBatchSize, cancellationToken);
 
         var workspacesExpired = 0;
         var workspacesDeleted = 0;
@@ -229,9 +242,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         long bytesReclaimed = 0;
         var errors = new List<string>();
 
-        var batch = expiredWorkspaces.Take(_options.MaxCleanupBatchSize);
-
-        foreach (var workspace in batch)
+        foreach (var workspace in expiredWorkspaces)
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
@@ -383,4 +394,10 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Warning,
         Message = "Skipped workspace {WorkspaceId} deletion: not all artifacts were cleaned up")]
     public static partial void CleanupSkippedOrphanRisk(ILogger logger, string workspaceId);
+
+    [LoggerMessage(
+        EventId = 9911,
+        Level = LogLevel.Error,
+        Message = "Rollback delete of promoted copy {PromotedArtifactId} threw after source {SourceArtifactId} transition failed; duplicate artifact may exist")]
+    public static partial void PromotionRollbackDeleteThrew(ILogger logger, string sourceArtifactId, string promotedArtifactId, Exception exception);
 }
