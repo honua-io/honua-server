@@ -513,7 +513,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             return;
         }
 
-        activity.SetTag(HonuaTelemetry.Tags.Protocol, "grpc");
+        activity.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
     }
 
