@@ -10,6 +10,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
+using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.Stac.Models;
 using Honua.Server.Features.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -76,9 +77,10 @@ internal static class CollectionEndpoints
             var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
                 context, layerCatalog, cancellationToken);
 
-            var collectionTasks = visibleLayers
-                .Select(layer => StacMappingService.MapLayerToCollectionAsync(layer, featureReader, baseUrl, cancellationToken));
-            var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
+            var collections = await CollectionsEndpoints.ProjectWithLimitedConcurrencyAsync(
+                visibleLayers,
+                (layer, ct) => StacMappingService.MapLayerToCollectionAsync(layer, featureReader, baseUrl, ct),
+                cancellationToken).ConfigureAwait(false);
 
             var links = ImmutableArray.Create(
                 Link.Create(

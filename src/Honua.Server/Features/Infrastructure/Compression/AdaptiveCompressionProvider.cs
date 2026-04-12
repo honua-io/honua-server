@@ -65,6 +65,23 @@ public sealed class AdaptiveCompressionOptions
     public CompressionLevel LargeContentLevel { get; set; } = CompressionLevel.Optimal;
 }
 
+internal static class AdaptiveCompressionLevelSelector
+{
+    internal static CompressionLevel Select(long contentSize, AdaptiveCompressionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var fastThreshold = Math.Max(1, options.FastCompressionThreshold);
+        var optimalThreshold = Math.Max(fastThreshold + 1, options.OptimalCompressionThreshold);
+
+        return contentSize < fastThreshold
+            ? options.SmallContentLevel
+            : contentSize < optimalThreshold
+                ? options.MediumContentLevel
+                : options.LargeContentLevel;
+    }
+}
+
 /// <summary>
 /// PERFORMANCE FIX: Adaptive Brotli stream that chooses compression level based on content size
 /// </summary>
@@ -174,14 +191,7 @@ internal sealed class AdaptiveBrotliStream : Stream
     }
 
     private CompressionLevel DetermineCompressionLevel(long contentSize)
-    {
-        return contentSize switch
-        {
-            < 4096 => _options.SmallContentLevel,  // Small content: prioritize speed
-            < 65536 => _options.MediumContentLevel, // Medium content: balanced
-            _ => _options.LargeContentLevel        // Large content: prioritize compression ratio
-        };
-    }
+        => AdaptiveCompressionLevelSelector.Select(contentSize, _options);
 
     private bool ShouldFlush()
     {
@@ -351,14 +361,7 @@ internal sealed class AdaptiveGzipStream : Stream
     }
 
     private CompressionLevel DetermineCompressionLevel(long contentSize)
-    {
-        return contentSize switch
-        {
-            < 4096 => _options.SmallContentLevel,
-            < 65536 => _options.MediumContentLevel,
-            _ => _options.LargeContentLevel
-        };
-    }
+        => AdaptiveCompressionLevelSelector.Select(contentSize, _options);
 
     public override void Flush()
     {

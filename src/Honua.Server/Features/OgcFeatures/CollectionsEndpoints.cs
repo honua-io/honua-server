@@ -25,6 +25,8 @@ namespace Honua.Server.Features.OgcFeatures;
 /// </summary>
 internal static class CollectionsEndpoints
 {
+    internal const int MaxCollectionProjectionConcurrency = 8;
+
     private static readonly IReadOnlyDictionary<string, string> _queryablesFormatParameters =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -124,9 +126,16 @@ internal static class CollectionsEndpoints
                         : ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OgcFeatures) &&
                             AccessPolicyHelpers.IsLayerAccessible(context, layer))
                 .ToList();
-            var collectionTasks = visibleLayers
-                .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, coordinateTransformService, cancellationToken));
-            var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
+            var collections = await ProjectWithLimitedConcurrencyAsync(
+                visibleLayers,
+                (layer, ct) => CreateCollectionAsync(
+                    layer,
+                    baseUrl,
+                    featureReader,
+                    crsRegistry,
+                    coordinateTransformService,
+                    ct),
+                cancellationToken).ConfigureAwait(false);
 
             var links = OgcCommonUtilities.BuildFormatLinks(
                     request,
@@ -591,6 +600,45 @@ internal static class CollectionsEndpoints
             Properties = properties.ToImmutable(),
             Required = requiredFields.ToImmutableArray()
         };
+    }
+
+    internal static async Task<ImmutableArray<TProjection>> ProjectWithLimitedConcurrencyAsync<TSource, TProjection>(
+        IReadOnlyList<TSource> source,
+        Func<TSource, CancellationToken, Task<TProjection>> projector,
+        CancellationToken cancellationToken)
+        where TProjection : class
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(projector);
+
+        if (source.Count == 0)
+        {
+            return [];
+        }
+
+        var results = new TProjection?[source.Count];
+        var workerCount = Math.Min(MaxCollectionProjectionConcurrency, source.Count);
+        var nextIndex = -1;
+
+        async Task RunWorkerAsync()
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var index = Interlocked.Increment(ref nextIndex);
+                if (index >= source.Count)
+                {
+                    return;
+                }
+
+                results[index] = await projector(source[index], cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var workers = Enumerable.Range(0, workerCount).Select(_ => RunWorkerAsync());
+        await Task.WhenAll(workers).ConfigureAwait(false);
+        return results.Select(static result => result!).ToImmutableArray();
     }
 
     /// <summary>

@@ -12,13 +12,20 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private const string KeyPrefix = "response:";
     private const string VersionPrefix = "response-version:";
     private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
-    private static readonly Regex FeatureServerKeyPattern = new("^query:featureserver:service:(?<service>[^:]+):layer:(?<layer>\\d+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex FeatureServerServicePattern = new("^query:featureserver:service:(?<service>[^:]+):layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex FeatureServerLayerPattern = new("^query:featureserver:service:\\*:layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex ODataKeyPattern = new("^query:odata:layer:(?<layer>\\d+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex ODataPattern = new("^query:odata:layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex OgcKeyPattern = new("^query:ogc:collection:(?<collection>[^:]+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private static readonly Regex OgcPattern = new("^query:ogc:collection:(?<collection>[^:]+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FeatureServerKeyPattern = new("^(?:response:)?query:featureserver:service:(?<service>[^:]+):layer:(?<layer>\\d+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FeatureServerLayerPattern = new("^(?:response:)?query:featureserver:service:\\*:layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FeatureServerServiceLayerPattern = new("^(?:response:)?query:featureserver:service:(?<service>[^:]+):layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FeatureServerServicePattern = new("^(?:response:)?query:featureserver:service:(?<service>[^:]+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FeatureServerPattern = new("^(?:response:)?query:featureserver:service:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ODataKeyPattern = new("^(?:response:)?query:odata:layer:(?<layer>\\d+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ODataLayerPattern = new("^(?:response:)?query:odata:layer:(?<layer>\\d+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ODataPattern = new("^(?:response:)?query:odata:layer:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex OgcKeyPattern = new("^(?:response:)?query:ogc:collection:(?<collection>[^:]+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex OgcCollectionPattern = new("^(?:response:)?query:ogc:collection:(?<collection>[^:]+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex OgcPattern = new("^(?:response:)?query:ogc:collection:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex StaticMapKeyPattern = new("^(?:response:)?render:staticmap:service:(?<service>[^:]+):", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex StaticMapServicePattern = new("^(?:response:)?render:staticmap:service:(?<service>[^:]+):\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex StaticMapPattern = new("^(?:response:)?render:staticmap:service:\\*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly ICacheService _cacheService;
 
@@ -66,25 +73,30 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private async Task<string> BuildStorageKeyAsync(string key, CancellationToken cancellationToken)
     {
-        var namespaces = await ResolveNamespacesAsync(key, cancellationToken).ConfigureAwait(false);
-        if (namespaces.Count == 0)
+        var namespaceVersions = await ResolveNamespaceVersionsAsync(key, cancellationToken).ConfigureAwait(false);
+        if (namespaceVersions.Count == 0)
         {
             return NormalizeKey(key);
         }
 
-        var versionSuffix = string.Join(':', namespaces.Values);
+        var versionSuffix = string.Join(':', namespaceVersions);
         return NormalizeKey($"{key}:v:{versionSuffix}");
     }
 
-    private async Task<Dictionary<string, string>> ResolveNamespacesAsync(string key, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, CancellationToken cancellationToken)
     {
         var namespaces = GetNamespaceKeysForCacheKey(key);
-        var resolved = new Dictionary<string, string>(namespaces.Count, StringComparer.Ordinal);
+        if (namespaces.Count == 0)
+        {
+            return [];
+        }
+
+        var resolved = new List<string>(namespaces.Count);
 
         foreach (var ns in namespaces)
         {
             var version = await _cacheService.GetAsync<string>(VersionPrefix + ns, cancellationToken).ConfigureAwait(false);
-            resolved[ns] = string.IsNullOrWhiteSpace(version) ? "0" : version;
+            resolved.Add(string.IsNullOrWhiteSpace(version) ? "0" : version);
         }
 
         return resolved;
@@ -113,29 +125,48 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private static List<string> GetNamespaceKeysForCacheKey(string key)
     {
-        var namespaces = new List<string>(2);
+        var namespaces = new List<string>(4);
+
+        var featureServerGlobalMatch = FeatureServerPattern.Match(key);
+        if (featureServerGlobalMatch.Success)
+        {
+            namespaces.Add("query:featureserver");
+            return namespaces;
+        }
 
         var featureServerMatch = FeatureServerKeyPattern.Match(key);
         if (featureServerMatch.Success)
         {
             var service = featureServerMatch.Groups["service"].Value;
             var layer = featureServerMatch.Groups["layer"].Value;
-            namespaces.Add($"featureserver:layer:{layer}");
-            namespaces.Add($"featureserver:service:{service}:layer:{layer}");
+            namespaces.Add("query:featureserver");
+            namespaces.Add($"query:featureserver:layer:{layer}");
+            namespaces.Add($"query:featureserver:service:{service}");
+            namespaces.Add($"query:featureserver:service:{service}:layer:{layer}");
             return namespaces;
         }
 
         var odataMatch = ODataKeyPattern.Match(key);
         if (odataMatch.Success)
         {
-            namespaces.Add($"odata:layer:{odataMatch.Groups["layer"].Value}");
+            namespaces.Add("query:odata");
+            namespaces.Add($"query:odata:layer:{odataMatch.Groups["layer"].Value}");
             return namespaces;
         }
 
         var ogcMatch = OgcKeyPattern.Match(key);
         if (ogcMatch.Success)
         {
-            namespaces.Add($"ogc:collection:{ogcMatch.Groups["collection"].Value}");
+            namespaces.Add("query:ogc");
+            namespaces.Add($"query:ogc:collection:{ogcMatch.Groups["collection"].Value}");
+            return namespaces;
+        }
+
+        var staticMapMatch = StaticMapKeyPattern.Match(key);
+        if (staticMapMatch.Success)
+        {
+            namespaces.Add("render:staticmap");
+            namespaces.Add($"render:staticmap:service:{staticMapMatch.Groups["service"].Value}");
         }
 
         return namespaces;
@@ -143,28 +174,64 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private static string[] GetNamespaceKeysForPattern(string pattern)
     {
+        var featureServerGlobalMatch = FeatureServerPattern.Match(pattern);
+        if (featureServerGlobalMatch.Success)
+        {
+            return ["query:featureserver"];
+        }
+
         var featureServerLayerMatch = FeatureServerLayerPattern.Match(pattern);
         if (featureServerLayerMatch.Success)
         {
-            return [$"featureserver:layer:{featureServerLayerMatch.Groups["layer"].Value}"];
+            return [$"query:featureserver:layer:{featureServerLayerMatch.Groups["layer"].Value}"];
+        }
+
+        var featureServerServiceLayerMatch = FeatureServerServiceLayerPattern.Match(pattern);
+        if (featureServerServiceLayerMatch.Success)
+        {
+            return [$"query:featureserver:service:{featureServerServiceLayerMatch.Groups["service"].Value}:layer:{featureServerServiceLayerMatch.Groups["layer"].Value}"];
         }
 
         var featureServerServiceMatch = FeatureServerServicePattern.Match(pattern);
         if (featureServerServiceMatch.Success)
         {
-            return [$"featureserver:service:{featureServerServiceMatch.Groups["service"].Value}:layer:{featureServerServiceMatch.Groups["layer"].Value}"];
+            return [$"query:featureserver:service:{featureServerServiceMatch.Groups["service"].Value}"];
+        }
+
+        var odataLayerMatch = ODataLayerPattern.Match(pattern);
+        if (odataLayerMatch.Success)
+        {
+            return [$"query:odata:layer:{odataLayerMatch.Groups["layer"].Value}"];
         }
 
         var odataMatch = ODataPattern.Match(pattern);
         if (odataMatch.Success)
         {
-            return [$"odata:layer:{odataMatch.Groups["layer"].Value}"];
+            return ["query:odata"];
+        }
+
+        var ogcCollectionMatch = OgcCollectionPattern.Match(pattern);
+        if (ogcCollectionMatch.Success)
+        {
+            return [$"query:ogc:collection:{ogcCollectionMatch.Groups["collection"].Value}"];
         }
 
         var ogcMatch = OgcPattern.Match(pattern);
         if (ogcMatch.Success)
         {
-            return [$"ogc:collection:{ogcMatch.Groups["collection"].Value}"];
+            return ["query:ogc"];
+        }
+
+        var staticMapPattern = StaticMapPattern.Match(pattern);
+        if (staticMapPattern.Success)
+        {
+            return ["render:staticmap"];
+        }
+
+        var staticMapServiceMatch = StaticMapServicePattern.Match(pattern);
+        if (staticMapServiceMatch.Success)
+        {
+            return [$"render:staticmap:service:{staticMapServiceMatch.Groups["service"].Value}"];
         }
 
         return Array.Empty<string>();
@@ -177,6 +244,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             throw new ArgumentException("Cache key must be non-empty.", nameof(key));
         }
 
-        return $"{KeyPrefix}{key}";
+        return key.StartsWith(KeyPrefix, StringComparison.Ordinal) ? key : $"{KeyPrefix}{key}";
     }
 }

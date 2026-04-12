@@ -3,6 +3,7 @@
 
 using System.Text;
 using FluentAssertions;
+using System.IO.Compression;
 using Honua.Server.Features.Infrastructure.Compression;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Compression;
@@ -43,6 +44,25 @@ public sealed class AdaptiveCompressionProviderTests
         await stream.DisposeAsync();
 
         output.BytesWritten.Should().BeGreaterThan(0);
+    }
+
+    [Theory]
+    [InlineData(9, CompressionLevel.Fastest)]
+    [InlineData(10, CompressionLevel.SmallestSize)]
+    [InlineData(99, CompressionLevel.SmallestSize)]
+    [InlineData(100, CompressionLevel.Optimal)]
+    public void SelectCompressionLevel_UsesConfiguredThresholds(long contentSize, CompressionLevel expected)
+    {
+        var options = new AdaptiveCompressionOptions
+        {
+            FastCompressionThreshold = 10,
+            OptimalCompressionThreshold = 100,
+            SmallContentLevel = CompressionLevel.Fastest,
+            MediumContentLevel = CompressionLevel.SmallestSize,
+            LargeContentLevel = CompressionLevel.Optimal
+        };
+
+        AdaptiveCompressionLevelSelector.Select(contentSize, options).Should().Be(expected);
     }
 
     private sealed class AsyncOnlyBufferingStream : Stream
