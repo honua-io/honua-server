@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
@@ -64,42 +65,48 @@ internal sealed class GeoprocessingConfigurationDocumentationContributor : IConf
                         "Maximum workspaces processed per cleanup sweep",
                         100,
                         opts.MaxCleanupBatchSize),
-                    BuildProperty(
+                    BuildPropertyWithCurrent(
                         $"{WorkspaceOptions.SectionName}:ScratchDefaultTtl",
                         "Geoprocessing__Workspace__ScratchDefaultTtl",
                         "duration",
-                        "Default TTL override for scratch workspaces",
-                        null),
-                    BuildProperty(
+                        "Default TTL for scratch workspaces",
+                        RetentionPolicy.Defaults[WorkspaceKind.Scratch].DefaultTimeToLive,
+                        opts.ScratchDefaultTtl ?? RetentionPolicy.Defaults[WorkspaceKind.Scratch].DefaultTimeToLive),
+                    BuildPropertyWithCurrent(
                         $"{WorkspaceOptions.SectionName}:TempLayerDefaultTtl",
                         "Geoprocessing__Workspace__TempLayerDefaultTtl",
                         "duration",
-                        "Default TTL override for temp layer workspaces",
-                        null),
-                    BuildProperty(
+                        "Default TTL for temp layer workspaces",
+                        RetentionPolicy.Defaults[WorkspaceKind.TempLayer].DefaultTimeToLive,
+                        opts.TempLayerDefaultTtl ?? RetentionPolicy.Defaults[WorkspaceKind.TempLayer].DefaultTimeToLive),
+                    BuildPropertyWithCurrent(
                         $"{WorkspaceOptions.SectionName}:ResultCollectionDefaultTtl",
                         "Geoprocessing__Workspace__ResultCollectionDefaultTtl",
                         "duration",
-                        "Default TTL override for result collection workspaces",
-                        null),
-                    BuildProperty(
+                        "Default TTL for result collection workspaces",
+                        RetentionPolicy.Defaults[WorkspaceKind.ResultCollection].DefaultTimeToLive,
+                        opts.ResultCollectionDefaultTtl ?? RetentionPolicy.Defaults[WorkspaceKind.ResultCollection].DefaultTimeToLive),
+                    BuildPropertyWithCurrent(
                         $"{WorkspaceOptions.SectionName}:MaxWorkspaceCount",
                         "Geoprocessing__Workspace__MaxWorkspaceCount",
                         "integer",
                         "Maximum workspace count per owner",
-                        null),
-                    BuildProperty(
+                        WorkspaceQuota.Default.MaxWorkspaceCount,
+                        opts.MaxWorkspaceCount ?? WorkspaceQuota.Default.MaxWorkspaceCount),
+                    BuildPropertyWithCurrent(
                         $"{WorkspaceOptions.SectionName}:MaxArtifactCount",
                         "Geoprocessing__Workspace__MaxArtifactCount",
                         "integer",
                         "Maximum artifact count per owner",
-                        null),
-                    BuildProperty(
+                        WorkspaceQuota.Default.MaxArtifactCount,
+                        opts.MaxArtifactCount ?? WorkspaceQuota.Default.MaxArtifactCount),
+                    BuildPropertyWithCurrent(
                         $"{WorkspaceOptions.SectionName}:MaxStorageBytes",
                         "Geoprocessing__Workspace__MaxStorageBytes",
                         "integer",
                         "Maximum storage bytes per owner",
-                        null)
+                        WorkspaceQuota.Default.MaxStorageBytes,
+                        opts.MaxStorageBytes ?? WorkspaceQuota.Default.MaxStorageBytes)
                 ]
             }
         ];

@@ -416,7 +416,7 @@ internal static partial class WorkspaceLifecycleLog
     [LoggerMessage(
         EventId = 9906,
         Level = LogLevel.Warning,
-        Message = "Failed to mark source artifact {ArtifactId} as promoted; promoted copy rolled back")]
+        Message = "Failed to mark source artifact {ArtifactId} as promoted; rolling back promoted copy")]
     public static partial void PromotionTransitionFailed(ILogger logger, string artifactId);
 
     [LoggerMessage(

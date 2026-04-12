@@ -431,7 +431,8 @@ Eligibility rules:
 - Target workspace kind must be durable (`Persistent` or `SavedLayer`).
 - Target workspace must be `Active` and must not have passed its `ExpiresAt`
   by clock (same real-time expiration guard applied to artifact additions).
-- Artifact must not be in `Deleted` or `Promoted` state.
+- Artifact must be in `Available` state. All other states (`Pending`,
+  `Expired`, `Deleted`, `Promoted`) are rejected.
 - On success, the source artifact transitions to `Promoted` and a new artifact
   is created in the target workspace with state `Available`.
 - On transition failure, the promoted copy is rolled back so the caller can
