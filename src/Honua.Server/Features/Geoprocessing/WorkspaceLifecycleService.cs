@@ -76,6 +76,20 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default)
     {
+        var workspace = await _workspaceStore.GetAsync(workspaceId, cancellationToken);
+        if (workspace is null)
+        {
+            WorkspaceLifecycleLog.AddArtifactRejected(_logger, workspaceId, "not found");
+            throw new InvalidOperationException($"Workspace '{workspaceId}' not found");
+        }
+
+        if (workspace.State != WorkspaceLifecycleState.Active)
+        {
+            WorkspaceLifecycleLog.AddArtifactRejected(_logger, workspaceId, workspace.State.ToString());
+            throw new InvalidOperationException(
+                $"Workspace '{workspaceId}' is in state {workspace.State}; only Active workspaces accept new artifacts");
+        }
+
         var artifact = new Artifact
         {
             ArtifactId = Guid.NewGuid().ToString("N"),
@@ -322,4 +336,10 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Error,
         Message = "Failed to roll back promoted copy {PromotedArtifactId} after source {SourceArtifactId} transition failed; duplicate artifact may exist")]
     public static partial void PromotionRollbackFailed(ILogger logger, string sourceArtifactId, string promotedArtifactId);
+
+    [LoggerMessage(
+        EventId = 9908,
+        Level = LogLevel.Warning,
+        Message = "Rejected artifact addition to workspace {WorkspaceId}: {Reason}")]
+    public static partial void AddArtifactRejected(ILogger logger, string workspaceId, string reason);
 }

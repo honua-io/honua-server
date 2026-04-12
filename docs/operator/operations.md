@@ -225,7 +225,9 @@ Cleanup runs in two phases:
    deleted, then the workspace is removed.
 
 Artifacts in expired workspaces can still be promoted to durable workspaces
-during the grace period when the retention policy allows it.
+during the grace period when the retention policy allows it. Individual
+failures during a sweep are recorded without halting cleanup, so one failing
+workspace does not block subsequent workspaces.
 
 For full lifecycle semantics, see the
 [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).

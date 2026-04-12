@@ -438,7 +438,10 @@ The `WorkspaceCleanupService` runs periodic background sweeps:
    deleted and then the workspace itself is removed.
 
 Cleanup is non-destructive during the grace period, allowing artifact promotion
-from recently-expired workspaces.
+from recently-expired workspaces. Individual failures during a sweep (e.g. a
+store transition or delete returning `false`) are recorded in
+`CleanupResult.Errors` without halting the sweep, so one failing workspace does
+not block cleanup of subsequent workspaces.
 
 Default configuration (overridable via `Geoprocessing:Workspace`):
 
@@ -825,7 +828,8 @@ Authorization and approval checks are enforced on all mutating RPCs.
 
 `IWorkspaceLifecycleService` defines the orchestration surface. `CreateWorkspace`
 applies retention policy and creates workspaces with automatic expiration.
-`AddArtifact` creates artifacts in the `Available` state. `PromoteArtifact`
+`AddArtifact` validates that the target workspace exists and is `Active`
+before creating artifacts in the `Available` state. `PromoteArtifact`
 copies an artifact to a durable workspace and marks the source as promoted,
 with rollback on transition failure. `ExtendWorkspaceExpiration` extends
 active workspace TTL clamped to policy limits. `RunCleanup` expires overdue

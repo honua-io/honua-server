@@ -84,8 +84,10 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
-    public async Task AddArtifact_SetsAvailableState()
+    public async Task AddArtifact_ActiveWorkspace_SetsAvailableState()
     {
+        SetupWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active);
+
         var artifact = await _service.AddArtifactAsync(
             "ws-1", ArtifactKind.FeatureLayer, "result-layer",
             sizeBytes: 2048);
@@ -93,6 +95,46 @@ public class WorkspaceLifecycleServiceTests
         Assert.Equal(ArtifactLifecycleState.Available, artifact.State);
         Assert.Equal("ws-1", artifact.WorkspaceId);
         Assert.Equal(2048, artifact.SizeBytes);
+    }
+
+    [Fact]
+    public async Task AddArtifact_MissingWorkspace_Throws()
+    {
+        _workspaceStore.GetAsync("nonexistent", Arg.Any<CancellationToken>())
+            .Returns((Workspace?)null);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AddArtifactAsync("nonexistent", ArtifactKind.FeatureLayer, "layer"));
+
+        Assert.Contains("not found", ex.Message);
+        await _artifactStore.DidNotReceive().CreateAsync(
+            Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AddArtifact_ExpiredWorkspace_Throws()
+    {
+        SetupWorkspace("ws-expired", WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AddArtifactAsync("ws-expired", ArtifactKind.FeatureLayer, "layer"));
+
+        Assert.Contains("only Active workspaces", ex.Message);
+        await _artifactStore.DidNotReceive().CreateAsync(
+            Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AddArtifact_DeletedWorkspace_Throws()
+    {
+        SetupWorkspace("ws-deleted", WorkspaceKind.Scratch, WorkspaceLifecycleState.Deleted);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AddArtifactAsync("ws-deleted", ArtifactKind.FeatureLayer, "layer"));
+
+        Assert.Contains("only Active workspaces", ex.Message);
+        await _artifactStore.DidNotReceive().CreateAsync(
+            Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

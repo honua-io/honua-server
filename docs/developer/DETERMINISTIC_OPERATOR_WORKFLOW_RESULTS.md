@@ -324,16 +324,25 @@ Progress is observable through the admin operations endpoints
 
 ## Workspace Artifact Lifecycle
 
+> **Implementation status:** The workspace and artifact lifecycle types,
+> retention policy, and cleanup service are implemented. The `Execute` stage
+> does not yet create workspaces or artifacts automatically — the wiring
+> between `ExecutePlan` and `IWorkspaceLifecycleService` is planned for a
+> downstream ticket. The contracts and rules described below are the target
+> design.
+
 Execution results integrate with the workspace retention model described in the
 [AI Operator Contract](AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
 
-**Artifact creation during execution.** The `Execute` stage creates artifacts
-in a workspace assigned by the workflow. Scratch and result-collection
-workspaces are created automatically with retention policy applied. Artifacts
-added through `IWorkspaceLifecycleService.AddArtifactAsync` are registered
-directly in the `Available` state. Callers that need a two-phase create
-(e.g. long-running materialization) can use `IArtifactStore` directly with
-the `Pending` state and transition to `Available` on completion.
+**Artifact creation during execution.** The `Execute` stage will create
+artifacts in a workspace assigned by the workflow. Scratch and result-collection
+workspaces will be created automatically with retention policy applied.
+Artifacts added through `IWorkspaceLifecycleService.AddArtifactAsync` are
+registered directly in the `Available` state; the method validates that the
+target workspace exists and is `Active` before creating the artifact. Callers
+that need a two-phase create (e.g. long-running materialization) can use
+`IArtifactStore` directly with the `Pending` state and transition to
+`Available` on completion.
 
 **WorkspaceRef expiration.** The `workspaceRefs` array in `ExecutionResult` and
 `AnalysisResultPackage` carries `expiresAt` values reflecting the workspace

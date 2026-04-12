@@ -23,8 +23,11 @@ public interface IWorkspaceLifecycleService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Adds an artifact to an existing workspace.
+    /// Adds an artifact to an existing, active workspace.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The workspace does not exist or is not in the <see cref="WorkspaceLifecycleState.Active"/> state.
+    /// </exception>
     Task<Artifact> AddArtifactAsync(
         string workspaceId,
         ArtifactKind kind,
