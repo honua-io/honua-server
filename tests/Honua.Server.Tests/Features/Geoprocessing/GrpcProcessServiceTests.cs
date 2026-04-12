@@ -524,6 +524,47 @@ public sealed class GrpcProcessServiceTests
         ex.Which.StatusCode.Should().Be(StatusCode.AlreadyExists);
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WithEmptyPlanId_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan
+        {
+            PlanId = "",
+            IntentId = "intent-1"
+        };
+        plan.Steps.Add(CreateValidStep());
+
+        var request = new Proto.SubmitPlanJobRequest { Plan = plan, IdempotencyKey = "idem-1" };
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("Plan identifier");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WithNoSteps_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "intent-1"
+        };
+
+        var request = new Proto.SubmitPlanJobRequest { Plan = plan, IdempotencyKey = "idem-1" };
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("at least one step");
+    }
+
     // -----------------------------------------------------------------------
     // Fingerprint canonicalization
     // -----------------------------------------------------------------------

@@ -249,6 +249,7 @@ Recommended workflow statuses (`GeoprocessingWorkflowStatus`):
 - `AwaitingClarification`
 - `Validated`
 - `AwaitingApproval`
+- `AwaitingExecution`
 - `Running`
 - `Completed`
 - `Failed`
@@ -311,7 +312,7 @@ The workflow status maps to the unified `OperationStatus`:
 
 | Workflow status | Unified status |
 |---|---|
-| `Draft` | `Queued` |
+| `Draft`, `AwaitingExecution` | `Queued` |
 | `AwaitingClarification`, `Validated`, `AwaitingApproval`, `Running` | `Processing` |
 | `Completed` | `Completed` |
 | `Failed` | `Failed` |

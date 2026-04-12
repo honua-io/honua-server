@@ -158,6 +158,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         var plan = request.Plan;
         ValidatePlanStructure(plan);
+        EnsurePlanExecutable(plan);
         EnsureApproved(context);
 
         var jobStore = RequireJobStore();
@@ -405,6 +406,21 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         => _jobStore ?? throw new RpcException(new Status(
             StatusCode.Unavailable,
             "Job operations require Redis-backed durable storage. Ensure a valid Redis connection is configured."));
+
+    private static void EnsurePlanExecutable(Proto.AnalysisPlan plan)
+    {
+        if (string.IsNullOrWhiteSpace(plan.PlanId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument,
+                "Plan identifier is required for job submission."));
+        }
+
+        if (plan.Steps.Count == 0)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument,
+                "Plan must contain at least one step for job submission."));
+        }
+    }
 
     private static void ValidatePlanStructure(Proto.AnalysisPlan? plan)
     {
