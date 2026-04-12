@@ -340,7 +340,7 @@ Active ──> Expired ──> Deleted
 
 | State | Description |
 |---|---|
-| `Active` | Workspace is available for use. Artifacts can be added and promoted. A workspace whose stored state is `Active` but whose `ExpiresAt` has been reached by the clock is treated as effectively expired for artifact addition and promotion eligibility. |
+| `Active` | Workspace is available for use. Artifacts can be added and promoted. A workspace whose stored state is `Active` but whose `ExpiresAt` has been reached by the clock is treated as effectively expired for artifact addition, promotion eligibility, and expiration extension. |
 | `Expired` | Past its expiration time, pending cleanup. Promotion may still be allowed depending on the retention policy. |
 | `Archived` | Preserved but no longer directly accessible. Reserved for future use — no transitions into or out of this state are implemented in #725. |
 | `Deleted` | Storage reclaimed. Terminal state. Cleanup deletes workspaces via `IWorkspaceStore.DeleteAsync`; whether the store records a terminal state row or physically removes storage is provider-specific. |

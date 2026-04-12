@@ -202,6 +202,8 @@ All settings live under `Geoprocessing:Workspace` (env prefix
 | `MaxArtifactCount` | (built-in: 1,000) | Per-owner artifact limit |
 | `MaxStorageBytes` | (built-in: 10 GB) | Per-owner storage limit |
 
+Use `/api/v1/admin/config` to confirm effective values at runtime.
+
 Nullable TTL and quota settings fall back to built-in defaults when unset.
 `MaxTimeToLive` and `AllowPromotionBeforeCleanup` per workspace kind are not
 config-overridable. TTL overrides are validated at startup; values exceeding
