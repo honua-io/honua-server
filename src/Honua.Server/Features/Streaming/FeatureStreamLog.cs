@@ -51,4 +51,12 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5011, Level = LogLevel.Warning,
         Message = "Feature stream filter validation failed: {Error}")]
     public static partial void FilterValidationFailed(ILogger logger, string error);
+
+    [LoggerMessage(EventId = 5012, Level = LogLevel.Warning,
+        Message = "Feature stream cross-node broadcast is unavailable; live delivery is local-only.")]
+    public static partial void ClusterBroadcastUnavailable(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5013, Level = LogLevel.Warning,
+        Message = "Feature stream cross-node broadcast failed; live delivery is continuing locally.")]
+    public static partial void ClusterBroadcastFailed(ILogger logger, Exception exception);
 }

@@ -16,6 +16,7 @@ namespace Honua.Server.Features.Streaming;
     WriteIndented = false)]
 [JsonSerializable(typeof(FeatureStreamEnvelope))]
 [JsonSerializable(typeof(FeatureStreamHeartbeat))]
+[JsonSerializable(typeof(FeatureStreamBroadcastMessage))]
 [JsonSerializable(typeof(ApiResponse<FeatureStreamStatusResponse>))]
 [JsonSerializable(typeof(FeatureStreamStatusResponse))]
 [JsonSerializable(typeof(FeatureStreamSessionResponse))]

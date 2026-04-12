@@ -24,6 +24,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     private const string DispatchLeaseKey = "featurechange:webhook:lease";
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan DispatchLeaseDuration = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan LeaseRenewalInterval = TimeSpan.FromSeconds(1);
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly IDistributedCache? _distributedCache = distributedCache;
     private readonly IDatabase? _redisDb = redis?.GetDatabase();
@@ -83,41 +84,59 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                         continue;
                     }
 
-                    var validation = await FeatureChangeWebhookUrlValidation
-                        .ValidateAsync(_options.Url, stoppingToken)
-                        .ConfigureAwait(false);
-                    if (!validation.IsValid || validation.Uri == null)
-                    {
-                        LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
+                    using var leaseRenewalCts = _leaseCoordinator.IsConfigured
+                        ? CancellationTokenSource.CreateLinkedTokenSource(stoppingToken)
+                        : null;
+                    var leaseRenewalTask = leaseRenewalCts is null
+                        ? Task.CompletedTask
+                        : _leaseCoordinator.MaintainLeaseAsync(LeaseRenewalInterval, leaseRenewalCts.Token);
 
-                    var pending = await _store.QueryAsync(_deliveredCursor, null, null, limit: 100, stoppingToken).ConfigureAwait(false);
-                    if (pending.Count == 0)
+                    try
                     {
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    foreach (var featureEvent in pending)
-                    {
-                        stoppingToken.ThrowIfCancellationRequested();
-
-                        if (_leaseCoordinator.IsConfigured &&
-                            !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+                        var validation = await FeatureChangeWebhookUrlValidation
+                            .ValidateAsync(_options.Url, stoppingToken)
+                            .ConfigureAwait(false);
+                        if (!validation.IsValid || validation.Uri == null)
                         {
-                            break;
+                            LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+                            await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                            continue;
                         }
 
-                        var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, stoppingToken).ConfigureAwait(false);
-                        if (!delivered)
+                        var pending = await _store.QueryAsync(_deliveredCursor, null, null, limit: 100, stoppingToken).ConfigureAwait(false);
+                        if (pending.Count == 0)
                         {
-                            break;
+                            await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                            continue;
                         }
 
-                        _deliveredCursor = featureEvent.Cursor;
-                        await TryPersistDeliveredCursorAsync(_deliveredCursor, stoppingToken).ConfigureAwait(false);
+                        foreach (var featureEvent in pending)
+                        {
+                            stoppingToken.ThrowIfCancellationRequested();
+
+                            if (_leaseCoordinator.IsConfigured &&
+                                !await _leaseCoordinator.TryAcquireOrExtendAsync().ConfigureAwait(false))
+                            {
+                                break;
+                            }
+
+                            var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, stoppingToken).ConfigureAwait(false);
+                            if (!delivered)
+                            {
+                                break;
+                            }
+
+                            _deliveredCursor = featureEvent.Cursor;
+                            await TryPersistDeliveredCursorAsync(_deliveredCursor, stoppingToken).ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        if (leaseRenewalCts is not null)
+                        {
+                            leaseRenewalCts.Cancel();
+                            await leaseRenewalTask.ConfigureAwait(false);
+                        }
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

@@ -49,6 +49,31 @@ internal sealed class RedisLeaseCoordinator(
         }
     }
 
+    internal async Task MaintainLeaseAsync(TimeSpan renewalInterval, CancellationToken cancellationToken)
+    {
+        if (_database == null || !_hasLease)
+        {
+            return;
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(renewalInterval, TimeSpan.Zero);
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested && _hasLease)
+            {
+                await Task.Delay(renewalInterval, cancellationToken).ConfigureAwait(false);
+                if (!await TryAcquireOrExtendAsync().ConfigureAwait(false))
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
     public async Task ReleaseAsync()
     {
         if (_database == null || !_hasLease)

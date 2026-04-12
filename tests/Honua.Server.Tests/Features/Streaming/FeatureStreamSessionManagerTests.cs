@@ -6,6 +6,8 @@ using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -483,6 +485,49 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
 
         Assert.True(filtered.Reader.TryRead(out var msg));
         Assert.True(msg.IsHeartbeat);
+    }
+
+    [UnitTest]
+    public void Broadcast_WithRedisSubscription_FanOutsToOtherManagers()
+    {
+        var subscriber = Substitute.For<ISubscriber>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var handlers = new List<Action<RedisChannel, RedisValue>>();
+
+        redis.GetSubscriber().Returns(subscriber);
+        subscriber.Subscribe(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
+        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var channel = callInfo.Arg<RedisChannel>();
+                var value = callInfo.Arg<RedisValue>();
+                foreach (var handler in handlers)
+                {
+                    handler(channel, value);
+                }
+
+                return handlers.Count;
+            });
+
+        var options = Options.Create(new FeatureStreamOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            MaxBufferPerConnection = 4,
+            ReplayBatchSize = 100
+        });
+
+        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var localSession = localManager.CreateSession("WebSocket", "local");
+        using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
+
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 42)));
+
+        Assert.True(localSession.Reader.TryRead(out var localMessage));
+        Assert.True(remoteSession.Reader.TryRead(out var remoteMessage));
+        Assert.Equal(42, localMessage.Envelope.Cursor);
+        Assert.Equal(localMessage.Envelope.Cursor, remoteMessage.Envelope.Cursor);
+        Assert.Equal(localMessage.Envelope.ServiceId, remoteMessage.Envelope.ServiceId);
     }
 
     private static FeatureStreamEnvelope CreateEnvelope(long cursor) => CreateEnvelope(cursor, layerId: 0, serviceId: "test-svc");

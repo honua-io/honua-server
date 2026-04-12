@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -14,18 +15,40 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
+    private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
     private readonly IOptions<FeatureStreamOptions> _options;
     private readonly ILogger<FeatureStreamSessionManager> _logger;
+    private readonly ISubscriber? _subscriber;
+    private readonly string _instanceId = Guid.NewGuid().ToString("N");
+    private readonly bool _clusterBroadcastEnabled;
     private long _slowConsumerDrops;
     private long _heartbeatsSent;
+    private int _clusterBroadcastFailureLogged;
 
     public FeatureStreamSessionManager(
         IOptions<FeatureStreamOptions> options,
-        ILogger<FeatureStreamSessionManager> logger)
+        ILogger<FeatureStreamSessionManager> logger,
+        IConnectionMultiplexer? redis = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        if (redis is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _subscriber = redis.GetSubscriber();
+            _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
+            _clusterBroadcastEnabled = true;
+        }
+        catch (Exception ex)
+        {
+            LogClusterBroadcastUnavailableOnce(ex);
+        }
     }
 
     /// <summary>
@@ -121,6 +144,37 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// </summary>
     public int Broadcast(FeatureStreamMessage message)
     {
+        var delivered = BroadcastLocally(message);
+
+        if (message.IsHeartbeat || !_clusterBroadcastEnabled || _subscriber is null)
+        {
+            return delivered;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(
+                new FeatureStreamBroadcastMessage
+                {
+                    OriginInstanceId = _instanceId,
+                    Envelope = message.Envelope,
+                    GeometryEnvelope = message.GeometryEnvelope,
+                    PropertiesJson = message.PropertiesJson
+                },
+                FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
+
+            _subscriber.Publish(BroadcastChannel, payload);
+        }
+        catch (Exception ex)
+        {
+            LogClusterBroadcastFailedOnce(ex);
+        }
+
+        return delivered;
+    }
+
+    private int BroadcastLocally(FeatureStreamMessage message)
+    {
         var delivered = 0;
         IReadOnlyDictionary<string, JsonElement>? parsedProperties = null;
         bool propertiesParsed = false;
@@ -177,6 +231,36 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         return delivered;
+    }
+
+    private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
+    {
+        if (!_clusterBroadcastEnabled || value.IsNullOrEmpty)
+        {
+            return;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize(
+                value.ToString(),
+                FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
+
+            if (payload is null ||
+                string.Equals(payload.OriginInstanceId, _instanceId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            BroadcastLocally(FeatureStreamMessage.Data(
+                payload.Envelope,
+                payload.GeometryEnvelope,
+                payload.PropertiesJson));
+        }
+        catch (Exception ex)
+        {
+            LogClusterBroadcastFailedOnce(ex);
+        }
     }
 
     /// <summary>
@@ -274,6 +358,18 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     public void Dispose()
     {
+        if (_subscriber is not null)
+        {
+            try
+            {
+                _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
+            }
+            catch
+            {
+                // Best-effort shutdown; the connection owner will close the Redis subscription anyway.
+            }
+        }
+
         foreach (var (_, entry) in _sessions)
         {
             entry.Cts.Cancel();
@@ -281,6 +377,22 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         _sessions.Clear();
+    }
+
+    private void LogClusterBroadcastUnavailableOnce(Exception exception)
+    {
+        if (Interlocked.Exchange(ref _clusterBroadcastFailureLogged, 1) == 0)
+        {
+            FeatureStreamLog.ClusterBroadcastUnavailable(_logger, exception);
+        }
+    }
+
+    private void LogClusterBroadcastFailedOnce(Exception exception)
+    {
+        if (Interlocked.Exchange(ref _clusterBroadcastFailureLogged, 1) == 0)
+        {
+            FeatureStreamLog.ClusterBroadcastFailed(_logger, exception);
+        }
     }
 
     private sealed class SessionEntry
@@ -426,4 +538,30 @@ internal readonly record struct FeatureStreamMessage
     /// </summary>
     public static FeatureStreamMessage Heartbeat() =>
         new() { IsHeartbeat = true };
+}
+
+/// <summary>
+/// Redis pub/sub envelope used to fan out live stream events across nodes.
+/// </summary>
+internal sealed record FeatureStreamBroadcastMessage
+{
+    /// <summary>
+    /// Unique instance identifier for the originating node.
+    /// </summary>
+    public required string OriginInstanceId { get; init; }
+
+    /// <summary>
+    /// Event envelope delivered to subscribers.
+    /// </summary>
+    public required FeatureStreamEnvelope Envelope { get; init; }
+
+    /// <summary>
+    /// Optional geometry envelope used by subscription filters.
+    /// </summary>
+    public double[]? GeometryEnvelope { get; init; }
+
+    /// <summary>
+    /// Optional pre-serialized feature properties used by subscription filters.
+    /// </summary>
+    public string? PropertiesJson { get; init; }
 }

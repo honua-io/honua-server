@@ -12,6 +12,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
@@ -168,6 +169,44 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executeTask);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_RenewsRedisLeaseWhileWebhookDeliveryIsInFlight()
+    {
+        var database = Substitute.For<IDatabase>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase().Returns(database);
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        database.LockExtendAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+
+        var coordinator = new RedisLeaseCoordinator(redis, "featurechange:webhook:lease", TimeSpan.FromMinutes(10));
+        Assert.True(await coordinator.TryAcquireOrExtendAsync());
+
+        using var cts = new CancellationTokenSource();
+        var maintainMethod = typeof(RedisLeaseCoordinator).GetMethod(
+            "MaintainLeaseAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        Assert.NotNull(maintainMethod);
+
+        var maintainTask = (Task)maintainMethod!.Invoke(
+            coordinator,
+            [TimeSpan.FromMilliseconds(50), cts.Token])!;
+
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+
+        var extendCalls = database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync));
+        Assert.True(extendCalls >= 2, $"expected at least two lease extensions while delivery was in flight, but saw {extendCalls}");
+
+        cts.Cancel();
+        await maintainTask;
+
+        Assert.Equal(1, database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockTakeAsync)));
     }
 
     [UnitTest]
@@ -331,4 +370,5 @@ public sealed class FeatureChangeWebhookDispatcherTests
         public void Set(string key, byte[] value, DistributedCacheEntryOptions options) => throw new InvalidOperationException("boom");
         public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => throw new InvalidOperationException("boom");
     }
+
 }

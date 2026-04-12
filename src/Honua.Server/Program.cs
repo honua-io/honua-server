@@ -464,7 +464,11 @@ builder.Services.AddOptions<Honua.Server.Features.Streaming.FeatureStreamOptions
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>,
     Honua.Server.Features.Streaming.FeatureStreamOptionsValidator>();
-builder.Services.AddSingleton<Honua.Server.Features.Streaming.FeatureStreamSessionManager>();
+builder.Services.AddSingleton<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(sp =>
+    new Honua.Server.Features.Streaming.FeatureStreamSessionManager(
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamSessionManager>>(),
+        sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<Honua.Server.Features.Infrastructure.Events.PendingFeatureChangeSignal>());
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeRetryQueue>(sp =>
     new Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryQueue(
