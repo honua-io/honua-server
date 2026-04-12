@@ -127,14 +127,14 @@ public class WorkspaceLifecycleTests
         string label = "test",
         string? uri = null,
         DateTimeOffset? expiresAt = null) => new()
-    {
-        WorkspaceId = Guid.NewGuid().ToString("N"),
-        Kind = kind,
-        Label = label,
-        OwnerId = "owner-1",
-        State = WorkspaceLifecycleState.Active,
-        Uri = uri,
-        CreatedAt = Now.AddHours(-2),
-        ExpiresAt = expiresAt
-    };
+        {
+            WorkspaceId = Guid.NewGuid().ToString("N"),
+            Kind = kind,
+            Label = label,
+            OwnerId = "owner-1",
+            State = WorkspaceLifecycleState.Active,
+            Uri = uri,
+            CreatedAt = Now.AddHours(-2),
+            ExpiresAt = expiresAt
+        };
 }

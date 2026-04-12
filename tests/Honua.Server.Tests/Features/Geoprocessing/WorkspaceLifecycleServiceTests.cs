@@ -316,13 +316,13 @@ public class WorkspaceLifecycleServiceTests
         WorkspaceKind kind,
         WorkspaceLifecycleState state,
         DateTimeOffset? expiresAt = null) => new()
-    {
-        WorkspaceId = id,
-        Kind = kind,
-        Label = $"ws-{id}",
-        OwnerId = "owner-1",
-        State = state,
-        CreatedAt = Now.AddHours(-2),
-        ExpiresAt = expiresAt
-    };
+        {
+            WorkspaceId = id,
+            Kind = kind,
+            Label = $"ws-{id}",
+            OwnerId = "owner-1",
+            State = state,
+            CreatedAt = Now.AddHours(-2),
+            ExpiresAt = expiresAt
+        };
 }
