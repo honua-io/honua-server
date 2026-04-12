@@ -415,6 +415,32 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_StoresProgressInQueuedState()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = CreateValidPlan(),
+            IdempotencyKey = "idem-progress"
+        };
+
+        await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        await _progressStore.Received(1).SetProgressAsync(
+            Arg.Any<string>(),
+            Arg.Is<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingProgress>(p =>
+                p.WorkflowStatus == Honua.Core.Features.Geoprocessing.Domain.GeoprocessingWorkflowStatus.Validated &&
+                p.CurrentStage == Honua.Core.Features.Geoprocessing.Domain.GeoprocessingStageKind.Execute &&
+                p.CurrentPhase == "Queued" &&
+                p.PlanId == "plan-1"),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
     public async Task SubmitPlanJob_WithDuplicateIdempotencyKey_ReturnsExistingJob()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -503,6 +529,28 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WhenApprovalRequired_ThrowsFailedPrecondition()
+    {
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.Required("policy-1", "destructive-action"));
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = CreateValidPlan(),
+            IdempotencyKey = "idem-key-1"
+        };
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        ex.Which.Status.Detail.Should().Contain("approval");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
     public async Task SubmitPlanJob_Unauthorized_ThrowsPermissionDenied()
     {
         _authEvaluator
@@ -543,12 +591,30 @@ public sealed class GrpcProcessServiceTests
     private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)
     {
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
-        var stepKeys = string.Join(",", domainPlan.Steps.Select(s => $"{s.StepId}:{s.Kind}"));
-        var outputKeys = string.Join(",", domainPlan.Outputs);
-        var input = $"{domainPlan.PlanId}\0{domainPlan.IntentId}\0{stepKeys}\0{outputKeys}";
+        var sb = new System.Text.StringBuilder();
+        sb.Append(domainPlan.PlanId).Append('\0').Append(domainPlan.IntentId).Append('\0');
+
+        foreach (var step in domainPlan.Steps)
+        {
+            sb.Append(step.StepId).Append(':').Append(step.Kind);
+            sb.Append(':').Append(step.ProcessId ?? "");
+            foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                sb.Append(':').Append(kv.Key).Append('=').Append(kv.Value);
+            }
+            foreach (var dep in step.DependsOn)
+            {
+                sb.Append('>').Append(dep);
+            }
+            sb.Append(',');
+        }
+
+        sb.Append('\0');
+        sb.Append(string.Join(",", domainPlan.Outputs));
+
         return Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
+                System.Text.Encoding.UTF8.GetBytes(sb.ToString()))).ToLowerInvariant();
     }
 
     private static ExecutionJobRecord CreateTestJobRecord(string jobId, ExecutionJobStatus status)

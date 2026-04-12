@@ -155,6 +155,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         var plan = request.Plan;
         ValidatePlanStructure(plan);
+        EnsureApproved(context);
 
         var jobStore = RequireJobStore();
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(plan);
@@ -202,7 +203,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
                 "Failed to create or locate execution job."));
         }
 
-        var progress = GeoprocessingProgress.CreateInitial(jobId);
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, domainPlan.PlanId);
         await _progressStore.SetProgressAsync(jobId, progress, cancellationToken: context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -361,6 +362,29 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
                 : "You do not have permission to perform this operation."));
     }
 
+    private void EnsureApproved(ServerCallContext context)
+    {
+        var approval = _approvalEvaluator.Evaluate(
+            context.GetHttpContext().User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Process,
+                Operation = OperatorOperation.Execute
+            });
+
+        if (!approval.IsRequired)
+        {
+            return;
+        }
+
+        GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
+
+        throw new RpcException(new Status(
+            StatusCode.FailedPrecondition,
+            $"This operation requires approval (policy: {approval.PolicyRef}). " +
+            "Use ValidatePlan to check approval requirements before submission."));
+    }
+
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new RpcException(new Status(
             StatusCode.Unavailable,
@@ -405,10 +429,28 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
     private static string CreateRequestFingerprint(AnalysisPlan plan)
     {
-        var stepKeys = string.Join(",", plan.Steps.Select(s => $"{s.StepId}:{s.Kind}"));
-        var outputKeys = string.Join(",", plan.Outputs);
-        var input = $"{plan.PlanId}\0{plan.IntentId}\0{stepKeys}\0{outputKeys}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
+        var sb = new StringBuilder();
+        sb.Append(plan.PlanId).Append('\0').Append(plan.IntentId).Append('\0');
+
+        foreach (var step in plan.Steps)
+        {
+            sb.Append(step.StepId).Append(':').Append(step.Kind);
+            sb.Append(':').Append(step.ProcessId ?? "");
+            foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                sb.Append(':').Append(kv.Key).Append('=').Append(kv.Value);
+            }
+            foreach (var dep in step.DependsOn)
+            {
+                sb.Append('>').Append(dep);
+            }
+            sb.Append(',');
+        }
+
+        sb.Append('\0');
+        sb.Append(string.Join(",", plan.Outputs));
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()))).ToLowerInvariant();
     }
 
     private static void EnsureMatchingIdempotentRequest(ExecutionJobRecord existing, string requestFingerprint)

@@ -64,4 +64,9 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string jobId,
         string status);
+
+    [LoggerMessage(8010, LogLevel.Warning, "Submit rejected: approval required (policy: {PolicyRef})")]
+    public static partial void SubmitRejectedApprovalRequired(
+        ILogger logger,
+        string policyRef);
 }

@@ -124,4 +124,19 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
             StartedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Capturing intent"
         };
+
+    /// <summary>
+    /// Creates a progress record for a submitted execution job that has been queued.
+    /// </summary>
+    public static GeoprocessingProgress CreateForSubmittedJob(string operationId, string? planId = null)
+        => new()
+        {
+            OperationId = operationId,
+            WorkflowStatus = GeoprocessingWorkflowStatus.Validated,
+            CurrentStage = GeoprocessingStageKind.Execute,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending,
+            PlanId = planId,
+            StartedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Queued"
+        };
 }
