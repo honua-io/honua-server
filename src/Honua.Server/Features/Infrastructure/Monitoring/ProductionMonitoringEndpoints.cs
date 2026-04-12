@@ -113,7 +113,7 @@ internal static class ProductionMonitoringEndpoints
             UtilizationPercentage = $"{utilization:P2}",
             TotalFailures = failures,
             TotalTimeouts = timeouts,
-            IsHealthy = utilization <= 0.8 && failures == 0,
+            IsHealthy = utilization <= 0.8 && failures == 0 && timeouts == 0,
             Timestamp = DateTimeOffset.UtcNow
         };
 
@@ -337,7 +337,7 @@ internal static class ProductionMonitoringEndpoints
                     ActiveConnections = healthMetrics.ActiveConnections,
                     TotalFailures = totalFailures,
                     TotalTimeouts = totalTimeouts,
-                    IsHealthy = poolUtilization <= 0.8 && totalFailures == 0
+                    IsHealthy = poolUtilization <= 0.8 && totalFailures == 0 && totalTimeouts == 0
                 },
                 Resilience = new DatabaseResilienceStatus
                 {
@@ -347,7 +347,7 @@ internal static class ProductionMonitoringEndpoints
                     ErrorRate = healthMetrics.ErrorRate,
                     ErrorRatePercentage = $"{healthMetrics.ErrorRate:P2}"
                 },
-                Alerts = GetDatabaseAlerts(poolUtilization, totalFailures, healthMetrics.ErrorRate),
+                Alerts = GetDatabaseAlerts(poolUtilization, totalFailures, totalTimeouts, healthMetrics.ErrorRate),
                 Timestamp = DateTimeOffset.UtcNow
             };
 
@@ -367,9 +367,10 @@ internal static class ProductionMonitoringEndpoints
     /// </summary>
     /// <param name="poolUtilization">Pool utilization ratio.</param>
     /// <param name="totalFailures">Total connection failures.</param>
+    /// <param name="totalTimeouts">Total connection timeouts.</param>
     /// <param name="errorRate">Query error rate.</param>
     /// <returns>List of database alerts.</returns>
-    private static List<string> GetDatabaseAlerts(double poolUtilization, long totalFailures, double errorRate)
+    private static List<string> GetDatabaseAlerts(double poolUtilization, long totalFailures, long totalTimeouts, double errorRate)
     {
         var alerts = new List<string>();
 
@@ -385,6 +386,11 @@ internal static class ProductionMonitoringEndpoints
         if (totalFailures > 0)
         {
             alerts.Add($"Error: Database connection failures detected ({totalFailures} total)");
+        }
+
+        if (totalTimeouts > 0)
+        {
+            alerts.Add($"Warning: Database connection timeouts detected ({totalTimeouts} total)");
         }
 
         if (errorRate > 0.1)

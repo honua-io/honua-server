@@ -96,6 +96,26 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/migrations")]
+    public async Task GetMigrationStatus_WhenPlanThrows_ReturnsProblemDetails()
+    {
+        _migrationRunner.PlanException = new InvalidOperationException("Migration planner exploded.");
+
+        _fixture.Services.GetRequiredService<MigrationState>()
+            .MarkSucceeded("No pending migration scripts.");
+
+        var response = await _client.GetAsync("/api/v1/admin/observability/migrations");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Internal Server Error");
+        content.Should().NotContain("Migration planner exploded.");
+        content.Should().NotContain("planAvailable");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/errors")]
     public async Task GetRecentErrors_WhenEmpty_ReturnsEmptyList()
     {
@@ -161,12 +181,20 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner
     {
         public DatabaseMigrationPlan Plan { get; set; } = DatabaseMigrationPlan.Succeeded();
+        public Exception? PlanException { get; set; }
 
         public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
             string connectionString,
             Assembly migrationsAssembly,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(Plan);
+        {
+            if (PlanException is not null)
+            {
+                throw PlanException;
+            }
+
+            return Task.FromResult(Plan);
+        }
 
         public Task<DatabaseMigrationResult> RunMigrationsAsync(
             string connectionString,

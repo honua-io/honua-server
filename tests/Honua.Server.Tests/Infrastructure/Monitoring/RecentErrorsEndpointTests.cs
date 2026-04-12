@@ -51,6 +51,7 @@ public sealed class RecentErrorsEndpointTests
 
         result.Should().NotBeNull();
         result!.Errors.Should().HaveCount(1);
+        result.InstanceId.Should().NotBeNullOrWhiteSpace();
 
         var entry = result.Errors.Single();
         entry.CorrelationId.Should().Be("trace-sensitive");
@@ -85,6 +86,7 @@ public sealed class RecentErrorsEndpointTests
 
         result.Should().NotBeNull();
         result!.Errors.Should().ContainSingle();
+        result.InstanceId.Should().NotBeNullOrWhiteSpace();
         result.Errors[0].StatusCode.Should().Be(StatusCodes.Status400BadRequest);
         result.Errors[0].Path.Should().Be("/rest/services/test/MapServer/WMS");
         result.Errors[0].Message.Should().Contain("WMS invalid BBOX");
@@ -111,6 +113,7 @@ public sealed class RecentErrorsEndpointTests
 
         result.Should().NotBeNull();
         result!.Capacity.Should().Be(2);
+        result.InstanceId.Should().NotBeNullOrWhiteSpace();
         result.Errors.Should().HaveCount(2);
         result.Errors[0].CorrelationId.Should().Be("trace-3");
         result.Errors[1].CorrelationId.Should().Be("trace-2");

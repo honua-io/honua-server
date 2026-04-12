@@ -132,6 +132,30 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/features/collections/testLayer/items?token=redacted")]
+    public async Task FormatError_OgcPath_DoesNotLeakQueryStringInInstance()
+    {
+        // Arrange
+        var context = CreateContext("/ogc/features/collections/testLayer/items");
+        context.Request.QueryString = new QueryString("?token=redacted");
+        var errorResponse = StandardErrorResponse.NotFound("Collection 'testLayer' not found.");
+
+        // Act
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        await result.ExecuteAsync(context);
+
+        // Assert
+        var responseBody = GetResponseBody(context);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(responseBody);
+
+        var instance = problemDetails.GetProperty("instance").GetString();
+        instance.Should().Be("/ogc/features/collections/testLayer/items");
+        instance.Should().NotContain("token=redacted");
+        instance.Should().NotContain("?");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task FormatError_OgcServiceAliasPath_ReturnsXmlExceptionReport()
     {

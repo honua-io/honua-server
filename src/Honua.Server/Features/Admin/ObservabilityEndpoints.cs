@@ -48,6 +48,7 @@ internal static class ObservabilityEndpoints
         var response = new RecentErrorsResponse
         {
             Capacity = buffer.Capacity,
+            InstanceId = buffer.InstanceId,
             Errors = buffer.Snapshot()
         };
 
@@ -87,51 +88,37 @@ internal static class ObservabilityEndpoints
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
-        try
-        {
-            var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
-                configuration,
-                secretResolver,
-                context.RequestAborted).ConfigureAwait(false);
+        var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+            configuration,
+            secretResolver,
+            context.RequestAborted).ConfigureAwait(false);
 
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                return Results.Json(
-                    response with
-                    {
-                        PlanAvailable = false,
-                        PlanError = "No database connection string configured."
-                    },
-                    MetricsJsonContext.Default.MigrationObservabilityResponse);
-            }
-
-            var plan = await migrationRunner.PlanMigrationsAsync(
-                connectionString,
-                typeof(Program).Assembly,
-                context.RequestAborted).ConfigureAwait(false);
-
-            return Results.Json(
-                response with
-                {
-                    PlanAvailable = plan.Successful,
-                    UpgradeRequired = plan.UpgradeRequired,
-                    PendingScripts = plan.PendingScripts,
-                    ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                    PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
-                },
-                MetricsJsonContext.Default.MigrationObservabilityResponse);
-        }
-        catch (Exception)
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
             return Results.Json(
                 response with
                 {
                     PlanAvailable = false,
-                    UpgradeRequired = false,
-                    PlanError = MigrationPlanUnavailableMessage
+                    PlanError = "No database connection string configured."
                 },
                 MetricsJsonContext.Default.MigrationObservabilityResponse);
         }
+
+        var plan = await migrationRunner.PlanMigrationsAsync(
+            connectionString,
+            typeof(Program).Assembly,
+            context.RequestAborted).ConfigureAwait(false);
+
+        return Results.Json(
+            response with
+            {
+                PlanAvailable = plan.Successful,
+                UpgradeRequired = plan.UpgradeRequired,
+                PendingScripts = plan.PendingScripts,
+                ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
+                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
+            },
+            MetricsJsonContext.Default.MigrationObservabilityResponse);
     }
 
     private static string? ResolveOtlpEndpoint(TracingOptions tracingOptions, IConfiguration configuration)

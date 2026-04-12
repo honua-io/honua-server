@@ -12,6 +12,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 internal sealed class RecentErrorBuffer
 {
     private readonly int _capacity;
+    private readonly string _instanceId;
     private readonly object _lock = new();
     private readonly Queue<RecentErrorEntry> _entries = new();
 
@@ -19,12 +20,18 @@ internal sealed class RecentErrorBuffer
     {
         ArgumentNullException.ThrowIfNull(options);
         _capacity = Math.Max(0, options.Value.Capacity);
+        _instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
     }
 
     /// <summary>
     /// Maximum number of errors retained.
     /// </summary>
     public int Capacity => _capacity;
+
+    /// <summary>
+    /// Identifier for the current node that owns this buffer.
+    /// </summary>
+    public string InstanceId => _instanceId;
 
     /// <summary>
     /// Record a server error response into the buffer.

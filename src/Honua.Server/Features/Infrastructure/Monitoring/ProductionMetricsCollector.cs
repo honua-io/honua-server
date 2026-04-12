@@ -233,6 +233,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
             TotalErrors = Volatile.Read(ref _totalErrors),
             ErrorRate = CalculateErrorRate(),
             ActiveConnections = _connectionTracker.GetActiveCount(),
+            ConnectionAcquisitionTimeouts = _connectionPoolMetrics.GetTotalTimeouts(),
             ConnectionAcquisitionFailures = _connectionPoolMetrics.GetTotalFailures(),
             RateLimitViolations = Volatile.Read(ref _rateLimitViolationsCount),
             Timestamp = DateTimeOffset.UtcNow
@@ -398,6 +399,11 @@ public sealed class ProductionHealthMetrics
     public required int ActiveConnections { get; set; }
 
     /// <summary>
+    /// Gets or sets connection acquisition timeouts.
+    /// </summary>
+    public required long ConnectionAcquisitionTimeouts { get; set; }
+
+    /// <summary>
     /// Gets or sets connection acquisition failures.
     /// </summary>
     public required long ConnectionAcquisitionFailures { get; set; }
@@ -421,7 +427,9 @@ public sealed class ProductionHealthMetrics
         return CacheHitRatio >= 0.8 &&
                DatabaseConnectionPoolUtilization <= 0.8 &&
                ErrorRate <= 0.05 &&
-               MemoryPressureLevel != "critical";
+               MemoryPressureLevel != "critical" &&
+               ConnectionAcquisitionTimeouts == 0 &&
+               ConnectionAcquisitionFailures == 0;
     }
 
     /// <summary>
@@ -450,6 +458,11 @@ public sealed class ProductionHealthMetrics
         if (MemoryPressureLevel == "critical")
         {
             alerts.Add($"Critical memory pressure: {MemoryUsageBytes / (1024 * 1024)}MB");
+        }
+
+        if (ConnectionAcquisitionTimeouts > 0)
+        {
+            alerts.Add($"Database connection acquisition timeouts: {ConnectionAcquisitionTimeouts}");
         }
 
         if (ConnectionAcquisitionFailures > 0)

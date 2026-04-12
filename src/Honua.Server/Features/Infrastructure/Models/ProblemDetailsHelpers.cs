@@ -65,13 +65,7 @@ internal static class ProblemDetailsHelpers
             return null;
         }
 
-        var instance = context.Request.Path.Value ?? string.Empty;
-        if (context.Request.QueryString.HasValue)
-        {
-            instance += context.Request.QueryString.Value;
-        }
-
-        return instance;
+        return context.Request.Path.Value ?? string.Empty;
     }
 
     private static ProblemDetailsResponse CreateProblemDetails(

@@ -2,12 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Runtime.ExceptionServices;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Options;
 using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
 
 namespace Honua.Server.Features.Infrastructure.Middleware;
@@ -26,11 +29,13 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 internal sealed class GlobalExceptionMiddleware(
     RequestDelegate next,
     ILogger<GlobalExceptionMiddleware> logger,
-    IHostEnvironment environment)
+    IHostEnvironment environment,
+    IOptions<LimitsOptions> limitsOptions)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly ILogger<GlobalExceptionMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly bool _includeDebugDetails = environment?.IsDevelopment() ?? false;
+    private readonly IOptions<LimitsOptions> _limitsOptions = limitsOptions ?? throw new ArgumentNullException(nameof(limitsOptions));
 
     // WEEK 5 FIX: Fast-path optimization components
     private static readonly ObjectPool<StringBuilder> _stringBuilderPool = new DefaultObjectPool<StringBuilder>(new StringBuilderPooledObjectPolicy());
@@ -62,7 +67,8 @@ internal sealed class GlobalExceptionMiddleware(
         if (context.Response.HasStarted)
         {
             // Cannot modify response after it has started - rethrow to let framework handle
-            throw ex;
+            ExceptionDispatchInfo.Capture(ex).Throw();
+            return;
         }
 
         // WEEK 5 FIX: Categorize exception for fast-path handling
@@ -88,7 +94,13 @@ internal sealed class GlobalExceptionMiddleware(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private async Task HandleFastPathException(HttpContext context, Exception ex, ExceptionCategory category)
     {
-        _ = category;
+        if (category.Type == ExceptionType.Timeout)
+        {
+            InfrastructureLog.RequestTimedOut(
+                _logger,
+                context.Request.Path.Value ?? string.Empty,
+                _limitsOptions.Value.Connections.RequestTimeout.TotalSeconds);
+        }
 
         // Preserve protocol-specific error contracts even on the fast path.
         await HandleExceptionAsync(context, ex);
@@ -264,7 +276,7 @@ internal sealed class ExceptionCategorizer
             };
         }
 
-        if (exceptionType == typeof(TimeoutException))
+        if (exceptionType == typeof(TimeoutException) || typeof(OperationCanceledException).IsAssignableFrom(exceptionType))
         {
             return new ExceptionCategory
             {

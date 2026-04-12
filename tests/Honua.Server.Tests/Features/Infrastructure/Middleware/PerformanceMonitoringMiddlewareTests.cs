@@ -119,6 +119,36 @@ public class PerformanceMonitoringMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
+    [Endpoint("GET /timeout")]
+    public async Task PerformanceMiddleware_ShouldCountTimeoutResponsesAsErrors()
+    {
+        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
+        var operationScope = Substitute.For<IOperationScope>();
+        performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
+
+        var systemMetricsCollector = Substitute.For<ISystemMetricsCollector>();
+        systemMetricsCollector.TrackRequest().Returns(Substitute.For<IDisposable>());
+
+        var app = CreateTestApp(services =>
+        {
+            services.AddSingleton(performanceMonitor);
+            services.AddSingleton(systemMetricsCollector);
+            services.Configure<PerformanceMonitoringOptions>(opt =>
+            {
+                opt.EnableMemoryTracking = false;
+                opt.SlowRequestThreshold = TimeSpan.FromSeconds(1);
+            });
+        }, addTimeoutEndpoint: true);
+
+        var response = await app.GetAsync("/timeout");
+
+        Assert.Equal(HttpStatusCode.RequestTimeout, response.StatusCode);
+        systemMetricsCollector.Received().RecordRequest(Arg.Any<TimeSpan>(), true);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /unmatched")]
     public async Task PerformanceMiddleware_ShouldCollapseUnmatchedRoutesIntoSingleMetricEndpoint()
     {
@@ -214,7 +244,8 @@ public class PerformanceMonitoringMiddlewareTests
     private HttpClient CreateTestApp(
         Action<IServiceCollection>? configureServices = null,
         bool addSlowEndpoint = false,
-        bool addErrorEndpoint = false)
+        bool addErrorEndpoint = false,
+        bool addTimeoutEndpoint = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -257,6 +288,11 @@ public class PerformanceMonitoringMiddlewareTests
         if (addErrorEndpoint)
         {
             app.MapGet("/error", (HttpContext _) => throw new InvalidOperationException("Test error"));
+        }
+
+        if (addTimeoutEndpoint)
+        {
+            app.MapGet("/timeout", (HttpContext _) => Results.StatusCode(StatusCodes.Status408RequestTimeout));
         }
 
         app.StartAsync().GetAwaiter().GetResult();

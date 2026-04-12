@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
@@ -25,6 +26,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 {
     private readonly TestServer _server;
     private readonly HttpClient _client;
+    private readonly TestLogger<GlobalExceptionMiddleware> _logger = new();
 
     public GlobalExceptionMiddlewareTests()
     {
@@ -35,6 +37,8 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                     .ConfigureServices(services =>
                     {
                         services.AddLogging();
+                        services.Configure<LimitsOptions>(_ => { });
+                        services.AddSingleton<ILogger<GlobalExceptionMiddleware>>(_logger);
                     })
                     .Configure(app =>
                     {
@@ -53,6 +57,8 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new UnauthorizedAccessException("Access denied");
                                 if (path.Contains("throw-timeout"))
                                     throw new TimeoutException("Operation timed out");
+                                if (path.Contains("throw-cancelled"))
+                                    throw new OperationCanceledException("Operation timed out");
                                 if (path.Contains("throw-circuit"))
                                     throw new BrokenCircuitException("Circuit is open");
                                 if (path.Contains("throw-notfound"))
@@ -69,7 +75,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                 {
                                     await context.Response.StartAsync();
                                     await context.Response.WriteAsync("partial");
-                                    throw new InvalidOperationException("The response has already started, the error handler will not be executed.");
+                                    ThrowResponseStartedException();
                                 }
                                 if (path.Contains("throw-general"))
                                     throw new InvalidOperationException("Something went wrong");
@@ -156,6 +162,33 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         problemDetails.GetProperty("title").GetString().Should().Be("Request Timeout");
         problemDetails.GetProperty("detail").GetString().Should().Be("The request timed out.");
         problemDetails.GetProperty("status").GetInt32().Should().Be(408);
+
+        _logger.LogEntries.Should().ContainSingle(entry =>
+            entry.EventId.Id == 4051 &&
+            entry.LogLevel == LogLevel.Warning &&
+            entry.Message.Contains("/throw-timeout", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_OperationCanceledException_Returns408RequestTimeout()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-cancelled");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.RequestTimeout);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Request Timeout");
+        problemDetails.GetProperty("detail").GetString().Should().Be("The request was cancelled or timed out.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(408);
+
+        _logger.LogEntries.Should().Contain(entry =>
+            entry.EventId.Id == 4051 &&
+            entry.LogLevel == LogLevel.Warning &&
+            entry.Message.Contains("/throw-cancelled", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -404,6 +437,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var exception = await Assert.ThrowsAsync<HttpRequestException>(() => _client.GetAsync("/throw-started"));
         exception.InnerException.Should().NotBeNull();
         exception.InnerException!.ToString().Should().Contain("The response has already started");
+        exception.InnerException!.StackTrace.Should().Contain(nameof(ThrowResponseStartedException));
     }
 
     public void Dispose()
@@ -412,4 +446,41 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         _server.Dispose();
         GC.SuppressFinalize(this);
     }
+
+    private static void ThrowResponseStartedException()
+        => throw new InvalidOperationException("The response has already started, the error handler will not be executed.");
+
+    private sealed class TestLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> LogEntries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            LogEntries.Add(new LogEntry(logLevel, eventId, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed record LogEntry(
+        LogLevel LogLevel,
+        EventId EventId,
+        string Message,
+        Exception? Exception);
 }

@@ -105,7 +105,9 @@ internal sealed partial class PerformanceMonitoringMiddleware
 
             // Record request metrics
             RecordRequestMetrics(context, endpoint, stopwatch.Elapsed);
-            var isError = requestErrored || context.Response.StatusCode >= StatusCodes.Status500InternalServerError;
+            var isError = requestErrored ||
+                          context.Response.StatusCode >= StatusCodes.Status500InternalServerError ||
+                          context.Response.StatusCode == StatusCodes.Status408RequestTimeout;
             _systemMetricsCollector.RecordRequest(stopwatch.Elapsed, isError);
 
             if (operationScope is not null)

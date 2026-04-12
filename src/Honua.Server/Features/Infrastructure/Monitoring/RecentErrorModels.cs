@@ -45,6 +45,11 @@ internal sealed class RecentErrorsResponse
     public int Capacity { get; init; }
 
     /// <summary>
+    /// Identifier for the current node that generated the response.
+    /// </summary>
+    public string InstanceId { get; init; } = string.Empty;
+
+    /// <summary>
     /// Recent errors, ordered newest-first.
     /// </summary>
     public IReadOnlyList<RecentErrorEntry> Errors { get; init; } = Array.Empty<RecentErrorEntry>();
