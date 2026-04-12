@@ -289,6 +289,17 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
 
             try
             {
+                // Only Active and Expired workspaces are eligible for cleanup.
+                // Archived or Deleted workspaces may have stale ExpiresAt values
+                // and must not be processed by the expiration sweep.
+                if (workspace.State is not (WorkspaceLifecycleState.Active
+                    or WorkspaceLifecycleState.Expired))
+                {
+                    WorkspaceLifecycleLog.CleanupSkippedNonExpiredState(
+                        _logger, workspace.WorkspaceId, workspace.State);
+                    continue;
+                }
+
                 if (workspace.State == WorkspaceLifecycleState.Active)
                 {
                     var expired = await _workspaceStore.TransitionStateAsync(
@@ -304,10 +315,6 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                         continue;
                     }
                 }
-
-                // At this point the workspace is expired: either it was already
-                // Expired or it was just transitioned from Active above
-                // (failed transitions continue out of the loop iteration).
                 if (workspace.ExpiresAt.HasValue
                     && now >= workspace.ExpiresAt.Value + _options.CleanupGracePeriod)
                 {
@@ -441,4 +448,10 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Error,
         Message = "Rollback delete of promoted copy {PromotedArtifactId} threw after source {SourceArtifactId} transition failed; duplicate artifact may exist")]
     public static partial void PromotionRollbackDeleteThrew(ILogger logger, string sourceArtifactId, string promotedArtifactId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 9912,
+        Level = LogLevel.Debug,
+        Message = "Skipped workspace {WorkspaceId} during cleanup: state {State} is not eligible for expiration")]
+    public static partial void CleanupSkippedNonExpiredState(ILogger logger, string workspaceId, WorkspaceLifecycleState state);
 }

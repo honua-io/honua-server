@@ -693,6 +693,26 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task RunCleanup_SkipsArchivedWorkspace()
+    {
+        // Archived workspace with a stale ExpiresAt should not be transitioned or deleted.
+        var archived = CreateWorkspace("ws-archived", WorkspaceKind.Scratch,
+            WorkspaceLifecycleState.Archived, expiresAt: Now.AddHours(-2));
+        _workspaceStore.ListExpiredAsync(Now, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([archived]);
+
+        var result = await _service.RunCleanupAsync();
+
+        Assert.Equal(0, result.WorkspacesExpired);
+        Assert.Equal(0, result.WorkspacesDeleted);
+        Assert.Empty(result.Errors);
+        await _workspaceStore.DidNotReceive().TransitionStateAsync(
+            Arg.Any<string>(), Arg.Any<WorkspaceLifecycleState>(), Arg.Any<CancellationToken>());
+        await _workspaceStore.DidNotReceive().DeleteAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RunCleanup_ContinuesAfterIndividualError()
     {
         // Within grace period so only transition is attempted.
