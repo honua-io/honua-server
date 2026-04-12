@@ -365,8 +365,8 @@ public sealed class StacItemsTests : IAsyncLifetime
         command.CommandText = """
             UPDATE features
             SET attributes = attributes || jsonb_build_object('id', @itemId)
-             WHERE objectid = @featureId;
-             """;
+            WHERE objectid = @featureId;
+            """;
         command.Parameters.Add(new NpgsqlParameter { ParameterName = "@itemId", Value = itemId });
         command.Parameters.Add(new NpgsqlParameter { ParameterName = "@featureId", Value = featureId });
         await command.ExecuteNonQueryAsync();
