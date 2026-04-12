@@ -340,7 +340,7 @@ Active ──> Expired ──> Deleted
 
 | State | Description |
 |---|---|
-| `Active` | Workspace is available for use. Artifacts can be added and promoted. |
+| `Active` | Workspace is available for use. Artifacts can be added and promoted. A workspace whose stored state is `Active` but whose `ExpiresAt` has been reached by the clock is treated as effectively expired for artifact addition and promotion eligibility. |
 | `Expired` | Past its expiration time, pending cleanup. Promotion may still be allowed depending on the retention policy. |
 | `Archived` | Preserved but no longer directly accessible. Reserved for future use — no transitions into or out of this state are implemented in #725. |
 | `Deleted` | Storage reclaimed. Terminal state. Cleanup deletes workspaces via `IWorkspaceStore.DeleteAsync`; whether the store records a terminal state row or physically removes storage is provider-specific. |
@@ -421,9 +421,11 @@ Eligibility rules:
 - Source workspace kind must be temporary (`Scratch`, `TempLayer`, or
   `ResultCollection`). Durable kinds are not valid promotion sources.
 - Source workspace must be `Active`, or `Expired` with `AllowPromotionBeforeCleanup`
-  enabled for its kind. An `Expired` source whose expiration timestamp plus the
-  cleanup grace period has elapsed is no longer eligible — promotion must happen
-  within the grace window.
+  enabled for its kind. A workspace whose stored state is `Active` but whose
+  `ExpiresAt` has been reached by the clock is treated as effectively `Expired`
+  for this check. An expired source whose expiration timestamp plus the
+  cleanup grace period has been reached (`>=`) is no longer eligible —
+  promotion must happen within the grace window.
 - Target workspace kind must be durable (`Persistent` or `SavedLayer`).
 - Target workspace must be `Active`.
 - Artifact must not be in `Deleted` or `Promoted` state.
@@ -437,9 +439,11 @@ Eligibility rules:
 
 The `WorkspaceCleanupService` runs periodic background sweeps:
 
-1. **Expire** — active workspaces past their `ExpiresAt` transition to `Expired`.
-2. **Delete** — expired workspaces past the grace period have their artifacts
-   deleted and then the workspace itself is removed.
+1. **Expire** — active workspaces at or past their `ExpiresAt` (`>=`) transition
+   to `Expired`.
+2. **Delete** — expired workspaces at or past the grace period boundary
+   (`now >= ExpiresAt + CleanupGracePeriod`) have their artifacts deleted and
+   then the workspace itself is removed.
 
 Cleanup is non-destructive during the grace period, allowing artifact promotion
 from recently-expired workspaces. Individual failures during a sweep (e.g. a
@@ -834,8 +838,9 @@ Authorization and approval checks are enforced on all mutating RPCs.
 
 `IWorkspaceLifecycleService` defines the orchestration surface. `CreateWorkspace`
 applies retention policy and creates workspaces with automatic expiration.
-`AddArtifact` validates that the target workspace exists and is `Active`
-before creating artifacts in the `Available` state. `PromoteArtifact`
+`AddArtifact` validates that the target workspace exists, is `Active`,
+and has not passed its expiration time by clock before creating artifacts
+in the `Available` state. `PromoteArtifact`
 copies an artifact to a durable workspace and marks the source as promoted,
 with rollback on transition failure. `ExtendWorkspaceExpiration` extends
 active workspace TTL clamped to policy limits. `RunCleanup` expires overdue

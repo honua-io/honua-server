@@ -207,6 +207,10 @@ Nullable TTL and quota settings fall back to built-in defaults when unset.
 config-overridable. TTL overrides are validated at startup; values exceeding
 the `MaxTimeToLive` ceiling for the kind are rejected.
 
+Quota enforcement is caller-initiated: the lifecycle service does not
+automatically check quotas during workspace creation. gRPC endpoints and
+workflow orchestrators should call `EvaluateQuota` before creating workspaces.
+
 ### Retention Defaults
 
 | Workspace Kind | Default TTL | Max TTL | Promotion allowed |
@@ -221,9 +225,10 @@ the `MaxTimeToLive` ceiling for the kind are rejected.
 
 Cleanup runs in two phases:
 
-1. **Expire** — active workspaces past their expiration transition to `Expired`.
-2. **Delete** — expired workspaces past the grace period have their artifacts
-   deleted, then the workspace is removed.
+1. **Expire** — active workspaces at or past their expiration (`>=`) transition
+   to `Expired`.
+2. **Delete** — expired workspaces at or past the grace period boundary have
+   their artifacts deleted, then the workspace is removed.
 
 Artifacts in expired workspaces can still be promoted to durable workspaces
 during the grace period when the retention policy allows it. Individual

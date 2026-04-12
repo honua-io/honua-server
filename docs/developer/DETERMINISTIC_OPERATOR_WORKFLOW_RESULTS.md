@@ -339,7 +339,8 @@ artifacts in a workspace assigned by the workflow. Scratch and result-collection
 workspaces will be created automatically with retention policy applied.
 Artifacts added through `IWorkspaceLifecycleService.AddArtifactAsync` are
 registered directly in the `Available` state; the method validates that the
-target workspace exists and is `Active` before creating the artifact. Callers
+target workspace exists, is `Active`, and has not passed its expiration time
+by clock before creating the artifact. Callers
 that need a two-phase create (e.g. long-running materialization) can use
 `IArtifactStore` directly with the `Pending` state and transition to
 `Available` on completion.
