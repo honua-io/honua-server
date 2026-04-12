@@ -174,6 +174,64 @@ Honua uses a layered caching approach:
 
 ---
 
+## Workspace Lifecycle
+
+Geoprocessing workspaces manage temporary and durable artifacts produced by
+analysis workflows. The workspace lifecycle service handles creation, retention,
+promotion, and background cleanup.
+
+> **Note:** Workspace lifecycle requires concrete `IWorkspaceStore` and
+> `IArtifactStore` implementations to be registered. The lifecycle service and
+> background cleanup are skipped when no store provider is available.
+
+### Configuration
+
+All settings live under `Geoprocessing:Workspace` (env prefix
+`Geoprocessing__Workspace__`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `CleanupInterval` | 15 minutes | How frequently the cleanup service runs |
+| `CleanupGracePeriod` | 1 hour | Grace period after expiration before deletion |
+| `EnableAutomaticCleanup` | `true` | Whether background cleanup is active |
+| `MaxCleanupBatchSize` | 100 | Workspaces processed per sweep |
+| `ScratchDefaultTtl` | (built-in: 1 hour) | TTL override for scratch workspaces |
+| `TempLayerDefaultTtl` | (built-in: 24 hours) | TTL override for temp layer workspaces |
+| `ResultCollectionDefaultTtl` | (built-in: 7 days) | TTL override for result collections |
+| `MaxWorkspaceCount` | (built-in: 100) | Per-owner workspace limit |
+| `MaxArtifactCount` | (built-in: 1,000) | Per-owner artifact limit |
+| `MaxStorageBytes` | (built-in: 10 GB) | Per-owner storage limit |
+
+Nullable TTL and quota settings fall back to built-in defaults when unset.
+`MaxTimeToLive` and `AllowPromotionBeforeCleanup` per workspace kind are not
+config-overridable.
+
+### Retention Defaults
+
+| Workspace Kind | Default TTL | Max TTL | Promotion allowed |
+|----------------|-------------|---------|-------------------|
+| Scratch | 1 hour | 24 hours | Yes |
+| TempLayer | 24 hours | 7 days | Yes |
+| Persistent | none | none | No |
+| SavedLayer | none | none | No |
+| ResultCollection | 7 days | 30 days | Yes |
+
+### Cleanup Behavior
+
+Cleanup runs in two phases:
+
+1. **Expire** — active workspaces past their expiration transition to `Expired`.
+2. **Delete** — expired workspaces past the grace period have their artifacts
+   deleted, then the workspace is removed.
+
+Artifacts in expired workspaces can still be promoted to durable workspaces
+during the grace period when the retention policy allows it.
+
+For full lifecycle semantics, see the
+[AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
+
+---
+
 ## Memory Optimizations
 
 Key memory-management patterns in Honua:
