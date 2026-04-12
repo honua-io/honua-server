@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geoprocessing;
@@ -93,20 +94,14 @@ internal sealed class WorkspaceOptionsValidator : IValidateOptions<WorkspaceOpti
             failures.Add($"{WorkspaceOptions.SectionName}:MaxCleanupBatchSize must be a positive integer.");
         }
 
-        if (options.ScratchDefaultTtl.HasValue && options.ScratchDefaultTtl.Value <= TimeSpan.Zero)
-        {
-            failures.Add($"{WorkspaceOptions.SectionName}:ScratchDefaultTtl must be a positive duration when specified.");
-        }
+        ValidateTtlOverride(failures, "ScratchDefaultTtl",
+            options.ScratchDefaultTtl, WorkspaceKind.Scratch);
 
-        if (options.TempLayerDefaultTtl.HasValue && options.TempLayerDefaultTtl.Value <= TimeSpan.Zero)
-        {
-            failures.Add($"{WorkspaceOptions.SectionName}:TempLayerDefaultTtl must be a positive duration when specified.");
-        }
+        ValidateTtlOverride(failures, "TempLayerDefaultTtl",
+            options.TempLayerDefaultTtl, WorkspaceKind.TempLayer);
 
-        if (options.ResultCollectionDefaultTtl.HasValue && options.ResultCollectionDefaultTtl.Value <= TimeSpan.Zero)
-        {
-            failures.Add($"{WorkspaceOptions.SectionName}:ResultCollectionDefaultTtl must be a positive duration when specified.");
-        }
+        ValidateTtlOverride(failures, "ResultCollectionDefaultTtl",
+            options.ResultCollectionDefaultTtl, WorkspaceKind.ResultCollection);
 
         if (options.MaxWorkspaceCount.HasValue && options.MaxWorkspaceCount.Value <= 0)
         {
@@ -126,5 +121,29 @@ internal sealed class WorkspaceOptionsValidator : IValidateOptions<WorkspaceOpti
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
+    }
+
+    private static void ValidateTtlOverride(
+        List<string> failures,
+        string propertyName,
+        TimeSpan? value,
+        WorkspaceKind kind)
+    {
+        if (!value.HasValue)
+            return;
+
+        if (value.Value <= TimeSpan.Zero)
+        {
+            failures.Add($"{WorkspaceOptions.SectionName}:{propertyName} must be a positive duration when specified.");
+            return;
+        }
+
+        if (RetentionPolicy.Defaults.TryGetValue(kind, out var policy)
+            && policy.MaxTimeToLive.HasValue
+            && value.Value > policy.MaxTimeToLive.Value)
+        {
+            failures.Add(
+                $"{WorkspaceOptions.SectionName}:{propertyName} ({value.Value}) exceeds the maximum allowed TTL of {policy.MaxTimeToLive.Value} for {kind} workspaces.");
+        }
     }
 }

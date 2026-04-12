@@ -157,29 +157,49 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         };
 
         var created = await _artifactStore.CreateAsync(promoted, cancellationToken);
-        var transitioned = await _artifactStore.TransitionStateAsync(
-            request.ArtifactId, ArtifactLifecycleState.Promoted, cancellationToken);
+
+        bool transitioned;
+        try
+        {
+            transitioned = await _artifactStore.TransitionStateAsync(
+                request.ArtifactId, ArtifactLifecycleState.Promoted, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            WorkspaceLifecycleLog.PromotionTransitionThrew(_logger, request.ArtifactId, ex);
+            return await RollbackPromotedCopyAsync(request.ArtifactId, created.ArtifactId,
+                "Source artifact state transition threw an exception", cancellationToken);
+        }
 
         if (!transitioned)
         {
-            // Roll back the promoted copy so the caller can safely retry.
-            var rolledBack = await _artifactStore.DeleteAsync(created.ArtifactId, cancellationToken);
-            if (!rolledBack)
-            {
-                WorkspaceLifecycleLog.PromotionRollbackFailed(
-                    _logger, request.ArtifactId, created.ArtifactId);
-                return ArtifactPromotionResult.Failure(
-                    "Failed to mark source artifact as promoted and rollback of promoted copy also failed; manual cleanup may be required");
-            }
-
             WorkspaceLifecycleLog.PromotionTransitionFailed(_logger, request.ArtifactId);
-            return ArtifactPromotionResult.Failure("Failed to mark source artifact as promoted");
+            return await RollbackPromotedCopyAsync(request.ArtifactId, created.ArtifactId,
+                "Failed to mark source artifact as promoted", cancellationToken);
         }
 
         WorkspaceLifecycleLog.ArtifactPromoted(_logger, request.ArtifactId, created.ArtifactId,
             request.SourceWorkspaceId, request.TargetWorkspaceId);
 
         return ArtifactPromotionResult.Success(created.ArtifactId);
+    }
+
+    private async Task<ArtifactPromotionResult> RollbackPromotedCopyAsync(
+        string sourceArtifactId,
+        string promotedArtifactId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var rolledBack = await _artifactStore.DeleteAsync(promotedArtifactId, cancellationToken);
+        if (!rolledBack)
+        {
+            WorkspaceLifecycleLog.PromotionRollbackFailed(
+                _logger, sourceArtifactId, promotedArtifactId);
+            return ArtifactPromotionResult.Failure(
+                $"{reason} and rollback of promoted copy also failed; manual cleanup may be required");
+        }
+
+        return ArtifactPromotionResult.Failure(reason);
     }
 
     public async Task<bool> ExtendWorkspaceExpirationAsync(
@@ -240,6 +260,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                     && now >= workspace.ExpiresAt.Value + _options.CleanupGracePeriod)
                 {
                     var artifacts = await _artifactStore.ListByWorkspaceAsync(workspace.WorkspaceId, cancellationToken);
+                    var allArtifactsDeleted = true;
                     foreach (var artifact in artifacts)
                     {
                         if (artifact.State is not ArtifactLifecycleState.Deleted)
@@ -252,9 +273,17 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                             }
                             else
                             {
+                                allArtifactsDeleted = false;
                                 errors.Add($"Workspace {workspace.WorkspaceId}: failed to delete artifact {artifact.ArtifactId}");
                             }
                         }
+                    }
+
+                    if (!allArtifactsDeleted)
+                    {
+                        WorkspaceLifecycleLog.CleanupSkippedOrphanRisk(
+                            _logger, workspace.WorkspaceId);
+                        continue;
                     }
 
                     var wsDeleted = await _workspaceStore.DeleteAsync(workspace.WorkspaceId, cancellationToken);
@@ -342,4 +371,16 @@ internal static partial class WorkspaceLifecycleLog
         Level = LogLevel.Warning,
         Message = "Rejected artifact addition to workspace {WorkspaceId}: {Reason}")]
     public static partial void AddArtifactRejected(ILogger logger, string workspaceId, string reason);
+
+    [LoggerMessage(
+        EventId = 9909,
+        Level = LogLevel.Error,
+        Message = "Source artifact {ArtifactId} state transition threw during promotion")]
+    public static partial void PromotionTransitionThrew(ILogger logger, string artifactId, Exception exception);
+
+    [LoggerMessage(
+        EventId = 9910,
+        Level = LogLevel.Warning,
+        Message = "Skipped workspace {WorkspaceId} deletion: not all artifacts were cleaned up")]
+    public static partial void CleanupSkippedOrphanRisk(ILogger logger, string workspaceId);
 }

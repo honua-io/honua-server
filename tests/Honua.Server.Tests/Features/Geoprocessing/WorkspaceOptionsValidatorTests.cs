@@ -216,4 +216,70 @@ public class WorkspaceOptionsValidatorTests
 
         Assert.True(result.Succeeded);
     }
+
+    [Fact]
+    public void Validate_ScratchTtlExceedsMax_Fails()
+    {
+        var options = new WorkspaceOptions { ScratchDefaultTtl = TimeSpan.FromHours(48) };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("ScratchDefaultTtl", result.FailureMessage);
+        Assert.Contains("exceeds the maximum", result.FailureMessage);
+    }
+
+    [Fact]
+    public void Validate_ScratchTtlAtMax_Succeeds()
+    {
+        var options = new WorkspaceOptions { ScratchDefaultTtl = TimeSpan.FromHours(24) };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public void Validate_TempLayerTtlExceedsMax_Fails()
+    {
+        var options = new WorkspaceOptions { TempLayerDefaultTtl = TimeSpan.FromDays(14) };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("TempLayerDefaultTtl", result.FailureMessage);
+        Assert.Contains("exceeds the maximum", result.FailureMessage);
+    }
+
+    [Fact]
+    public void Validate_TempLayerTtlAtMax_Succeeds()
+    {
+        var options = new WorkspaceOptions { TempLayerDefaultTtl = TimeSpan.FromDays(7) };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public void Validate_ResultCollectionTtlExceedsMax_Fails()
+    {
+        var options = new WorkspaceOptions { ResultCollectionDefaultTtl = TimeSpan.FromDays(60) };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("ResultCollectionDefaultTtl", result.FailureMessage);
+        Assert.Contains("exceeds the maximum", result.FailureMessage);
+    }
+
+    [Fact]
+    public void Validate_ResultCollectionTtlAtMax_Succeeds()
+    {
+        var options = new WorkspaceOptions { ResultCollectionDefaultTtl = TimeSpan.FromDays(30) };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
 }
