@@ -1106,6 +1106,60 @@
       ]
     },
     {
+      "surfaceId": "grpc-process-service",
+      "displayName": "gRPC ProcessService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.ProcessService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.ProcessService/ValidatePlan",
+        "Grpc::geospatial.v1.ProcessService/DryRunPlan",
+        "Grpc::geospatial.v1.ProcessService/ExecutePlan",
+        "Grpc::geospatial.v1.ProcessService/SubmitPlanJob",
+        "Grpc::geospatial.v1.ProcessService/GetJob",
+        "Grpc::geospatial.v1.ProcessService/GetJobResults",
+        "Grpc::geospatial.v1.ProcessService/CancelJob"
+      ],
+      "stubbed": [
+        "Grpc::geospatial.v1.ProcessService/ExecutePlan",
+        "Grpc::geospatial.v1.ProcessService/SubmitPlanJob",
+        "Grpc::geospatial.v1.ProcessService/GetJobResults"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GrpcProcessServiceIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#722",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "ci:proto-wire-governance",
+          "evidenceLocations": [
+            ".github/workflows/proto-wire-governance.yml",
+            "src/Honua.Core/Transport/Proto/geospatial/v1/process_service.proto"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#722",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "stac-api",
       "displayName": "STAC API and hosted sample",
       "surfaceKind": "http-route-family",

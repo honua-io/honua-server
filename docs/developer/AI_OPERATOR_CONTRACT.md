@@ -264,21 +264,30 @@ Example responsibilities:
 
 ### ExecutionJob
 
-Represents durable execution state.
+Represents durable execution state for an asynchronous geoprocessing job.
 
 Conceptual shape:
 
 ```json
 {
-  "jobId": "job_123",
-  "planId": "plan_123",
+  "jobId": "gp-a1b2c3d4e5f6",
   "status": "Running",
-  "progressPercent": 42,
-  "currentStepId": "buffer_schools",
-  "messages": [],
-  "startedAt": "2026-04-09T18:00:00Z"
+  "percentComplete": 42.0,
+  "currentPhase": "buffer_schools",
+  "createdAt": "2026-04-09T18:00:00Z",
+  "updatedAt": "2026-04-09T18:01:30Z",
+  "completedAt": null,
+  "errorMessage": null,
+  "warnings": []
 }
 ```
+
+Supported `status` values (`JobStatus`): `Queued`, `Provisioning`, `Running`,
+`Succeeded`, `Failed`, `Cancelled`.
+
+`percentComplete`, `currentPhase`, `completedAt`, and `errorMessage` are
+optional and populated as the job progresses. `createdAt` and `updatedAt` are
+always present.
 
 ### ArtifactRef
 
@@ -661,6 +670,21 @@ Recommended public services:
 - `GetJob`
 - `GetJobResults`
 - `CancelJob`
+
+**Implementation status** (as of #722):
+
+All seven RPCs are wired. `ValidatePlan` and `DryRunPlan` are fully functional
+and enforce structural validation (null plan, valid step kinds, valid artifact
+kinds). `SubmitPlanJob` creates durable job records with idempotency support
+and requires Redis-backed storage. `GetJob` and `CancelJob` are fully wired.
+
+Stubbed RPCs:
+- `ExecutePlan` returns `Unimplemented`; callers should use `SubmitPlanJob`
+  for asynchronous execution.
+- `GetJobResults` enforces terminal-state preconditions but returns `NotFound`
+  until the execution engine and result storage are implemented.
+
+Authorization and approval checks are enforced on all mutating RPCs.
 
 ### WorkspaceService
 

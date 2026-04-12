@@ -90,6 +90,7 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
         GeoprocessingWorkflowStatus.AwaitingClarification => OperationStatus.Processing,
         GeoprocessingWorkflowStatus.Validated => OperationStatus.Processing,
         GeoprocessingWorkflowStatus.AwaitingApproval => OperationStatus.Processing,
+        GeoprocessingWorkflowStatus.AwaitingExecution => OperationStatus.Queued,
         GeoprocessingWorkflowStatus.Running => OperationStatus.Processing,
         GeoprocessingWorkflowStatus.Completed => OperationStatus.Completed,
         GeoprocessingWorkflowStatus.Failed => OperationStatus.Failed,
@@ -123,5 +124,20 @@ public sealed record GeoprocessingProgress : IOperationProgress, ICancellableOpe
             CurrentStageStatus = GeoprocessingStageStatus.Pending,
             StartedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Capturing intent"
+        };
+
+    /// <summary>
+    /// Creates a progress record for a submitted execution job that has been queued.
+    /// </summary>
+    public static GeoprocessingProgress CreateForSubmittedJob(string operationId, string? planId = null)
+        => new()
+        {
+            OperationId = operationId,
+            WorkflowStatus = GeoprocessingWorkflowStatus.AwaitingExecution,
+            CurrentStage = GeoprocessingStageKind.Execute,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending,
+            PlanId = planId,
+            StartedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Queued"
         };
 }

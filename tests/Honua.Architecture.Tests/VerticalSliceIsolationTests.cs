@@ -23,6 +23,7 @@ public sealed class VerticalSliceIsolationTests
         "FeatureServer",
         "GeoservicesCatalog",
         "Geocoding",
+        "Geoprocessing",
         "GeometryService",
         "ImageServer",
         "MapServer",

@@ -11,42 +11,47 @@ public enum GeoprocessingWorkflowStatus
     /// <summary>
     /// Intent captured but not yet validated.
     /// </summary>
-    Draft,
+    Draft = 0,
 
     /// <summary>
     /// Workflow is waiting for user clarification before proceeding.
     /// </summary>
-    AwaitingClarification,
+    AwaitingClarification = 1,
 
     /// <summary>
     /// Intent and plan have been validated.
     /// </summary>
-    Validated,
+    Validated = 2,
 
     /// <summary>
     /// Plan requires explicit user approval before execution.
     /// </summary>
-    AwaitingApproval,
+    AwaitingApproval = 3,
+
+    /// <summary>
+    /// Plan is validated and submitted but waiting for an execution slot.
+    /// </summary>
+    AwaitingExecution = 8,
 
     /// <summary>
     /// Execution is in progress.
     /// </summary>
-    Running,
+    Running = 4,
 
     /// <summary>
     /// Execution completed successfully.
     /// </summary>
-    Completed,
+    Completed = 5,
 
     /// <summary>
     /// Execution failed.
     /// </summary>
-    Failed,
+    Failed = 6,
 
     /// <summary>
     /// Execution was cancelled by the user or system.
     /// </summary>
-    Cancelled
+    Cancelled = 7
 }
 
 /// <summary>

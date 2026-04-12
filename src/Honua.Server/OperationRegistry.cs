@@ -45,6 +45,15 @@ public static class OperationRegistry
         new(Grpc, "geospatial.v1.FeatureService/QueryFeatures"),
         new(Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream"),
         new(Grpc, "geospatial.v1.FeatureService/ApplyEdits"),
+
+        // gRPC ProcessService methods (geospatial.v1.ProcessService)
+        new(Grpc, "geospatial.v1.ProcessService/ValidatePlan"),
+        new(Grpc, "geospatial.v1.ProcessService/DryRunPlan"),
+        new(Grpc, "geospatial.v1.ProcessService/ExecutePlan"),
+        new(Grpc, "geospatial.v1.ProcessService/SubmitPlanJob"),
+        new(Grpc, "geospatial.v1.ProcessService/GetJob"),
+        new(Grpc, "geospatial.v1.ProcessService/GetJobResults"),
+        new(Grpc, "geospatial.v1.ProcessService/CancelJob"),
     ];
 }
 
