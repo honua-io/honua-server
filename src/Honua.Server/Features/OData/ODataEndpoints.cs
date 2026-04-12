@@ -241,7 +241,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(201, "application/json")
             .Produces(400)
             .Produces(404);
-        createFeature.RequireAuthorization();
+        createFeature.AllowAnonymous();
 
         // POST - Create a new feature for a layer
         var createLayerFeature = endpoints.MapPost("/odata/Layers({layerId:int})/Features",
@@ -254,7 +254,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(201, "application/json")
             .Produces(400)
             .Produces(404);
-        createLayerFeature.RequireAuthorization();
+        createLayerFeature.AllowAnonymous();
 
         // GET - Get a single feature
         var getFeature = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
@@ -343,7 +343,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
             .Produces(404);
-        updateFeature.RequireAuthorization();
+        updateFeature.AllowAnonymous();
 
         var updateLayerFeature = endpoints.MapPatch("/odata/Layers({layerId:int})/Features({objectId:long})",
             (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
@@ -355,7 +355,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
             .Produces(404);
-        updateLayerFeature.RequireAuthorization();
+        updateLayerFeature.AllowAnonymous();
 
         var legacyUpdateFeature = endpoints.MapPatch("/odata/Features({layerId:int},{objectId:long})",
             (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, Models.ODataFeatureRequest request, CancellationToken cancellationToken) =>
@@ -367,7 +367,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
             .Produces(404);
-        legacyUpdateFeature.RequireAuthorization();
+        legacyUpdateFeature.AllowAnonymous();
 
         // DELETE - Delete a feature
         var deleteFeature = endpoints.MapDelete("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
@@ -379,7 +379,7 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces(204)
             .Produces(404);
-        deleteFeature.RequireAuthorization();
+        deleteFeature.AllowAnonymous();
 
         var deleteLayerFeature = endpoints.MapDelete("/odata/Layers({layerId:int})/Features({objectId:long})",
             (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
@@ -390,7 +390,7 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces(204)
             .Produces(404);
-        deleteLayerFeature.RequireAuthorization();
+        deleteLayerFeature.AllowAnonymous();
 
         var legacyDeleteFeature = endpoints.MapDelete("/odata/Features({layerId:int},{objectId:long})",
             (HttpContext context, int layerId, long objectId, [FromServices] ODataCrudHandler handler, CancellationToken cancellationToken) =>
@@ -401,7 +401,7 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces(204)
             .Produces(404);
-        legacyDeleteFeature.RequireAuthorization();
+        legacyDeleteFeature.AllowAnonymous();
 
         // POST - Batch operations
         // The handler (ValidateBatchAccessAsync) performs per-operation authorization checks

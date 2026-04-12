@@ -317,6 +317,52 @@ public sealed class OgcServiceRbacTests
     }
 }
 
+public sealed class FeatureServerServiceAccessPolicyTests
+{
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymousWrite: true)));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            ServiceRbacTestFixture.CreateApplyEditsContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymousWrite: true)));
+        using var client = factory.CreateClient();
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "anonymous-replica",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+}
+
 public sealed class OgcServiceAccessPolicyTests
 {
     [IntegrationTest]
@@ -341,6 +387,24 @@ public sealed class OgcServiceAccessPolicyTests
             ServiceRbacTestFixture.CreateOgcFeatureContent());
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.OgcApiFeatures)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymousWrite: true)));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items",
+            ServiceRbacTestFixture.CreateOgcFeatureContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
     }
 
     [IntegrationTest]
@@ -565,6 +629,24 @@ public sealed class ODataServiceAccessPolicyTests
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task CreateFeature_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymousWrite: true)));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features",
+            ServiceRbacTestFixture.CreateODataFeatureContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAdminRole_RespectsServiceWritePolicy()
@@ -603,6 +685,47 @@ public sealed class ODataServiceAccessPolicyTests
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymousWrite: true)));
+        using var client = factory.CreateClient();
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "create-alpha",
+                Method = "POST",
+                Url = $"Layers({ServiceRbacTestFixture.AlphaLayerId})/Features",
+                Body = new Dictionary<string, object?>
+                {
+                    ["Attributes"] = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Anonymous Policy Batch"
+                    }
+                }
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = ServiceRbacTestFixture.GetPropertyCaseInsensitive(document.RootElement, "responses");
+        responses.GetArrayLength().Should().Be(1);
+        ServiceRbacTestFixture.GetPropertyCaseInsensitive(responses[0], "status").GetInt32().Should().Be(201);
     }
 }
 
@@ -867,12 +990,16 @@ internal static class ServiceRbacTestFixture
 
     public static CatalogMetadata CreateServiceMetadata(
         string[]? readRoles = null,
-        string[]? writeRoles = null)
+        string[]? writeRoles = null,
+        bool allowAnonymous = false,
+        bool allowAnonymousWrite = false)
     {
         return new CatalogMetadata
         {
             AccessPolicy = new AccessPolicy
             {
+                AllowAnonymous = allowAnonymous,
+                AllowAnonymousWrite = allowAnonymousWrite,
                 AllowedRoles = readRoles,
                 AllowedWriteRoles = writeRoles
             }

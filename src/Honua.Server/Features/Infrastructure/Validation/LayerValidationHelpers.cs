@@ -223,7 +223,7 @@ internal static class LayerValidationHelpers
     /// <summary>
     /// Validates layer existence, write access, and RBAC data-editor role in a single call.
     /// Combines <see cref="ValidateLayerWithAccessAsync(HttpContext, int, AccessScope, string, CancellationToken)"/>
-    /// with <see cref="ServiceDataEditorAuthorization.RequireLayerDataEditorAsync"/>.
+    /// with <see cref="ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(HttpContext, LayerDefinition, ServiceDefinition?, CancellationToken)"/>.
     /// </summary>
     public static async Task<LayerValidationResult> ValidateWriteAccessAsync(
         HttpContext context,
@@ -237,8 +237,9 @@ internal static class LayerValidationHelpers
             return layerValidation;
         }
 
+        var service = await ResolvePrimaryServiceAsync(context, layerId, cancellationToken: cancellationToken);
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context, layerId, cancellationToken);
+            context, layerValidation.Layer!, service, cancellationToken);
         if (rbacError != null)
         {
             return new LayerValidationResult(false, null, rbacError);
@@ -310,8 +311,13 @@ internal static class LayerValidationHelpers
             return layerValidation;
         }
 
+        var service = await ResolvePrimaryServiceAsync(
+            context,
+            layerValidation.Layer!.Id,
+            ServiceProtocols.OgcFeatures,
+            cancellationToken);
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context, layerValidation.Layer!.Id, cancellationToken);
+            context, layerValidation.Layer!, service, cancellationToken);
         if (rbacError != null)
         {
             return new LayerValidationResult(false, null, rbacError);
@@ -341,8 +347,13 @@ internal static class LayerValidationHelpers
             return layerValidation;
         }
 
+        var service = await ResolvePrimaryServiceAsync(
+            context,
+            layerId,
+            ServiceProtocols.OData,
+            cancellationToken);
         var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context, layerId, cancellationToken);
+            context, layerValidation.Layer!, service, cancellationToken);
         if (rbacError != null)
         {
             return new LayerValidationResult(false, null, rbacError);

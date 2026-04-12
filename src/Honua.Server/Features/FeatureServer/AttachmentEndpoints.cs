@@ -58,7 +58,7 @@ internal static class AttachmentEndpoints
             .WithSummary("Add an attachment to a feature")
             .WithDescription("Upload a file attachment to a specific feature")
             .WithTags("FeatureServer", "Attachments")
-            .RequireAuthorization()
+            .AllowAnonymous()
             .DisableAntiforgery();
 
         // Backward-compatible legacy route.
@@ -68,7 +68,7 @@ internal static class AttachmentEndpoints
             .WithSummary("Add an attachment to a feature")
             .WithDescription("Upload a file attachment to a specific feature")
             .WithTags("FeatureServer", "Attachments")
-            .RequireAuthorization()
+            .AllowAnonymous()
             .DisableAntiforgery();
 
         // Update attachment (canonical route).
@@ -78,7 +78,7 @@ internal static class AttachmentEndpoints
             .WithSummary("Update an attachment's metadata")
             .WithDescription("Update keywords and other metadata for an existing attachment")
             .WithTags("FeatureServer", "Attachments")
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         // Backward-compatible legacy route.
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/updateAttachment", HandleUpdateAttachment)
@@ -87,7 +87,7 @@ internal static class AttachmentEndpoints
             .WithSummary("Update an attachment's metadata")
             .WithDescription("Update keywords and other metadata for an existing attachment")
             .WithTags("FeatureServer", "Attachments")
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         // Delete attachments (canonical route).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/deleteAttachments", HandleDeleteAttachments)
@@ -96,7 +96,7 @@ internal static class AttachmentEndpoints
             .WithSummary("Delete attachments from a feature")
             .WithDescription("Delete one or more attachments from a specific feature")
             .WithTags("FeatureServer", "Attachments")
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         // Backward-compatible legacy route.
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/deleteAttachments", HandleDeleteAttachments)
@@ -105,7 +105,7 @@ internal static class AttachmentEndpoints
             .WithSummary("Delete attachments from a feature")
             .WithDescription("Delete one or more attachments from a specific feature")
             .WithTags("FeatureServer", "Attachments")
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         // Download attachment content
         endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments/{attachmentId:long}", HandleDownloadAttachment)
@@ -569,7 +569,7 @@ internal static class AttachmentEndpoints
         {
             var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
                 context,
-                validationResult.Service!.Name,
+                validationResult.Service!,
                 context.RequestAborted);
             if (rbacError != null)
             {

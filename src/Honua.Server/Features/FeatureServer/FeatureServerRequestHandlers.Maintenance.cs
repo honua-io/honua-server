@@ -202,7 +202,7 @@ internal static partial class FeatureServerEndpoints
 
         var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
             context,
-            service.Name,
+            service,
             cancellationToken);
         if (rbacError != null)
         {

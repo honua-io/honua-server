@@ -580,7 +580,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var rbacDecision = await ServiceDataEditorAuthorization.EvaluateServiceAccessAsync(
             httpContext,
-            service.Name,
+            service,
             context.CancellationToken).ConfigureAwait(false);
 
         if (!rbacDecision.IsAllowed)

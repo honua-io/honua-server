@@ -243,7 +243,7 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
-    public async Task ApplyEdits_AnonymousWritePolicyWithoutAuthentication_ThrowsUnauthenticatedRpcException()
+    public async Task ApplyEdits_AnonymousWritePolicyWithoutAuthentication_AllowsWrite()
     {
         var anonymousWriteService = _testService with
         {
@@ -255,10 +255,18 @@ public sealed class GrpcFeatureServiceTests
                 }
             }
         };
+        var applyResult = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 0,
+            deletedCount: 0,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)));
 
         _resourceValidator
             .ValidateServiceLayerAsync("anonymous-write", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success((anonymousWriteService, _testLayer)));
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(applyResult));
 
         var request = new Proto.ApplyEditsRequest
         {
@@ -270,10 +278,10 @@ public sealed class GrpcFeatureServiceTests
             Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
         });
 
-        var act = async () => await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
+        var response = await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
 
-        var ex = await act.Should().ThrowAsync<RpcException>();
-        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
+        response.AddResults.Should().ContainSingle();
+        response.AddResults[0].ObjectId.Should().Be(101);
     }
 
     [UnitTest]

@@ -18,10 +18,33 @@ internal static class ServiceDataEditorAuthorization
 {
     public static async Task<IResult?> RequireServiceDataEditorAsync(
         HttpContext context,
+        ServiceDefinition service,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+
+        var decision = await EvaluateServiceAccessAsync(context, service, cancellationToken);
+        return CreateDecisionResult(context, decision);
+    }
+
+    public static async Task<IResult?> RequireServiceDataEditorAsync(
+        HttpContext context,
         string serviceId,
         CancellationToken cancellationToken = default)
     {
         var decision = await EvaluateServiceAccessAsync(context, serviceId, cancellationToken);
+        return CreateDecisionResult(context, decision);
+    }
+
+    public static async Task<IResult?> RequireLayerDataEditorAsync(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition? service = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+
+        var decision = await EvaluateLayerAccessAsync(context, layer, service, cancellationToken);
         return CreateDecisionResult(context, decision);
     }
 
@@ -32,6 +55,21 @@ internal static class ServiceDataEditorAuthorization
     {
         var decision = await EvaluateLayerAccessAsync(context, layerId, cancellationToken);
         return CreateDecisionResult(context, decision);
+    }
+
+    internal static Task<AccessDecision> EvaluateServiceAccessAsync(
+        HttpContext context,
+        ServiceDefinition service,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<AccessDecision>(cancellationToken);
+        }
+
+        return AccessPolicyHelpers.AllowsAnonymousServiceAccess(context, service, AccessScope.Write)
+            ? Task.FromResult(AccessDecision.Allowed())
+            : EvaluateServiceAccessAsync(context, service.Name, cancellationToken);
     }
 
     internal static Task<AccessDecision> EvaluateServiceAccessAsync(
@@ -67,6 +105,27 @@ internal static class ServiceDataEditorAuthorization
         }
 
         return Task.FromResult(AccessDecision.Forbidden("User does not have the required data editor role."));
+    }
+
+    private static Task<AccessDecision> EvaluateLayerAccessAsync(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition? service,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<AccessDecision>(cancellationToken);
+        }
+
+        if (AccessPolicyHelpers.AllowsAnonymousLayerAccess(context, layer, service, AccessScope.Write))
+        {
+            return Task.FromResult(AccessDecision.Allowed());
+        }
+
+        return service != null
+            ? EvaluateServiceAccessAsync(context, service, cancellationToken)
+            : EvaluateLayerAccessAsync(context, layer.Id, cancellationToken);
     }
 
     private static async Task<AccessDecision> EvaluateLayerAccessAsync(

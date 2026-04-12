@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.DependencyInjection;
+using System.Security.Claims;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
@@ -15,6 +16,7 @@ internal static class AccessPolicyHelpers
 {
     internal const string AuthRequiredMessage = "Authentication is required to access this resource.";
     internal const string AccessForbiddenMessage = "Access to this resource is forbidden.";
+    private static readonly ClaimsPrincipal AnonymousPrincipal = new(new ClaimsIdentity());
 
     /// <summary>
     /// Creates the appropriate error result for a denied access decision.
@@ -115,4 +117,27 @@ internal static class AccessPolicyHelpers
 
     public static bool IsLayerWriteAccessible(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
         => EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, AccessScope.Write).IsAllowed;
+
+    public static bool AllowsAnonymousServiceAccess(
+        HttpContext context,
+        ServiceDefinition service,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+
+        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
+        return evaluator.Evaluate(AnonymousPrincipal, null, service.Metadata?.AccessPolicy, scope).IsAllowed;
+    }
+
+    public static bool AllowsAnonymousLayerAccess(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition? service = null,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+
+        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
+        return evaluator.Evaluate(AnonymousPrincipal, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope).IsAllowed;
+    }
 }

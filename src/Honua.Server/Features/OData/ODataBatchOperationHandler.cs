@@ -596,7 +596,8 @@ internal sealed partial class ODataBatchOperationHandler(
                 {
                     var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
                         context,
-                        layerId,
+                        layer,
+                        service,
                         cancellationToken);
                     if (rbacError != null)
                     {

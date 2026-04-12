@@ -60,7 +60,7 @@ internal static partial class FeaturesEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(409)
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         endpoints.MapPut("/ogc/features/collections/{collectionId}/items/{featureId}", HandleUpdateFeature)
             .WithDisplayName("OGC API Features Update Item")
@@ -72,7 +72,7 @@ internal static partial class FeaturesEndpoints
             .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
             .Produces(400)
             .Produces(404)
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         endpoints.MapMethods(
                 "/ogc/features/collections/{collectionId}/items/{featureId}",
@@ -89,7 +89,7 @@ internal static partial class FeaturesEndpoints
             .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
             .Produces(400)
             .Produces(404)
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         endpoints.MapDelete("/ogc/features/collections/{collectionId}/items/{featureId}", HandleDeleteFeature)
             .WithDisplayName("OGC API Features Delete Item")
@@ -99,7 +99,7 @@ internal static partial class FeaturesEndpoints
             .WithTags("OGC API Features", "Transactions")
             .Produces(204)
             .Produces(404)
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         // Additional endpoints for advanced features
         endpoints.MapPost("/ogc/features/collections/{collectionId}/items/batch", HandleBatchOperation)
@@ -113,7 +113,7 @@ internal static partial class FeaturesEndpoints
             .Produces<BatchOperationResponse>(207, MediaTypes.Json) // Multi-Status
             .Produces(400)
             .Produces(404)
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         return endpoints;
     }

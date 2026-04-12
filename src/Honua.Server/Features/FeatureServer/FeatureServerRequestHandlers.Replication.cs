@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using System.Collections.Immutable;
 using Honua.Server.Features.FeatureServer.Models;
@@ -49,7 +50,7 @@ internal static partial class FeatureServerEndpoints
 
         var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
             context,
-            service.Name,
+            service,
             cancellationToken);
         if (rbacError != null)
         {
@@ -81,7 +82,13 @@ internal static partial class FeatureServerEndpoints
         var layersParam = GetValueString(values, "layers");
         var syncModel = GetValueString(values, "syncModel") ?? "perReplica";
 
-        if (!TryResolveReplicaLayerIds(context, service, layersParam, out var layerIds, out var layerError))
+        if (!TryResolveReplicaLayerIds(
+                context,
+                service,
+                layersParam,
+                out var layerIds,
+                out var layerError,
+                AccessScope.Write))
         {
             return layerError ?? StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -345,7 +352,7 @@ internal static partial class FeatureServerEndpoints
 
         var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
             context,
-            service.Name,
+            service,
             cancellationToken);
         if (rbacError != null)
         {
@@ -502,7 +509,7 @@ internal static partial class FeatureServerEndpoints
 
         var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
             context,
-            service.Name,
+            service,
             cancellationToken);
         if (rbacError != null)
         {
@@ -557,7 +564,8 @@ internal static partial class FeatureServerEndpoints
         ServiceDefinition service,
         string? layersParam,
         out int[] layerIds,
-        out IResult? error)
+        out IResult? error,
+        AccessScope scope = AccessScope.Read)
     {
         layerIds = [];
         error = null;
@@ -565,13 +573,17 @@ internal static partial class FeatureServerEndpoints
         if (string.IsNullOrWhiteSpace(layersParam))
         {
             var accessibleLayers = service.Layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                .Where(layer => AccessPolicyHelpers.EvaluateAccess(
+                    context,
+                    layer.Metadata?.AccessPolicy,
+                    service.Metadata?.AccessPolicy,
+                    scope).IsAllowed)
                 .Select(layer => layer.Id)
                 .ToArray();
 
             if (accessibleLayers.Length == 0)
             {
-                error = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service)
+                error = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service, scope)
                         ?? StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
                 return false;
             }
@@ -610,7 +622,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service, scope);
             if (accessError != null)
             {
                 error = accessError;
