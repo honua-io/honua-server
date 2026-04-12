@@ -99,7 +99,7 @@ internal sealed class StacMappingService
         IReadOnlySet<string>? selectedProperties = null)
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
-        var itemId = feature.ObjectId?.ToString(CultureInfo.InvariantCulture) ?? "0";
+        var itemId = ResolveItemId(feature);
         var stacBase = $"{baseUrl}/stac";
         var selectedPropertiesLookup = selectedProperties is null
             ? null
@@ -111,7 +111,8 @@ internal sealed class StacMappingService
         // Copy feature attributes
         foreach (var kvp in feature.Attributes)
         {
-            if (!string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
+            if (!IsItemIdAttribute(kvp.Key) &&
+                !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
@@ -190,6 +191,30 @@ internal sealed class StacMappingService
             StacExtensions = ResolveDeclaredExtensions(layer)
         };
     }
+
+    private static string ResolveItemId(Feature feature)
+    {
+        foreach (var key in new[] { "id", "stac_id", "item_id" })
+        {
+            if (!feature.Attributes.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            var resolved = Convert.ToString(value, CultureInfo.InvariantCulture);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                return resolved;
+            }
+        }
+
+        return feature.ObjectId?.ToString(CultureInfo.InvariantCulture) ?? "0";
+    }
+
+    private static bool IsItemIdAttribute(string attributeName)
+        => attributeName.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+           attributeName.Equals("stac_id", StringComparison.OrdinalIgnoreCase) ||
+           attributeName.Equals("item_id", StringComparison.OrdinalIgnoreCase);
 
     private static void PopulateTemporalProperties(
         Feature feature,

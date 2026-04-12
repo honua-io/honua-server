@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Stac;
 
@@ -296,6 +297,29 @@ public sealed class StacItemsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
+    public async Task GetItem_ByStringId_ReturnsStacItem()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC String ID Item");
+        await PromoteStacItemIdAsync(featureId, "stac-item-alpha");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items/stac-item-alpha");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("id").GetString().Should().Be("stac-item-alpha");
+        json.RootElement.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse();
+        json.RootElement.GetProperty("assets").GetProperty("geojson")
+            .GetProperty("href").GetString().Should().Contain("/ogc/features/collections/");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_NotFound_Returns404()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -332,5 +356,19 @@ public sealed class StacItemsTests : IAsyncLifetime
 
         var result = await command.ExecuteScalarAsync();
         return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task PromoteStacItemIdAsync(long featureId, string itemId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE features
+            SET attributes = attributes || jsonb_build_object('id', @itemId)
+             WHERE objectid = @featureId;
+             """;
+        command.Parameters.Add(new NpgsqlParameter { ParameterName = "@itemId", Value = itemId });
+        command.Parameters.Add(new NpgsqlParameter { ParameterName = "@featureId", Value = featureId });
+        await command.ExecuteNonQueryAsync();
     }
 }

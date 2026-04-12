@@ -27,6 +27,8 @@ namespace Honua.Server.Features.OgcTiles;
 
 internal static class TilesEndpoints
 {
+    private const string OgcApiTilesProtocol = "OGC-API-Tiles";
+
     public static IEndpointRouteBuilder MapTilesEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var datasetTilesets = endpoints.MapGet("/ogc/tiles/tiles", HandleGetDatasetTilesets)
@@ -268,6 +270,11 @@ internal static class TilesEndpoints
 
         var services = await layerCatalog.ListServicesAsync(cancellationToken);
         var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+        if (!IsOgcApiTilesEnabled(layer, primaryService))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+        }
+
         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
         if (accessError != null)
         {
@@ -324,7 +331,14 @@ internal static class TilesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+        if (!IsOgcApiTilesEnabled(layer, primaryService))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+        }
+
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
         if (accessError != null)
         {
             return accessError;
@@ -396,6 +410,11 @@ internal static class TilesEndpoints
 
                 var services = await layerCatalog.ListServicesAsync(cancellationToken);
                 var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+                if (!IsOgcApiTilesEnabled(layer, primaryService))
+                {
+                    return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+                }
+
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
                 if (accessError != null)
                 {
@@ -1010,6 +1029,11 @@ internal static class TilesEndpoints
             foreach (var layer in layers)
             {
                 var service = GetPrimaryService(layer.Id, primaryServices);
+                if (!IsOgcApiTilesEnabled(layer, service))
+                {
+                    continue;
+                }
+
                 var decision = AccessPolicyHelpers.EvaluateAccess(
                     context,
                     layer.Metadata?.AccessPolicy,
@@ -1062,6 +1086,11 @@ internal static class TilesEndpoints
             }
 
             var primaryService = GetPrimaryService(selectedLayer.Id, primaryServices);
+            if (!IsOgcApiTilesEnabled(selectedLayer, primaryService))
+            {
+                return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+            }
+
             var accessError = AccessPolicyHelpers.RequireLayerAccess(context, selectedLayer, primaryService);
             if (accessError != null)
             {
@@ -1307,5 +1336,11 @@ internal static class TilesEndpoints
         int layerId,
         IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
         => primaryServices.TryGetValue(layerId, out var service) ? service : null;
+
+    private static bool IsOgcApiTilesEnabled(LayerDefinition layer, ServiceDefinition? service)
+    {
+        var metadata = service?.Metadata ?? layer.Metadata;
+        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiTilesProtocol);
+    }
 
 }

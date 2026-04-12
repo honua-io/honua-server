@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
 using Honua.TestKit;
@@ -99,6 +101,18 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections")]
+    public async Task GetCollections_ProtocolDisabled_ReturnsNotFound()
+    {
+        await UpdateServiceProtocolsAsync();
+
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
     public async Task GetCollection_ReturnsCollectionMetadata()
     {
@@ -110,6 +124,18 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         var collection = await response.Content.ReadFromJsonAsync<CollectionInfo>();
         collection.Should().NotBeNull();
         collection!.Links.Should().Contain(l => l.Rel == RelationTypes.TilesetsVector);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_ProtocolDisabled_ReturnsNotFound()
+    {
+        await UpdateServiceProtocolsAsync();
+
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -149,6 +175,18 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tilesets.Tilesets.First().Links.Should().Contain(l => l.Rel == "item" && l.Type == MediaTypes.Png);
         tilesets.Tilesets.First().Links.Should().NotContain(l => l.Rel == "item" && l.Type == MediaTypes.Mvt);
         tilesets.Tilesets.First().Links.Should().NotContain(l => l.Href.Contains("collections=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles")]
+    public async Task GetDatasetTilesets_ProtocolDisabled_ReturnsNotFound()
+    {
+        await UpdateServiceProtocolsAsync();
+
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -389,5 +427,16 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         var definition = await response.Content.ReadFromJsonAsync<TileMatrixSetDefinition>();
         definition.Should().NotBeNull();
         definition!.TileMatrices.Should().NotBeEmpty();
+    }
+
+    private async Task UpdateServiceProtocolsAsync()
+    {
+        var updater = _fixture.GetService<IServiceMetadataUpdater>();
+        await updater.UpdateServiceMetadataAsync(
+            WebAppFixture.TestServiceId,
+            new CatalogMetadata
+            {
+                EnabledProtocols = ServiceProtocols.All
+            });
     }
 }

@@ -220,6 +220,17 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_WithInvalidLayers_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?layers=abc");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // --- Markers parameter ---
 
     [IntegrationTest]

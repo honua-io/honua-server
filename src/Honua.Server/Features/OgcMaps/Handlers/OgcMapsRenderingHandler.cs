@@ -28,6 +28,7 @@ namespace Honua.Server.Features.OgcMaps.Handlers;
 /// </summary>
 internal sealed class OgcMapsRenderingHandler
 {
+    private const string OgcApiMapsProtocol = "OGC-API-Maps";
     private const int DefaultImageDimension = 256;
     private const int MaxImageDimension = 4096;
     private const int DefaultBboxCrsSrid = 4326;
@@ -82,9 +83,14 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
+            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+            if (!IsOgcApiMapsEnabled(layer, service))
+            {
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+            }
+
             if (context is not null)
             {
-                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {
@@ -170,9 +176,16 @@ internal sealed class OgcMapsRenderingHandler
 
                 if (context is not null)
                 {
+                    var sawEnabledLayer = false;
                     foreach (var layer in allLayers)
                     {
                         var service = GetPrimaryService(layer.Id, primaryServices);
+                        if (!IsOgcApiMapsEnabled(layer, service))
+                        {
+                            continue;
+                        }
+
+                        sawEnabledLayer = true;
                         var decision = AccessPolicyHelpers.EvaluateAccess(
                             context,
                             layer.Metadata?.AccessPolicy,
@@ -190,6 +203,11 @@ internal sealed class OgcMapsRenderingHandler
                             }
                         }
                     }
+
+                    if (!sawEnabledLayer)
+                    {
+                        return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
+                    }
                 }
                 else
                 {
@@ -201,7 +219,14 @@ internal sealed class OgcMapsRenderingHandler
                             "Specify the collections parameter to narrow the request.");
                     }
 
-                    layers.AddRange(allLayers);
+                    foreach (var layer in allLayers)
+                    {
+                        var service = GetPrimaryService(layer.Id, primaryServices);
+                        if (IsOgcApiMapsEnabled(layer, service))
+                        {
+                            layers.Add(layer);
+                        }
+                    }
                 }
 
                 if (layers.Count == 0)
@@ -212,6 +237,11 @@ internal sealed class OgcMapsRenderingHandler
                         foreach (var layer in allLayers)
                         {
                             var service = GetPrimaryService(layer.Id, primaryServices);
+                            if (!IsOgcApiMapsEnabled(layer, service))
+                            {
+                                continue;
+                            }
+
                             var decision = AccessPolicyHelpers.EvaluateAccess(
                                 context,
                                 layer.Metadata?.AccessPolicy,
@@ -262,9 +292,14 @@ internal sealed class OgcMapsRenderingHandler
                         return CreateNotFoundResult(context, $"Collection {layerId} not found");
                     }
 
+                    var service = GetPrimaryService(layerId, primaryServices);
+                    if (!IsOgcApiMapsEnabled(layer, service))
+                    {
+                        return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                    }
+
                     if (context is not null)
                     {
-                        var service = GetPrimaryService(layerId, primaryServices);
                         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                         if (accessError != null)
                         {
@@ -342,6 +377,12 @@ internal sealed class OgcMapsRenderingHandler
             ? service
             : null;
 
+    private static bool IsOgcApiMapsEnabled(LayerDefinition layer, ServiceDefinition? service)
+    {
+        var metadata = service?.Metadata ?? layer.Metadata;
+        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiMapsProtocol);
+    }
+
     /// <summary>
     /// Renders a map with a specific style applied.
     /// </summary>
@@ -369,9 +410,14 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
+            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+            if (!IsOgcApiMapsEnabled(layer, service))
+            {
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+            }
+
             if (context is not null)
             {
-                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {

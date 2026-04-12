@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -199,13 +200,26 @@ internal static class ItemEndpoints
                 return validation.ErrorResult!;
             }
 
-            if (!long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var layer = validation.Layer!;
+            Feature? feature;
+            if (long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"Item '{itemId}' not found.");
+                feature = await featureReader.GetAsync(layer.Id, objectId, cancellationToken);
+            }
+            else
+            {
+                var query = new FeatureQuery
+                {
+                    SqlFilter = new SqlFragment(
+                        "objectid::text = @p0 OR attributes->>'id' = @p0 OR attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0",
+                        [itemId]),
+                    Limit = 2
+                };
+
+                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                feature = result.Items.FirstOrDefault();
             }
 
-            var layer = validation.Layer!;
-            var feature = await featureReader.GetAsync(layer.Id, objectId, cancellationToken);
             if (feature is null)
             {
                 StacLog.ItemNotFound(logger, collectionId, itemId);

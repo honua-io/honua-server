@@ -21,6 +21,8 @@ namespace Honua.Server.Features.OgcMaps.Handlers;
 /// </summary>
 internal sealed class OgcMapsTileSetHandler
 {
+    private const string OgcApiMapsProtocol = "OGC-API-Maps";
+
     private readonly ILayerCatalog _layerCatalog;
     private readonly ILogger<OgcMapsTileSetHandler> _logger;
 
@@ -56,9 +58,14 @@ internal sealed class OgcMapsTileSetHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
+            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+            if (!IsOgcApiMapsEnabled(layer, service))
+            {
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+            }
+
             if (context is not null)
             {
-                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {
@@ -136,9 +143,14 @@ internal sealed class OgcMapsTileSetHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
+            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+            if (!IsOgcApiMapsEnabled(layer, service))
+            {
+                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+            }
+
             if (context is not null)
             {
-                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {
@@ -269,6 +281,12 @@ internal sealed class OgcMapsTileSetHandler
         => string.IsNullOrWhiteSpace(basePathPrefix)
             ? relativePath
             : $"{basePathPrefix}{relativePath}";
+
+    private static bool IsOgcApiMapsEnabled(LayerDefinition layer, ServiceDefinition? service)
+    {
+        var metadata = service?.Metadata ?? layer.Metadata;
+        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiMapsProtocol);
+    }
 
     private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
     {

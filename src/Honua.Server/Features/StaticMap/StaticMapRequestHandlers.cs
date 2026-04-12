@@ -272,7 +272,11 @@ internal static partial class StaticMapEndpoints
             }
 
             // Resolve layers to render (filtered by per-layer access policy)
-            var renderLayerIds = ResolveLayerIds(parameters.Layers, service, context);
+            var (renderLayerIds, layerError) = ResolveLayerIds(parameters.Layers, service, context);
+            if (layerError is not null)
+            {
+                return layerError;
+            }
 
             // Query features and render
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -675,7 +679,7 @@ internal static partial class StaticMapEndpoints
 
     // ----- Rendering helpers -----
 
-    private static int[] ResolveLayerIds(string? layerParam, ServiceDefinition service, HttpContext context)
+    private static (int[] LayerIds, IResult? Error) ResolveLayerIds(string? layerParam, ServiceDefinition service, HttpContext context)
     {
         var accessibleLayers = service.Layers
             .Where(l => l.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, l, service))
@@ -684,25 +688,33 @@ internal static partial class StaticMapEndpoints
         if (string.IsNullOrWhiteSpace(layerParam))
         {
             // Default: accessible layers with default visibility
-            return accessibleLayers
+            return (accessibleLayers
                 .Where(l => l.DefaultVisibility)
                 .Select(l => l.Id)
-                .ToArray();
+                .ToArray(), null);
         }
 
         var requestedIds = new HashSet<int>();
-        foreach (var segment in layerParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var tokens = layerParam.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0 || tokens.Any(string.IsNullOrWhiteSpace))
+        {
+            return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
+        }
+        foreach (var segment in tokens)
         {
             if (int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
             {
                 requestedIds.Add(id);
+                continue;
             }
+
+            return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(context, $"Invalid layers parameter '{layerParam}'."));
         }
 
-        return accessibleLayers
+        return (accessibleLayers
             .Where(l => requestedIds.Contains(l.Id))
             .Select(l => l.Id)
-            .ToArray();
+            .ToArray(), null);
     }
 
     private static SpatialFilter CreateBboxSpatialFilter(RenderExtent extent)

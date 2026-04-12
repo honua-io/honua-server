@@ -58,6 +58,23 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_ProtocolDisabled_ReturnsNotFound()
+    {
+        var layer = CreatePublicLayerWithExtent();
+        var service = CreateProtocolDisabledService(layer);
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([service]);
+
+        var result = await _handler.RenderCollectionMapAsync(1, CreateDefaultRequest(), CreateAnonymousOgcMapsContext());
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_InvalidBbox_ReturnsBadRequest()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -743,6 +760,18 @@ public class OgcMapsRenderingHandlerTests
                 {
                     AllowedRoles = ["service-reader"]
                 }
+            }
+        };
+
+    private static ServiceDefinition CreateProtocolDisabledService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "protocol-disabled-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = ServiceProtocols.All
             }
         };
 

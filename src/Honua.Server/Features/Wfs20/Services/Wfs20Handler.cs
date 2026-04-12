@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
@@ -265,7 +266,8 @@ internal sealed class Wfs20Handler
             resourceId: featureId,
             srsName: null,
             enforceResourceIdTypeMatch: true,
-            cancellationToken).ConfigureAwait(false);
+            requireResourceIdQualifier: false,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var result = await _gmlFeatureStore.QueryGmlAsync(
             descriptor.Layer.Id,
@@ -384,8 +386,9 @@ internal sealed class Wfs20Handler
                     filter,
                     resourceId,
                     srsName,
-                    selectedTypes.Length == 1,
-                    cancellationToken).ConfigureAwait(false)) with
+                    enforceResourceIdTypeMatch: true,
+                    requireResourceIdQualifier: selectedTypes.Length > 1,
+                    cancellationToken: cancellationToken).ConfigureAwait(false)) with
                 {
                     Offset = offset,
                     Limit = maxFeatures
@@ -1491,7 +1494,8 @@ internal sealed class Wfs20Handler
             resourceId: resourceIds,
             srsName: null,
             enforceResourceIdTypeMatch: true,
-            cancellationToken).ConfigureAwait(false);
+            requireResourceIdQualifier: false,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var objectIds = await _featureReader.QueryObjectIdsAsync(
             layer.Id,
@@ -1526,6 +1530,16 @@ internal sealed class Wfs20Handler
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult;
+        }
+
+        var primaryService = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+            context,
+            layerId,
+            ServiceProtocols.Wfs20,
+            cancellationToken).ConfigureAwait(false);
+        if (IsAnonymousWriteAllowed(context, layerValidation.Layer!, primaryService))
+        {
+            return null;
         }
 
         return await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
@@ -2478,8 +2492,9 @@ internal sealed class Wfs20Handler
                 filter,
                 resourceId,
                 srsName,
-                featureTypes.Count == 1,
-                cancellationToken);
+                enforceResourceIdTypeMatch: true,
+                requireResourceIdQualifier: featureTypes.Count > 1,
+                cancellationToken: cancellationToken);
 
             var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
             totalMatched += layerMatched;
@@ -2547,8 +2562,9 @@ internal sealed class Wfs20Handler
                 filter,
                 resourceId,
                 srsName,
-                featureTypes.Count == 1,
-                cancellationToken);
+                enforceResourceIdTypeMatch: true,
+                requireResourceIdQualifier: featureTypes.Count > 1,
+                cancellationToken: cancellationToken);
 
             var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
             totalMatched += layerMatched;
@@ -2600,13 +2616,14 @@ internal sealed class Wfs20Handler
         string? resourceId,
         string? srsName,
         bool enforceResourceIdTypeMatch,
+        bool requireResourceIdQualifier,
         CancellationToken cancellationToken)
     {
         var projectedFields = ResolveProjectedFields(layer, propertyName);
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
         var sqlFilter = TranslateFesFilter(layer, normalizedFilter);
         var spatialFilter = ParseBboxFilter(bbox, layer);
-        var resourceIds = ParseResourceIds(normalizedResourceId, layer, enforceResourceIdTypeMatch);
+        var resourceIds = ParseResourceIds(normalizedResourceId, layer, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
             ? CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;
@@ -2635,6 +2652,7 @@ internal sealed class Wfs20Handler
         string? resourceId,
         string? srsName,
         bool enforceResourceIdTypeMatch,
+        bool requireResourceIdQualifier,
         CancellationToken cancellationToken)
     {
         ImmutableArray<string>? outFields = valueReference.IsGeometry || valueReference.IsFeatureId
@@ -2644,7 +2662,7 @@ internal sealed class Wfs20Handler
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
         var sqlFilter = TranslateFesFilter(layer, normalizedFilter);
         var spatialFilter = ParseBboxFilter(bbox, layer);
-        var resourceIds = ParseResourceIds(normalizedResourceId, layer, enforceResourceIdTypeMatch);
+        var resourceIds = ParseResourceIds(normalizedResourceId, layer, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
             ? CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;
@@ -2873,9 +2891,7 @@ internal sealed class Wfs20Handler
                 out var layerCrs)
                 ? layerCrs
                 : throw new ArgumentException($"Unsupported layer spatial reference '{layer.SpatialReference.ToSrid()}'.");
-        var axisOrder = parts.Length == 5
-            ? crsDefinition.AxisOrder
-            : AxisOrder.EastNorth;
+        var axisOrder = crsDefinition.AxisOrder;
 
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
@@ -2910,7 +2926,8 @@ internal sealed class Wfs20Handler
     private static ResourceIdResolution ParseResourceIds(
         string? resourceId,
         LayerDefinition layer,
-        bool enforceTypeMatch)
+        bool enforceTypeMatch,
+        bool requireTypeQualifier)
     {
         if (string.IsNullOrWhiteSpace(resourceId))
         {
@@ -2945,6 +2962,14 @@ internal sealed class Wfs20Handler
                 }
 
                 continue;
+            }
+
+            if (prefix.Length == 0 && requireTypeQualifier)
+            {
+                throw new WfsQueryException(
+                    "InvalidParameterValue",
+                    $"resourceId '{rawResourceId}' must be qualified when multiple feature types are requested.",
+                    Wfs20Utilities.ParameterNames.ResourceId);
             }
 
             if (!long.TryParse(candidate, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
@@ -4506,6 +4531,22 @@ internal sealed class Wfs20Handler
         }
 
         return result;
+    }
+
+    private static bool IsAnonymousWriteAllowed(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition? service)
+    {
+        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
+        var anonymousPrincipal = new ClaimsPrincipal(new ClaimsIdentity());
+        var decision = evaluator.Evaluate(
+            anonymousPrincipal,
+            layer.Metadata?.AccessPolicy,
+            service?.Metadata?.AccessPolicy,
+            AccessScope.Write);
+
+        return decision.IsAllowed;
     }
 
     private static string[] ParseQualifiedList(string? value)

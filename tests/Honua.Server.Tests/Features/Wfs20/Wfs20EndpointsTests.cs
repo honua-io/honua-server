@@ -5,9 +5,12 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.Wfs20;
@@ -221,6 +224,26 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_BboxWithoutSrsName_UsesLayerAxisOrder()
+    {
+        const string outputFormat = "application/geo%2Bjson";
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&BBOX=37.7,-122.5,37.8,-122.3&OUTPUTFORMAT={outputFormat}&COUNT=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        using var document = JsonDocument.Parse(content);
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().BeGreaterThan(0, content);
+        features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("Fifth Feature");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
@@ -295,6 +318,21 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"resultType\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_MultiTypeUnqualifiedResourceId_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer,related_test_layer_1&RESOURCEID=101");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("must be qualified when multiple feature types are requested");
     }
 
     [IntegrationTest]
@@ -439,6 +477,49 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryContent);
         queryContent.Should().Contain("WFS Transaction Insert");
         queryContent.Should().Contain(resourceId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac()
+    {
+        await UpdateLayerMetadataAsync(new CatalogMetadata
+        {
+            AccessPolicy = new AccessPolicy
+            {
+                AllowAnonymousWrite = true
+            }
+        });
+
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert handle="anonymous-write">
+                <honua:test_layer>
+                  <honua:name>WFS Anonymous Write Insert</honua:name>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.223 -122.556</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
+        content.Should().Contain("anonymous-write");
     }
 
     [IntegrationTest]
@@ -892,5 +973,11 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
         responseBody.Should().Contain("ValueCollection");
+    }
+
+    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
+    {
+        var updater = _fixture.Services.GetRequiredService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
     }
 }

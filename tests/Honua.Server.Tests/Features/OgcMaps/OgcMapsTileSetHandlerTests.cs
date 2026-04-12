@@ -50,6 +50,22 @@ public class OgcMapsTileSetHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_ProtocolDisabled_ReturnsNotFound()
+    {
+        var layer = CreatePublicLayer();
+        var service = CreateProtocolDisabledService(layer);
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([service]);
+
+        var result = await _handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
+
+        result.Should().BeOfType<NotFound>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ValidLayer_ReturnsOk()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -263,6 +279,18 @@ public class OgcMapsTileSetHandlerTests
                 {
                     AllowedRoles = ["service-reader"]
                 }
+            }
+        };
+
+    private static ServiceDefinition CreateProtocolDisabledService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "protocol-disabled-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = ServiceProtocols.All
             }
         };
 
