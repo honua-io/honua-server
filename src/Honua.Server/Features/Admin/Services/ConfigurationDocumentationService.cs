@@ -5,6 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Geoprocessing;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
@@ -23,6 +24,7 @@ internal sealed class ConfigurationDocumentationService
     private readonly IOptions<TileOptions> _tileOptions;
     private readonly IOptions<AdaptiveSamplingOptions> _adaptiveSamplingOptions;
     private readonly IOptions<TracingOptions> _tracingOptions;
+    private readonly IOptions<WorkspaceOptions> _workspaceOptions;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConfigurationDocumentationService"/> class.
@@ -34,7 +36,8 @@ internal sealed class ConfigurationDocumentationService
         IOptions<CacheOptions> cacheOptions,
         IOptions<TileOptions> tileOptions,
         IOptions<AdaptiveSamplingOptions> adaptiveSamplingOptions,
-        IOptions<TracingOptions> tracingOptions)
+        IOptions<TracingOptions> tracingOptions,
+        IOptions<WorkspaceOptions> workspaceOptions)
     {
         _configuration = configuration;
         _environment = environment;
@@ -43,6 +46,7 @@ internal sealed class ConfigurationDocumentationService
         _tileOptions = tileOptions;
         _adaptiveSamplingOptions = adaptiveSamplingOptions;
         _tracingOptions = tracingOptions;
+        _workspaceOptions = workspaceOptions;
     }
 
     /// <summary>
@@ -68,7 +72,8 @@ internal sealed class ConfigurationDocumentationService
             BuildTileOptionsSection(),
             BuildSecuritySection(),
             BuildTracingSection(),
-            BuildAdaptiveSamplingSection()
+            BuildAdaptiveSamplingSection(),
+            BuildGeoprocessingWorkspaceSection()
         };
 
         var envVars = BuildEnvironmentVariableQuickReference();
@@ -553,6 +558,39 @@ internal sealed class ConfigurationDocumentationService
         };
     }
 
+    private ConfigurationSection BuildGeoprocessingWorkspaceSection()
+    {
+        var opts = _workspaceOptions.Value;
+        return new ConfigurationSection
+        {
+            Name = "Geoprocessing:Workspace",
+            Description = "Workspace lifecycle, retention, and cleanup settings for geoprocessing workflows",
+            Properties =
+            [
+                BuildPropertyWithCurrent("Geoprocessing:Workspace:CleanupInterval", "Geoprocessing__Workspace__CleanupInterval", "duration",
+                    "How frequently the cleanup service runs", "00:15:00", opts.CleanupInterval),
+                BuildPropertyWithCurrent("Geoprocessing:Workspace:CleanupGracePeriod", "Geoprocessing__Workspace__CleanupGracePeriod", "duration",
+                    "Grace period after expiration before workspace deletion", "01:00:00", opts.CleanupGracePeriod),
+                BuildPropertyWithCurrent("Geoprocessing:Workspace:EnableAutomaticCleanup", "Geoprocessing__Workspace__EnableAutomaticCleanup", "boolean",
+                    "Whether the automatic cleanup background service is enabled", true, opts.EnableAutomaticCleanup),
+                BuildPropertyWithCurrent("Geoprocessing:Workspace:MaxCleanupBatchSize", "Geoprocessing__Workspace__MaxCleanupBatchSize", "integer",
+                    "Maximum workspaces processed per cleanup sweep", 100, opts.MaxCleanupBatchSize),
+                BuildProperty("Geoprocessing:Workspace:ScratchDefaultTtl", "Geoprocessing__Workspace__ScratchDefaultTtl", "duration",
+                    "Default TTL override for scratch workspaces", null),
+                BuildProperty("Geoprocessing:Workspace:TempLayerDefaultTtl", "Geoprocessing__Workspace__TempLayerDefaultTtl", "duration",
+                    "Default TTL override for temp layer workspaces", null),
+                BuildProperty("Geoprocessing:Workspace:ResultCollectionDefaultTtl", "Geoprocessing__Workspace__ResultCollectionDefaultTtl", "duration",
+                    "Default TTL override for result collection workspaces", null),
+                BuildProperty("Geoprocessing:Workspace:MaxWorkspaceCount", "Geoprocessing__Workspace__MaxWorkspaceCount", "integer",
+                    "Maximum workspace count per owner", null),
+                BuildProperty("Geoprocessing:Workspace:MaxArtifactCount", "Geoprocessing__Workspace__MaxArtifactCount", "integer",
+                    "Maximum artifact count per owner", null),
+                BuildProperty("Geoprocessing:Workspace:MaxStorageBytes", "Geoprocessing__Workspace__MaxStorageBytes", "integer",
+                    "Maximum storage bytes per owner", null)
+            ]
+        };
+    }
+
     private ConfigurationProperty BuildProperty(string path, string envVar, string type, string description,
         object? defaultValue, bool isRequired = false, bool isSensitive = false, string? validation = null)
     {
@@ -723,7 +761,19 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORRATETHRESHOLD", ConfigPath = "AdaptiveSampling.Error", Description = "Error rate % that increases sampling", Default = "5.0", Example = "10.0" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER", ConfigPath = "AdaptiveSampling.Error", Description = "Sampling multiplier during errors", Default = "3.0", Example = "5.0" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Critical operation sampling rate", Default = "1.0", Example = "0.8" },
-            new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Normal operation sampling rate", Default = "0.1", Example = "0.05" }
+            new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Normal operation sampling rate", Default = "0.1", Example = "0.05" },
+
+            // Geoprocessing Workspace
+            new() { Name = "Geoprocessing__Workspace__CleanupInterval", ConfigPath = "Geoprocessing.Workspace", Description = "Cleanup service run interval", Default = "00:15:00", Example = "00:30:00" },
+            new() { Name = "Geoprocessing__Workspace__CleanupGracePeriod", ConfigPath = "Geoprocessing.Workspace", Description = "Grace period after expiration before deletion", Default = "01:00:00", Example = "02:00:00" },
+            new() { Name = "Geoprocessing__Workspace__EnableAutomaticCleanup", ConfigPath = "Geoprocessing.Workspace", Description = "Enable automatic workspace cleanup", Default = "true", Example = "false" },
+            new() { Name = "Geoprocessing__Workspace__MaxCleanupBatchSize", ConfigPath = "Geoprocessing.Workspace", Description = "Max workspaces per cleanup sweep", Default = "100", Example = "50" },
+            new() { Name = "Geoprocessing__Workspace__ScratchDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for scratch workspaces", Required = false, Example = "01:00:00" },
+            new() { Name = "Geoprocessing__Workspace__TempLayerDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for temp layer workspaces", Required = false, Example = "06:00:00" },
+            new() { Name = "Geoprocessing__Workspace__ResultCollectionDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for result collection workspaces", Required = false, Example = "1.00:00:00" },
+            new() { Name = "Geoprocessing__Workspace__MaxWorkspaceCount", ConfigPath = "Geoprocessing.Workspace", Description = "Max workspace count per owner", Required = false, Example = "50" },
+            new() { Name = "Geoprocessing__Workspace__MaxArtifactCount", ConfigPath = "Geoprocessing.Workspace", Description = "Max artifact count per owner", Required = false, Example = "500" },
+            new() { Name = "Geoprocessing__Workspace__MaxStorageBytes", ConfigPath = "Geoprocessing.Workspace", Description = "Max storage bytes per owner", Required = false, Example = "1073741824" }
         };
     }
 }

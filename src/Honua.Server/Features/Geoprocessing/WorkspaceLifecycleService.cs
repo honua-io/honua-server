@@ -259,7 +259,11 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         if (workspace is null || workspace.State != WorkspaceLifecycleState.Active)
             return false;
 
-        var baseTime = workspace.ExpiresAt ?? _timeProvider.GetUtcNow();
+        var now = _timeProvider.GetUtcNow();
+        if (workspace.IsExpired(now))
+            return false;
+
+        var baseTime = workspace.ExpiresAt ?? now;
         var requested = baseTime + extension;
         var clamped = _retentionPolicy.ClampExpiration(workspace.Kind, workspace.CreatedAt, requested);
 

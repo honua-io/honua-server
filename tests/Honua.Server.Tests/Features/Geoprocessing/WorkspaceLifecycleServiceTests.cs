@@ -744,6 +744,21 @@ public class WorkspaceLifecycleServiceTests
         Assert.False(success);
     }
 
+    [Fact]
+    public async Task ExtendExpiration_OverdueActiveWorkspace_ReturnsFalse()
+    {
+        var workspace = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Active,
+            expiresAt: Now.AddMinutes(-10));
+        _workspaceStore.GetAsync("ws-1", Arg.Any<CancellationToken>())
+            .Returns(workspace);
+
+        var success = await _service.ExtendWorkspaceExpirationAsync("ws-1", TimeSpan.FromHours(1));
+
+        Assert.False(success);
+        await _workspaceStore.DidNotReceive().ExtendExpirationAsync(
+            Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-30)]
