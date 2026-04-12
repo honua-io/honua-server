@@ -1126,6 +1126,7 @@
       ],
       "stubbed": [
         "Grpc::geospatial.v1.ProcessService/ExecutePlan",
+        "Grpc::geospatial.v1.ProcessService/SubmitPlanJob",
         "Grpc::geospatial.v1.ProcessService/GetJobResults"
       ],
       "proofs": [

@@ -525,6 +525,75 @@ public sealed class GrpcProcessServiceTests
     }
 
     // -----------------------------------------------------------------------
+    // Fingerprint canonicalization
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public void Fingerprint_AmbiguousDelimiterValues_ProduceDifferentHashes()
+    {
+        var planA = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
+        var stepA = new Proto.AnalysisPlanStep
+        {
+            StepId = "s1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "buffer"
+        };
+        stepA.Inputs.Add("k", "a>b");
+        planA.Steps.Add(stepA);
+
+        var planB = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
+        var stepB = new Proto.AnalysisPlanStep
+        {
+            StepId = "s1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "buffer"
+        };
+        stepB.Inputs.Add("k", "a");
+        stepB.DependsOn.Add("b");
+        planB.Steps.Add(stepB);
+
+        var fpA = ComputeExpectedFingerprint(planA);
+        var fpB = ComputeExpectedFingerprint(planB);
+
+        fpA.Should().NotBe(fpB, "plans with different inputs vs dependencies must hash differently");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public void Fingerprint_ReorderedDependsOn_ProducesSameHash()
+    {
+        var planA = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
+        var stepA = new Proto.AnalysisPlanStep
+        {
+            StepId = "s1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "buffer"
+        };
+        stepA.DependsOn.Add("dep-a");
+        stepA.DependsOn.Add("dep-b");
+        planA.Steps.Add(stepA);
+
+        var planB = new Proto.AnalysisPlan { PlanId = "p", IntentId = "i" };
+        var stepB = new Proto.AnalysisPlanStep
+        {
+            StepId = "s1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "buffer"
+        };
+        stepB.DependsOn.Add("dep-b");
+        stepB.DependsOn.Add("dep-a");
+        planB.Steps.Add(stepB);
+
+        var fpA = ComputeExpectedFingerprint(planA);
+        var fpB = ComputeExpectedFingerprint(planB);
+
+        fpA.Should().Be(fpB, "semantically equivalent plans with reordered dependencies must hash identically");
+    }
+
+    // -----------------------------------------------------------------------
     // Authorization
     // -----------------------------------------------------------------------
 
@@ -610,30 +679,35 @@ public sealed class GrpcProcessServiceTests
     private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)
     {
         var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(protoPlan);
-        var sb = new System.Text.StringBuilder();
-        sb.Append(domainPlan.PlanId).Append('\0').Append(domainPlan.IntentId).Append('\0');
 
-        foreach (var step in domainPlan.Steps)
+        var normalizedSteps = domainPlan.Steps.Select(step => new
         {
-            sb.Append(step.StepId).Append(':').Append(step.Kind);
-            sb.Append(':').Append(step.ProcessId ?? "");
-            foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            {
-                sb.Append(':').Append(kv.Key).Append('=').Append(kv.Value);
-            }
-            foreach (var dep in step.DependsOn)
-            {
-                sb.Append('>').Append(dep);
-            }
-            sb.Append(',');
-        }
+            stepId = step.StepId,
+            kind = step.Kind.ToString(),
+            processId = step.ProcessId ?? "",
+            inputs = step.Inputs
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value))
+                .ToArray(),
+            dependsOn = step.DependsOn
+                .OrderBy(d => d, StringComparer.Ordinal)
+                .ToArray()
+        }).ToArray();
 
-        sb.Append('\0');
-        sb.Append(string.Join(",", domainPlan.Outputs));
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            planId = domainPlan.PlanId,
+            intentId = domainPlan.IntentId,
+            steps = normalizedSteps,
+            outputs = domainPlan.Outputs
+                .Select(o => o.ToString())
+                .OrderBy(o => o, StringComparer.Ordinal)
+                .ToArray()
+        });
 
         return Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(sb.ToString()))).ToLowerInvariant();
+                System.Text.Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
 
     private static ExecutionJobRecord CreateTestJobRecord(string jobId, ExecutionJobStatus status)

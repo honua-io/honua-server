@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -210,6 +211,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
             .ConfigureAwait(false);
 
         GeoprocessingServiceLog.JobSubmitted(_logger, jobId, domainPlan.PlanId);
+        GeoprocessingServiceLog.JobSubmittedStubbed(_logger, jobId);
 
         return GeoprocessingConversionHelpers.ToProtoExecutionJob(jobRecord);
     }
@@ -443,28 +445,32 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
     private static string CreateRequestFingerprint(AnalysisPlan plan)
     {
-        var sb = new StringBuilder();
-        sb.Append(plan.PlanId).Append('\0').Append(plan.IntentId).Append('\0');
-
-        foreach (var step in plan.Steps)
+        var normalizedSteps = plan.Steps.Select(step => new
         {
-            sb.Append(step.StepId).Append(':').Append(step.Kind);
-            sb.Append(':').Append(step.ProcessId ?? "");
-            foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            {
-                sb.Append(':').Append(kv.Key).Append('=').Append(kv.Value);
-            }
-            foreach (var dep in step.DependsOn)
-            {
-                sb.Append('>').Append(dep);
-            }
-            sb.Append(',');
-        }
+            stepId = step.StepId,
+            kind = step.Kind.ToString(),
+            processId = step.ProcessId ?? "",
+            inputs = step.Inputs
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value))
+                .ToArray(),
+            dependsOn = step.DependsOn
+                .OrderBy(d => d, StringComparer.Ordinal)
+                .ToArray()
+        }).ToArray();
 
-        sb.Append('\0');
-        sb.Append(string.Join(",", plan.Outputs));
+        var payload = JsonSerializer.Serialize(new
+        {
+            planId = plan.PlanId,
+            intentId = plan.IntentId,
+            steps = normalizedSteps,
+            outputs = plan.Outputs
+                .Select(o => o.ToString())
+                .OrderBy(o => o, StringComparer.Ordinal)
+                .ToArray()
+        });
 
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()))).ToLowerInvariant();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
 
     private static void EnsureMatchingIdempotentRequest(ExecutionJobRecord existing, string requestFingerprint)

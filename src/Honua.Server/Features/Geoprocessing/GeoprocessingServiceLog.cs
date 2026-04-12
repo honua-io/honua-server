@@ -79,4 +79,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void JobResultsUnavailable(
         ILogger logger,
         string jobId);
+
+    [LoggerMessage(8013, LogLevel.Warning, "Job {JobId} queued in stub mode: backend dispatch deferred until execution engine is available")]
+    public static partial void JobSubmittedStubbed(
+        ILogger logger,
+        string jobId);
 }
