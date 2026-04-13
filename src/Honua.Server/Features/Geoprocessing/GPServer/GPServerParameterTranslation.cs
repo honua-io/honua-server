@@ -142,9 +142,14 @@ internal static class GPServerParameterTranslation
     }
 
     /// <summary>
-    /// Resolves the output parameter name for an artifact.
-    /// Uses the well-known metadata key, falling back to the artifact label.
+    /// Resolves the output parameter name for an artifact using the well-known
+    /// metadata key <see cref="OutputParameterMetadataKey"/>. Per ADR-0029
+    /// invariant #3, the route key must be a stable output identifier — not
+    /// <see cref="ArtifactRef.Label"/> (which is human-readable).
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the artifact does not carry the required metadata binding.
+    /// </exception>
     public static string ResolveOutputParameterName(ArtifactRef artifact)
     {
         if (artifact.Metadata.TryGetValue(OutputParameterMetadataKey, out var paramName)
@@ -153,6 +158,8 @@ internal static class GPServerParameterTranslation
             return paramName;
         }
 
-        return artifact.Label;
+        throw new InvalidOperationException(
+            $"Artifact '{artifact.ArtifactId}' is missing the required " +
+            $"'{OutputParameterMetadataKey}' metadata binding for GPServer result routing.");
     }
 }

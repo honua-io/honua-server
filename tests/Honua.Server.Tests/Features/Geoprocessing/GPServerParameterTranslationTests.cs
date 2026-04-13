@@ -221,7 +221,7 @@ public sealed class GPServerParameterTranslationTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
-    public void ResolveOutputParameterName_FallsBackToLabel()
+    public void ResolveOutputParameterName_ThrowsWhenMetadataKeyMissing()
     {
         var artifact = new ArtifactRef
         {
@@ -231,7 +231,8 @@ public sealed class GPServerParameterTranslationTests
             Metadata = new Dictionary<string, string>()
         };
 
-        GPServerParameterTranslation.ResolveOutputParameterName(artifact)
-            .Should().Be("Output Features");
+        var act = () => GPServerParameterTranslation.ResolveOutputParameterName(artifact);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*geoservices.output_parameter*");
     }
 }

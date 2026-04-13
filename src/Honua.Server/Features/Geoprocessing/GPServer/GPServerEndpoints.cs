@@ -119,8 +119,8 @@ internal static class GPServerEndpoints
 
     private static Task<IResult> HandleServiceInfo(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("ServiceInfo");
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        EnrichActivity("ServiceInfo", serviceId);
         var logger = ResolveLogger(context);
         GPServerLog.ServiceInfoRequested(logger, serviceId);
 
@@ -138,9 +138,9 @@ internal static class GPServerEndpoints
 
     private static Task<IResult> HandleTaskInfo(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("TaskInfo");
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("TaskInfo", serviceId, taskName);
         var logger = ResolveLogger(context);
         GPServerLog.TaskInfoRequested(logger, serviceId, taskName);
 
@@ -159,8 +159,9 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("Execute");
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("Execute", serviceId, taskName);
         var logger = ResolveLogger(context);
         GPServerLog.ExecuteRequested(logger, taskName);
 
@@ -173,11 +174,20 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleSubmitJob(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("SubmitJob");
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("SubmitJob", serviceId, taskName);
         var logger = ResolveLogger(context);
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context);
+
+        // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
+        // with a clear 400 instead of silently stripping them.
+        var envError = RejectUnsupportedEnvControls(context, logger, parameters);
+        if (envError != null)
+        {
+            return envError;
+        }
 
         // Build a minimal AnalysisPlan from the GP task parameters.
         // The taskName becomes the process ID; parameters map to step inputs.
@@ -225,7 +235,9 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("JobStatus");
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("JobStatus", serviceId, taskName);
         var jobId = context.Request.RouteValues["jobId"]?.ToString();
         var logger = ResolveLogger(context);
 
@@ -298,7 +310,9 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleJobResult(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("JobResult");
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("JobResult", serviceId, taskName);
         var jobId = context.Request.RouteValues["jobId"]?.ToString();
         var paramName = context.Request.RouteValues["paramName"]?.ToString();
         var logger = ResolveLogger(context);
@@ -354,7 +368,9 @@ internal static class GPServerEndpoints
 
     private static async Task<IResult> HandleCancelJob(HttpContext context, CancellationToken ct)
     {
-        EnrichActivity("CancelJob");
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("CancelJob", serviceId, taskName);
         var jobId = context.Request.RouteValues["jobId"]?.ToString();
         var logger = ResolveLogger(context);
 
@@ -415,7 +431,40 @@ internal static class GPServerEndpoints
     // -----------------------------------------------------------------------
 
     /// <summary>
+    /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>,
+    /// <c>context</c>) with a structured 400 error instead of silently stripping them.
+    /// Returns null when no unsupported controls are present.
+    /// </summary>
+    private static IResult? RejectUnsupportedEnvControls(
+        HttpContext context, ILogger logger, IReadOnlyDictionary<string, string> allParams)
+    {
+        List<string>? unsupported = null;
+        foreach (var key in allParams.Keys)
+        {
+            if (key.StartsWith("env:", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "context", StringComparison.OrdinalIgnoreCase))
+            {
+                unsupported ??= [];
+                unsupported.Add(key);
+            }
+        }
+
+        if (unsupported == null)
+        {
+            return null;
+        }
+
+        var names = string.Join(", ", unsupported);
+        GPServerLog.UnsupportedEnvControlsRejected(logger, names);
+        return StandardErrorHelpers.CreateBadRequest(context,
+            $"GP environment controls are not yet supported: {names}. " +
+            "Remove these parameters or wait for engine support.");
+    }
+
+    /// <summary>
     /// Filters out protocol-level parameters (f, token, etc.) from GP task inputs.
+    /// Environment controls must be validated with <see cref="RejectUnsupportedEnvControls"/>
+    /// before calling this method.
     /// </summary>
     private static Dictionary<string, string> FilterGpParameters(
         IReadOnlyDictionary<string, string> allParams)
@@ -427,9 +476,7 @@ internal static class GPServerEndpoints
             if (string.Equals(key, "f", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(key, "token", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(key, "callback", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "returnMessages", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "env:outSR", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "env:processSR", StringComparison.OrdinalIgnoreCase))
+                string.Equals(key, "returnMessages", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -486,7 +533,7 @@ internal static class GPServerEndpoints
         return result;
     }
 
-    private static void EnrichActivity(string operation)
+    private static void EnrichActivity(string operation, string? serviceId = null, string? taskName = null)
     {
         var activity = Activity.Current;
         if (activity == null)
@@ -496,6 +543,15 @@ internal static class GPServerEndpoints
 
         activity.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.GPServer);
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
+        if (!string.IsNullOrEmpty(serviceId))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        }
+
+        if (!string.IsNullOrEmpty(taskName))
+        {
+            activity.SetTag("honua.gp.task_name", taskName);
+        }
     }
 
     private static ILogger ResolveLogger(HttpContext context)

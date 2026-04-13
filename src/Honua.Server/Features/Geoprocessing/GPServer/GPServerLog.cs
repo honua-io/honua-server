@@ -32,4 +32,7 @@ internal static partial class GPServerLog
 
     [LoggerMessage(8107, LogLevel.Warning, "GPServer request failed: Operation={Operation}, Error={Error}")]
     public static partial void RequestFailed(ILogger logger, string operation, string error);
+
+    [LoggerMessage(8108, LogLevel.Information, "GPServer rejected unsupported environment controls: {ControlNames}")]
+    public static partial void UnsupportedEnvControlsRejected(ILogger logger, string controlNames);
 }

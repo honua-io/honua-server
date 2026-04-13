@@ -224,6 +224,39 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     // -----------------------------------------------------------------------
+    // GP environment controls
+    // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithEnvOutSR_ReturnsBadRequest()
+    {
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["input_features"] = "test-layer",
+            ["env:outSR"] = "4326"
+        });
+
+        var response = await _client.PostAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobGet_WithEnvProcessSR_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob?f=json&input=test&env:processSR=3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // -----------------------------------------------------------------------
     // Missing parameters
     // -----------------------------------------------------------------------
 
