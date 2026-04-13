@@ -167,10 +167,10 @@ public class SpatialGeometryValidationTests
         {
             // Verify precision is maintained (within floating point limits)
             var parts = bbox.Split(',');
-            var expectedMinX = double.Parse(parts[0]);
-            var expectedMinY = double.Parse(parts[1]);
-            var expectedMaxX = double.Parse(parts[2]);
-            var expectedMaxY = double.Parse(parts[3]);
+            var expectedMinX = double.Parse(parts[0], CultureInfo.InvariantCulture);
+            var expectedMinY = double.Parse(parts[1], CultureInfo.InvariantCulture);
+            var expectedMaxX = double.Parse(parts[2], CultureInfo.InvariantCulture);
+            var expectedMaxY = double.Parse(parts[3], CultureInfo.InvariantCulture);
 
             minX.Should().BeApproximately(expectedMinX, 1e-10, "MinX precision should be preserved");
             minY.Should().BeApproximately(expectedMinY, 1e-10, "MinY precision should be preserved");
@@ -184,10 +184,10 @@ public class SpatialGeometryValidationTests
     /// Verifies parser handles very long decimal strings without issues
     /// </summary>
     [Theory]
-    [InlineData("0.123456789012345", true, "15 decimal places")]
-    [InlineData("-122.419416666666666", true, "15 decimal places negative")]
-    [InlineData("179.999999999999999", true, "Maximum longitude precision")]
-    [InlineData("89.999999999999999", true, "Maximum latitude precision")]
+    [InlineData(0.123456789012345, true, "15 decimal places")]
+    [InlineData(-122.419416666666666, true, "15 decimal places negative")]
+    [InlineData(179.999999999999999, true, "Maximum longitude precision")]
+    [InlineData(89.999999999999999, true, "Maximum latitude precision")]
     public void IsValidCoordinate_ExtremePrecision_HandlesLongDecimals(
         double coordinate, bool expectedValid, string description)
     {

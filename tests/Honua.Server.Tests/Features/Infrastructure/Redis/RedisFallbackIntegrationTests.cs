@@ -15,6 +15,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.Redis;
 public sealed class RedisFallbackIntegrationTests
 {
     private readonly Mock<IHostEnvironment> _mockEnvironment = new();
+    private static RedisConnectionException CreateConnectionException(string message)
+        => new(ConnectionFailureType.UnableToConnect, message);
 
     [UnitTest]
     public async Task MultipleServices_ConsistentBehaviorInDevelopment()
@@ -130,7 +132,7 @@ public sealed class RedisFallbackIntegrationTests
         result2.Should().BeFalse();
 
         // Simulate Redis failure - both should lose leadership
-        healthMonitor.RecordFailure(new RedisConnectionException("Connection lost"));
+        healthMonitor.RecordFailure(CreateConnectionException("Connection lost"));
 
         // In production, both should recognize they can't maintain leadership without Redis
         var result1AfterFailure = await election1.TryAcquireOrExtendLeadershipAsync();
@@ -175,7 +177,7 @@ public sealed class RedisFallbackIntegrationTests
             NullLogger<RedisLeaderElection>.Instance);
 
         // Simulate initial Redis failure
-        healthMonitor.RecordFailure(new RedisConnectionException("Initial failure"));
+        healthMonitor.RecordFailure(CreateConnectionException("Initial failure"));
 
         // Both services should use fallback
         await jobQueue.EnqueueAsync("fallback-job");

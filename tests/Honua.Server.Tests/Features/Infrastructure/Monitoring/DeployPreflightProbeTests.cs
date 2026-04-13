@@ -91,23 +91,29 @@ public sealed class DeployPreflightProbeTests
 
     private sealed class StubConnectionSecretResolver(string secretRef, string resolvedConnectionString) : IConnectionSecretResolver
     {
+        public string ProviderName => "aws";
+
+        public Task<string?> ResolveSecretAsync(string candidate, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(candidate == secretRef ? resolvedConnectionString : null);
+
+        public bool CanResolve(string candidate)
+            => candidate == secretRef;
+
         public Task<string> ResolveConnectionStringAsync(string candidate, CancellationToken cancellationToken = default)
             => Task.FromResult(candidate == secretRef ? resolvedConnectionString : candidate);
-
-        public Task<bool> CanResolveSecretAsync(string candidate, CancellationToken cancellationToken = default)
-            => Task.FromResult(candidate == secretRef);
-
-        public string[] GetSupportedProviders() => ["aws"];
     }
 
     private sealed class ThrowingConnectionSecretResolver : IConnectionSecretResolver
     {
+        public string ProviderName => "aws";
+
+        public Task<string?> ResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+            => Task.FromException<string?>(new InvalidOperationException("resolver failure"));
+
+        public bool CanResolve(string secretKey)
+            => true;
+
         public Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
             => Task.FromException<string>(new InvalidOperationException("resolver failure"));
-
-        public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
-
-        public string[] GetSupportedProviders() => ["aws"];
     }
 }

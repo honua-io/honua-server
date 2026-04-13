@@ -47,6 +47,7 @@ public static class Operations
     public const string TableDiscovery = "TableDiscovery";
     public const string Configuration = "Configuration";
     public const string Cache = "Cache";
+    public const string Infrastructure = "Infrastructure";
     public const string OperationsProgress = "OperationsProgress";
     public const string LicenseManagement = "LicenseManagement";
     public const string IdentityManagement = "IdentityManagement";

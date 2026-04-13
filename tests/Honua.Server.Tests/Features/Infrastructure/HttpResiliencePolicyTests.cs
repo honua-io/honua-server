@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
+using Polly.CircuitBreaker;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
@@ -288,7 +289,7 @@ public class HttpResiliencePolicyTests
             {
                 // Expected failures
             }
-            catch (CircuitBreakerOpenException)
+            catch (BrokenCircuitException)
             {
                 // Circuit breaker opened - this is what we want to test
                 _output.WriteLine($"Circuit breaker blocked request after {failureCount} failures");
@@ -301,7 +302,7 @@ public class HttpResiliencePolicyTests
         Assert.True(failureCount >= 3, $"Should have at least 3 failures, got {failureCount}");
     }
 
-    private class TestHttpClient
+    private sealed class TestHttpClient
     {
         public TestHttpClient(HttpClient httpClient)
         {

@@ -12,7 +12,7 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Infrastructure.Redis;
 
 [Collection("Unit")]
-public sealed class RedisLeaderElectionTests
+public sealed class RedisLeaderElectionTests : IDisposable
 {
     private readonly Mock<IConnectionMultiplexer> _mockRedis = new();
     private readonly Mock<IDatabase> _mockDatabase = new();
@@ -25,6 +25,9 @@ public sealed class RedisLeaderElectionTests
         _healthMonitor = new RedisHealthMonitor(_mockRedis.Object, NullLogger<RedisHealthMonitor>.Instance);
         _mockEnvironment.Setup(e => e.EnvironmentName).Returns("Development");
     }
+
+    private static RedisConnectionException CreateConnectionException(string message)
+        => new(ConnectionFailureType.UnableToConnect, message);
 
     [UnitTest]
     public void Constructor_InitializesCorrectly()
@@ -91,7 +94,7 @@ public sealed class RedisLeaderElectionTests
     public async Task TryAcquireOrExtendLeadershipAsync_InDevelopment_AllowsFallback()
     {
         // Simulate Redis failure
-        _healthMonitor.RecordFailure(new RedisConnectionException("Test failure"));
+        _healthMonitor.RecordFailure(CreateConnectionException("Test failure"));
 
         var election = CreateElection("test-key");
         var result = await election.TryAcquireOrExtendLeadershipAsync();
@@ -104,7 +107,7 @@ public sealed class RedisLeaderElectionTests
     public async Task TryAcquireOrExtendLeadershipAsync_InProduction_RejectsOnRedisFailure()
     {
         _mockEnvironment.Setup(e => e.EnvironmentName).Returns("Production");
-        _healthMonitor.RecordFailure(new RedisConnectionException("Test failure"));
+        _healthMonitor.RecordFailure(CreateConnectionException("Test failure"));
 
         var election = CreateElection("test-key");
         var result = await election.TryAcquireOrExtendLeadershipAsync();
@@ -185,5 +188,10 @@ public sealed class RedisLeaderElectionTests
             _mockEnvironment.Object,
             NullLogger<RedisLeaderElection>.Instance,
             leaseDuration);
+    }
+
+    public void Dispose()
+    {
+        _healthMonitor.Dispose();
     }
 }

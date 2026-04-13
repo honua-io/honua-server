@@ -710,14 +710,27 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             LastSslMode = sslMode;
             return "Host=localhost;Port=5432;Database=test;Username=test;Password=test;SslMode=Require";
         }
+
+        public Task<string> BuildConnectionStringAsync(DataConnection connection)
+        {
+            LastSslMode = connection.SslMode;
+            return Task.FromResult(BuildConnectionString(
+                connection.Host,
+                connection.Port,
+                connection.DatabaseName,
+                connection.Username,
+                password: string.Empty,
+                connection.SslMode));
+        }
+
+        public bool ValidateConnectionString(string connectionString)
+            => !string.IsNullOrWhiteSpace(connectionString);
     }
 
     private sealed class AlwaysHealthyConnectionTester : IConnectionHealthTester
     {
-        public Task<bool> TestConnectionAsync(string connectionString, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(true);
-        }
+        public Task<ConnectionHealthStatus> TestConnectionAsync(string connectionString, CancellationToken cancellationToken = default)
+            => Task.FromResult(ConnectionHealthStatus.Healthy);
     }
 
     private sealed class ThrowingEncryptionService(Exception exception, string failureTrigger) : IConnectionEncryptionService

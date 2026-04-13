@@ -149,6 +149,55 @@ public class DataConnection
         string username,
         byte[] encryptedConnectionString,
         int encryptionKeyVersion,
+        string createdBy)
+        => CreateWithEncryptedCredentials(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            encryptedConnectionString,
+            encryptionKeyVersion,
+            createdBy,
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+    /// <summary>
+    /// Creates a data connection with encrypted credentials.
+    /// </summary>
+    public static DataConnection CreateWithEncryptedCredentials(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        byte[] encryptedConnectionString,
+        int encryptionKeyVersion,
+        string createdBy,
+        SslMode sslMode)
+        => CreateWithEncryptedCredentials(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            encryptedConnectionString,
+            encryptionKeyVersion,
+            createdBy,
+            sslRequired: true,
+            sslMode: sslMode);
+
+    /// <summary>
+    /// Creates a data connection with encrypted credentials.
+    /// </summary>
+    public static DataConnection CreateWithEncryptedCredentials(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        byte[] encryptedConnectionString,
+        int encryptionKeyVersion,
         string createdBy,
         bool sslRequired,
         SslMode sslMode)
@@ -208,6 +257,55 @@ public class DataConnection
         connection.Description = description;
         return connection;
     }
+
+    /// <summary>
+    /// Creates a data connection with a secret reference.
+    /// </summary>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy)
+        => CreateWithSecretReference(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            secretRef,
+            secretType,
+            createdBy,
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+    /// <summary>
+    /// Creates a data connection with a secret reference.
+    /// </summary>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy,
+        SslMode sslMode)
+        => CreateWithSecretReference(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            secretRef,
+            secretType,
+            createdBy,
+            sslRequired: true,
+            sslMode: sslMode);
 
     /// <summary>
     /// Creates a data connection with a secret reference.

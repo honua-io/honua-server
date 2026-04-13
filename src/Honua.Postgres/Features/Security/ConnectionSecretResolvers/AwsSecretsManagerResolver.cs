@@ -141,6 +141,12 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         return true;
     }
 
+    /// <summary>
+    /// Compatibility shim for callers still invoking the older async capability probe directly on this concrete type.
+    /// </summary>
+    public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(CanResolve(secretKey));
+
     /// <inheritdoc />
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {

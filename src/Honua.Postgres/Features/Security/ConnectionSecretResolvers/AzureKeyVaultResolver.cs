@@ -100,6 +100,12 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         }
     }
 
+    /// <summary>
+    /// Compatibility shim for callers still invoking the older async capability probe directly on this concrete type.
+    /// </summary>
+    public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(CanResolve(secretKey));
+
     /// <inheritdoc />
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {

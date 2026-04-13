@@ -311,7 +311,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
     [InlineData(0, -85.051129)]   // Exact Web Mercator south limit
     [InlineData(180, 85.051)]     // Near limit, antimeridian
     [InlineData(-180, -85.051)]   // Near limit, antimeridian
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WebMercatorLimitBoundary_ExactLimitHandling(double lon, double lat)
@@ -348,7 +348,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
     [InlineData(-179.5, 0)]    // Just east of antimeridian
     [InlineData(180, 0)]       // Exactly on antimeridian (east)
     [InlineData(-180, 0)]      // Exactly on antimeridian (west)
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_AntimeridianCoordinates_TransformsCorrectly(double lon, double lat)
@@ -436,7 +436,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
     [InlineData("EPSG:4326", "WGS84")]
     [InlineData("EPSG:4269", "NAD83")]
     [InlineData("EPSG:4267", "NAD27")]
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_DifferentDatums_RecognizedAndHandled(string epsgCode, string datumName)
@@ -481,7 +481,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
     [InlineData("INVALID:123")]   // Invalid CRS format
     [InlineData("")]              // Empty SRID
     [InlineData("NaN")]           // Non-numeric SRID
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_InvalidSrid_HandlesGracefully(string invalidSrid)
@@ -518,7 +518,7 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
     [InlineData("0,-999")]       // Latitude < -90
     [InlineData("NaN,0")]        // NaN coordinate
     [InlineData("0,Infinity")]   // Infinite coordinate
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_InvalidCoordinates_ValidationAndErrors(string invalidGeometry)

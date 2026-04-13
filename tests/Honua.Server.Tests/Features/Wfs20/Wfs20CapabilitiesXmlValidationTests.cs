@@ -205,7 +205,7 @@ public class Wfs20CapabilitiesXmlValidationTests
             {
                 Title = "Honua WFS",
                 ServiceType = "WFS",
-                ServiceTypeVersion = "2.0.0"
+                ServiceTypeVersion = ["2.0.0"]
             },
             ServiceProvider = new ServiceProvider
             {

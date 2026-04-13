@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Tests.Features.Security;
 

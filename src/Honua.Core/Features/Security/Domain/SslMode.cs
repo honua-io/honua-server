@@ -34,6 +34,11 @@ public enum SslMode
     VerifyCa = 4,
 
     /// <summary>
+    /// Compatibility alias for callers that still use the older casing.
+    /// </summary>
+    VerifyCA = VerifyCa,
+
+    /// <summary>
     /// SSL is required with full certificate and hostname verification.
     /// </summary>
     VerifyFull = 5

@@ -84,26 +84,41 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         public Task<DataConnection> CreateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
             => Task.FromResult(connection);
 
+        public Task RegisterConnectionAsync(DataConnection connection)
+            => Task.CompletedTask;
+
+        public Task<DataConnection?> GetConnectionAsync(string connectionId)
+            => Task.FromResult<DataConnection?>(null);
+
+        public Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
+            => Task.FromResult<DataConnection?>(null);
+
         public Task<DataConnection?> GetConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
             => Task.FromResult<DataConnection?>(null);
 
         public Task<DataConnection?> GetConnectionByNameAsync(string name, CancellationToken cancellationToken = default)
             => Task.FromResult<DataConnection?>(null);
 
-        public Task<IReadOnlyList<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<DataConnection>>(Array.Empty<DataConnection>());
+        public Task<IEnumerable<DataConnection>> GetAllConnectionsAsync()
+            => Task.FromResult<IEnumerable<DataConnection>>(Array.Empty<DataConnection>());
+
+        public Task<IEnumerable<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<DataConnection>>(Array.Empty<DataConnection>());
 
         public Task<DataConnection> UpdateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
             => Task.FromResult(connection);
 
+        public Task<bool> RemoveConnectionAsync(string connectionId)
+            => Task.FromResult(false);
+
         public Task<bool> DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
-        public Task<bool> TestConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
+        public Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync()
+            => Task.FromResult(new Dictionary<string, ConnectionHealthStatus>());
 
-        public Task<bool> UpdateHealthStatusAsync(Guid connectionId, ConnectionHealthStatus healthStatus, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
+        public Task UpdateHealthStatusAsync(string connectionId, bool isHealthy, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private sealed class NullConnectionEncryptionService : IConnectionEncryptionService
@@ -149,6 +164,21 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             return $"Host={host};Port={port};Database={databaseName};Username={username};Password={password};SslMode={sslMode}";
         }
+
+        public Task<string> BuildConnectionStringAsync(DataConnection connection)
+        {
+            var connectionString = BuildConnectionString(
+                connection.Host,
+                connection.Port,
+                connection.DatabaseName,
+                connection.Username,
+                password: string.Empty,
+                connection.SslMode);
+            return Task.FromResult(connectionString);
+        }
+
+        public bool ValidateConnectionString(string connectionString)
+            => !string.IsNullOrWhiteSpace(connectionString);
     }
 
     private sealed class NoOpLeaderElectionStrategy : ILeaderElectionStrategy

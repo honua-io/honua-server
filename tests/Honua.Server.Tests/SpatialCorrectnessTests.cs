@@ -281,7 +281,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
     [InlineData("-200,-10,200,10", false)]   // Outside longitude range (invalid)
     [InlineData("179.999,-10,-179.999,10", true)] // Near antimeridian (valid)
     [InlineData("0,-10,360,10", false)]      // Longitude > 180 (invalid)
-    [UnitTest]
+    [Trait("Category", "Unit")]
     [Operation(Operations.Query)]
     public void ValidateGeographicRange_AntimeridianCrossingBoxes_CorrectValidation(
         string bbox, bool expectedValid)
@@ -314,7 +314,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
     [InlineData("-180,-90.1,180,90", false)] // South of South Pole (invalid)
     [InlineData("-180,-90,180,90.1", false)] // North of North Pole (invalid)
     [InlineData("-180,-89.999,180,89.999", true)] // Near poles (valid)
-    [UnitTest]
+    [Trait("Category", "Unit")]
     [Operation(Operations.Query)]
     public void ValidateGeographicRange_PolarBoundaries_CorrectValidation(
         string bbox, bool expectedValid)
@@ -543,7 +543,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
     [InlineData(-180, -90, 180, 90)]     // Full world extent
     [InlineData(179.999, -5, -179.999, 5)] // Near antimeridian
     [InlineData(0, 85.05, 1, 85.051)]   // Near Web Mercator limit
-    [UnitTest]
+    [Trait("Category", "Unit")]
     [Operation(Operations.Query)]
     public void CreateEnvelopeWkb_ExtemeCoordinates_GeneratesValidWkb(
         double minX, double minY, double maxX, double maxY)

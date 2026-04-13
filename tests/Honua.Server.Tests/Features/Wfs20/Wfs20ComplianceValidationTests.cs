@@ -122,9 +122,9 @@ public class Wfs20ComplianceValidationTests
 
         // Should include key function categories
         functionNames.Should().Contain(f => f.StartsWith("ST_"), "Should include spatial functions");
-        functionNames.Should().Contain(f => f is "UPPER" or "LOWER" or "CONCAT", "Should include string functions");
-        functionNames.Should().Contain(f => f is "ABS" or "CEIL" or "FLOOR", "Should include math functions");
-        functionNames.Should().Contain(f => f is "YEAR" or "MONTH" or "DAY", "Should include date functions");
+        functionNames.Should().Contain(f => f == "UPPER" || f == "LOWER" || f == "CONCAT", "Should include string functions");
+        functionNames.Should().Contain(f => f == "ABS" || f == "CEIL" || f == "FLOOR", "Should include math functions");
+        functionNames.Should().Contain(f => f == "YEAR" || f == "MONTH" || f == "DAY", "Should include date functions");
     }
 
     private static FilterCapabilities InvokeBuildFilterCapabilities()

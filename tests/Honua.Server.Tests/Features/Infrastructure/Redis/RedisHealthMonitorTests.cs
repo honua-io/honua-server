@@ -13,6 +13,9 @@ namespace Honua.Server.Tests.Features.Infrastructure.Redis;
 [Collection("Unit")]
 public sealed class RedisHealthMonitorTests
 {
+    private static RedisConnectionException CreateConnectionException(string message)
+        => new(ConnectionFailureType.UnableToConnect, message);
+
     [UnitTest]
     public void Constructor_WithNullRedis_InitializesCorrectly()
     {
@@ -45,7 +48,7 @@ public sealed class RedisHealthMonitorTests
         var mockRedis = new Mock<IConnectionMultiplexer>();
         var monitor = new RedisHealthMonitor(mockRedis.Object, NullLogger<RedisHealthMonitor>.Instance);
 
-        var exception = new RedisConnectionException("Test failure");
+        var exception = CreateConnectionException("Test failure");
         monitor.RecordFailure(exception);
 
         monitor.IsRedisAvailable.Should().BeFalse();
@@ -61,7 +64,7 @@ public sealed class RedisHealthMonitorTests
         var monitor = new RedisHealthMonitor(mockRedis.Object, NullLogger<RedisHealthMonitor>.Instance);
 
         // Record some failures
-        var exception = new RedisConnectionException("Test failure");
+        var exception = CreateConnectionException("Test failure");
         monitor.RecordFailure(exception);
         monitor.RecordFailure(exception);
 
@@ -82,7 +85,7 @@ public sealed class RedisHealthMonitorTests
         var mockRedis = new Mock<IConnectionMultiplexer>();
         var monitor = new RedisHealthMonitor(mockRedis.Object, NullLogger<RedisHealthMonitor>.Instance);
 
-        var exception = new RedisConnectionException("Test failure");
+        var exception = CreateConnectionException("Test failure");
         monitor.RecordFailure(exception);
 
         // Immediately after failure, should not retry (within retry interval)
@@ -101,7 +104,7 @@ public sealed class RedisHealthMonitorTests
         var monitor = new RedisHealthMonitor(mockRedis.Object, NullLogger<RedisHealthMonitor>.Instance);
 
         // Force failure state first
-        monitor.RecordFailure(new RedisConnectionException("Test"));
+        monitor.RecordFailure(CreateConnectionException("Test"));
         monitor.IsRedisAvailable.Should().BeFalse();
 
         var result = await monitor.TestConnectivityAsync();
@@ -115,7 +118,7 @@ public sealed class RedisHealthMonitorTests
     public async Task TestConnectivityAsync_WithFailedPing_RecordsFailure()
     {
         var mockDatabase = new Mock<IDatabase>();
-        mockDatabase.Setup(db => db.PingAsync()).ThrowsAsync(new RedisConnectionException("Connection failed"));
+        mockDatabase.Setup(db => db.PingAsync()).ThrowsAsync(CreateConnectionException("Connection failed"));
 
         var mockRedis = new Mock<IConnectionMultiplexer>();
         mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(mockDatabase.Object);
