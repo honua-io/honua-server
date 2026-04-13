@@ -129,25 +129,34 @@ internal sealed partial class JobReconciliationService(
     }
 
     private async Task HandleHeartbeatExpiryAsync(
-        ExecutionJobRecord job,
+        ExecutionJobRecord snapshot,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
-
-        if (retryPolicy.ShouldRetry(job.AttemptCount))
+        // Re-read the current record to avoid overwriting a job that completed
+        // between the sweep snapshot and this handler invocation.
+        var current = await jobStore.GetAsync(snapshot.OperationId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (IsStaleSnapshot(snapshot, current))
         {
-            Log.HeartbeatExpiredRetrying(logger, job.OperationId, job.AttemptCount, retryPolicy.MaxAttempts);
+            Log.ReconciliationSkippedStale(logger, snapshot.OperationId, current?.Status.ToString() ?? "deleted");
+            return;
+        }
 
-            var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
-            var abandoned = job with
+        var retryPolicy = current!.RetryPolicy ?? JobRetryPolicy.Default;
+
+        if (retryPolicy.ShouldRetry(current.AttemptCount))
+        {
+            Log.HeartbeatExpiredRetrying(logger, current.OperationId, current.AttemptCount, retryPolicy.MaxAttempts);
+
+            var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
+            var abandoned = current with
             {
                 Status = ExecutionJobStatus.Queued,
                 ClaimedBy = null,
                 ClaimedAt = null,
                 LastHeartbeatAt = null,
                 UpdatedAt = now,
-                CurrentPhase = $"Retrying (attempt {job.AttemptCount + 1}/{retryPolicy.MaxAttempts})",
+                CurrentPhase = $"Retrying (attempt {current.AttemptCount + 1}/{retryPolicy.MaxAttempts})",
                 PercentComplete = null,
                 ErrorMessage = null,
                 ProviderOperationId = null,
@@ -158,46 +167,67 @@ internal sealed partial class JobReconciliationService(
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             await jobQueue.RequeueAsync(
-                job.OperationId,
-                job.Priority,
+                current.OperationId,
+                current.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            Log.HeartbeatExpiredFailed(logger, job.OperationId, job.AttemptCount);
+            Log.HeartbeatExpiredFailed(logger, current.OperationId, current.AttemptCount);
 
-            var failed = job with
+            var failed = current with
             {
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
                 CompletedAt = now,
-                ErrorMessage = $"Worker heartbeat expired after {job.AttemptCount} attempt(s).",
+                ErrorMessage = $"Worker heartbeat expired after {current.AttemptCount} attempt(s).",
                 CurrentPhase = "Failed (heartbeat expired)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
-            await jobQueue.RemoveAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
         }
     }
 
     private async Task HandleTimeoutExpiryAsync(
-        ExecutionJobRecord job,
+        ExecutionJobRecord snapshot,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        Log.TimeoutExpired(logger, job.OperationId);
+        // Re-read the current record to avoid overwriting a job that completed
+        // between the sweep snapshot and this handler invocation.
+        var current = await jobStore.GetAsync(snapshot.OperationId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (IsStaleSnapshot(snapshot, current))
+        {
+            Log.ReconciliationSkippedStale(logger, snapshot.OperationId, current?.Status.ToString() ?? "deleted");
+            return;
+        }
 
-        var failed = job with
+        Log.TimeoutExpired(logger, current!.OperationId);
+
+        var failed = current with
         {
             Status = ExecutionJobStatus.Failed,
             UpdatedAt = now,
             CompletedAt = now,
-            ErrorMessage = $"Job exceeded maximum execution duration of {(job.TimeoutPolicy ?? JobTimeoutPolicy.Default).MaxDuration}.",
+            ErrorMessage = $"Job exceeded maximum execution duration of {(current.TimeoutPolicy ?? JobTimeoutPolicy.Default).MaxDuration}.",
             CurrentPhase = "Failed (timeout)"
         };
         await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
-        await jobQueue.RemoveAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when the fresh record has already moved past the state
+    /// captured in the sweep snapshot — the worker finalized the job, another
+    /// process intervened, or the record was deleted.
+    /// </summary>
+    private static bool IsStaleSnapshot(ExecutionJobRecord snapshot, ExecutionJobRecord? current)
+        => current is null
+           || current.Status is ExecutionJobStatus.Succeeded
+               or ExecutionJobStatus.Failed
+               or ExecutionJobStatus.Cancelled
+           || current.ClaimedBy != snapshot.ClaimedBy;
 
     private static partial class Log
     {
@@ -221,5 +251,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9046, LogLevel.Error, "Job {OperationId} exceeded maximum execution duration")]
         public static partial void TimeoutExpired(ILogger logger, string operationId);
+
+        [LoggerMessage(9047, LogLevel.Information, "Reconciliation skipped for job {OperationId}: current status is {Status} (state changed since sweep snapshot)")]
+        public static partial void ReconciliationSkippedStale(ILogger logger, string operationId, string status);
     }
 }
