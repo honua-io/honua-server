@@ -44,6 +44,9 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         links.Should().NotBeEmpty();
         links.Should().Contain(l =>
             l.GetProperty("rel").GetString() == "http://www.opengis.net/def/rel/ogc/1.0/processes");
+        links.Should().Contain(l =>
+            l.GetProperty("rel").GetString() == "service-desc",
+            "OGC API Common Core requires a service-desc link to the API definition");
     }
 
     // -----------------------------------------------------------------------
@@ -66,7 +69,8 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core");
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json");
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss");
-        conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list");
+        conformsTo.Should().NotContain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list",
+            "V1 job list is MVP-scoped and does not fully implement conf/job-list");
     }
 
     // -----------------------------------------------------------------------
@@ -218,6 +222,27 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     // -----------------------------------------------------------------------
     // Job list
     // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /ogc/processes/jobs")]
+    public async Task JobList_NegativeLimit_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes/jobs?limit=-1");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("positive");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /ogc/processes/jobs")]
+    public async Task JobList_ZeroLimit_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes/jobs?limit=0");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 
     [IntegrationTest]
     [Operation(Operations.JobStatus)]

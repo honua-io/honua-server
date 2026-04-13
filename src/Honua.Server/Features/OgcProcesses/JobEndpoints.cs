@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -61,12 +63,34 @@ internal static class JobEndpoints
     private static async Task<IResult> GetJobList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        IOperatorAuthorizationEvaluator authEvaluator,
         IOptions<OgcProcessesOptions> options,
         [FromQuery] int? limit = null,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobList");
+
+        var authResult = ProcessEndpoints.EvaluateAuthorization(
+            authEvaluator, context, logger,
+            OperatorResourceType.Job, OperatorOperation.Read);
+        if (authResult != null) return authResult;
+
         OgcProcessesLog.JobListRequested(logger);
+
+        if (limit is <= 0)
+        {
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Invalid limit",
+                    Status = StatusCodes.Status400BadRequest,
+                    Detail = "The 'limit' parameter must be a positive integer."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status400BadRequest);
+        }
 
         if (jobStore == null)
         {
@@ -101,9 +125,16 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        IOperatorAuthorizationEvaluator authEvaluator,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobStatus");
+
+        var authResult = ProcessEndpoints.EvaluateAuthorization(
+            authEvaluator, context, logger,
+            OperatorResourceType.Job, OperatorOperation.Read);
+        if (authResult != null) return authResult;
+
         OgcProcessesLog.JobStatusRequested(logger, jobId);
 
         if (jobStore == null)
@@ -130,9 +161,16 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        IOperatorAuthorizationEvaluator authEvaluator,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobResults");
+
+        var authResult = ProcessEndpoints.EvaluateAuthorization(
+            authEvaluator, context, logger,
+            OperatorResourceType.Job, OperatorOperation.Read);
+        if (authResult != null) return authResult;
+
         OgcProcessesLog.JobResultsRequested(logger, jobId);
 
         if (jobStore == null)
@@ -207,11 +245,18 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        IOperatorAuthorizationEvaluator authEvaluator,
         IJobCancellationNotifier cancellationNotifier,
         IUniversalProgressStore progressStore,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("DismissJob");
+
+        var authResult = ProcessEndpoints.EvaluateAuthorization(
+            authEvaluator, context, logger,
+            OperatorResourceType.Job, OperatorOperation.Execute);
+        if (authResult != null) return authResult;
+
         OgcProcessesLog.JobDismissRequested(logger, jobId);
 
         if (jobStore == null)

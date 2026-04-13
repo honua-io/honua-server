@@ -21,6 +21,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 - [MapServer REST](#mapserver-rest)
 - [STAC API](#stac-api)
 - [OGC API Features](#ogc-api-features)
+- [OGC API Processes](#ogc-api-processes)
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
 - [Error Handling](#error-handling)
@@ -402,6 +403,78 @@ The other OGC analytics mirrors are:
 - `POST /ogc/features/collections/{collectionId}/buffer-aggregate`
 
 As with the FeatureServer mirror, `numberReturned` equals `features.length` after truncation, and `metadata.maxOutputRows` is populated for density and cluster hull mode while remaining `null` for per-feature clusters, spatial join, and buffer aggregate. Per-feature cluster and spatial-join rows keep `properties.objectId` plus nested `properties.attributes`; spatial join also exposes `matchCount` and any array-valued `carryFields`, buffer aggregate dissolved rows expose `featureCount`, and density rows expose `cellId`, `featureCount`, and optional `weight`.
+
+---
+
+## **OGC API Processes**
+
+### **Landing Page**
+
+```bash
+curl http://localhost:8080/ogc/processes
+```
+
+### **List Processes**
+
+```bash
+curl http://localhost:8080/ogc/processes/processes
+```
+
+### **Describe a Process**
+
+```bash
+curl http://localhost:8080/ogc/processes/processes/honua-geoprocessing
+```
+
+### **Execute (Async)**
+
+Async execution requires the `Prefer: respond-async` header. The `plan` input must be a JSON object with a `planId` and at least one step. The response returns `201 Created` with a `Location` header pointing to the job status endpoint.
+
+```bash
+curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/execution \
+  -H "Content-Type: application/json" \
+  -H "Prefer: respond-async" \
+  -d '{
+    "inputs": {
+      "plan": {
+        "planId": "plan-1",
+        "steps": [
+          {"stepId": "s1", "toolName": "buffer", "inputs": {"distance": "100"}}
+        ]
+      }
+    }
+  }'
+```
+
+### **List Jobs**
+
+Returns a `jobList` object with `jobs` array and navigation `links`. Use `?limit=N` to control page size (defaults to `OgcProcesses:DefaultJobLimit`).
+
+```bash
+curl "http://localhost:8080/ogc/processes/jobs?limit=10"
+```
+
+### **Poll Job Status**
+
+```bash
+curl http://localhost:8080/ogc/processes/jobs/{jobId}
+```
+
+### **Retrieve Results**
+
+Results are available once the job reaches `successful` status. Returns document-mode JSON (by-value).
+
+```bash
+curl http://localhost:8080/ogc/processes/jobs/{jobId}/results
+```
+
+### **Dismiss a Job**
+
+Cancels a running job. Terminal jobs (successful, failed, dismissed) return `409 Conflict`.
+
+```bash
+curl -X DELETE http://localhost:8080/ogc/processes/jobs/{jobId}
+```
 
 ---
 

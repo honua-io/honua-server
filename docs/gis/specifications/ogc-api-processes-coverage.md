@@ -10,7 +10,7 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 |---|---|---|
 | Core | `http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core` | Implemented |
 | JSON | `http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json` | Implemented |
-| Job List | `http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list` | Implemented |
+| Job List | `http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list` | MVP (not advertised) |
 | Dismiss | `http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss` | Implemented |
 | OGC API Common Core | `http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core` | Implemented |
 | OGC API Common JSON | `http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json` | Implemented |
@@ -19,12 +19,12 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 
 | Capability | Method | Path | Status | Notes |
 |---|---|---|---|---|
-| Landing page | GET | `/ogc/processes` | Implemented | HATEOAS links to conformance, processes, jobs |
+| Landing page | GET | `/ogc/processes` | Implemented | HATEOAS links to API definition (service-desc), conformance, processes, jobs |
 | Conformance | GET | `/ogc/processes/conformance` | Implemented | Declares conformance classes listed above |
 | Process list | GET | `/ogc/processes/processes` | Implemented | V1: single canonical process (`honua-geoprocessing`) |
 | Process description | GET | `/ogc/processes/processes/{processId}` | Implemented | JSON Schema input/output descriptions |
-| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps) to match canonical service invariants. |
-| Job list | GET | `/ogc/processes/jobs` | Implemented | Returns `jobList.yaml` object (`jobs` + `links`). Supports `limit` query param. Capped to `OgcProcesses:DefaultJobLimit` entries. Query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`) are follow-on. |
+| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps). Authorization and approval gates match the canonical geoprocessing service. |
+| Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; capped to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document |
 | Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Implemented | Document-mode, by-value JSON |
 | Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Cancels running jobs via `IJobCancellationNotifier` |
@@ -56,13 +56,14 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 - **Single process**: the process catalog exposes one canonical process (`honua-geoprocessing`). Catalog formalization is follow-on work.
 - **Document-mode results only**: results are returned by value as a JSON document. By-reference transmission is not supported in V1.
 - **Result content**: the results document structure will evolve as the execution engine matures.
-- **Job list filters**: the `limit` parameter is supported; additional query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`) are follow-on.
+- **Job list (MVP)**: the `limit` parameter is supported (must be positive); additional query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, and terminal job enumeration are follow-on. `conf/job-list` is not advertised.
 - **Job store required**: all job endpoints return `503 Service Unavailable` when Redis-backed durable storage is not configured.
+- **Authorization alignment**: all endpoints enforce the same authorization and approval gates as the canonical geoprocessing service (`IOperatorAuthorizationEvaluator`, `IOperatorApprovalEvaluator`).
 
 ## Telemetry
 
 - Diagnostic activity protocol tag: `OGC-API-Processes`
-- Structured logging event IDs: `8100`–`8159`
+- Structured logging event IDs: `8100`–`8199` (reserved block)
 - Activity operation tags: `GetProcessList`, `GetProcess`, `ExecuteProcess`, `GetJobList`, `GetJobStatus`, `GetJobResults`, `DismissJob`
 
 ## Source Specification

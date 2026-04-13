@@ -68,4 +68,11 @@ internal static partial class OgcProcessesLog
     // 8150-8159: Errors
     [LoggerMessage(8150, LogLevel.Warning, "OGC Processes job store unavailable")]
     public static partial void JobStoreUnavailable(ILogger logger);
+
+    // 8160-8169: Authorization
+    [LoggerMessage(8160, LogLevel.Warning, "OGC Processes authorization denied: Resource={ResourceType}, Operation={Operation}")]
+    public static partial void AuthorizationDenied(ILogger logger, string resourceType, string operation);
+
+    [LoggerMessage(8161, LogLevel.Warning, "OGC Processes execution rejected: approval required (policy: {PolicyRef})")]
+    public static partial void ExecutionRejectedApprovalRequired(ILogger logger, string policyRef);
 }

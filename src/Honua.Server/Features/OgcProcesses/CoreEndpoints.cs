@@ -18,7 +18,6 @@ internal static class CoreEndpoints
     private static readonly ImmutableArray<string> ConformanceClasses = ImmutableArray.Create(
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json",
-        "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss",
         "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json");
@@ -47,6 +46,7 @@ internal static class CoreEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var links = ImmutableArray.Create(
             Link.Create($"{baseUrl}{BasePath}", RelationTypes.Self, MediaTypes.Json, "This document"),
+            Link.Create($"{baseUrl}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"),
             Link.Create($"{baseUrl}{BasePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"),
             Link.Create($"{baseUrl}{BasePath}/processes", "http://www.opengis.net/def/rel/ogc/1.0/processes", MediaTypes.Json, "Process list"),
             Link.Create($"{baseUrl}{BasePath}/jobs", "http://www.opengis.net/def/rel/ogc/1.0/job-list", MediaTypes.Json, "Job list"));

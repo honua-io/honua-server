@@ -5,6 +5,8 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -167,9 +169,19 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
+        IOperatorAuthorizationEvaluator authEvaluator,
+        IOperatorApprovalEvaluator approvalEvaluator,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("ExecuteProcess");
+
+        var authResult = EvaluateAuthorization(
+            authEvaluator, context, logger,
+            OperatorResourceType.Process, OperatorOperation.Execute);
+        if (authResult != null) return authResult;
+
+        var approvalResult = EvaluateApproval(approvalEvaluator, context, logger);
+        if (approvalResult != null) return approvalResult;
 
         if (!string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase))
         {
@@ -349,6 +361,90 @@ internal static class ProcessEndpoints
     {
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"ogc-execute:{processId}:{planJson}"));
         return Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Evaluates operator authorization and returns an error result if denied; null if allowed.
+    /// Mirrors the authorization gate in <c>HonuaProcessService.EnsureAuthorized</c>.
+    /// </summary>
+    internal static IResult? EvaluateAuthorization(
+        IOperatorAuthorizationEvaluator authEvaluator,
+        HttpContext context,
+        ILogger logger,
+        OperatorResourceType resourceType,
+        OperatorOperation operation)
+    {
+        var decision = authEvaluator.Evaluate(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = resourceType,
+            Operation = operation
+        });
+
+        if (decision.IsAllowed) return null;
+
+        OgcProcessesLog.AuthorizationDenied(logger, resourceType.ToString(), operation.ToString());
+
+        if (decision.RequiresAuthentication)
+        {
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Authentication required",
+                    Status = StatusCodes.Status401Unauthorized,
+                    Detail = "Authentication is required for this operation."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status401Unauthorized);
+        }
+
+        return Results.Json(
+            new OgcProcessError
+            {
+                Type = "about:blank",
+                Title = "Permission denied",
+                Status = StatusCodes.Status403Forbidden,
+                Detail = "You do not have permission to perform this operation."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status403Forbidden);
+    }
+
+    /// <summary>
+    /// Evaluates operator approval and returns an error result if approval is required; null if not.
+    /// Mirrors the approval gate in <c>HonuaProcessService.EnsureApproved</c>.
+    /// </summary>
+    private static IResult? EvaluateApproval(
+        IOperatorApprovalEvaluator approvalEvaluator,
+        HttpContext context,
+        ILogger logger)
+    {
+        var approval = approvalEvaluator.Evaluate(
+            context.User,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Process,
+                Operation = OperatorOperation.Execute
+            });
+
+        if (!approval.IsRequired) return null;
+
+        OgcProcessesLog.ExecutionRejectedApprovalRequired(logger, approval.PolicyRef ?? "unknown");
+
+        return Results.Json(
+            new OgcProcessError
+            {
+                Type = "about:blank",
+                Title = "Approval required",
+                Status = StatusCodes.Status403Forbidden,
+                Detail = $"This operation requires approval (policy: {approval.PolicyRef}). " +
+                         "Use the process validation endpoint to check approval requirements before submission."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status403Forbidden);
     }
 
     private static void EnrichActivity(string operation)
