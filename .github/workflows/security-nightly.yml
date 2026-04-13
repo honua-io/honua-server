@@ -66,7 +66,7 @@ jobs:
 
       - name: Create Issue on Vulnerabilities
         if: steps.nuget-scan.outputs.vulnerable_packages == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = 'Security Alert: High/Critical vulnerabilities detected';
