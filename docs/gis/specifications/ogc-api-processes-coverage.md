@@ -24,7 +24,7 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 | Process list | GET | `/ogc/processes/processes` | Implemented | V1: single canonical process (`honua-geoprocessing`) |
 | Process description | GET | `/ogc/processes/processes/{processId}` | Implemented | JSON Schema input/output descriptions |
 | Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header |
-| Job list | GET | `/ogc/processes/jobs` | Implemented | Paginated; limit controlled by `OgcProcesses:DefaultJobLimit` |
+| Job list | GET | `/ogc/processes/jobs` | Implemented | Capped to `OgcProcesses:DefaultJobLimit` entries (pagination follow-on) |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document |
 | Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Implemented | Document-mode, by-value JSON |
 | Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Cancels running jobs via `IJobCancellationNotifier` |

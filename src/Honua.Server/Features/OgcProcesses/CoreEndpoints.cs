@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.OgcProcesses;
@@ -43,7 +44,7 @@ internal static class CoreEndpoints
     {
         OgcProcessesLog.LandingPageRequested(logger);
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var links = ImmutableArray.Create(
             Link.Create($"{baseUrl}{BasePath}", RelationTypes.Self, MediaTypes.Json, "This document"),
             Link.Create($"{baseUrl}{BasePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"),
@@ -72,10 +73,6 @@ internal static class CoreEndpoints
         return Results.Json(conformance, OgcProcessesJsonContext.Default.ConformanceDeclaration, MediaTypes.Json);
     }
 
-    private static string GetBaseUrl(HttpRequest request)
-    {
-        return $"{request.Scheme}://{request.Host}";
-    }
 }
 
 /// <summary>

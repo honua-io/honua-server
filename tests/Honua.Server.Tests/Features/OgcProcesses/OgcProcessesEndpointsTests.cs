@@ -133,11 +133,34 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithoutRespondAsync_Returns501()
     {
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var body = """{"inputs":{"plan":{"steps":[]}}}""";
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/honua-geoprocessing/execution", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("type").GetString().Should().Be("about:blank");
+        json.RootElement.GetProperty("type").GetString().Should()
+            .NotContain("no-such-process", "sync rejection must not reuse the no-such-process problem type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_MissingPlanInput_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("title").GetString().Should().Contain("Invalid");
     }
 
     [IntegrationTest]
@@ -148,7 +171,7 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/nonexistent/execution");
         request.Headers.Add("Prefer", "respond-async");
-        request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+        request.Content = new StringContent("""{"inputs":{"plan":{"steps":[]}}}""", Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

@@ -7,10 +7,12 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.OgcProcesses;
 
@@ -59,6 +61,7 @@ internal static class JobEndpoints
     private static async Task<IResult> GetJobList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
+        IOptions<OgcProcessesOptions> options,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobList");
@@ -77,8 +80,9 @@ internal static class JobEndpoints
             ExecutionJobKind.Geoprocessing,
             context.RequestAborted).ConfigureAwait(false);
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfos = jobs
+            .Take(options.Value.DefaultJobLimit)
             .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(j, null, baseUrl))
             .ToArray();
 
@@ -107,7 +111,7 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl);
 
         return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json);
@@ -217,7 +221,7 @@ internal static class JobEndpoints
         // Already dismissed — return current status
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
-            var baseUrl2 = GetBaseUrl(context.Request);
+            var baseUrl2 = BaseUrlResolver.GetBaseUrl(context);
             return Results.Json(
                 OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl2),
                 OgcProcessesJsonContext.Default.OgcStatusInfo,
@@ -275,7 +279,7 @@ internal static class JobEndpoints
             job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false) ?? job;
         }
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         return Results.Json(
             OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl),
             OgcProcessesJsonContext.Default.OgcStatusInfo,
@@ -302,5 +306,4 @@ internal static class JobEndpoints
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
     }
 
-    private static string GetBaseUrl(HttpRequest request) => $"{request.Scheme}://{request.Host}";
 }

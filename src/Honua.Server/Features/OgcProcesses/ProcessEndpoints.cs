@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
@@ -104,7 +105,7 @@ internal static class ProcessEndpoints
         EnrichActivity("GetProcessList");
         OgcProcessesLog.ProcessListRequested(logger);
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var summary = CanonicalProcessSummary with
         {
             Links = ImmutableArray.Create(
@@ -149,7 +150,7 @@ internal static class ProcessEndpoints
                 StatusCodes.Status404NotFound);
         }
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var description = CanonicalProcessDescription with
         {
             Links = ImmutableArray.Create(
@@ -162,6 +163,7 @@ internal static class ProcessEndpoints
 
     private static async Task<IResult> ExecuteProcess(
         string processId,
+        [FromBody] OgcExecuteRequest request,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
@@ -196,7 +198,7 @@ internal static class ProcessEndpoints
             return Results.Json(
                 new OgcProcessError
                 {
-                    Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/no-such-process",
+                    Type = "about:blank",
                     Title = "Synchronous execution not supported",
                     Status = StatusCodes.Status501NotImplemented,
                     Detail = "This process only supports asynchronous execution. " +
@@ -205,6 +207,26 @@ internal static class ProcessEndpoints
                 OgcProcessesJsonContext.Default.OgcProcessError,
                 MediaTypes.Json,
                 StatusCodes.Status501NotImplemented);
+        }
+
+        // Validate that the request contains the required 'plan' input.
+        if (request.Inputs == null
+            || !request.Inputs.TryGetValue("plan", out var planElement)
+            || planElement.ValueKind == System.Text.Json.JsonValueKind.Undefined
+            || planElement.ValueKind == System.Text.Json.JsonValueKind.Null)
+        {
+            OgcProcessesLog.ExecutionRequestInvalid(logger, processId);
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Invalid execution request",
+                    Status = StatusCodes.Status400BadRequest,
+                    Detail = "The 'inputs' object must contain a 'plan' property with a non-null analysis plan."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status400BadRequest);
         }
 
         OgcProcessesLog.ExecutionRequested(logger, processId, true);
@@ -225,6 +247,7 @@ internal static class ProcessEndpoints
                 StatusCodes.Status503ServiceUnavailable);
         }
 
+        var planJson = planElement.GetRawText();
         var now = DateTimeOffset.UtcNow;
         var jobId = $"gp-{Guid.NewGuid():N}";
 
@@ -238,7 +261,7 @@ internal static class ProcessEndpoints
             Audit = new OperationAuditInfo
             {
                 RequestedBy = context.User.Identity?.Name,
-                RequestFingerprint = CreateRequestFingerprint(processId)
+                RequestFingerprint = CreateRequestFingerprint(processId, planJson)
             },
             Spec = new ExecutionJobSpec
             {
@@ -257,7 +280,7 @@ internal static class ProcessEndpoints
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);
 
-        var baseUrl = GetBaseUrl(context.Request);
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(jobRecord, processId, baseUrl);
 
         context.Response.Headers["Location"] = $"{baseUrl}{BasePath}/jobs/{jobId}";
@@ -266,9 +289,9 @@ internal static class ProcessEndpoints
         return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json, StatusCodes.Status201Created);
     }
 
-    private static string CreateRequestFingerprint(string processId)
+    private static string CreateRequestFingerprint(string processId, string planJson)
     {
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"ogc-execute:{processId}:{DateTimeOffset.UtcNow.Ticks}"));
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"ogc-execute:{processId}:{planJson}"));
         return Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant();
     }
 
@@ -280,5 +303,4 @@ internal static class ProcessEndpoints
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
     }
 
-    private static string GetBaseUrl(HttpRequest request) => $"{request.Scheme}://{request.Host}";
 }

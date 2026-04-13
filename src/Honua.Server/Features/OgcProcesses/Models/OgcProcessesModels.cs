@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.OgcProcesses.Models;
@@ -180,10 +181,10 @@ public sealed record OgcProcessDescription
 public sealed record OgcExecuteRequest
 {
     /// <summary>
-    /// Process inputs keyed by input identifier.
+    /// Process inputs keyed by input identifier. Values are arbitrary JSON (string, object, array, etc.).
     /// </summary>
     [JsonPropertyName("inputs")]
-    public ImmutableDictionary<string, string>? Inputs { get; init; }
+    public ImmutableDictionary<string, JsonElement>? Inputs { get; init; }
 
     /// <summary>
     /// Desired response mode (document or raw). V1 supports document only.
