@@ -51,7 +51,7 @@ See `.env.example` in the repo root for every available setting.
 
 - **Honua Server** is a stateless container. Scale horizontally by adding replicas.
 - **PostGIS** is the only required dependency. All protocols read from and write to the same database.
-- **Redis** is optional. Without it, Honua falls back to in-memory caching (fine for single-node).
+- **Redis** is optional for caching (Honua falls back to in-memory caching for single-node). However, Redis is **required** when running job orchestration workloads (geoprocessing, ETL, tile-cache jobs) because the durable job queue, execution log store, and reconciliation state use Redis-backed storage. See [Operations — Job Orchestration](operations.md#job-orchestration).
 - **Object storage** (S3/MinIO) is optional, used only for file import workflows.
 - **TLS and rate limiting** are handled at the edge (ALB, API Gateway, Ingress Controller). Honua does not terminate TLS.
 

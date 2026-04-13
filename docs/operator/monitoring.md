@@ -35,6 +35,23 @@ Admin-only diagnostics:
 
 ---
 
+## Job Orchestration Observability
+
+Worker hosts running `AddJobWorker()` emit log entries from the
+`JobReconciliationService` background sweep:
+
+| Level | Signal |
+|-------|--------|
+| Debug | Routine sweep results (reconciled count out of active total) |
+| Warning | Heartbeat expired — job requeued for retry |
+| Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
+
+Monitor for `JobReconciliationService` entries in worker hosts to detect
+stale heartbeats, abandoned jobs, and retry exhaustion. For lifecycle
+details and tuning, see [Operations — Job Orchestration](operations.md#job-orchestration).
+
+---
+
 ## OpenTelemetry
 
 Honua uses standard OpenTelemetry APIs.
