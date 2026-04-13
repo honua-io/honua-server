@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -287,6 +289,54 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             $"/rest/services/TestService/GPServer/DifferentTask/jobs/{jobId}?f=json");
 
         statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // -----------------------------------------------------------------------
+    // Cross-protocol binding rejection
+    // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task JobStatus_WithNonGPServerJob_ReturnsNotFound()
+    {
+        // Write a job record directly to the store without GPServer binding metadata.
+        // This simulates a gRPC-submitted job that should not be visible via GPServer routes.
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            // Without Redis, skip — store unavailable
+            return;
+        }
+
+        var jobId = $"grpc-test-{Guid.NewGuid():N}";
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = jobId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "grpc-test"
+                // No gpserver.serviceId / gpserver.taskName parameters
+            }
+        };
+
+        var created = await jobStore.TryCreateAsync(jobRecord);
+        if (!created)
+        {
+            return;
+        }
+
+        // Access via GPServer route — should be rejected (no GPServer binding metadata)
+        var response = await _client.GetAsync(
+            $"/rest/services/AnyService/GPServer/AnyTask/jobs/{jobId}?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     // -----------------------------------------------------------------------

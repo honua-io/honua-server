@@ -465,8 +465,9 @@ internal static class GPServerEndpoints
     /// <summary>
     /// Validates that the route <paramref name="serviceId"/> and <paramref name="taskName"/>
     /// match the protocol metadata stored with the job when it was submitted.
-    /// Returns a 404 result when the binding does not match; null when it does.
-    /// Jobs without stored binding metadata (e.g. submitted via gRPC) pass through.
+    /// Returns a 404 result when the binding does not match or is absent; null when it matches.
+    /// Jobs without GPServer binding metadata (e.g. submitted via gRPC) are rejected
+    /// to prevent cross-protocol job access through arbitrary GPServer routes.
     /// </summary>
     private static IResult? ValidateJobBinding(
         HttpContext context, ILogger logger, ExecutionJobRecord job,
@@ -475,10 +476,13 @@ internal static class GPServerEndpoints
         var storedService = job.Spec.Parameters.GetValueOrDefault("gpserver.serviceId");
         var storedTask = job.Spec.Parameters.GetValueOrDefault("gpserver.taskName");
 
-        // Jobs without GPServer binding metadata (e.g. submitted via gRPC) skip validation.
+        // Jobs without GPServer binding metadata were not submitted through GPServer.
+        // Reject them to prevent cross-protocol job access.
         if (storedService == null && storedTask == null)
         {
-            return null;
+            GPServerLog.JobBindingMismatch(logger, job.OperationId, serviceId, taskName);
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'.");
         }
 
         if (string.Equals(storedService, serviceId, StringComparison.OrdinalIgnoreCase) &&

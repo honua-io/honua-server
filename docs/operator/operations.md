@@ -255,7 +255,7 @@ responses:
 | Queued | `esriJobSubmitted` | `submitJob` returns 202 |
 | Provisioning | `esriJobWaiting` | `jobs/{jobId}` status poll |
 | Running | `esriJobExecuting` | `jobs/{jobId}` status poll |
-| Succeeded | `esriJobSucceeded` | `jobs/{jobId}` with result URLs |
+| Succeeded | `esriJobSucceeded` | `jobs/{jobId}` status (result URLs pending result-storage support) |
 | Failed | `esriJobFailed` | `jobs/{jobId}` with error messages |
 | Cancelled | `esriJobCancelled` | After `jobs/{jobId}/cancel` |
 
