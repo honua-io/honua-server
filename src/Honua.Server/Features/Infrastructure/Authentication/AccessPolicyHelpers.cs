@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.DependencyInjection;
 using System.Security.Claims;

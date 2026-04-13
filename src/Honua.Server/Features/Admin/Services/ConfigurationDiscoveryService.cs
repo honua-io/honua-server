@@ -23,7 +23,7 @@ namespace Honua.Server.Features.Admin.Services;
 /// Enhanced configuration discovery service that provides automatic documentation
 /// generation, metadata extraction, and introspection capabilities.
 /// </summary>
-internal sealed class ConfigurationDiscoveryService
+public sealed class ConfigurationDiscoveryService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;

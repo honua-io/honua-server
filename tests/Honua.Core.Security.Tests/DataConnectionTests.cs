@@ -1,4 +1,4 @@
-using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Domain;
 using Xunit;
 
 namespace Honua.Core.Security.Tests;
