@@ -62,7 +62,8 @@ internal static class ProcessEndpoints
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime. " +
                       "Accepts a plan specification with steps, inputs, and output expectations. " +
-                      "Returns artifacts via the job results endpoint once execution completes.",
+                      "Job status can be polled via the jobs endpoint. " +
+                      "Result retrieval will be available once the execution engine is integrated.",
         Version = "1.0.0",
         JobControlOptions = ImmutableArray.Create("async-execute", "dismiss"),
         OutputTransmission = ImmutableArray.Create("value"),

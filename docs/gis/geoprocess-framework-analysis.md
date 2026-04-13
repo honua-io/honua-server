@@ -400,7 +400,7 @@ This **protocol adapter** is implemented. The adapter:
 - Implements OGC API Processes Part 1 Core routes that project canonical process service operations
 - Translates JSON Schema process descriptions from canonical process definitions
 - Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above
-- V1: returns results as document-mode, by-value JSON (raw-mode and reference transmission deferred)
+- V1: result storage is pending; the `/results` endpoint stubs 404 for successful jobs until the execution engine populates result packages (target: document-mode, by-value JSON; raw-mode and reference transmission deferred)
 - Supports `Prefer: respond-async` negotiation
 - Does not add internal domain types or lifecycle states
 
