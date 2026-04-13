@@ -8,11 +8,11 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), STAC API, OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, and vector tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), STAC API, OGC API Features/Maps/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -76,6 +76,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | OGC API Features | `/ogc/features` | QGIS, OpenLayers, MapLibre, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients, custom web apps |
 | OGC API Tiles | `/ogc/tiles` | QGIS, OpenLayers, MapLibre |
+| OGC API Processes | `/ogc/processes` | OGC-compliant process clients |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
 | Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, OpenLayers, Leaflet, Mapbox GL |
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
@@ -84,6 +85,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
+| OpenAPI (OGC Processes) | `/ogc/processes/openapi.json` | Any HTTP client |
 | API Explorer (Scalar) | `/docs` | Browser *(dev mode or `HONUA_SERVE_API_DOCS=true`)* |
 | Health | `/healthz/live`, `/healthz/ready` | Load balancers, orchestrators |
 
