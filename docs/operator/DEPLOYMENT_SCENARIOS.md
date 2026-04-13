@@ -79,6 +79,26 @@ curl http://localhost:8080/healthz/ready
 
 ---
 
+## **API/Worker Host Separation**
+
+Honua's durable job orchestration substrate
+([ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
+separates API-side and worker-side concerns:
+
+- **API-only image**: Registers shared queue and log store
+  (`AddJobOrchestration`). Stays lean — no execution or reconciliation
+  overhead. Suitable for request-serving replicas.
+- **Worker or combined image**: Additionally registers the execution host and
+  reconciliation sweep (`AddJobWorker`). Claims and runs queued
+  geoprocessing, ETL, and tile-cache jobs.
+
+In Scenarios 1–2, a combined image running both API and worker is typical. In
+Scenario 3, consider separating API-serving replicas from worker replicas to
+scale them independently and keep heavyweight execution dependencies out of the
+request path.
+
+---
+
 ## **Related Documentation**
 
 - [Security](security.md)

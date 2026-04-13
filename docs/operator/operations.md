@@ -189,6 +189,72 @@ All settings live under `OgcProcesses` (env prefix `OgcProcesses__`):
 |---------|---------|-------------|
 | `DefaultJobLimit` | 100 | Maximum jobs returned per `GET /ogc/processes/jobs` request |
 
+## Job Orchestration
+
+Geoprocessing, ETL, and tile-cache workloads run through a durable job
+orchestration substrate. The substrate handles queuing, claim/heartbeat
+liveness, retry, cancellation, progress reporting, and structured execution
+logs.
+
+> **Deployment note:** The substrate is split into API-side and worker-side
+> registrations. The API image registers shared infrastructure (queue, log
+> store) via `AddJobOrchestration()`. The worker or combined-mode image
+> additionally registers the execution host and reconciliation sweep via
+> `AddJobWorker()`. Lean API-only deployments do not run execution or
+> reconciliation overhead. See
+> [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md).
+
+### Job Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Queued | In the queue, not yet claimed by a worker |
+| Provisioning | Worker has claimed the job, preparing to execute |
+| Running | Execution is in progress |
+| Succeeded | Terminal: completed successfully |
+| Failed | Terminal: failed (may be retried if policy allows) |
+| Cancelled | Terminal: cancelled by user or system |
+
+### Heartbeat and Liveness
+
+Workers pump heartbeats at a configurable interval (default: 30 seconds).
+The reconciliation service sweeps active jobs every 30 seconds. If a
+worker's last heartbeat exceeds the heartbeat timeout (default: 90 seconds),
+the job is considered abandoned. If retries remain, the reconciler requeues
+the job with a computed backoff delay; otherwise the job transitions to
+Failed.
+
+### Retry Policy
+
+Default: 3 attempts with exponential backoff starting at 30 seconds, capped
+at 10 minutes. Per-job override is supported via `JobRetryPolicy` on the
+`ExecutionJobRecord`.
+
+### Timeout Policy
+
+Default maximum execution duration is 1 hour. Long-running ETL or
+geoprocessing workloads can use the 24-hour policy. Jobs exceeding their
+timeout are marked Failed by the reconciler.
+
+### Structured Execution Logs
+
+Workers append `ExecutionLogEntry` records (timestamp, level, message,
+phase, optional metadata) through `IExecutionLogStore`. Logs are
+append-only during execution and read-only after terminal state. Redis-backed
+with configurable retention (default: 7 days).
+
+### Monitoring
+
+Active jobs surface through the existing operations endpoints:
+
+- `GET /api/v1/admin/operations/active` — lists all active operations
+- `GET /api/v1/admin/operations/{operationId}` — job progress and status
+- `GET /api/v1/admin/operations/type/Geoprocessing` — geoprocessing jobs
+
+The reconciliation service logs sweep results at Debug level and heartbeat/
+timeout expiry at Warning/Error level. Monitor for `JobReconciliationService`
+log entries in worker hosts.
+
 ---
 
 ## Workspace Lifecycle

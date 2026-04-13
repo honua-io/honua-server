@@ -273,16 +273,9 @@ internal static partial class GeoservicesImportEndpoints
                     statusCode: StatusCodes.Status202Accepted)
                 .ExecuteAsync(context);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import queue is unavailable", StringComparison.OrdinalIgnoreCase))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import", StringComparison.OrdinalIgnoreCase) && ex.Message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
         {
-            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
-            {
-                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
+            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
 
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(
@@ -292,17 +285,32 @@ internal static partial class GeoservicesImportEndpoints
         }
         catch (Exception ex)
         {
-            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
-            {
-                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
+            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
 
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task TryRollbackQueuedStateAsync(
+        IDistributedImportJobManager? jobManager, string? jobId, bool jobQueued)
+    {
+        if (jobManager == null || string.IsNullOrWhiteSpace(jobId) || jobQueued)
+        {
+            return;
+        }
+
+        try
+        {
+            await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                jobManager.RequestStore,
+                jobManager.ProgressStore,
+                jobId,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort rollback; state will expire via TTL.
         }
     }
 
