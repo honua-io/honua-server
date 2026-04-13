@@ -322,6 +322,45 @@ Progress is observable through the admin operations endpoints
 (`/api/v{version}/admin/operations/`) and supports cancellation via
 `ICancellableOperationProgress`.
 
+## Workspace Artifact Lifecycle
+
+> **Implementation status:** The workspace and artifact lifecycle types,
+> retention policy, and cleanup service are implemented. The `Execute` stage
+> does not yet create workspaces or artifacts automatically — the wiring
+> between `ExecutePlan` and `IWorkspaceLifecycleService` is planned for a
+> downstream ticket. The contracts and rules described below are the target
+> design.
+
+Execution results integrate with the workspace retention model described in the
+[AI Operator Contract](AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
+
+**Artifact creation during execution.** The `Execute` stage will create
+artifacts in a workspace assigned by the workflow. Scratch and result-collection
+workspaces will be created automatically with retention policy applied.
+Artifacts added through `IWorkspaceLifecycleService.AddArtifactAsync` are
+registered directly in the `Available` state; the method validates that the
+target workspace exists, is `Active`, and has not passed its expiration time
+by clock before creating the artifact. Callers
+that need a two-phase create (e.g. long-running materialization) can use
+`IArtifactStore` directly with the `Pending` state and transition to
+`Available` on completion.
+
+**WorkspaceRef expiration.** The `workspaceRefs` array in `ExecutionResult` and
+`AnalysisResultPackage` carries `expiresAt` values reflecting the workspace
+retention policy. Consumers should treat these timestamps as the deadline for
+accessing temporary outputs before cleanup reclaims them.
+
+**Promotion for durable outputs.** Artifacts that should survive beyond the
+workspace TTL must be promoted to a `Persistent` or `SavedLayer` workspace
+before the grace period elapses. Promotion is available from `Active` and
+`Expired` workspaces when the retention policy allows it. See the
+[Artifact Promotion](AI_OPERATOR_CONTRACT.md#artifact-promotion) rules.
+
+**Transparent background cleanup.** The cleanup service runs on a configurable
+interval and removes expired workspaces after a grace period. Workflows do not
+need to manage cleanup explicitly — retention is enforced by the platform.
+Non-promoted artifacts in expired workspaces are deleted during the sweep.
+
 ## Related Documents
 
 - [AI Operator Contract](AI_OPERATOR_CONTRACT.md)

@@ -299,8 +299,13 @@ Responsible for intermediate and saved state:
 - scratch workspaces
 - temp layers
 - saved layers
-- artifact registration
-- lifecycle and expiry
+- result collections
+- artifact registration and storage tracking
+- lifecycle state transitions (Active, Expired, Archived, Deleted)
+- retention policy enforcement (per-kind TTL and max TTL)
+- per-owner quota evaluation (workspace count, artifact count, storage bytes)
+- artifact promotion from temporary to durable workspaces
+- background cleanup with configurable interval, grace period, and batch size
 
 ### RenderService
 

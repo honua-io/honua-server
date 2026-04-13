@@ -140,6 +140,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         sectionNames.Should().Contain("Cache");
         sectionNames.Should().Contain("Limits.Query");
         sectionNames.Should().Contain("Security");
+        sectionNames.Should().Contain("Geoprocessing:Workspace");
     }
 
     [IntegrationTest]
@@ -179,6 +180,33 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         envVars.Should().Contain(e => e.Name == "ConnectionStrings__DefaultConnection");
         envVars.Should().Contain(e => e.Name == "HONUA_ADMIN_UI");
         envVars.Should().Contain(e => e.Name == "Cache__Enabled");
+        envVars.Should().Contain(e => e.Name == "Geoprocessing__Workspace__CleanupInterval");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/admin/config")]
+    public async Task GetConfiguration_WorkspaceEnvVarsHaveDefaults()
+    {
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/config");
+        var content = await response.Content.ReadAsStringAsync();
+        var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+            content, ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+        var envVars = configDoc!.EnvironmentVariables;
+
+        envVars.Should().Contain(e =>
+            e.Name == "Geoprocessing__Workspace__ScratchDefaultTtl" && e.Default == "01:00:00");
+        envVars.Should().Contain(e =>
+            e.Name == "Geoprocessing__Workspace__TempLayerDefaultTtl" && e.Default == "1.00:00:00");
+        envVars.Should().Contain(e =>
+            e.Name == "Geoprocessing__Workspace__ResultCollectionDefaultTtl" && e.Default == "7.00:00:00");
+        envVars.Should().Contain(e =>
+            e.Name == "Geoprocessing__Workspace__MaxWorkspaceCount" && e.Default == "100");
+        envVars.Should().Contain(e =>
+            e.Name == "Geoprocessing__Workspace__MaxArtifactCount" && e.Default == "1000");
+        envVars.Should().Contain(e =>
+            e.Name == "Geoprocessing__Workspace__MaxStorageBytes" && e.Default == "10737418240");
     }
 
     [IntegrationTest]

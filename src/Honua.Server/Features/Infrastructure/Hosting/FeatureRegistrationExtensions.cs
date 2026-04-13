@@ -55,8 +55,8 @@ internal static class FeatureRegistrationExtensions
         services.AddStac();
         services.AddStaticMap();
         services.AddPrintingTools();
-        services.AddSpatialAnalytics();
         services.AddGeoprocessing(configuration);
+        services.AddSpatialAnalytics();
 
         return services;
     }

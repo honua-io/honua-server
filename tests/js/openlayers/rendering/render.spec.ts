@@ -82,6 +82,45 @@ async function countMatchingPixels(
   }, target);
 }
 
+/**
+ * Returns whether the OpenLayers canvas has painted any non-uniform pixels yet.
+ *
+ * `rendercomplete` can fire before Chromium has committed the vector-tile
+ * draw into the canvas for sampling, so the spec waits for this condition
+ * instead of sampling immediately after the event.
+ */
+async function isCanvasNonBlank(
+  page: import('@playwright/test').Page,
+): Promise<boolean> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector('#map canvas') as HTMLCanvasElement | null;
+    if (!canvas) return false;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const r0 = data[0];
+    const g0 = data[1];
+    const b0 = data[2];
+    const a0 = data[3];
+
+    for (let i = 4; i < data.length; i += 4) {
+      if (
+        data[i] !== r0 ||
+        data[i + 1] !== g0 ||
+        data[i + 2] !== b0 ||
+        data[i + 3] !== a0
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+}
+
 /** Discover collection ID from OGC Features endpoint. */
 async function getCollectionId(): Promise<string> {
   const resp = await fetch(`${BASE_URL}/ogc/features/collections`);
@@ -130,36 +169,21 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
     const error = await page.evaluate(() => window.__ERROR);
     expect(error).toBeNull();
 
-    // Assert features were loaded
+    await expect
+      .poll(async () => page.evaluate(() => window.__FEATURE_COUNT), {
+        timeout: 5_000,
+      })
+      .toBeGreaterThan(0);
+
+    await expect.poll(async () => isCanvasNonBlank(page), {
+      timeout: 5_000,
+    }).toBe(true);
+
+    // Assert features were loaded after the canvas has painted.
     const featureCount = await page.evaluate(() => window.__FEATURE_COUNT);
 
     // Sample canvas pixels to verify non-blank rendering
-    const isNonBlank = await page.evaluate(() => {
-      const canvas = document.querySelector('#map canvas') as HTMLCanvasElement;
-      if (!canvas) return false;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return false;
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-
-      // Check if all pixels are the same (blank canvas)
-      const r0 = data[0],
-        g0 = data[1],
-        b0 = data[2],
-        a0 = data[3];
-      for (let i = 4; i < data.length; i += 4) {
-        if (
-          data[i] !== r0 ||
-          data[i + 1] !== g0 ||
-          data[i + 2] !== b0 ||
-          data[i + 3] !== a0
-        ) {
-          return true; // At least one pixel differs -> non-blank
-        }
-      }
-      return false;
-    });
+    const isNonBlank = await isCanvasNonBlank(page);
 
     expect(isNonBlank).toBe(true);
 
