@@ -166,11 +166,26 @@ internal static class GPServerEndpoints
         var logger = ResolveLogger(context);
         GPServerLog.ExecuteRequested(logger, taskName);
 
-        // Synchronous execute is not yet available (#721 ExecutePlan).
-        // Return 501 with structured error per design.
-        return StandardErrorHelpers.CreateNotImplemented(context,
-            "Synchronous GP task execution is not yet available. " +
-            "Use submitJob for asynchronous execution.");
+        try
+        {
+            // Auth must precede the 501 to guarantee 401/403 before feature-availability
+            // errors for unauthenticated callers (consistent with all other endpoints).
+            var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
+            jobService.EnsureCallerAuthorized(
+                context.User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+            // Synchronous execute is not yet available (#721 ExecutePlan).
+            // Return 501 with structured error per design.
+            return StandardErrorHelpers.CreateNotImplemented(context,
+                "Synchronous GP task execution is not yet available. " +
+                "Use submitJob for asynchronous execution.");
+        }
+        catch (Exception ex)
+        {
+            return MapExceptionToResult(context, logger, "Execute", ex);
+        }
     }
 
     private static async Task<IResult> HandleSubmitJob(HttpContext context, CancellationToken ct)

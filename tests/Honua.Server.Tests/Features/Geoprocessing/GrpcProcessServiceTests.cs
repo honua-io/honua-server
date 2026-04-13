@@ -186,11 +186,11 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
-    public async Task ExecutePlan_Unauthorized_ThrowsUnimplemented()
+    public async Task ExecutePlan_Unauthorized_ThrowsPermissionDenied()
     {
-        // ExecutePlan is wholly unimplemented (#721). The adapter returns Unimplemented
-        // regardless of auth state — there is no point checking authorization for a
-        // feature that does not exist.
+        // Even though ExecutePlan is unimplemented (#721), auth is enforced first
+        // so that unauthorized callers get 403 rather than an implementation-detail
+        // 501 (consistent with the contract: auth on all mutating RPCs).
         _authEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(AccessDecision.Forbidden());
@@ -200,7 +200,7 @@ public sealed class GrpcProcessServiceTests
         var act = async () => await _sut.ExecutePlan(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
-        ex.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
     // -----------------------------------------------------------------------

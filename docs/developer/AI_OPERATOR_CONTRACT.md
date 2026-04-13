@@ -820,8 +820,8 @@ kinds). `SubmitPlanJob` creates durable job records with idempotency support
 and requires Redis-backed storage. `GetJob` and `CancelJob` are fully wired.
 
 Stubbed RPCs:
-- `ExecutePlan` returns `Unimplemented`; callers should use `SubmitPlanJob`
-  for asynchronous execution.
+- `ExecutePlan` enforces authorization then returns `Unimplemented`; callers
+  should use `SubmitPlanJob` for asynchronous execution.
 - `GetJobResults` enforces terminal-state preconditions but returns `NotFound`
   until the execution engine and result storage are implemented.
 

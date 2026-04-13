@@ -80,9 +80,21 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
     {
         EnrichActivity("ExecutePlan");
 
-        throw new RpcException(new Status(
-            StatusCode.Unimplemented,
-            "Synchronous plan execution is not yet available. Use SubmitPlanJob for asynchronous execution."));
+        try
+        {
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+            throw new RpcException(new Status(
+                StatusCode.Unimplemented,
+                "Synchronous plan execution is not yet available. Use SubmitPlanJob for asynchronous execution."));
+        }
+        catch (Exception ex) when (ex is not RpcException)
+        {
+            throw MapToRpcException(ex);
+        }
     }
 
     public override async Task<Proto.ExecutionJob> SubmitPlanJob(
