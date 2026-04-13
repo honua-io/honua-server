@@ -304,7 +304,7 @@ internal static class JobEndpoints
         });
         if (approval.IsRequired)
         {
-            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Execute.ToString());
+            OgcProcessesLog.DismissRejectedApprovalRequired(logger, approval.PolicyRef ?? "unknown");
             return ProcessEndpoints.FormatOgcApprovalError(approval);
         }
 

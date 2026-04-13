@@ -164,10 +164,9 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var approvalResult = gate.EvaluateApproval(
-            context, OperatorResourceType.Deployment, OperatorOperation.Publish);
-        if (approvalResult != null) return approvalResult;
+        // Approval gating is handled by DeployWorkflowService.CreateAsync which bridges
+        // the canonical evaluator and persists AwaitingApproval status when required.
+        // Do not gate creation here — the workflow must be allowed to persist the operation.
 
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
@@ -272,10 +271,9 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var approvalResult = gate.EvaluateApproval(
-            context, OperatorResourceType.Deployment, OperatorOperation.Publish);
-        if (approvalResult != null) return approvalResult;
+        // Submit is the manual approval action — an operator explicitly advancing an
+        // AwaitingApproval operation. Re-gating here would make approval-gated deploys
+        // permanently unsubmittable. Rollback retains its own destructive-action gate.
 
         try
         {
