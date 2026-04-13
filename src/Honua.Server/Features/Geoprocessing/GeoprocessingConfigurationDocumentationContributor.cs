@@ -120,12 +120,12 @@ internal sealed class GeoprocessingConfigurationDocumentationContributor : IConf
             new() { Name = "Geoprocessing__Workspace__CleanupGracePeriod", ConfigPath = "Geoprocessing.Workspace", Description = "Grace period after expiration before deletion", Default = "01:00:00", Example = "02:00:00" },
             new() { Name = "Geoprocessing__Workspace__EnableAutomaticCleanup", ConfigPath = "Geoprocessing.Workspace", Description = "Enable automatic workspace cleanup", Default = "true", Example = "false" },
             new() { Name = "Geoprocessing__Workspace__MaxCleanupBatchSize", ConfigPath = "Geoprocessing.Workspace", Description = "Max workspaces per cleanup sweep", Default = "100", Example = "50" },
-            new() { Name = "Geoprocessing__Workspace__ScratchDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for scratch workspaces", Required = false, Example = "01:00:00" },
-            new() { Name = "Geoprocessing__Workspace__TempLayerDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for temp layer workspaces", Required = false, Example = "06:00:00" },
-            new() { Name = "Geoprocessing__Workspace__ResultCollectionDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for result collection workspaces", Required = false, Example = "1.00:00:00" },
-            new() { Name = "Geoprocessing__Workspace__MaxWorkspaceCount", ConfigPath = "Geoprocessing.Workspace", Description = "Max workspace count per owner", Required = false, Example = "50" },
-            new() { Name = "Geoprocessing__Workspace__MaxArtifactCount", ConfigPath = "Geoprocessing.Workspace", Description = "Max artifact count per owner", Required = false, Example = "500" },
-            new() { Name = "Geoprocessing__Workspace__MaxStorageBytes", ConfigPath = "Geoprocessing.Workspace", Description = "Max storage bytes per owner", Required = false, Example = "1073741824" }
+            new() { Name = "Geoprocessing__Workspace__ScratchDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for scratch workspaces", Default = "01:00:00", Required = false, Example = "01:00:00" },
+            new() { Name = "Geoprocessing__Workspace__TempLayerDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for temp layer workspaces", Default = "1.00:00:00", Required = false, Example = "06:00:00" },
+            new() { Name = "Geoprocessing__Workspace__ResultCollectionDefaultTtl", ConfigPath = "Geoprocessing.Workspace", Description = "Default TTL for result collection workspaces", Default = "7.00:00:00", Required = false, Example = "1.00:00:00" },
+            new() { Name = "Geoprocessing__Workspace__MaxWorkspaceCount", ConfigPath = "Geoprocessing.Workspace", Description = "Max workspace count per owner", Default = "100", Required = false, Example = "50" },
+            new() { Name = "Geoprocessing__Workspace__MaxArtifactCount", ConfigPath = "Geoprocessing.Workspace", Description = "Max artifact count per owner", Default = "1000", Required = false, Example = "500" },
+            new() { Name = "Geoprocessing__Workspace__MaxStorageBytes", ConfigPath = "Geoprocessing.Workspace", Description = "Max storage bytes per owner", Default = "10737418240", Required = false, Example = "1073741824" }
         ];
     }
 

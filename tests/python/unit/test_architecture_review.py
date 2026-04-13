@@ -32,3 +32,22 @@ def test_extract_acceptance_criteria_handles_escaped_newlines() -> None:
         "Reviewers can launch the sample quickly",
         "The sample shows both healthy and warning compatibility signals",
     ]
+
+
+def test_extract_acceptance_criteria_accepts_legacy_acceptance_heading() -> None:
+    issue_body = (
+        "## Scope\\n"
+        "Implement workspace retention and cleanup semantics.\\n\\n"
+        "## Acceptance\\n"
+        "- Operator workflows can rely on durable and temporary artifacts\\n"
+        "- Retention behavior is deterministic and testable\\n"
+        "- Publishing and packaging tickets are unblocked\\n"
+    )
+
+    criteria = ARCHITECTURE_REVIEW.extract_acceptance_criteria(issue_body)
+
+    assert criteria == [
+        "Operator workflows can rely on durable and temporary artifacts",
+        "Retention behavior is deterministic and testable",
+        "Publishing and packaging tickets are unblocked",
+    ]

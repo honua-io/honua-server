@@ -867,6 +867,16 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task AddArtifact_NegativeSizeBytes_Throws()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => _service.AddArtifactAsync("ws-1", ArtifactKind.FeatureLayer, "layer", sizeBytes: -1));
+
+        await _workspaceStore.DidNotReceive().GetAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task AddArtifact_OverdueButStillActive_Throws()
     {
         var overdue = CreateWorkspace("ws-overdue", WorkspaceKind.Scratch,

@@ -82,6 +82,8 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(sizeBytes);
+
         var workspace = await _workspaceStore.GetAsync(workspaceId, cancellationToken);
         if (workspace is null)
         {
