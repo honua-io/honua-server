@@ -122,11 +122,13 @@ internal sealed partial class RedisJobQueue(
                 var operationId = candidate.ToString();
 
                 // Filter delayed jobs (requeue with visibility delay).
+                // Invisible entries do not consume the scan budget so that
+                // a backlog of delayed retries cannot starve ready work in
+                // lower-priority bands.
                 var meta = await _database.HashGetAllAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
                 var visibleAfter = GetVisibleAfter(meta);
                 if (visibleAfter.HasValue && visibleAfter.Value > now)
                 {
-                    totalScanned++;
                     continue;
                 }
 

@@ -92,6 +92,20 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        // Re-read before promoting to Running to catch cancellations that arrived
+        // after the claim but before the worker registered its CTS.
+        job = await jobStore.GetAsync(operationId, stoppingToken).ConfigureAwait(false);
+        if (job == null || IsTerminalOrNotOwnedBy(job, workerId))
+        {
+            if (job != null)
+            {
+                Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
+            }
+
+            await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
+            return;
+        }
+
         // Transition to Running.
         var now = DateTimeOffset.UtcNow;
         var running = job with

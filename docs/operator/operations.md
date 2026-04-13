@@ -191,10 +191,12 @@ All settings live under `OgcProcesses` (env prefix `OgcProcesses__`):
 
 ## Job Orchestration
 
-Geoprocessing, ETL, and tile-cache workloads run through a durable job
-orchestration substrate. The substrate handles queuing, claim/heartbeat
+The durable job orchestration substrate provides queuing, claim/heartbeat
 liveness, retry, cancellation, progress reporting, and structured execution
-logs.
+logs for geoprocessing, ETL, and tile-cache workloads. The substrate
+contract and infrastructure are implemented; end-to-end wiring from
+submission endpoints through the queue to worker execution lands with the
+per-kind executor tickets (#721, #724, #727).
 
 > **Deployment note:** The substrate is split into API-side and worker-side
 > registrations. The API image registers shared infrastructure (queue, log
