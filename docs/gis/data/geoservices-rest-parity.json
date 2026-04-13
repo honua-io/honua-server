@@ -1828,7 +1828,9 @@
       ],
       "knownGaps": [
         "synchronous execute returns 501 pending #721 ExecutePlan",
-        "service/task discovery returns stub metadata until a formal process catalog is available"
+        "service/task discovery returns stub metadata until a formal process catalog is available",
+        "GP environment controls (env:*, context) are rejected with 400 until engine support is available",
+        "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
       ],
       "evidence": {
         "canonicalModel": [
@@ -1902,7 +1904,7 @@
             "name": "Submit Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
             "methods": ["GET", "POST"],
-            "notes": "Submits async job via canonical process runtime. Route binding persisted with job for status/result/cancel validation. Implemented in #723."
+            "notes": "Submits async job via canonical process runtime. Returns HTTP 202 (Accepted) with {jobId, jobStatus}. Route binding persisted with job for status/result/cancel validation. Implemented in #723."
           },
           {
             "name": "Job Status (generic)",

@@ -930,6 +930,20 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "GPServer adapter retains happy-path and negative-path depth for endpoint routing, parameter translation, and status mapping",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#723",
+          "versionCaptureRule": null
         }
       ]
     },
