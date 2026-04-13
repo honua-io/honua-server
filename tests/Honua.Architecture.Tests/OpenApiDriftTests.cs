@@ -61,6 +61,23 @@ public sealed class OpenApiDriftTests
     }
 
     [ArchitectureTest]
+    public void OgcProcessesSchemas_IncludeFieldsEmittedByEndpoints()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+
+        var processSummaryProps = schemas.GetProperty("ProcessSummary")
+            .GetProperty("properties");
+        processSummaryProps.TryGetProperty("links", out _).Should()
+            .BeTrue("ProcessSummary must document the links array emitted by GetProcessList");
+
+        var statusInfoProps = schemas.GetProperty("StatusInfo")
+            .GetProperty("properties");
+        statusInfoProps.TryGetProperty("type", out _).Should()
+            .BeTrue("StatusInfo must document the type discriminator emitted by all job status responses");
+    }
+
+    [ArchitectureTest]
     public void OgcProcessesAuthProtectedEndpoints_Document401And403Responses()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));

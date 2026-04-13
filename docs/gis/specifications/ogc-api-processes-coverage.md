@@ -24,11 +24,11 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 | Conformance | GET | `/ogc/processes/conformance` | Implemented | Declares conformance classes listed above |
 | Process list | GET | `/ogc/processes/processes` | Implemented | V1: single canonical process (`honua-geoprocessing`) |
 | Process description | GET | `/ogc/processes/processes/{processId}` | Implemented | JSON Schema input/output descriptions |
-| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps, step kinds, output artifact kinds). Authorization and approval gates match the canonical geoprocessing service. |
+| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` and accepts only `response=document`. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`. Validates plan structure (`planId`, non-empty `steps`, allowed step kinds, string step inputs, string `dependsOn` entries, output artifact kinds). Returns `503` when Redis-backed durable storage is not configured. Authorization and approval gates match the canonical geoprocessing service. |
 | Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; defaults to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
-| Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document |
+| Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document. V1 intentionally omits the OGC results relation because `/results` is still stubbed. |
 | Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Stub | Non-terminal jobs return `404` (result not ready). Failed jobs return `500`. Dismissed jobs return `410 Gone`. Successful jobs return `404` (result storage pending execution engine integration). |
-| Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Cancels running jobs via `IJobCancellationNotifier` |
+| Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Attempts cancellation via `IJobCancellationNotifier`; already-dismissed jobs return `200`, succeeded/failed jobs return `409 Conflict` |
 
 ## Job Status Mapping
 
@@ -55,12 +55,12 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 
 - **Async-only**: synchronous execution returns `501 Not Implemented` when the `Prefer: respond-async` header is absent.
 - **Single process**: the process catalog exposes one canonical process (`honua-geoprocessing`). Catalog formalization is follow-on work.
-- **Document-mode results (target)**: the target results format is by-value JSON document; V1 stubs the `/results` endpoint — successful jobs return `404` until the execution engine populates result storage. By-reference transmission is deferred.
-- **Result content**: the results document structure will evolve as the execution engine matures.
+- **Results endpoint**: V1 still stubs the `/results` endpoint — successful jobs return `404` until the execution engine populates result storage. When implemented, the planned V1 shape is a document-mode, by-value JSON response keyed by stable output identifiers. By-reference transmission remains deferred.
+- **Planned result document shape**: once result storage is populated, successful `/results` responses will contain outputs only. Job status, summary, and error state remain on job/status endpoints rather than inside `/results`.
 - **No results link in StatusInfo**: V1 StatusInfo documents do not include the `http://www.opengis.net/def/rel/ogc/1.0/results` relation because the `/results` endpoint is stubbed. The link will be emitted once result storage is populated by the execution engine.
 - **Job list (MVP)**: the `limit` parameter is supported (must be positive); additional query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, and terminal job enumeration are follow-on. `conf/job-list` is not advertised.
-- **Job store required**: all job endpoints return `503 Service Unavailable` when Redis-backed durable storage is not configured.
-- **Authorization alignment**: all endpoints enforce the same authorization and approval gates as the canonical geoprocessing service (`IOperatorAuthorizationEvaluator`, `IOperatorApprovalEvaluator`).
+- **Job store required**: async execution and all job endpoints return `503 Service Unavailable` when Redis-backed durable storage is not configured.
+- **Authorization alignment**: all protected routes enforce `IOperatorAuthorizationEvaluator`; execution additionally enforces `IOperatorApprovalEvaluator`, matching the canonical geoprocessing execute gate.
 
 ## Telemetry
 

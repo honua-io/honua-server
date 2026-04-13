@@ -429,7 +429,7 @@ curl http://localhost:8080/ogc/processes/processes/honua-geoprocessing
 
 ### **Execute (Async)**
 
-Async execution requires the `Prefer: respond-async` header. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`). The response returns `201 Created` with a `Location` header pointing to the job status endpoint.
+Async execution requires the `Prefer: respond-async` header and only accepts `response: "document"` in V1. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`); step input values and `dependsOn` entries must be strings, and `outputs` must be an array of supported artifact-kind strings when present. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` headers.
 
 ```bash
 curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/execution \
@@ -466,9 +466,11 @@ curl "http://localhost:8080/ogc/processes/jobs?limit=10"
 curl http://localhost:8080/ogc/processes/jobs/{jobId}
 ```
 
+V1 `StatusInfo` documents do not include a results link because `/results` is still stubbed.
+
 ### **Retrieve Results**
 
-Returns results once the job reaches `successful` status and result storage is available. V1 does not yet populate result storage, so terminal jobs return errors: `404` for successful (results pending), `500` for failed, `410 Gone` for dismissed. Non-terminal jobs return `404` (result not ready).
+V1 keeps `/results` stubbed. Non-terminal jobs return `404` (result not ready). Successful jobs currently also return `404` until the execution engine populates result storage. Failed jobs return `500`, and dismissed jobs return `410 Gone`.
 
 ```bash
 curl http://localhost:8080/ogc/processes/jobs/{jobId}/results

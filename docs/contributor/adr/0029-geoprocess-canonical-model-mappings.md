@@ -84,11 +84,13 @@ Adapters reshape it:
   must be a stable output identifier, not `ArtifactRef.Label` (which is
   human-readable). Adapters should bind artifacts to process definition
   output parameter names via `ArtifactRef.Metadata` or a follow-on field
-- **OGC API Processes (v1 subset)**: return all `Artifacts` in a single
+- **OGC API Processes (v1 subset)**: target all `Artifacts` in a single
   `/jobs/{jobId}/results` JSON response using document-mode, by-value
-  transmission. This is a Honua v1 adapter decision — the full OGC spec
-  (§7.13) also supports raw-mode responses and reference-based transmission,
-  which are deferred
+  transmission. The current `#529` implementation still stubs `/results`
+  until the execution engine populates result storage; successful jobs return
+  `404`, failed jobs return `500`, and dismissed jobs return `410`. This is a
+  Honua v1 adapter decision — the full OGC spec (§7.13) also supports
+  raw-mode responses and reference-based transmission, which are deferred
 
 ### Parameter Translation Is An Adapter Concern
 
@@ -125,7 +127,7 @@ into the canonical model:
    multipart, `204` with `Link` headers) are out of scope.
 
 6. **OGC output transmission negotiation** (`value` vs `reference`): deferred.
-   V1 returns results by value.
+   When successful results are populated, V1 returns them by value.
 
 7. **OGC callback notification**: deferred. V1 uses polling.
 

@@ -97,6 +97,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 
+**Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, and dismiss over the canonical geoprocessing runtime. V1 keeps `/ogc/processes/jobs/{jobId}/results` stubbed until execution-engine result storage is wired.
+
 **Catalog discovery** — STAC catalog, collections, items, and item-search with extension-aware metadata, collection license defaults, cross-protocol links to OGC API Features, and conditional GET support on catalog metadata routes.
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.

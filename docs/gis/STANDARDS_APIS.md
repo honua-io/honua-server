@@ -205,7 +205,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /jobs/{jobId}/results
 ```
 
-**Output formats:** JSON (document-mode, by-value)
+**Output formats:** JSON (landing, metadata, status, and errors today; planned successful results remain document-mode, by-value)
 
 **Typical use cases:**
 - Standards-based geoprocessing workflows
@@ -216,8 +216,10 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 **Contract notes:**
 - This is a protocol adapter over the canonical Honua geoprocessing runtime, not a separate processing framework.
 - V1 supports async execution only; synchronous execution returns `501 Not Implemented`.
-- The `Prefer: respond-async` header is required for execution requests.
-- V1: result storage is not yet available; the `/results` endpoint returns 404 for successful jobs until the execution engine is integrated. Target format is document-mode JSON (by-value).
+- Execution requires `Prefer: respond-async`, accepts only `response=document`, and returns `201 Created` with `Location` plus `Preference-Applied: respond-async` on success.
+- V1: result storage is not yet available; `/results` remains stubbed (`404` for non-terminal and successful jobs, `500` for failed jobs, `410 Gone` for dismissed jobs). When results are populated, the successful shape will be document-mode JSON (by-value).
+- `StatusInfo` documents intentionally omit the OGC results relation until `/results` can return a real results document.
+- Async execution and job routes require Redis-backed durable storage; execution/job list/status/results/dismiss return `503 Service Unavailable` when the store is not configured.
 - V1 exposes one canonical process (`honua-geoprocessing`); catalog formalization is follow-on work.
 - Conforms to OGC API Processes Part 1: Core conformance classes: `core`, `json`, `dismiss`, plus OGC API Common `core` and `json`. The `job-list` conformance class is implemented at MVP level but not advertised (V1 lacks required filters and pagination).
 

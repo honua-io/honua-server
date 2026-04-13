@@ -114,10 +114,14 @@
         },
         "responses": {
           "201": {
-            "description": "Job created (async)",
+            "description": "Async job created",
             "headers": {
               "Location": {
                 "description": "URL of the job status endpoint",
+                "schema": { "type": "string" }
+              },
+              "Preference-Applied": {
+                "description": "Applied preference header. V1 returns 'respond-async' on successful submissions.",
                 "schema": { "type": "string" }
               }
             },
@@ -160,7 +164,7 @@
             }
           },
           "501": {
-            "description": "Synchronous execution not supported",
+            "description": "Synchronous execution or unsupported response mode not supported in V1",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -475,6 +479,10 @@
           "outputTransmission": {
             "type": "array",
             "items": { "type": "string" }
+          },
+          "links": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Link" }
           }
         }
       },
@@ -531,6 +539,10 @@
         "type": "object",
         "properties": {
           "processID": { "type": "string" },
+          "type": {
+            "type": "string",
+            "description": "Resource type discriminator. Always 'process' for OGC API Processes jobs."
+          },
           "jobID": { "type": "string" },
           "status": {
             "type": "string",

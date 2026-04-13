@@ -296,8 +296,8 @@ Adapter notes:
 
 | Behavior | Reason for Exclusion |
 | --- | --- |
-| Response mode negotiation (`document` vs `raw`) | Deferred. V1 supports only document-mode responses (single JSON object with all outputs). Raw-mode responses (direct media type, multipart, or `204` with `Link` headers) can be added when single-output streaming or large-result downloads are needed. |
-| Output transmission negotiation (`value` vs `reference`) | Deferred. V1 returns results by value. Reference-based output can be added when large-result streaming is needed. |
+| Response mode negotiation (`document` vs `raw`) | Deferred. V1 accepts only document-mode execution requests; the planned successful results shape is a single JSON object with all outputs. The current implementation does not yet emit successful results documents. Raw-mode responses (direct media type, multipart, or `204` with `Link` headers) can be added when single-output streaming or large-result downloads are needed. |
+| Output transmission negotiation (`value` vs `reference`) | Deferred. When successful results are populated, V1 returns them by value. Reference-based output can be added when large-result streaming is needed. |
 | `Prefer: return=minimal` / `return=representation` | Deferred. V1 returns full job representation on creation. |
 | Nested process execution (Part 2: Deploy, Replace, Undeploy) | Out of scope. Honua does not support user-deployed process definitions in v1. |
 | Callback/subscriber notification (`Prefer: respond-async; callback=...`) | Deferred. V1 uses polling. Webhook/callback notification can be added later. |
@@ -352,24 +352,24 @@ Adapter invariants:
 The OGC API Processes adapter projects the Honua canonical model into the OGC
 API Processes Part 1 Core contract. Key mappings:
 
-| OGC Concept | Honua Source |
+| OGC Concept | Honua Source / V1 implementation |
 | --- | --- |
-| `GET /processes` | `CatalogService` process definitions |
-| `GET /processes/{processId}` | Process definition → OGC process description with JSON Schema inputs/outputs |
-| `POST /processes/{id}/execution` (sync) | `ProcessService.ExecutePlan` |
-| `POST /processes/{id}/execution` (async) | `ProcessService.SubmitPlanJob` |
-| `GET /jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
-| `GET /jobs/{jobId}/results` | `ProcessService.GetJobResults` → v1: document-mode, by-value output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
-| `DELETE /jobs/{jobId}` | `ProcessService.CancelJob` |
+| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); catalog formalization is follow-on work |
+| `GET /processes/{processId}` | V1 static process description with JSON Schema inputs/outputs for the canonical process stub |
+| `POST /processes/{id}/execution` (sync) | Not implemented in V1; synchronous execution returns `501 Not Implemented` |
+| `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
+| `GET /jobs/{jobId}` | `IExecutionJobStore` → `ExecutionJobRecord` projected to OGC `StatusInfo` |
+| `GET /jobs/{jobId}/results` | V1 stub: non-terminal `404`, successful `404`, failed `500`, dismissed `410`. Planned successful shape: document-mode, by-value output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
+| `DELETE /jobs/{jobId}` | `IJobCancellationNotifier` + durable job store cancellation mapping to OGC `dismissed` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
-| `jobControlOptions` | Derived from process definition capabilities |
-| `Prefer: respond-async` | Route to `SubmitPlanJob` vs `ExecutePlan` |
+| `jobControlOptions` | V1 fixed capability declaration for the canonical process stub: `async-execute`, `dismiss` |
+| `Prefer: respond-async` | Required for execution; successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` |
 
 Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Input/output schema translation to JSON Schema is the adapter's responsibility
-3. V1 results use document-mode, by-value only: return a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. Raw-mode and reference-based transmission are deferred
+3. V1 targets document-mode, by-value successful results only: the planned shape is a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. The current implementation still stubs `/results` until the execution engine populates result packages. Raw-mode and reference-based transmission are deferred
 4. `DELETE /jobs/{jobId}` maps to cancellation, not resource deletion — the canonical job record persists
 
 ## Backlog Guidance
@@ -399,10 +399,12 @@ This ticket builds the canonical process contract. It must:
 This **protocol adapter** is implemented. The adapter:
 
 - Implements OGC API Processes Part 1 Core routes that project canonical process service operations
-- Translates JSON Schema process descriptions from canonical process definitions
+- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) while process catalog formalization is follow-on work
+- Translates JSON Schema process descriptions from the canonical process stub
+- Validates canonical plan structure at the adapter boundary before durable job creation
 - Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above
-- V1: result storage is pending; the `/results` endpoint stubs 404 for successful jobs until the execution engine populates result packages (target: document-mode, by-value JSON; raw-mode and reference transmission deferred)
-- Supports `Prefer: respond-async` negotiation
+- V1 is async-only: `Prefer: respond-async` is required, successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`, and sync execution returns `501`
+- V1: result storage is pending; the `/results` endpoint stubs `404` for non-terminal and successful jobs, `500` for failed jobs, and `410` for dismissed jobs (target: document-mode, by-value JSON; raw-mode and reference transmission deferred)
 - Does not add internal domain types or lifecycle states
 
 See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for endpoint and conformance details.
