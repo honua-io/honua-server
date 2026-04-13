@@ -57,6 +57,7 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 - **Single process**: the process catalog exposes one canonical process (`honua-geoprocessing`). Catalog formalization is follow-on work.
 - **Document-mode results only**: results are returned by value as a JSON document. By-reference transmission is not supported in V1.
 - **Result content**: the results document structure will evolve as the execution engine matures.
+- **No results link in StatusInfo**: V1 StatusInfo documents do not include the `http://www.opengis.net/def/rel/ogc/1.0/results` relation because the `/results` endpoint is stubbed. The link will be emitted once result storage is populated by the execution engine.
 - **Job list (MVP)**: the `limit` parameter is supported (must be positive); additional query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, and terminal job enumeration are follow-on. `conf/job-list` is not advertised.
 - **Job store required**: all job endpoints return `503 Service Unavailable` when Redis-backed durable storage is not configured.
 - **Authorization alignment**: all endpoints enforce the same authorization and approval gates as the canonical geoprocessing service (`IOperatorAuthorizationEvaluator`, `IOperatorApprovalEvaluator`).

@@ -49,14 +49,11 @@ internal static class OgcProcessesConversionHelpers
 
         var ogcStatus = ToOgcStatus(job.Status);
 
-        if (IsTerminal(job.Status))
-        {
-            linksBuilder.Add(Link.Create(
-                $"{jobUrl}/results",
-                "http://www.opengis.net/def/rel/ogc/1.0/results",
-                MediaTypes.Json,
-                "Job results"));
-        }
+        // V1: Do not advertise the results relation. The /results endpoint is
+        // stubbed (returns 404/410/500 for all terminal states) because result
+        // storage is not yet implemented. Emitting the link would cause clients
+        // to follow a relation that never resolves to a results document.
+        // Re-enable when the execution engine populates result packages.
 
         return new OgcStatusInfo
         {
