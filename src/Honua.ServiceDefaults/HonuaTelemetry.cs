@@ -256,6 +256,9 @@ public static class HonuaTelemetry
 
         /// <summary>Real-time feature-change streaming (WebSocket/SSE).</summary>
         public const string Streaming = "Streaming";
+
+        /// <summary>GeoServices GPServer REST API.</summary>
+        public const string GPServer = "GPServer";
     }
 
     /// <summary>

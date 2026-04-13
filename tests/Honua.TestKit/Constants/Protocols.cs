@@ -124,4 +124,9 @@ public static class Protocols
     /// aggregate, density binning). Mirrored under both REST and OGC route families.
     /// </summary>
     public const string SpatialAnalytics = "SpatialAnalytics";
+
+    /// <summary>
+    /// GeoServices GPServer REST API (geoprocessing tasks).
+    /// </summary>
+    public const string GPServer = "GPServer";
 }

@@ -42,9 +42,15 @@ public sealed class GrpcProcessServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.NotRequired());
 
+        var jobService = new GeoprocessingJobService(
+            _progressStore, _cancellationNotifier,
+            _authEvaluator, _approvalEvaluator,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore);
+
         _sut = new HonuaProcessService(
-            _jobStore, _progressStore, _cancellationNotifier,
-            _authEvaluator, _approvalEvaluator);
+            jobService,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
 
     // -----------------------------------------------------------------------
@@ -180,8 +186,11 @@ public sealed class GrpcProcessServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
-    public async Task ExecutePlan_Unauthorized_ThrowsPermissionDenied()
+    public async Task ExecutePlan_Unauthorized_ThrowsUnimplemented()
     {
+        // ExecutePlan is wholly unimplemented (#721). The adapter returns Unimplemented
+        // regardless of auth state — there is no point checking authorization for a
+        // feature that does not exist.
         _authEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(AccessDecision.Forbidden());
@@ -191,7 +200,7 @@ public sealed class GrpcProcessServiceTests
         var act = async () => await _sut.ExecutePlan(request, CreateCallContext());
 
         var ex = await act.Should().ThrowAsync<RpcException>();
-        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        ex.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
     }
 
     // -----------------------------------------------------------------------
