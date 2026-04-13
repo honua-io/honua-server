@@ -261,7 +261,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Job results (document mode)",
+            "description": "Job results (document mode). V1: result storage is not yet implemented; successful jobs currently return 404 until the execution engine is wired up.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Results" }
@@ -269,7 +269,23 @@
             }
           },
           "404": {
-            "description": "No such job or results not available",
+            "description": "Job not found, not yet in a terminal state, or result storage not yet available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "410": {
+            "description": "Job has been dismissed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "500": {
+            "description": "Job failed during execution",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }

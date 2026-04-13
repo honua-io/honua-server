@@ -332,6 +332,63 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_NonStringPlanId_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":123,"steps":[{"stepId":"s1","kind":"geoprocess"}]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("planId");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_NonObjectStep_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":["bad"]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("JSON object");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_OutputsNotArray_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess"}],"outputs":{"kind":"scalar"}}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("array");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_ResponseModeRaw_Returns501()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,

@@ -375,6 +375,9 @@ internal static class ProcessEndpoints
             return "The analysis plan must contain a 'planId' property.";
         }
 
+        if (planIdProp.ValueKind != System.Text.Json.JsonValueKind.String)
+            return "The analysis plan 'planId' must be a string.";
+
         planId = planIdProp.GetString() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(planId))
             return "The analysis plan 'planId' must not be empty.";
@@ -393,8 +396,11 @@ internal static class ProcessEndpoints
         // which defines inputs as map<string,string> and depends_on as repeated string).
         foreach (var step in stepsProp.EnumerateArray())
         {
+            if (step.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return "Each step in the analysis plan must be a JSON object.";
+
             var stepId = (step.TryGetProperty("stepId", out var sid) || step.TryGetProperty("step_id", out sid))
-                ? sid.GetString() ?? "<unknown>"
+                ? (sid.ValueKind == System.Text.Json.JsonValueKind.String ? sid.GetString() ?? "<unknown>" : "<unknown>")
                 : "<unknown>";
 
             if (!step.TryGetProperty("kind", out var kindProp)
@@ -439,9 +445,13 @@ internal static class ProcessEndpoints
 
         // Validate output artifact kinds if present (mirrors HonuaProcessService.ValidatePlanStructure
         // which rejects Unspecified or undefined ArtifactKind values).
+        // The canonical proto contract defines outputs as repeated ArtifactKind, so require an array.
         if (plan.TryGetProperty("outputs", out var outputsProp)
-            && outputsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+            && outputsProp.ValueKind != System.Text.Json.JsonValueKind.Null)
         {
+            if (outputsProp.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return "The 'outputs' property must be an array of artifact kind strings.";
+
             foreach (var output in outputsProp.EnumerateArray())
             {
                 if (output.ValueKind != System.Text.Json.JsonValueKind.String)
