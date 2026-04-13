@@ -102,23 +102,25 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
         // If features are returned, verify they have similar spatial context
         // (Exact equality not required, but should be in same geographic region)
-        if (crs84Result.Features.Length > 0 && epsg4326Result.Features.Length > 0 &&
-            crs84Result.Features[0].Geometry != null && epsg4326Result.Features[0].Geometry != null)
+        if (crs84Result.Features.Length > 0 && epsg4326Result.Features.Length > 0)
         {
             var crs84Geom = crs84Result.Features[0].Geometry;
             var epsg4326Geom = epsg4326Result.Features[0].Geometry;
 
-            // Coordinates should be in same hemisphere/region
-            // Major axis swapping would put NYC in Indian Ocean, etc.
-            if (crs84Geom.X != null && epsg4326Geom.X != null)
+            if (crs84Geom is not null && epsg4326Geom is not null)
             {
-                Math.Sign(crs84Geom.X.Value).Should().Be(Math.Sign(epsg4326Geom.X.Value),
-                    $"X coordinate signs differ for {description} - possible axis swap");
-            }
-            if (crs84Geom.Y != null && epsg4326Geom.Y != null)
-            {
-                Math.Sign(crs84Geom.Y.Value).Should().Be(Math.Sign(epsg4326Geom.Y.Value),
-                    $"Y coordinate signs differ for {description} - possible axis swap");
+                // Coordinates should be in same hemisphere/region
+                // Major axis swapping would put NYC in Indian Ocean, etc.
+                if (crs84Geom.X != null && epsg4326Geom.X != null)
+                {
+                    Math.Sign(crs84Geom.X.Value).Should().Be(Math.Sign(epsg4326Geom.X.Value),
+                        $"X coordinate signs differ for {description} - possible axis swap");
+                }
+                if (crs84Geom.Y != null && epsg4326Geom.Y != null)
+                {
+                    Math.Sign(crs84Geom.Y.Value).Should().Be(Math.Sign(epsg4326Geom.Y.Value),
+                        $"Y coordinate signs differ for {description} - possible axis swap");
+                }
             }
         }
     }
@@ -187,20 +189,23 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         result!.Features.Should().NotBeNull();
 
         // If geometry is returned, verify precision is maintained within tolerance
-        if (result.Features.Length > 0 && result.Features[0].Geometry != null)
+        if (result.Features.Length > 0)
         {
             var returnedGeom = result.Features[0].Geometry;
 
-            // Allow for some precision loss in transformation, but not excessive
-            if (returnedGeom.X != null)
+            if (returnedGeom is not null)
             {
-                returnedGeom.X.Value.Should().BeApproximately(lon, 0.001, // ~100m tolerance for longitude
-                    "Longitude precision loss exceeds acceptable limits");
-            }
-            if (returnedGeom.Y != null)
-            {
-                returnedGeom.Y.Value.Should().BeApproximately(lat, 0.001, // ~100m tolerance for latitude
-                    "Latitude precision loss exceeds acceptable limits");
+                // Allow for some precision loss in transformation, but not excessive
+                if (returnedGeom.X != null)
+                {
+                    returnedGeom.X.Value.Should().BeApproximately(lon, 0.001, // ~100m tolerance for longitude
+                        "Longitude precision loss exceeds acceptable limits");
+                }
+                if (returnedGeom.Y != null)
+                {
+                    returnedGeom.Y.Value.Should().BeApproximately(lat, 0.001, // ~100m tolerance for latitude
+                        "Latitude precision loss exceeds acceptable limits");
+                }
             }
         }
     }
@@ -372,22 +377,25 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         result.Features.Should().NotBeNull();
 
         // If geometry returned, verify transformation is reasonable
-        if (result.Features.Length > 0 && result.Features[0].Geometry != null)
+        if (result.Features.Length > 0)
         {
             var transformedGeom = result.Features[0].Geometry;
 
-            // Web Mercator X should be large near antimeridian (close to ±20037508.34)
-            if (transformedGeom.X != null)
+            if (transformedGeom is not null)
             {
-                Math.Abs(transformedGeom.X.Value).Should().BeGreaterThan(19000000,
-                    "Antimeridian coordinates should have large Web Mercator X values");
-            }
+                // Web Mercator X should be large near antimeridian (close to ±20037508.34)
+                if (transformedGeom.X != null)
+                {
+                    Math.Abs(transformedGeom.X.Value).Should().BeGreaterThan(19000000,
+                        "Antimeridian coordinates should have large Web Mercator X values");
+                }
 
-            // Y coordinate should be near equator for these test points
-            if (transformedGeom.Y != null)
-            {
-                Math.Abs(transformedGeom.Y.Value).Should().BeLessThan(1000000,
-                    "Equatorial coordinates should have small Web Mercator Y values");
+                // Y coordinate should be near equator for these test points
+                if (transformedGeom.Y != null)
+                {
+                    Math.Abs(transformedGeom.Y.Value).Should().BeLessThan(1000000,
+                        "Equatorial coordinates should have small Web Mercator Y values");
+                }
             }
         }
     }

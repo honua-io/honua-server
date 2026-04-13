@@ -14,6 +14,8 @@ namespace Honua.Server.Tests.Features.Wfs20;
 /// </summary>
 public class Wfs20FilterCapabilitiesComplianceTests
 {
+    private static readonly string[] RequiredSpatialFunctions = ["ST_Area", "ST_Length", "ST_Buffer", "ST_Centroid"];
+
     /// <summary>
     /// Validates that all 15 Allen interval temporal operators are correctly advertised.
     /// This addresses the critical gap where backend supports all operators but only some were being advertised.
@@ -376,8 +378,7 @@ public class Wfs20FilterCapabilitiesComplianceTests
         if (functions >= 35) passedChecks++;   // Comprehensive coverage
         // Verify spatial functions are present
         var functionNames = capabilities.Functions?.Functions?.Select(f => f.Name).ToHashSet() ?? new HashSet<string>();
-        var hasSpatialFunctions = new[] { "ST_Area", "ST_Length", "ST_Buffer", "ST_Centroid" }
-            .All(func => functionNames.Contains(func));
+        var hasSpatialFunctions = RequiredSpatialFunctions.All(func => functionNames.Contains(func));
         if (hasSpatialFunctions) passedChecks++;
 
         // CQL2 and modern standards (weight: 10%)
