@@ -323,12 +323,13 @@ Removal of previously supported standards API operations follows the same deprec
 Protocol support is tracked per standard and operation. Use these docs to confirm supported behaviors:
 
 **GeoServices REST (Esri-compatible):**
-- [GeoServices REST Parity](geoservices-rest-parity.md) — canonical landing page for FeatureServer, MapServer, ImageServer, and Geometry Service
+- [GeoServices REST Parity](geoservices-rest-parity.md) — canonical landing page for FeatureServer, MapServer, ImageServer, Geometry Service, and GPServer
 - [GeoServices REST Parity Data (JSON)](data/geoservices-rest-parity.json) — machine-readable export of the same operation and parameter contract
 - [FeatureServer Coverage Matrix](feature-server-matrix.md) — aligned to [Esri REST Feature Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
 - [MapServer Coverage Matrix](map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
 - [ImageServer Coverage Matrix](image-server-matrix.md) — aligned to [Esri REST Image Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/)
 - [Geometry Service Matrix](geometry-service-matrix.md) — buffer, simplify, project, intersect, union, clip, difference, plus Honua supplemental `area`/`length` routes
+- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer canonical model mapping, lifecycle state matrix, and adapter invariants (protocol adapter is downstream #723)
 
 **OGC API:**
 - [OGC API Features Coverage](specifications/ogc-api-features-coverage.md)

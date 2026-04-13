@@ -973,5 +973,7 @@ The deterministic system must own:
 ## Related Documents
 
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
+- [Geoprocess Framework Analysis](../gis/geoprocess-framework-analysis.md)
 - [Deterministic Operator Workflow Results](DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
 - [MCP Server](MCP_SERVER.md)
