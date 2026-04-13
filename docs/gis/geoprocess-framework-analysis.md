@@ -225,15 +225,15 @@ Honua uses `AnalysisResultPackage` as the canonical result envelope:
 | `AnalysisResultPackage` Field | GPServer Projection | OGC Projection |
 | --- | --- | --- |
 | `ResultPackageId` | — (no equivalent) | — (no equivalent) |
-| `Status` | Map from `GeoprocessingWorkflowStatus` to `jobStatus` | Map to OGC `status` on `GET /jobs/{jobId}` (not part of `/results`) |
-| `Summary` (title, description) | Map to job messages | Map to result metadata |
+| `Status` | Map from `GeoprocessingWorkflowStatus` to `jobStatus` | Not projected through `/results`; serve OGC `status` from `ExecutionJobRecord.Status` on `GET /jobs/{jobId}` |
+| `Summary` (title, description) | Map to job messages | Deferred / non-standard for OGC Part 1 Core results; not included in the v1 `/results` payload |
 | `Assumptions` | — (not in GPServer) | — (not in OGC) |
 | `Artifacts` (list of `ArtifactRef`) | Project each artifact as a named result parameter | V1: project all artifacts as a document-mode JSON results object (see §7.13 subset below) |
 | `WorkspaceRefs` | — (not in GPServer) | — (not in OGC) |
 | `MapPackageId` | — (Honua-specific) | — (Honua-specific) |
 | `AppPackageId` | — (Honua-specific) | — (Honua-specific) |
 | `Provenance` | — (not in GPServer) | — (not in OGC) |
-| `Errors` | Map to job messages with error type | Map to OGC exception report |
+| `Errors` | Map to job messages with error type | Not projected through `/results`; failures surface through OGC exception responses and `GET /jobs/{jobId}` status |
 
 The critical adapter difference is result access pattern:
 
@@ -351,7 +351,7 @@ API Processes Part 1 Core contract. Key mappings:
 | `POST /processes/{id}/execution` (sync) | `ProcessService.ExecutePlan` |
 | `POST /processes/{id}/execution` (async) | `ProcessService.SubmitPlanJob` |
 | `GET /jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
-| `GET /jobs/{jobId}/results` | `ProcessService.GetJobResults` → v1: document-mode, by-value only (full `AnalysisResultPackage.Artifacts` as single JSON) |
+| `GET /jobs/{jobId}/results` | `ProcessService.GetJobResults` → v1: document-mode, by-value output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
 | `DELETE /jobs/{jobId}` | `ProcessService.CancelJob` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
 | `jobControlOptions` | Derived from process definition capabilities |

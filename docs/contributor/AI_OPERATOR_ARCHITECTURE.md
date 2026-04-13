@@ -506,5 +506,7 @@ Those are downstream design tasks.
 - [ADR-0025: Multi-Provider Operation Architecture](adr/0025-multi-provider-operation-architecture.md)
 - [ADR-0026: AI-First Operator Contract as Primary Public Contract](adr/0026-ai-first-operator-contract.md)
 - [ADR-0027: Deterministic Intent, Clarification, and Plan Validation Workflow](adr/0027-deterministic-intent-clarification-workflow.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](adr/0029-geoprocess-canonical-model-mappings.md)
 - [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)
 - [Deterministic Operator Workflow Results](../developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
+- [Geoprocess Framework Analysis](../gis/geoprocess-framework-analysis.md)
