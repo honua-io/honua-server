@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcProcesses;
 
@@ -164,7 +165,7 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
-        IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("ExecuteProcess");
 

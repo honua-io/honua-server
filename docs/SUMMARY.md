@@ -36,6 +36,7 @@
   - [ImageServer](gis/image-server-matrix.md)
   - [OGC API Features](gis/specifications/ogc-api-features-coverage.md)
   - [OGC API Tiles](gis/specifications/ogc-api-tiles-coverage.md)
+  - [OGC API Processes](gis/specifications/ogc-api-processes-coverage.md)
   - [OData v4](gis/specifications/odata-v4-coverage.md)
   - [Geometry Service](gis/geometry-service-matrix.md)
   - [Geoprocess Framework Analysis](gis/geoprocess-framework-analysis.md)

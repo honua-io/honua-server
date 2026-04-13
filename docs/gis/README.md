@@ -30,6 +30,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer, OGC API Processes, and GeoServer WPS mapped to Honua canonical model
 - [OGC API Features](specifications/ogc-api-features-coverage.md) — Parts [1](specifications/ogc-api-features-part1-core.md), [2](specifications/ogc-api-features-part2-crs.md), [3](specifications/ogc-api-features-part3-filtering.md)
 - [OGC API Tiles](specifications/ogc-api-tiles-coverage.md)
+- [OGC API Processes](specifications/ogc-api-processes-coverage.md) — async geoprocessing adapter over canonical runtime
 - [OData v4](specifications/odata-v4-coverage.md)
 
 ## Compatibility

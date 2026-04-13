@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcProcesses;
 
@@ -58,7 +59,7 @@ internal static class JobEndpoints
     private static async Task<IResult> GetJobList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobList");
         OgcProcessesLog.JobListRequested(logger);
@@ -88,7 +89,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobStatus");
         OgcProcessesLog.JobStatusRequested(logger, jobId);
@@ -116,7 +117,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobResults");
         OgcProcessesLog.JobResultsRequested(logger, jobId);
@@ -195,7 +196,7 @@ internal static class JobEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         IJobCancellationNotifier cancellationNotifier,
         IUniversalProgressStore progressStore,
-        IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("DismissJob");
         OgcProcessesLog.JobDismissRequested(logger, jobId);

@@ -668,7 +668,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Stac.StacJsonContext.Default,
         Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
         Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
-        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default);
+        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
+        Honua.Server.Features.OgcProcesses.OgcProcessesJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
