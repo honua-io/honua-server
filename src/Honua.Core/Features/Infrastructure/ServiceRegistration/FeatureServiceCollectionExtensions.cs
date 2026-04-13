@@ -199,7 +199,7 @@ public static class ServiceRegistrationHelpers
         string? schemaName,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TInterface : class
-        where TImplementation : class
+        where TImplementation : class, TInterface
     {
         var factory = CreateSchemaBasedFactory<TInterface, TImplementation>(schemaName);
 
@@ -252,7 +252,7 @@ public static class ServiceRegistrationHelpers
 
     private static Func<IServiceProvider, TInterface> CreateSchemaBasedFactory<TInterface, TImplementation>(string? schemaName)
         where TInterface : class
-        where TImplementation : class
+        where TImplementation : class, TInterface
     {
         return serviceProvider =>
         {

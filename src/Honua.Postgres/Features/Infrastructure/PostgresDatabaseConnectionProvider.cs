@@ -44,6 +44,12 @@ internal sealed class PostgresDatabaseConnectionProvider(
     private readonly ISchemaContext? _schemaContext = schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
 
+    /// <inheritdoc />
+    public string GetConnectionString()
+    {
+        return _dataSource.ConnectionString;
+    }
+
     /// <summary>
     /// Opens a PostgreSQL connection with automatic retry for transient failures
     /// </summary>

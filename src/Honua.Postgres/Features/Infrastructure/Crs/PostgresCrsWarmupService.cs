@@ -105,7 +105,7 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
         {
             try
             {
-                await _leaderElection.ReleaseLeadershipAsync();
+                await _leaderElection.ReleaseLeadershipAsync(stoppingToken);
                 Log.LeadershipReleasedOnShutdown(_logger);
             }
             catch (Exception ex)

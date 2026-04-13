@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.Authorization.Abstractions;
 

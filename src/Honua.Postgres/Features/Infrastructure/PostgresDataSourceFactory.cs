@@ -105,7 +105,7 @@ internal static class PostgresDataSourceFactory
     /// Accepted values are <c>"auto"</c>, <c>"true"</c>, and <c>"false"</c>
     /// (case-insensitive). Null, empty, and unrecognized values fall back to
     /// the documented default (<c>"false"</c>) so a typo cannot silently
-    /// enable multiplexing; <see cref="Honua.Core.Configuration.LimitsOptionsValidator"/>
+    /// enable multiplexing; the configuration validation system
     /// rejects unrecognized values at startup as a paired fail-fast guard.
     /// </summary>
     internal static bool ResolveMultiplexing(string? multiplexingSetting, bool schemaHeadersEnabled)

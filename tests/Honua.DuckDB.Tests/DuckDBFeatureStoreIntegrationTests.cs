@@ -258,6 +258,8 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
             _connectionString = connectionString;
         }
 
+        public string GetConnectionString() => _connectionString;
+
         public async Task<System.Data.Common.DbConnection> OpenConnectionAsync(CancellationToken ct = default)
         {
             var conn = new DuckDBConnection(_connectionString);

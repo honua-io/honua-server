@@ -220,10 +220,10 @@ internal static class ServiceCollectionExtensions
         // Register CRS warmup service with leader election for distributed deployments
         services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
         {
-            var redis = serviceProvider.GetService<StackExchange.Redis.IConnectionMultiplexer>();
-            var logger = serviceProvider.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Coordination.RedisDistributedLeaderElection>>();
-            return new Honua.Server.Features.Infrastructure.Coordination.RedisDistributedLeaderElection(
-                "honua:leader:crs-warmup", redis, logger);
+            // Use no-op implementation for single-instance deployments
+            // TODO: Replace with Redis implementation when Server project is available
+            return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
+                "honua:leader:crs-warmup");
         });
 
         services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
@@ -352,17 +352,16 @@ internal static class ServiceCollectionExtensions
 
         try
         {
-            var canResolve = resolver.CanResolveSecretAsync(connectionString, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            var canResolve = resolver.CanResolve(connectionString);
             if (!canResolve)
             {
                 return connectionString;
             }
 
-            return resolver.ResolveConnectionStringAsync(connectionString, CancellationToken.None)
+            var resolved = resolver.ResolveSecretAsync(connectionString, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
+            return resolved ?? connectionString;
         }
         catch (Exception ex)
         {

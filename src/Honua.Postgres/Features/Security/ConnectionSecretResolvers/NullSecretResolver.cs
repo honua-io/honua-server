@@ -15,23 +15,30 @@ namespace Honua.Postgres.Features.Security.ConnectionSecretResolvers;
 /// </remarks>
 internal sealed class NullSecretResolver : IConnectionSecretResolver
 {
-    public Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public string ProviderName => "null";
+
+    /// <inheritdoc />
+    public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException(
-            $"External secret resolution is not configured. Secret reference '{secretRef}' cannot be resolved. " +
+            $"External secret resolution is not configured. Secret reference '{secretKey}' cannot be resolved. " +
             "Either configure a secret management provider or use encrypted credential storage.");
     }
 
-    public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public bool CanResolve(string secretKey)
     {
         // Always return false since this resolver doesn't support any providers
-        return Task.FromResult(false);
+        return false;
     }
 
-    public string[] GetSupportedProviders()
+    /// <inheritdoc />
+    public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
-        // No providers supported
-        return Array.Empty<string>();
+        throw new NotSupportedException(
+            $"External secret resolution is not configured. Connection string template '{connectionStringTemplate}' cannot be resolved. " +
+            "Either configure a secret management provider or use encrypted credential storage.");
     }
 }
 
@@ -49,17 +56,21 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
 {
     private const string ProviderType = "env";
 
-    public Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public string ProviderName => ProviderType;
+
+    /// <inheritdoc />
+    public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(secretRef))
-            throw new ArgumentException("Secret reference cannot be null or empty", nameof(secretRef));
+        if (string.IsNullOrWhiteSpace(secretKey))
+            throw new ArgumentException("Secret key cannot be null or empty", nameof(secretKey));
 
-        if (!secretRef.StartsWith($"{ProviderType}:", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException($"Invalid secret reference format. Expected 'env:VARIABLE_NAME', got '{secretRef}'", nameof(secretRef));
+        if (!secretKey.StartsWith($"{ProviderType}:", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"Invalid secret key format. Expected 'env:VARIABLE_NAME', got '{secretKey}'", nameof(secretKey));
 
-        var variableName = secretRef[4..]; // Remove "env:" prefix
+        var variableName = secretKey[4..]; // Remove "env:" prefix
         if (string.IsNullOrWhiteSpace(variableName))
-            throw new ArgumentException("Environment variable name cannot be empty", nameof(secretRef));
+            throw new ArgumentException("Environment variable name cannot be empty", nameof(secretKey));
 
         var value = Environment.GetEnvironmentVariable(variableName);
         if (string.IsNullOrWhiteSpace(value))
@@ -67,31 +78,71 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
             throw new InvalidOperationException($"Environment variable '{variableName}' is not set or is empty");
         }
 
-        return Task.FromResult(value);
+        return Task.FromResult<string?>(value);
     }
 
-    public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public bool CanResolve(string secretKey)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(secretRef) || !secretRef.StartsWith($"{ProviderType}:", StringComparison.OrdinalIgnoreCase))
-                return Task.FromResult(false);
+            if (string.IsNullOrWhiteSpace(secretKey) || !secretKey.StartsWith($"{ProviderType}:", StringComparison.OrdinalIgnoreCase))
+                return false;
 
-            var variableName = secretRef[4..];
+            var variableName = secretKey[4..];
             if (string.IsNullOrWhiteSpace(variableName))
-                return Task.FromResult(false);
+                return false;
 
             var value = Environment.GetEnvironmentVariable(variableName);
-            return Task.FromResult(!string.IsNullOrWhiteSpace(value));
+            return !string.IsNullOrWhiteSpace(value);
         }
         catch
         {
-            return Task.FromResult(false);
+            return false;
         }
     }
 
-    public string[] GetSupportedProviders()
+    /// <inheritdoc />
+    public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
-        return new[] { ProviderType };
+        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
+            return connectionStringTemplate;
+
+        // Simple pattern to find env: references in connection strings
+        // This is a basic implementation - could be enhanced with more sophisticated parsing
+        var result = connectionStringTemplate;
+        var startIndex = 0;
+
+        while (true)
+        {
+            var envIndex = result.IndexOf($"{ProviderType}:", startIndex, StringComparison.OrdinalIgnoreCase);
+            if (envIndex == -1)
+                break;
+
+            // Find the end of the variable reference (semicolon, space, or end of string)
+            var endIndex = envIndex + 4; // Start after "env:"
+            while (endIndex < result.Length &&
+                   result[endIndex] != ';' &&
+                   result[endIndex] != ' ' &&
+                   result[endIndex] != '\t')
+            {
+                endIndex++;
+            }
+
+            var secretKey = result[envIndex..endIndex];
+            var resolvedValue = await ResolveSecretAsync(secretKey, cancellationToken);
+
+            if (!string.IsNullOrEmpty(resolvedValue))
+            {
+                result = result.Replace(secretKey, resolvedValue);
+                startIndex = envIndex + resolvedValue.Length;
+            }
+            else
+            {
+                startIndex = endIndex;
+            }
+        }
+
+        return result;
     }
 }

@@ -60,7 +60,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 
         var limits = dependencies.LimitsOptions?.Value ?? new LimitsOptions();
         _queryTimeoutSeconds = GetTimeoutSeconds(limits.Query.QueryTimeout, TimeConstants.ThirtySeconds);
-        _tileTimeoutSeconds = GetTimeoutSeconds(limits.Tiles.TileTimeout, TimeConstants.TenSeconds);
+        _tileTimeoutSeconds = GetTimeoutSeconds(limits.Tiles.TileTimeout, 10);
 
         _tableName = string.IsNullOrEmpty(dependencies.SchemaName)
             ? "features"

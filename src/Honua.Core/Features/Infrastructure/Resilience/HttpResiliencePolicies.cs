@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
+using Polly.Wrap;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
 
@@ -157,7 +159,7 @@ public static class HttpResiliencePolicies
     internal static IAsyncPolicy<HttpResponseMessage> CreateFreshHttpPolicy(ResiliencePolicyOptions? options = null)
         => BuildHttpPolicy(options ?? HttpDefaults);
 
-    private static IAsyncPolicy<HttpResponseMessage> BuildHttpPolicy(ResiliencePolicyOptions options)
+    private static AsyncPolicyWrap<HttpResponseMessage> BuildHttpPolicy(ResiliencePolicyOptions options)
     {
         var builder = Policy<HttpResponseMessage>
             .HandleResult(response => IsTransientHttpFailure(new DelegateResult<HttpResponseMessage>(response)))
@@ -207,6 +209,6 @@ public static class HttpResiliencePolicies
             options.CircuitBreakerFailures,
             options.CircuitBreakDuration);
 
-        return hash.ToString("x8");
+        return hash.ToString("x8", CultureInfo.InvariantCulture);
     }
 }

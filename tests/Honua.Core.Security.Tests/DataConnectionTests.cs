@@ -1,4 +1,4 @@
-using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Security;
 using Xunit;
 
 namespace Honua.Core.Security.Tests;
@@ -28,7 +28,7 @@ public sealed class DataConnectionTests
 
     [Theory]
     [InlineData(SslMode.Require)]
-    [InlineData(SslMode.VerifyCA)]
+    [InlineData(SslMode.VerifyCa)]
     [InlineData(SslMode.VerifyFull)]
     public void CreateWithEncryptedCredentialsSslRequiredAllowsStrictModes(SslMode sslMode)
     {

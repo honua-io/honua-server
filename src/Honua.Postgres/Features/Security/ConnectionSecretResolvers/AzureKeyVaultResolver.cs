@@ -35,6 +35,9 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
 
     private AccessTokenCache? _tokenCache;
 
+    /// <inheritdoc />
+    public string ProviderName => ProviderType;
+
     public AzureKeyVaultResolver(IHttpClientFactory httpClientFactory, ILogger<AzureKeyVaultResolver> logger)
     {
         _httpClient = httpClientFactory.CreateClient(ClientName);
@@ -42,21 +45,22 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(secretRef);
+        ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
 
-        if (!secretRef.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!secretKey.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException($"Invalid Azure secret reference. Expected '{KeyVaultPrefix}<vault>:<secret>[:<version>]'.", nameof(secretRef));
+            throw new ArgumentException($"Invalid Azure secret reference. Expected '{KeyVaultPrefix}<vault>:<secret>[:<version>]'.", nameof(secretKey));
         }
 
-        if (TryGetCached(secretRef, out var cached))
+        if (TryGetCached(secretKey, out var cached))
         {
             return cached;
         }
 
-        var (vaultName, secretName, version) = ParseSecretReference(secretRef);
+        var (vaultName, secretName, version) = ParseSecretReference(secretKey);
         var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var url = BuildSecretUrl(vaultName, secretName, version);
@@ -72,30 +76,76 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var secretValue = ExtractSecretValue(content);
-        CacheValue(secretRef, secretValue);
+        CacheValue(secretKey, secretValue);
         return secretValue;
     }
 
-    public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public bool CanResolve(string secretKey)
     {
-        if (string.IsNullOrWhiteSpace(secretRef) ||
-            !secretRef.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(secretKey) ||
+            !secretKey.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         try
         {
-            var parsed = ParseSecretReference(secretRef);
-            return Task.FromResult(!string.IsNullOrWhiteSpace(parsed.VaultName) && !string.IsNullOrWhiteSpace(parsed.SecretName));
+            var parsed = ParseSecretReference(secretKey);
+            return !string.IsNullOrWhiteSpace(parsed.VaultName) && !string.IsNullOrWhiteSpace(parsed.SecretName);
         }
         catch (ArgumentException)
         {
-            return Task.FromResult(false);
+            return false;
         }
     }
 
-    public string[] GetSupportedProviders() => new[] { ProviderType };
+    /// <inheritdoc />
+    public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
+            return connectionStringTemplate;
+
+        // Simple pattern matching for Azure Key Vault secret references like ${azure:keyvault:...} or {azure:keyvault:...}
+        var result = connectionStringTemplate;
+        var patterns = new[] { "${", "{" };
+
+        foreach (var pattern in patterns)
+        {
+            var startIndex = 0;
+            while (true)
+            {
+                var start = result.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
+                if (start == -1) break;
+
+                var end = result.IndexOf('}', start + pattern.Length);
+                if (end == -1) break;
+
+                var secretRef = result.Substring(start + pattern.Length, end - start - pattern.Length);
+
+                if (!string.IsNullOrWhiteSpace(secretRef) && CanResolve(secretRef))
+                {
+                    var resolvedValue = await ResolveSecretAsync(secretRef, cancellationToken);
+                    if (!string.IsNullOrEmpty(resolvedValue))
+                    {
+                        var fullReference = result.Substring(start, end - start + 1);
+                        result = result.Replace(fullReference, resolvedValue);
+                        startIndex = start + resolvedValue.Length;
+                    }
+                    else
+                    {
+                        startIndex = end + 1;
+                    }
+                }
+                else
+                {
+                    startIndex = end + 1;
+                }
+            }
+        }
+
+        return result;
+    }
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
@@ -318,9 +368,9 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         return SecretValueExtractor.ExtractValue(valueElement.GetString()!);
     }
 
-    private bool TryGetCached(string secretRef, out string value)
+    private bool TryGetCached(string secretKey, out string value)
     {
-        if (_cache.TryGetValue(secretRef, out var entry) &&
+        if (_cache.TryGetValue(secretKey, out var entry) &&
             entry.ExpiresAt > DateTimeOffset.UtcNow)
         {
             value = entry.Value;
@@ -331,9 +381,9 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         return false;
     }
 
-    private void CacheValue(string secretRef, string value)
+    private void CacheValue(string secretKey, string value)
     {
-        _cache[secretRef] = new CacheEntry(value, DateTimeOffset.UtcNow.Add(_cacheTtl));
+        _cache[secretKey] = new CacheEntry(value, DateTimeOffset.UtcNow.Add(_cacheTtl));
     }
 
     private sealed record CacheEntry(string Value, DateTimeOffset ExpiresAt);

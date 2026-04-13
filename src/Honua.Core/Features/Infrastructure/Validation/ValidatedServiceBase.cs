@@ -22,7 +22,7 @@ public abstract class ValidatedServiceBase
     /// <returns>The validated non-null value</returns>
     /// <exception cref="ArgumentNullException">Thrown when the value is null</exception>
     [return: NotNull]
-    protected static T ValidateRequired<T>([NotNull] T? value, [CallerArgumentExpression("value")] string? parameterName = null)
+    public static T ValidateRequired<T>([NotNull] T? value, [CallerArgumentExpression("value")] string? parameterName = null)
         where T : class
     {
         return value ?? throw new ArgumentNullException(parameterName);
@@ -36,7 +36,7 @@ public abstract class ValidatedServiceBase
     /// <param name="parameterName">The parameter name (automatically inferred)</param>
     /// <returns>The validated non-null value</returns>
     /// <exception cref="ArgumentNullException">Thrown when the value is null</exception>
-    protected static T ValidateRequired<T>(T? value, [CallerArgumentExpression("value")] string? parameterName = null)
+    public static T ValidateRequired<T>(T? value, [CallerArgumentExpression("value")] string? parameterName = null)
         where T : struct
     {
         return value ?? throw new ArgumentNullException(parameterName);
@@ -51,7 +51,7 @@ public abstract class ValidatedServiceBase
     /// <returns>The validated options value</returns>
     /// <exception cref="ArgumentNullException">Thrown when options or options.Value is null</exception>
     [return: NotNull]
-    protected static T ValidateOptions<T>([NotNull] IOptions<T>? options, [CallerArgumentExpression("options")] string? parameterName = null)
+    public static T ValidateOptions<T>([NotNull] IOptions<T>? options, [CallerArgumentExpression("options")] string? parameterName = null)
         where T : class
     {
         if (options == null)
@@ -70,7 +70,7 @@ public abstract class ValidatedServiceBase
     /// <exception cref="ArgumentNullException">Thrown when the collection is null</exception>
     /// <exception cref="ArgumentException">Thrown when the collection is empty</exception>
     [return: NotNull]
-    protected static IEnumerable<T> ValidateCollectionNotEmpty<T>([NotNull] IEnumerable<T>? collection, [CallerArgumentExpression("collection")] string? parameterName = null)
+    public static IEnumerable<T> ValidateCollectionNotEmpty<T>([NotNull] IEnumerable<T>? collection, [CallerArgumentExpression("collection")] string? parameterName = null)
     {
         if (collection == null)
             throw new ArgumentNullException(parameterName);
@@ -90,7 +90,7 @@ public abstract class ValidatedServiceBase
     /// <exception cref="ArgumentNullException">Thrown when the value is null</exception>
     /// <exception cref="ArgumentException">Thrown when the value is empty or whitespace</exception>
     [return: NotNull]
-    protected static string ValidateNotEmpty([NotNull] string? value, [CallerArgumentExpression("value")] string? parameterName = null)
+    public static string ValidateNotEmpty([NotNull] string? value, [CallerArgumentExpression("value")] string? parameterName = null)
     {
         if (value == null)
             throw new ArgumentNullException(parameterName);

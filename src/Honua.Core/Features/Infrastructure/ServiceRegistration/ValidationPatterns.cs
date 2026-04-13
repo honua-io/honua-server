@@ -284,4 +284,168 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
             errors.Add($"{propertyName} does not appear to be a valid connection string format.");
         }
     }
+
+    /// <summary>
+    /// Helper to validate that a TimeSpan is within a range.
+    /// </summary>
+    protected static void ValidateTimeSpan(TimeSpan value, TimeSpan min, TimeSpan max, string propertyName, List<string> errors)
+    {
+        if (value < min || value > max)
+        {
+            errors.Add($"{propertyName} must be between {min.TotalSeconds} seconds and {max.TotalHours} hours, but was {value.TotalSeconds} seconds.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate outbound HTTP URLs.
+    /// </summary>
+    protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            errors.Add($"{propertyName} is required and cannot be empty.");
+            return;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            errors.Add($"{propertyName} must be a valid absolute URL, but was '{url}'.");
+            return;
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+        {
+            errors.Add($"{propertyName} must use HTTP or HTTPS scheme, but was '{uri.Scheme}'.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate data annotations on nested objects.
+    /// </summary>
+    protected static void ValidateDataAnnotations(object? obj, List<string> errors, string propertyName)
+    {
+        if (obj == null)
+            return;
+
+        var validationResults = new List<ValidationResult>();
+        var validationContext = new ValidationContext(obj);
+
+        if (!Validator.TryValidateObject(obj, validationContext, validationResults, true))
+        {
+            foreach (var result in validationResults)
+            {
+                errors.Add($"{propertyName}.{result.ErrorMessage}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate logical order between two values.
+    /// </summary>
+    protected static void ValidateLogicalOrder<T>(T smaller, T larger, string smallerName, string largerName, List<string> errors)
+        where T : IComparable<T>
+    {
+        if (smaller.CompareTo(larger) > 0)
+        {
+            errors.Add($"{smallerName} ({smaller}) should be less than or equal to {largerName} ({larger}).");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate that a string is not null or whitespace.
+    /// </summary>
+    protected static void ValidateRequiredString(string? value, string propertyName, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            errors.Add($"{propertyName} is required and cannot be empty or whitespace.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate string length.
+    /// </summary>
+    protected static void ValidateStringLength(string? value, int maxLength, string propertyName, List<string> errors, int minLength = 0)
+    {
+        if (string.IsNullOrEmpty(value))
+            return;
+
+        if (value.Length < minLength || value.Length > maxLength)
+        {
+            errors.Add($"{propertyName} length must be between {minLength} and {maxLength} characters, but was {value.Length}.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate file size within acceptable bounds.
+    /// </summary>
+    protected static void ValidateFileSize(long value, long min, long max, string propertyName, List<string> errors)
+    {
+        if (value < min || value > max)
+        {
+            var minMb = min / (1024.0 * 1024.0);
+            var maxGb = max / (1024.0 * 1024.0 * 1024.0);
+            var valueMb = value / (1024.0 * 1024.0);
+            errors.Add($"{propertyName} must be between {minMb:F1}MB and {maxGb:F1}GB, but was {valueMb:F1}MB.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate URL format.
+    /// </summary>
+    protected static void ValidateUrl(string? url, string propertyName, List<string> errors, bool requireHttps = true)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            errors.Add($"{propertyName} must be a valid absolute URL, but was '{url}'.");
+            return;
+        }
+
+        if (requireHttps && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            errors.Add($"{propertyName} must use HTTPS scheme, but was '{uri.Scheme}'.");
+        }
+        else if (!requireHttps && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+        {
+            errors.Add($"{propertyName} must use HTTP or HTTPS scheme, but was '{uri.Scheme}'.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to validate file/directory paths.
+    /// </summary>
+    protected static void ValidatePath(string? path, string propertyName, List<string> errors, bool requireAbsolute = false, bool preventTraversal = true)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            if (requireAbsolute && !Path.IsPathRooted(path))
+            {
+                errors.Add($"{propertyName} must be an absolute path, but was '{path}'.");
+                return;
+            }
+
+            if (preventTraversal && (path.Contains("..") || path.Contains('~')))
+            {
+                errors.Add($"{propertyName} cannot contain path traversal sequences (.., ~), but was '{path}'.");
+                return;
+            }
+
+            // Check for invalid characters
+            var invalidChars = Path.GetInvalidPathChars();
+            if (path.IndexOfAny(invalidChars) >= 0)
+            {
+                errors.Add($"{propertyName} contains invalid path characters: '{path}'.");
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"{propertyName} is not a valid path: {ex.Message}");
+        }
+    }
 }

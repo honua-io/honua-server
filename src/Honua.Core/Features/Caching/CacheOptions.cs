@@ -27,45 +27,41 @@ public sealed class CacheOptions
     /// Default time-to-live for cached layer metadata in seconds.
     /// Default is 1800 seconds (30 minutes).
     /// </summary>
-    [ValidTtl(
-        MinimumTtl = "00:00:01",
-        MaximumTtl = "1.00:00:00",
-        ConfigurationPath = SectionName,
-        SuggestedFix = "Use StandardTtl configuration for consistent cache timing")]
-    [Range(TimeConstants.OneSecond, TimeConstants.OneDay, ErrorMessage = ErrorMessages.RangeValidation.DefaultTtlSeconds)]
+    [ValidTtl(1, 24)]
+    [ConfigurationPath(SectionName)]
+    [SuggestedFix("Use StandardTtl configuration for consistent cache timing")]
+    [Range(1, 86400, ErrorMessage = ErrorMessages.RangeValidation.DefaultTtlSeconds)]
     public int DefaultTtlSeconds { get; set; } = TimeConstants.ThirtyMinutes;
 
     /// <summary>
     /// Time-to-live for cached service metadata in seconds.
     /// Default is 3600 seconds (1 hour).
     /// </summary>
-    [ValidTtl(
-        MinimumTtl = "00:00:01",
-        MaximumTtl = "1.00:00:00",
-        ConfigurationPath = SectionName,
-        SuggestedFix = "Service metadata should use Medium or Long TTL category")]
-    [Range(TimeConstants.OneSecond, TimeConstants.OneDay, ErrorMessage = ErrorMessages.RangeValidation.ServiceTtlSeconds)]
-    public int ServiceTtlSeconds { get; set; } = TimeConstants.OneHour;
+    [ValidTtl(1, 24)]
+    [ConfigurationPath(SectionName)]
+    [SuggestedFix("Service metadata should use Medium or Long TTL category")]
+    [Range(1, 86400, ErrorMessage = ErrorMessages.RangeValidation.ServiceTtlSeconds)]
+    public int ServiceTtlSeconds { get; set; } = 3600;
 
     /// <summary>
     /// Time-to-live for cached layer metadata in seconds.
     /// Default is 1800 seconds (30 minutes).
     /// </summary>
-    [Range(TimeConstants.OneSecond, TimeConstants.OneDay, ErrorMessage = ErrorMessages.RangeValidation.LayerTtlSeconds)]
+    [Range(1, 86400, ErrorMessage = ErrorMessages.RangeValidation.LayerTtlSeconds)]
     public int LayerTtlSeconds { get; set; } = TimeConstants.ThirtyMinutes;
 
     /// <summary>
     /// Time-to-live for cached query responses in seconds.
     /// Default is 30 seconds for short-lived response caching.
     /// </summary>
-    [Range(TimeConstants.OneSecond, TimeConstants.OneHour, ErrorMessage = ErrorMessages.RangeValidation.QueryTtlSeconds)]
+    [Range(1, 3600, ErrorMessage = ErrorMessages.RangeValidation.QueryTtlSeconds)]
     public int QueryTtlSeconds { get; set; } = TimeConstants.ThirtySeconds;
 
     /// <summary>
     /// Time-to-live for negative cache entries (missing layers/services) in seconds.
     /// Default is 60 seconds to avoid repeated lookups without long-lived false negatives.
     /// </summary>
-    [Range(TimeConstants.OneSecond, TimeConstants.OneHour, ErrorMessage = ErrorMessages.RangeValidation.NegativeTtlSeconds)]
+    [Range(1, 3600, ErrorMessage = ErrorMessages.RangeValidation.NegativeTtlSeconds)]
     public int NegativeTtlSeconds { get; set; } = TimeConstants.OneMinute;
 
     /// <summary>
@@ -99,7 +95,7 @@ public sealed class CacheOptions
     /// Interval in seconds to retry connecting to Redis after a failure.
     /// Default is 30 seconds.
     /// </summary>
-    [Range(TimeConstants.FiveSeconds, TimeConstants.FiveMinutes, ErrorMessage = ErrorMessages.RangeValidation.RetryIntervalSeconds)]
+    [Range(5, 300, ErrorMessage = ErrorMessages.RangeValidation.RetryIntervalSeconds)]
     public int RetryIntervalSeconds { get; set; } = TimeConstants.ThirtySeconds;
 
     /// <summary>
@@ -134,7 +130,7 @@ public sealed class CacheOptions
     /// Timeout in seconds for each background refresh operation.
     /// Default is 30 seconds.
     /// </summary>
-    [Range(TimeConstants.FiveSeconds, TimeConstants.TwoMinutes, ErrorMessage = ErrorMessages.RangeValidation.RefreshTimeoutSeconds)]
+    [Range(5, 120, ErrorMessage = ErrorMessages.RangeValidation.RefreshTimeoutSeconds)]
     public int RefreshTimeoutSeconds { get; set; } = TimeConstants.ThirtySeconds;
 
     /// <summary>

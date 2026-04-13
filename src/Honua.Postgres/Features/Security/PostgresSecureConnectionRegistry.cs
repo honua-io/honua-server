@@ -3,11 +3,11 @@
 
 using System.Data.Common;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Security;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
+using CoreSslMode = Honua.Core.Features.Security.SslMode;
 
 namespace Honua.Postgres.Features.Security;
 
@@ -36,7 +36,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         CoreSslMode.Allow => "allow",
         CoreSslMode.Prefer => "prefer",
         CoreSslMode.Require => "require",
-        CoreSslMode.VerifyCA => "verify-ca",
+        CoreSslMode.VerifyCa => "verify-ca",
         CoreSslMode.VerifyFull => "verify-full",
         _ => mode.ToString().ToLowerInvariant()
     };
@@ -441,11 +441,104 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         "allow" => CoreSslMode.Allow,
         "prefer" => CoreSslMode.Prefer,
         "require" => CoreSslMode.Require,
-        "verifyca" => CoreSslMode.VerifyCA,
-        "verify-ca" => CoreSslMode.VerifyCA,
+        "verifyca" => CoreSslMode.VerifyCa,
+        "verify-ca" => CoreSslMode.VerifyCa,
         "verifyfull" => CoreSslMode.VerifyFull,
         "verify-full" => CoreSslMode.VerifyFull,
         _ => throw new InvalidOperationException($"Unsupported SSL mode value '{value}' in secure connection registry.")
     };
 
+    // Interface implementations that delegate to existing methods
+
+    /// <inheritdoc />
+    public async Task RegisterConnectionAsync(DataConnection connection)
+    {
+        await CreateConnectionAsync(connection);
+    }
+
+    /// <inheritdoc />
+    public async Task<DataConnection?> GetConnectionAsync(string connectionId)
+    {
+        if (Guid.TryParse(connectionId, out var guid))
+        {
+            return await GetConnectionAsync(guid);
+        }
+        return null;
+    }
+
+    /// <inheritdoc />
+    public async Task<IEnumerable<DataConnection>> GetAllConnectionsAsync()
+    {
+        return await GetActiveConnectionsAsync();
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RemoveConnectionAsync(string connectionId)
+    {
+        if (Guid.TryParse(connectionId, out var guid))
+        {
+            return await DeleteConnectionAsync(guid);
+        }
+        return false;
+    }
+
+    /// <inheritdoc />
+    public async Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync()
+    {
+        var connections = await GetActiveConnectionsAsync();
+        var results = new Dictionary<string, ConnectionHealthStatus>();
+
+        foreach (var connection in connections)
+        {
+            var isHealthy = await TestConnectionAsync(connection.ConnectionId);
+            var status = isHealthy ? ConnectionHealthStatus.Healthy : ConnectionHealthStatus.Unhealthy;
+            results[connection.ConnectionId.ToString()] = status;
+        }
+
+        return results;
+    }
+
+    // Additional interface methods required by ISecureConnectionRegistry
+
+    /// <summary>
+    /// Gets a connection by ID with cancellation support (overload).
+    /// </summary>
+    public async Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId))
+            return null;
+
+        if (Guid.TryParse(connectionId, out var guid))
+            return await GetConnectionAsync(guid, cancellationToken);
+
+        // Fallback: try to find by name
+        return await GetConnectionByNameAsync(connectionId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Updates the health status of a connection using string ID and bool status.
+    /// </summary>
+    public async Task UpdateHealthStatusAsync(string connectionId, bool isHealthy, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId))
+            return;
+
+        if (Guid.TryParse(connectionId, out var guid))
+        {
+            var status = isHealthy ? ConnectionHealthStatus.Healthy : ConnectionHealthStatus.Unhealthy;
+            await UpdateHealthStatusAsync(guid, status, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Gets all active connections (interface compatibility wrapper).
+    /// </summary>
+    Task<IEnumerable<DataConnection>> ISecureConnectionRegistry.GetActiveConnectionsAsync(CancellationToken cancellationToken)
+    {
+        return GetActiveConnectionsAsync(cancellationToken).ContinueWith(
+            task => (IEnumerable<DataConnection>)task.Result,
+            cancellationToken,
+            TaskContinuationOptions.OnlyOnRanToCompletion,
+            TaskScheduler.Default);
+    }
 }

@@ -191,6 +191,9 @@ internal static class SecurityServiceCollectionExtensions
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
+        public string GetConnectionString()
+            => _inner.GetConnectionString();
+
         public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
             => _inner.OpenConnectionAsync(cancellationToken);
 

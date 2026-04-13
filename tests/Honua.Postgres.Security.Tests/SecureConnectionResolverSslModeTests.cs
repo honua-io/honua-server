@@ -1,5 +1,5 @@
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Security.Domain;
 using Honua.Postgres.Features.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

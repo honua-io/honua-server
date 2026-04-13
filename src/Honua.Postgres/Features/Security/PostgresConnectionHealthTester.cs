@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -28,7 +29,7 @@ internal sealed class PostgresConnectionHealthTester : IConnectionHealthTester
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<bool> TestConnectionAsync(string connectionString, CancellationToken cancellationToken = default)
+    public async Task<ConnectionHealthStatus> TestConnectionAsync(string connectionString, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -50,13 +51,13 @@ internal sealed class PostgresConnectionHealthTester : IConnectionHealthTester
             if (isHealthy)
             {
                 _logHealthCheckSuccess(_logger, null);
+                return ConnectionHealthStatus.Healthy;
             }
             else
             {
                 _logHealthCheckUnexpectedResult(_logger, result, null);
+                return ConnectionHealthStatus.Warning;
             }
-
-            return isHealthy;
         }
         catch (OperationCanceledException)
         {
@@ -65,7 +66,7 @@ internal sealed class PostgresConnectionHealthTester : IConnectionHealthTester
         catch (Exception ex)
         {
             _logHealthCheckFailed(_logger, ex.GetType().Name, ex);
-            return false;
+            return ConnectionHealthStatus.Unhealthy;
         }
     }
 }

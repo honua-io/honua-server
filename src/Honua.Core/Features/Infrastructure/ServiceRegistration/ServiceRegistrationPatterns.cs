@@ -182,9 +182,9 @@ public static class ServiceRegistrationPatterns
     /// </summary>
     public static IServiceCollection AddDatabaseDependentServices(
         this IServiceCollection services,
-        params (Type ServiceType, Type Implementation, ServiceLifetime Lifetime)[] services_list)
+        params (Type ServiceType, Type Implementation, ServiceLifetime Lifetime)[] servicesList)
     {
-        foreach (var (serviceType, implementation, lifetime) in services_list)
+        foreach (var (serviceType, implementation, lifetime) in servicesList)
         {
             var factory = CreateDatabaseServiceFactory(serviceType, implementation);
 
