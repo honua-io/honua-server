@@ -13,7 +13,7 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     private static DefaultOperatorApprovalEvaluator CreateEvaluator(
         bool publishRequiresApproval = true,
         bool destructiveActionsRequireApproval = true,
-        bool adminExemptFromApproval = false)
+        bool adminExemptFromApproval = true)
     {
         var options = Options.Create(new OperatorApprovalOptions
         {
@@ -200,9 +200,24 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     }
 
     [UnitTest]
-    public void Evaluate_AdminPrincipal_GatedByDefault()
+    public void Evaluate_AdminPrincipal_ExemptByDefault()
     {
         var evaluator = CreateEvaluator(publishRequiresApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        };
+
+        var result = evaluator.Evaluate(CreateAdminPrincipal(), request);
+
+        result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_AdminPrincipal_GatedWhenExemptionDisabled()
+    {
+        var evaluator = CreateEvaluator(publishRequiresApproval: true, adminExemptFromApproval: false);
         var request = new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Deployment,
@@ -214,21 +229,6 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
         result.IsRequired.Should().BeTrue();
         result.PolicyRef.Should().Be("operator.publish");
         result.ReasonCodes.Should().Contain("publish-requires-approval");
-    }
-
-    [UnitTest]
-    public void Evaluate_AdminPrincipal_ExemptWhenExplicitlyConfigured()
-    {
-        var evaluator = CreateEvaluator(publishRequiresApproval: true, adminExemptFromApproval: true);
-        var request = new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Deployment,
-            Operation = OperatorOperation.Publish
-        };
-
-        var result = evaluator.Evaluate(CreateAdminPrincipal(), request);
-
-        result.IsRequired.Should().BeFalse();
     }
 
     [UnitTest]

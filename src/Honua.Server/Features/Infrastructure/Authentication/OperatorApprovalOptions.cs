@@ -22,8 +22,9 @@ internal sealed class OperatorApprovalOptions
 
     /// <summary>
     /// Whether principals with the admin role bypass operator approval gates.
-    /// Defaults to false so that admin-only endpoints are gated by approval policies.
-    /// Set to true to explicitly exempt admins from operator approval.
+    /// Defaults to true so that admin-only endpoints (already behind RequireAdminAuthorization)
+    /// are not double-gated by operator approval policies targeting non-admin operators.
+    /// Set to false to require approval even for admin principals.
     /// </summary>
-    public bool AdminExemptFromApproval { get; set; }
+    public bool AdminExemptFromApproval { get; set; } = true;
 }
