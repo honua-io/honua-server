@@ -5,6 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
@@ -23,6 +24,7 @@ internal sealed class ConfigurationDocumentationService
     private readonly IOptions<TileOptions> _tileOptions;
     private readonly IOptions<AdaptiveSamplingOptions> _adaptiveSamplingOptions;
     private readonly IOptions<TracingOptions> _tracingOptions;
+    private readonly IReadOnlyList<IConfigurationDocumentationContributor> _configurationDocumentationContributors;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConfigurationDocumentationService"/> class.
@@ -34,7 +36,8 @@ internal sealed class ConfigurationDocumentationService
         IOptions<CacheOptions> cacheOptions,
         IOptions<TileOptions> tileOptions,
         IOptions<AdaptiveSamplingOptions> adaptiveSamplingOptions,
-        IOptions<TracingOptions> tracingOptions)
+        IOptions<TracingOptions> tracingOptions,
+        IEnumerable<IConfigurationDocumentationContributor> configurationDocumentationContributors)
     {
         _configuration = configuration;
         _environment = environment;
@@ -43,6 +46,8 @@ internal sealed class ConfigurationDocumentationService
         _tileOptions = tileOptions;
         _adaptiveSamplingOptions = adaptiveSamplingOptions;
         _tracingOptions = tracingOptions;
+        _configurationDocumentationContributors = configurationDocumentationContributors?.ToArray()
+            ?? throw new ArgumentNullException(nameof(configurationDocumentationContributors));
     }
 
     /// <summary>
@@ -70,6 +75,11 @@ internal sealed class ConfigurationDocumentationService
             BuildTracingSection(),
             BuildAdaptiveSamplingSection()
         };
+
+        foreach (var contributor in _configurationDocumentationContributors)
+        {
+            sections.AddRange(contributor.GetSections());
+        }
 
         var envVars = BuildEnvironmentVariableQuickReference();
         var version = typeof(ConfigurationDocumentationService).Assembly.GetName().Version?.ToString() ?? "unknown";
@@ -631,9 +641,9 @@ internal sealed class ConfigurationDocumentationService
         return "Default";
     }
 
-    private static List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
+    private List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
     {
-        return new List<EnvironmentVariableInfo>
+        var envVars = new List<EnvironmentVariableInfo>
         {
             // Feature flags
             new() { Name = "HONUA_ADMIN_UI", ConfigPath = "Features", Description = "Enable web admin interface", Default = "false", Example = "true" },
@@ -725,5 +735,12 @@ internal sealed class ConfigurationDocumentationService
             new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Critical operation sampling rate", Default = "1.0", Example = "0.8" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Normal operation sampling rate", Default = "0.1", Example = "0.05" }
         };
+
+        foreach (var contributor in _configurationDocumentationContributors)
+        {
+            envVars.AddRange(contributor.GetEnvironmentVariables());
+        }
+
+        return envVars;
     }
 }

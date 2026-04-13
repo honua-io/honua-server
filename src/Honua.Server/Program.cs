@@ -972,6 +972,7 @@ app.MapServerFeatureEndpoints();
 
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Grpc.HonuaFeatureService>();
+app.MapGrpcService<Honua.Server.Features.Geoprocessing.HonuaProcessService>();
 app.MapGrpcHealthChecksService();
 
 // Enable gRPC reflection for dev tooling (grpcurl, grpcui, Postman)

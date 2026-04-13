@@ -5,6 +5,7 @@ using Honua.Server.Features.Alerts;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.GeometryService;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.GeoservicesCatalog;
 using Honua.Server.Features.Grpc;
 using Honua.Server.Features.ImageServer;
@@ -54,6 +55,7 @@ internal static class FeatureRegistrationExtensions
         services.AddStac();
         services.AddStaticMap();
         services.AddPrintingTools();
+        services.AddGeoprocessing(configuration);
         services.AddSpatialAnalytics();
 
         return services;

@@ -174,6 +174,78 @@ Honua uses a layered caching approach:
 
 ---
 
+## Workspace Lifecycle
+
+Geoprocessing workspaces manage temporary and durable artifacts produced by
+analysis workflows. The workspace lifecycle service handles creation, retention,
+promotion, and background cleanup.
+
+> **Note:** Workspace lifecycle requires concrete `IWorkspaceStore` and
+> `IArtifactStore` implementations to be registered. The lifecycle service and
+> background cleanup are skipped when no store provider is available.
+
+### Configuration
+
+All settings live under `Geoprocessing:Workspace` (env prefix
+`Geoprocessing__Workspace__`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `CleanupInterval` | 15 minutes | How frequently the cleanup service runs |
+| `CleanupGracePeriod` | 1 hour | Grace period after expiration before deletion |
+| `EnableAutomaticCleanup` | `true` | Whether background cleanup is active |
+| `MaxCleanupBatchSize` | 100 | Workspaces processed per sweep |
+| `ScratchDefaultTtl` | (built-in: 1 hour) | TTL override for scratch workspaces |
+| `TempLayerDefaultTtl` | (built-in: 24 hours) | TTL override for temp layer workspaces |
+| `ResultCollectionDefaultTtl` | (built-in: 7 days) | TTL override for result collections |
+| `MaxWorkspaceCount` | (built-in: 100) | Per-owner workspace limit |
+| `MaxArtifactCount` | (built-in: 1,000) | Per-owner artifact limit |
+| `MaxStorageBytes` | (built-in: 10 GB) | Per-owner storage limit |
+
+Use `/api/v1/admin/config` to confirm effective values at runtime.
+
+Nullable TTL and quota settings fall back to built-in defaults when unset.
+`MaxTimeToLive` and `AllowPromotionBeforeCleanup` per workspace kind are not
+config-overridable. TTL overrides are validated at startup; values exceeding
+the `MaxTimeToLive` ceiling for the kind are rejected. Per-request TTL values
+supplied during workspace creation are silently clamped to the ceiling rather
+than rejected.
+
+Quota enforcement is caller-initiated: the lifecycle service does not
+automatically check quotas during workspace creation. gRPC endpoints and
+workflow orchestrators should call `EvaluateQuota` before creating workspaces.
+
+### Retention Defaults
+
+| Workspace Kind | Default TTL | Max TTL | Promotion allowed |
+|----------------|-------------|---------|-------------------|
+| Scratch | 1 hour | 24 hours | Yes |
+| TempLayer | 24 hours | 7 days | Yes |
+| Persistent | none | none | No |
+| SavedLayer | none | none | No |
+| ResultCollection | 7 days | 30 days | Yes |
+
+### Cleanup Behavior
+
+Cleanup runs in two phases:
+
+1. **Expire** — active workspaces at or past their expiration (`>=`) transition
+   to `Expired`.
+2. **Delete** — expired workspaces at or past the grace period boundary have
+   their artifacts deleted, then the workspace is removed.
+
+Artifacts in expired workspaces can still be promoted to durable workspaces
+during the grace period when the retention policy allows it. Individual
+failures during a sweep are recorded without halting cleanup, so one failing
+workspace does not block subsequent workspaces. If any artifact in a workspace
+fails to delete, the workspace itself is skipped for that sweep to prevent
+orphaned artifact records.
+
+For full lifecycle semantics, see the
+[AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
+
+---
+
 ## Memory Optimizations
 
 Key memory-management patterns in Honua:
