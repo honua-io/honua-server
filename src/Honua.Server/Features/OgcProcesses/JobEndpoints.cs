@@ -144,7 +144,7 @@ internal static class JobEndpoints
         }
 
         var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (job == null)
+        if (job == null || job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);
@@ -180,7 +180,7 @@ internal static class JobEndpoints
         }
 
         var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (job == null)
+        if (job == null || job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);
@@ -279,7 +279,7 @@ internal static class JobEndpoints
         }
 
         var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (job == null)
+        if (job == null || job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);

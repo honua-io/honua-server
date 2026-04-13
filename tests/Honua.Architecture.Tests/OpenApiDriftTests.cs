@@ -95,6 +95,12 @@ public sealed class OpenApiDriftTests
         var planRequiredFields = planRequired.EnumerateArray().Select(e => e.GetString()).ToList();
         planRequiredFields.Should().Contain("planId").And.Contain("steps");
 
+        // PlanStep must expose the optional processId field documented in API examples
+        // and aligned with the canonical AnalysisPlanStep.process_id proto field.
+        var planStepProps = schemas.GetProperty("PlanStep").GetProperty("properties");
+        planStepProps.TryGetProperty("processId", out _).Should()
+            .BeTrue("PlanStep must document the optional processId field used in request examples and the canonical proto contract");
+
         // ProcessIoSchema must expose the fields emitted by process description endpoints.
         var ioSchema = schemas.GetProperty("ProcessIoSchema");
         var ioSchemaProps = ioSchema.GetProperty("properties");

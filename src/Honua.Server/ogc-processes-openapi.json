@@ -594,6 +594,10 @@
             "description": "Type of processing operation.",
             "enum": ["queryFeatures", "geoprocess", "aggregate", "renderMap", "export"]
           },
+          "processId": {
+            "type": "string",
+            "description": "Optional canonical process identifier for this step."
+          },
           "inputs": {
             "type": "object",
             "description": "Step input parameters as key-value string pairs.",
