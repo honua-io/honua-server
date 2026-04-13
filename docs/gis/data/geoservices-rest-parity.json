@@ -1924,13 +1924,13 @@
             "name": "Execute Task (generic, sync)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
             "methods": ["GET", "POST"],
-            "notes": "Returns 501. Pending #721 ExecutePlan. Routes registered in #723."
+            "notes": "Returns 501 (auth and env-control validation enforced first). Pending #721 ExecutePlan. Routes registered in #723."
           },
           {
             "name": "Submit Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
             "methods": ["GET", "POST"],
-            "notes": "Returns 501. Job submission requires process catalog validation (not yet available). Route registered in #723."
+            "notes": "Returns 501 (auth and env-control validation enforced first). Job submission requires process catalog validation (not yet available). Route registered in #723."
           }
         ]
       },

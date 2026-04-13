@@ -299,6 +299,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
 - Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
 - Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
+- For endpoints that currently return 501 (`execute`, `submitJob`), authentication (401/403) and parameter validation (400 for unsupported env controls) are enforced before the 501. Callers always see auth and validation errors before feature-availability errors.
 - See [ADR-0029](../contributor/adr/0029-geoprocess-canonical-model-mappings.md) for adapter invariants and the [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) for the full canonical model mapping.
 
 ---
