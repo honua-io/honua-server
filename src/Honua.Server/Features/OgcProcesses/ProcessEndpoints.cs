@@ -549,7 +549,7 @@ internal static class ProcessEndpoints
                 Title = "Approval required",
                 Status = StatusCodes.Status403Forbidden,
                 Detail = $"This operation requires approval (policy: {approval.PolicyRef}). " +
-                         "Use the process validation endpoint to check approval requirements before submission."
+                         "Contact an administrator to request approval for this operation."
             },
             OgcProcessesJsonContext.Default.OgcProcessError,
             MediaTypes.Json,

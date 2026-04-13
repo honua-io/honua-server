@@ -61,6 +61,35 @@ public sealed class OpenApiDriftTests
     }
 
     [ArchitectureTest]
+    public void OgcProcessesAuthProtectedEndpoints_Document401And403Responses()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var paths = document.RootElement.GetProperty("paths");
+
+        (string Path, string Method)[] authProtectedOps =
+        [
+            ("/ogc/processes/processes/{processId}/execution", "post"),
+            ("/ogc/processes/jobs", "get"),
+            ("/ogc/processes/jobs/{jobId}", "get"),
+            ("/ogc/processes/jobs/{jobId}", "delete"),
+            ("/ogc/processes/jobs/{jobId}/results", "get")
+        ];
+
+        foreach (var (path, method) in authProtectedOps)
+        {
+            var responses = paths.GetProperty(path)
+                .GetProperty(method)
+                .GetProperty("responses");
+
+            responses.TryGetProperty("401", out _).Should()
+                .BeTrue($"{method.ToUpperInvariant()} {path} must document 401 Unauthorized");
+
+            responses.TryGetProperty("403", out _).Should()
+                .BeTrue($"{method.ToUpperInvariant()} {path} must document 403 Forbidden");
+        }
+    }
+
+    [ArchitectureTest]
     public void SpatialAnalyticsResponses_UseDedicatedFeatureCollectionSchema()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("openapi.json")));
