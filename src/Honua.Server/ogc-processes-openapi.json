@@ -150,6 +150,14 @@
                 "schema": { "$ref": "#/components/schemas/Exception" }
               }
             }
+          },
+          "503": {
+            "description": "Durable job storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
           }
         }
       }
@@ -171,6 +179,22 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/JobList" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. limit <= 0)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable job storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
               }
             }
           }
@@ -200,6 +224,14 @@
           },
           "404": {
             "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable job storage unavailable",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -238,6 +270,14 @@
           },
           "409": {
             "description": "Job in terminal state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable job storage unavailable",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -286,6 +326,14 @@
           },
           "500": {
             "description": "Job failed during execution",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable job storage unavailable",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }

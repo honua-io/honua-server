@@ -46,6 +46,18 @@ public sealed class OpenApiDriftTests
             "OGC API Tiles",
             tilesSpecEndpoints,
             tilesRegistryEndpoints);
+
+        var processesSpecEndpoints = LoadOpenApiEndpoints(ResolveOpenApiPath("ogc-processes-openapi.json"));
+        var processesRegistryEndpoints = EndpointRegistry.All
+            .Where(endpoint => endpoint.Path.StartsWith("/ogc/processes", StringComparison.OrdinalIgnoreCase))
+            .Where(endpoint => !endpoint.Path.Equals("/ogc/processes/openapi.json", StringComparison.OrdinalIgnoreCase))
+            .Select(endpoint => FormatKey(endpoint.Method, endpoint.Path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        AssertSpecMatchesRegistry(
+            "OGC API Processes",
+            processesSpecEndpoints,
+            processesRegistryEndpoints);
     }
 
     [ArchitectureTest]
