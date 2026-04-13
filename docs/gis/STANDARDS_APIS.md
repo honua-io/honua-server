@@ -15,7 +15,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
-| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (async job submission, status, results) |
+| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (async job submission and status; result route registered, retrieval pending) |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---
@@ -269,7 +269,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 ## **GeoServices REST GPServer**
 
-**Best for**: Esri geoprocessing workflows (async job submission, polling, result retrieval)
+**Best for**: Esri geoprocessing workflows (async job submission and status polling; result retrieval pending)
 
 **Endpoint structure:**
 ```
@@ -285,12 +285,12 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Output formats:** JSON (Esri camelCase convention)
 
-**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Service and task discovery return stub metadata (empty task/parameter lists) until a formal process catalog is available. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
+**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Task info and `submitJob` return 501 until a formal process catalog is available for task resolution. Service info returns stub metadata (empty task list) until the catalog is formalized. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
 
 **Typical use cases:**
 - ArcGIS Pro / SDK geoprocessing tool connectivity
 - Async analysis workflows with job lifecycle polling
-- Per-parameter result retrieval from completed jobs
+- Per-parameter result retrieval (route registered; output retrieval pending execution-engine support)
 
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.

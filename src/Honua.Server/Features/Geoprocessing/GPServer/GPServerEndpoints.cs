@@ -145,17 +145,13 @@ internal static class GPServerEndpoints
         var logger = ResolveLogger(context);
         GPServerLog.TaskInfoRequested(logger, serviceId, taskName);
 
-        var response = new GPTaskInfoResponse
-        {
-            Name = taskName,
-            DisplayName = taskName,
-            ExecutionType = "esriExecutionTypeAsynchronous",
-            Parameters = [] // Stub until process catalog is formalized
-        };
-
-        return Task.FromResult(Results.Json(
-            response, GPServerJsonContext.Default.GPTaskInfoResponse,
-            contentType: "application/json"));
+        // Process catalog is not yet formalized — cannot verify that {taskName}
+        // exists under {serviceId}. Reject instead of fabricating metadata for
+        // unknown tasks (see review finding: correctness/unpublished-tasks).
+        GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
+        return Task.FromResult(StandardErrorHelpers.CreateNotImplemented(context,
+            $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
+            "GP task metadata requires a formal process catalog (not yet available)."));
     }
 
     private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct)
@@ -216,48 +212,14 @@ internal static class GPServerEndpoints
                 return envError;
             }
 
-            // Build a minimal AnalysisPlan from the GP task parameters.
-            // The serviceId:taskName becomes the scoped process identity;
-            // parameters map to step inputs.
-            var plan = new AnalysisPlan
-            {
-                PlanId = $"gpserver-{Guid.NewGuid():N}",
-                IntentId = $"gpserver:{serviceId}:{taskName}",
-                Steps =
-                [
-                    new AnalysisPlanStep
-                    {
-                        StepId = "step-1",
-                        Kind = AnalysisPlanStepKind.Geoprocess,
-                        ProcessId = $"{serviceId}:{taskName}",
-                        Inputs = GPServerParameterTranslation.TranslateInbound(
-                            FilterGpParameters(parameters))
-                    }
-                ]
-            };
-
-            // Persist the GPServer route binding so status/result/cancel can
-            // validate that the route serviceId/taskName match the originating job.
-            var protocolMetadata = new Dictionary<string, string>
-            {
-                ["gpserver.serviceId"] = serviceId,
-                ["gpserver.taskName"] = taskName
-            };
-
-            var jobRecord = await jobService.SubmitJobAsync(
-                plan, null, context.User, protocolMetadata, ct);
-
-            var esriStatus = GPServerStatusMapping.ToEsriJobStatus(jobRecord.Status);
-            GPServerLog.JobSubmitted(logger, jobRecord.OperationId, taskName);
-
-            var response = new GPSubmitJobResponse
-            {
-                JobId = jobRecord.OperationId,
-                JobStatus = esriStatus
-            };
-
-            return Results.Json(response, GPServerJsonContext.Default.GPSubmitJobResponse,
-                contentType: "application/json", statusCode: 202);
+            // Process catalog is not yet formalized — cannot validate that
+            // {serviceId}:{taskName} resolves to a registered process definition.
+            // Reject to prevent creating durable jobs for unresolved processes
+            // (see review finding: correctness/unpublished-tasks).
+            GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
+            return StandardErrorHelpers.CreateNotImplemented(context,
+                $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
+                "GP job submission requires process catalog validation (not yet available).");
         }
         catch (Exception ex)
         {
@@ -550,35 +512,11 @@ internal static class GPServerEndpoints
             "Remove these parameters or wait for engine support.");
     }
 
-    /// <summary>
-    /// Filters out protocol-level parameters (f, token, etc.) from GP task inputs.
-    /// Environment controls must be validated with <see cref="RejectUnsupportedEnvControls"/>
-    /// before calling this method.
-    /// </summary>
-    private static Dictionary<string, string> FilterGpParameters(
-        IReadOnlyDictionary<string, string> allParams)
-    {
-        var filtered = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, value) in allParams)
-        {
-            // Skip GeoServices protocol parameters
-            if (string.Equals(key, "f", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "token", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "callback", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(key, "returnMessages", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            filtered[key] = value;
-        }
-
-        return filtered;
-    }
-
     private static IResult MapExceptionToResult(
         HttpContext context, ILogger logger, string operation, Exception ex)
     {
+        HonuaTelemetry.RecordException(Activity.Current, ex);
+
         return ex switch
         {
             GeoprocessingAuthorizationException authEx =>

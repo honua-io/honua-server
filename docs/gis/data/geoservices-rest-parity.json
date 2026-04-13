@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-04-12",
+  "lastReviewed": "2026-04-13",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -1824,11 +1824,11 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): service info, task info, submitJob, job status, job result, cancel job over the canonical process runtime"
+        "Generic GPServer adapter (#723): service info, job status, job result, cancel job over the canonical process runtime; task info and submitJob return 501 pending process catalog"
       ],
       "knownGaps": [
         "synchronous execute returns 501 pending #721 ExecutePlan",
-        "service/task discovery returns stub metadata until a formal process catalog is available",
+        "task info and submitJob return 501 until a formal process catalog is available for task resolution",
         "GP environment controls (env:*, context) are rejected with 400 until engine support is available",
         "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
       ],
@@ -1895,18 +1895,6 @@
             "notes": "Returns service metadata. Task list is stub (empty) until a formal process catalog is available. Implemented in #723."
           },
           {
-            "name": "GP Task Info (generic)",
-            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}",
-            "methods": ["GET"],
-            "notes": "Returns task metadata. Parameter list is stub (empty) until a formal process catalog is available. Implemented in #723."
-          },
-          {
-            "name": "Submit Job (generic)",
-            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
-            "methods": ["GET", "POST"],
-            "notes": "Submits async job via canonical process runtime. Returns HTTP 202 (Accepted) with {jobId, jobStatus}. Route binding persisted with job for status/result/cancel validation. Implemented in #723."
-          },
-          {
             "name": "Job Status (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}",
             "methods": ["GET"],
@@ -1927,16 +1915,28 @@
         ],
         "not_implemented": [
           {
+            "name": "GP Task Info (generic)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}",
+            "methods": ["GET"],
+            "notes": "Returns 501. Task metadata resolution requires a formal process catalog (not yet available). Route registered in #723."
+          },
+          {
             "name": "Execute Task (generic, sync)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
             "methods": ["GET", "POST"],
             "notes": "Returns 501. Pending #721 ExecutePlan. Routes registered in #723."
+          },
+          {
+            "name": "Submit Job (generic)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
+            "methods": ["GET", "POST"],
+            "notes": "Returns 501. Job submission requires process catalog validation (not yet available). Route registered in #723."
           }
         ]
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. Service/task discovery returns stub metadata until a formal process catalog is available.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. Task info and submitJob return 501 until a formal process catalog is available for task resolution.",
         "Synchronous execute returns 501 pending #721 ExecutePlan.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]

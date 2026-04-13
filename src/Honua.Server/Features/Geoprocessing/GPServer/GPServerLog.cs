@@ -38,4 +38,7 @@ internal static partial class GPServerLog
 
     [LoggerMessage(8109, LogLevel.Warning, "GPServer job binding mismatch: JobId={JobId}, RouteService={ServiceId}, RouteTask={TaskName}")]
     public static partial void JobBindingMismatch(ILogger logger, string jobId, string serviceId, string taskName);
+
+    [LoggerMessage(8110, LogLevel.Information, "GPServer task resolution unavailable (no process catalog): ServiceId={ServiceId}, TaskName={TaskName}")]
+    public static partial void TaskResolutionUnavailable(ILogger logger, string serviceId, string taskName);
 }

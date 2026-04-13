@@ -69,17 +69,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
-    public async Task TaskInfo_ReturnsTaskMetadata()
+    public async Task TaskInfo_WithoutProcessCatalog_ReturnsNotImplemented()
     {
         var response = await _client.GetAsync("/rest/services/TestService/GPServer/BufferAnalysis");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        root.GetProperty("name").GetString().Should().Be("BufferAnalysis");
-        root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
+        // Without a formal process catalog, task metadata cannot be resolved.
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     // -----------------------------------------------------------------------
@@ -121,7 +116,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_ReturnsJobIdAndSubmittedStatus()
+    public async Task SubmitJob_WithoutProcessCatalog_ReturnsNotImplemented()
     {
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -133,35 +128,21 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var response = await _client.PostAsync(
             "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
 
-        // SubmitJob returns 202 with job info, or falls back to error if store is unavailable
-        if (response.StatusCode == HttpStatusCode.Accepted)
-        {
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            root.GetProperty("jobId").GetString().Should().NotBeNullOrWhiteSpace();
-            root.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
-        }
-        else
-        {
-            // Without Redis, the store is unavailable — acceptable in integration tests
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        }
+        // Without a formal process catalog, job submission is rejected to prevent
+        // creating durable jobs for unresolved processes.
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobGet_ReturnsJobIdOrServiceUnavailable()
+    public async Task SubmitJobGet_WithoutProcessCatalog_ReturnsNotImplemented()
     {
         var response = await _client.GetAsync(
             "/rest/services/TestService/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
-        // GET submit follows the same pattern
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.Accepted,
-            HttpStatusCode.ServiceUnavailable);
+        // Without a formal process catalog, job submission is rejected.
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     // -----------------------------------------------------------------------
@@ -241,25 +222,40 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithMismatchedService_ReturnsNotFound()
     {
-        // Submit under TestService/BufferAnalysis
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["f"] = "json",
-            ["input_features"] = "test-layer"
-        });
-
-        var submitResponse = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
-
-        if (submitResponse.StatusCode != HttpStatusCode.Accepted)
+        // Create a job directly via the store with GPServer binding metadata.
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
         {
             // Without Redis, skip binding validation — store unavailable
             return;
         }
 
-        var submitJson = await submitResponse.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(submitJson);
-        var jobId = doc.RootElement.GetProperty("jobId").GetString()!;
+        var jobId = $"gpbind-svc-{Guid.NewGuid():N}";
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = jobId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "gptest",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["gpserver.serviceId"] = "TestService",
+                    ["gpserver.taskName"] = "BufferAnalysis"
+                }
+            }
+        };
+
+        var created = await jobStore.TryCreateAsync(jobRecord);
+        if (!created)
+        {
+            return;
+        }
 
         // Query status under a different service — should be rejected
         var statusResponse = await _client.GetAsync(
@@ -273,23 +269,40 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task JobStatus_WithMismatchedTask_ReturnsNotFound()
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        // Create a job directly via the store with GPServer binding metadata.
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
         {
-            ["f"] = "json",
-            ["input_features"] = "test-layer"
-        });
-
-        var submitResponse = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
-
-        if (submitResponse.StatusCode != HttpStatusCode.Accepted)
-        {
+            // Without Redis, skip binding validation — store unavailable
             return;
         }
 
-        var submitJson = await submitResponse.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(submitJson);
-        var jobId = doc.RootElement.GetProperty("jobId").GetString()!;
+        var jobId = $"gpbind-task-{Guid.NewGuid():N}";
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = jobId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "gptest",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["gpserver.serviceId"] = "TestService",
+                    ["gpserver.taskName"] = "BufferAnalysis"
+                }
+            }
+        };
+
+        var created = await jobStore.TryCreateAsync(jobRecord);
+        if (!created)
+        {
+            return;
+        }
 
         // Query status under a different task — should be rejected
         var statusResponse = await _client.GetAsync(
