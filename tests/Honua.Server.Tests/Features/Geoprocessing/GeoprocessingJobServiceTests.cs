@@ -236,6 +236,52 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     // -----------------------------------------------------------------------
+    // ProcessId disambiguation
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void CreateRequestFingerprint_DifferentServiceScopes_ProducesDifferentFingerprints()
+    {
+        var planA = new AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "gpserver:ServiceA:BufferAnalysis",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "ServiceA:BufferAnalysis"
+                }
+            ]
+        };
+
+        var planB = new AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "gpserver:ServiceB:BufferAnalysis",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "ServiceB:BufferAnalysis"
+                }
+            ]
+        };
+
+        var fingerprintA = GeoprocessingJobService.CreateRequestFingerprint(planA);
+        var fingerprintB = GeoprocessingJobService.CreateRequestFingerprint(planB);
+
+        fingerprintA.Should().NotBe(fingerprintB,
+            "two services with the same task name must produce distinguishable process identities");
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 

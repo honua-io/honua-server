@@ -202,7 +202,7 @@ internal static class GPServerEndpoints
                 {
                     StepId = "step-1",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = taskName,
+                    ProcessId = $"{serviceId}:{taskName}",
                     Inputs = GPServerParameterTranslation.TranslateInbound(
                         FilterGpParameters(parameters))
                 }

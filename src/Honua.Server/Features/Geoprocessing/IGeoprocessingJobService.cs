@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 
@@ -15,6 +16,12 @@ namespace Honua.Server.Features.Geoprocessing;
 /// </summary>
 internal interface IGeoprocessingJobService
 {
+    /// <summary>
+    /// Validates that the caller has the required authorization for the specified operation.
+    /// Enables adapters to enforce auth before protocol-specific validation.
+    /// </summary>
+    void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation);
+
     /// <summary>
     /// Validates a plan for executability and returns the validation result.
     /// </summary>

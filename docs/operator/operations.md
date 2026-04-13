@@ -244,6 +244,26 @@ orphaned artifact records.
 For full lifecycle semantics, see the
 [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
 
+### GPServer Job Lifecycle
+
+GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
+Esri clients. The mapping between admin operation tracking and GPServer
+responses:
+
+| Admin operation state | GPServer `jobStatus` | Endpoint |
+|-----------------------|----------------------|----------|
+| Queued | `esriJobSubmitted` | `submitJob` returns 202 |
+| Provisioning | `esriJobWaiting` | `jobs/{jobId}` status poll |
+| Running | `esriJobExecuting` | `jobs/{jobId}` status poll |
+| Succeeded | `esriJobSucceeded` | `jobs/{jobId}` with result URLs |
+| Failed | `esriJobFailed` | `jobs/{jobId}` with error messages |
+| Cancelled | `esriJobCancelled` | After `jobs/{jobId}/cancel` |
+
+GPServer jobs appear in `GET /api/v1/admin/operations/type/Geoprocessing`
+alongside jobs submitted through the gRPC `ProcessService`. Both share the
+same underlying `IExecutionJobStore` and `IUniversalProgressStore`, so admin
+observability covers all protocol surfaces.
+
 ---
 
 ## Memory Optimizations

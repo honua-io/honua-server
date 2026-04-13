@@ -15,6 +15,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
+| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (async job submission, status, results) |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---
@@ -263,6 +264,40 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - Coordinate reprojection
 - Geometry buffering and simplification
 - Esri SDK geometry helper operations
+
+---
+
+## **GeoServices REST GPServer**
+
+**Best for**: Esri geoprocessing workflows (async job submission, polling, result retrieval)
+
+**Endpoint structure:**
+```
+/rest/services/{service-name}/GPServer
+|-- /                                      (service info — available tasks)
+|-- /{taskName}                            (task info — parameters, data types)
+|-- /{taskName}/execute                    (synchronous execution — 501 pending)
+|-- /{taskName}/submitJob                  (async job submission)
+|-- /{taskName}/jobs/{jobId}               (job status polling)
+|-- /{taskName}/jobs/{jobId}/results/{paramName}  (named output result)
+|-- /{taskName}/jobs/{jobId}/cancel        (cancel in-flight job)
+```
+
+**Output formats:** JSON (Esri camelCase convention)
+
+**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Service and task discovery return stub metadata (empty task/parameter lists) until a formal process catalog is available. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400.
+
+**Typical use cases:**
+- ArcGIS Pro / SDK geoprocessing tool connectivity
+- Async analysis workflows with job lifecycle polling
+- Result retrieval per named output parameter
+
+**Contract notes:**
+- GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
+- Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
+- Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
+- Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches.
+- See [ADR-0029](../contributor/adr/0029-geoprocess-canonical-model-mappings.md) for adapter invariants and the [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) for the full canonical model mapping.
 
 ---
 

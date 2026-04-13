@@ -46,6 +46,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _jobStore = jobStore;
     }
 
+    public void EnsureCallerAuthorized(
+        ClaimsPrincipal principal,
+        OperatorResourceType resourceType,
+        OperatorOperation operation)
+    {
+        EnsureAuthorized(principal, resourceType, operation);
+    }
+
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         EnsureAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);

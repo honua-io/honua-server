@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using Grpc.Core;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.ServiceDefaults;
 using Proto = Geospatial.V1;
 
@@ -30,11 +31,16 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("ValidatePlan");
-        ValidateProtoStructure(request.Plan);
-        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
 
         try
         {
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Read);
+
+            ValidateProtoStructure(request.Plan);
+            var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
             var result = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
             return Task.FromResult(GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result));
         }
@@ -49,11 +55,16 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("DryRunPlan");
-        ValidateProtoStructure(request.Plan);
-        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
 
         try
         {
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Read);
+
+            ValidateProtoStructure(request.Plan);
+            var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
             var result = _jobService.DryRunPlan(domainPlan, context.GetHttpContext().User);
             return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result));
         }
@@ -79,11 +90,16 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("SubmitPlanJob");
-        ValidateProtoStructure(request.Plan);
-        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
 
         try
         {
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+            ValidateProtoStructure(request.Plan);
+            var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
             var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
                 ? null
                 : request.IdempotencyKey;

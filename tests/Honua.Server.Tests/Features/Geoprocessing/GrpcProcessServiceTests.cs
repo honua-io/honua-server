@@ -721,6 +721,70 @@ public sealed class GrpcProcessServiceTests
     }
 
     // -----------------------------------------------------------------------
+    // Auth-before-validation ordering
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public async Task ValidatePlan_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var request = new Proto.ValidatePlanRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.ValidatePlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
+            "auth must be checked before proto structural validation");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
+            "auth must be checked before proto structural validation");
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
