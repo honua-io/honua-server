@@ -44,7 +44,7 @@ jobs:
 
       - name: Fail fast on conflicted or stale PR branches
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const owner = context.repo.owner;
@@ -943,7 +943,7 @@ jobs:
 
       - name: Post Review Comment
         if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           ANALYSIS_OUTPUT: ${{ steps.llm-analysis.outputs.analysis }}
           ASSESSMENT_OUTPUT: ${{ steps.llm-analysis.outputs.assessment }}
