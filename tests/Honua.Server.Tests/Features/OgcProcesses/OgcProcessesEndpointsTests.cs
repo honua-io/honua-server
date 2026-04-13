@@ -166,6 +166,44 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_PlanMissingPlanId_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"steps":[{"stepId":"s1"}]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("planId");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_PlanEmptySteps_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"test-plan","steps":[]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("step");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_InvalidProcess_Returns404()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,
@@ -184,15 +222,25 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /ogc/processes/jobs")]
-    public async Task JobList_ReturnsArrayResponse()
+    public async Task JobList_ReturnsJobListObjectOrServiceUnavailable()
     {
         var response = await _fixture.Client.GetAsync("/ogc/processes/jobs");
+
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+        {
+            // No Redis — 503 with problem document
+            var err = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            err.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+            return;
+        }
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Should return a JSON array (possibly empty if no Redis)
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        json.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+        json.RootElement.TryGetProperty("jobs", out var jobs).Should().BeTrue();
+        jobs.ValueKind.Should().Be(JsonValueKind.Array);
+        json.RootElement.TryGetProperty("links", out _).Should().BeTrue();
     }
 
     // -----------------------------------------------------------------------
@@ -202,11 +250,18 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /ogc/processes/jobs/{jobId}")]
-    public async Task JobStatus_NonexistentJob_Returns404()
+    public async Task JobStatus_NonexistentJob_ReturnsNotFoundOrServiceUnavailable()
     {
         var response = await _fixture.Client.GetAsync("/ogc/processes/jobs/nonexistent-job-id");
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+        {
+            var err = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            err.RootElement.GetProperty("status").GetInt32().Should().Be(503);
+            return;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("type").GetString().Should()
             .Contain("no-such-job");
@@ -219,10 +274,10 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
-    public async Task JobResults_NonexistentJob_Returns404()
+    public async Task JobResults_NonexistentJob_ReturnsNotFoundOrServiceUnavailable()
     {
         var response = await _fixture.Client.GetAsync("/ogc/processes/jobs/nonexistent-job-id/results");
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
     }
 
     // -----------------------------------------------------------------------
@@ -232,9 +287,9 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
-    public async Task DismissJob_NonexistentJob_Returns404()
+    public async Task DismissJob_NonexistentJob_ReturnsNotFoundOrServiceUnavailable()
     {
         var response = await _fixture.Client.DeleteAsync("/ogc/processes/jobs/nonexistent-job-id");
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
     }
 }

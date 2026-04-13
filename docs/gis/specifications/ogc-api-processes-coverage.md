@@ -23,8 +23,8 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 | Conformance | GET | `/ogc/processes/conformance` | Implemented | Declares conformance classes listed above |
 | Process list | GET | `/ogc/processes/processes` | Implemented | V1: single canonical process (`honua-geoprocessing`) |
 | Process description | GET | `/ogc/processes/processes/{processId}` | Implemented | JSON Schema input/output descriptions |
-| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header |
-| Job list | GET | `/ogc/processes/jobs` | Implemented | Capped to `OgcProcesses:DefaultJobLimit` entries (pagination follow-on) |
+| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps) to match canonical service invariants. |
+| Job list | GET | `/ogc/processes/jobs` | Implemented | Returns `jobList.yaml` object (`jobs` + `links`). Supports `limit` query param. Capped to `OgcProcesses:DefaultJobLimit` entries. Query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`) are follow-on. |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document |
 | Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Implemented | Document-mode, by-value JSON |
 | Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Cancels running jobs via `IJobCancellationNotifier` |
@@ -56,6 +56,8 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 - **Single process**: the process catalog exposes one canonical process (`honua-geoprocessing`). Catalog formalization is follow-on work.
 - **Document-mode results only**: results are returned by value as a JSON document. By-reference transmission is not supported in V1.
 - **Result content**: the results document structure will evolve as the execution engine matures.
+- **Job list filters**: the `limit` parameter is supported; additional query filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`) are follow-on.
+- **Job store required**: all job endpoints return `503 Service Unavailable` when Redis-backed durable storage is not configured.
 
 ## Telemetry
 

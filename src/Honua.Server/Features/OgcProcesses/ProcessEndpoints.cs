@@ -28,7 +28,7 @@ internal static class ProcessEndpoints
     // V1 stub: single canonical process representing the Honua geoprocessing runtime.
     // CatalogService formalization is follow-on work; this stub allows the OGC adapter
     // to serve a valid process list and description while the catalog is being built.
-    private const string CanonicalProcessId = "honua-geoprocessing";
+    internal const string CanonicalProcessId = "honua-geoprocessing";
 
     private static readonly OgcProcessSummary CanonicalProcessSummary = new()
     {
@@ -229,6 +229,26 @@ internal static class ProcessEndpoints
                 StatusCodes.Status400BadRequest);
         }
 
+        // Validate plan structure: canonical service requires planId and at least one step.
+        // This mirrors the validation in HonuaProcessService.SubmitPlanJob to prevent
+        // OGC clients from creating jobs that the canonical runtime would reject.
+        var planIdError = ValidatePlanStructure(planElement, out var planId);
+        if (planIdError != null)
+        {
+            OgcProcessesLog.PlanStructureInvalid(logger, processId, planIdError);
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Invalid analysis plan",
+                    Status = StatusCodes.Status400BadRequest,
+                    Detail = planIdError
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status400BadRequest);
+        }
+
         OgcProcessesLog.ExecutionRequested(logger, processId, true);
 
         if (jobStore == null)
@@ -268,13 +288,13 @@ internal static class ProcessEndpoints
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "local",
-                WorkloadName = $"ogc-processes:{processId}"
+                WorkloadName = $"geoprocessing:{planId}"
             }
         };
 
         await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.RequestAborted).ConfigureAwait(false);
 
-        var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, processId);
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, planId);
         await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
             .ConfigureAwait(false);
 
@@ -287,6 +307,42 @@ internal static class ProcessEndpoints
         context.Response.Headers["Preference-Applied"] = "respond-async";
 
         return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json, StatusCodes.Status201Created);
+    }
+
+    /// <summary>
+    /// Validates plan structure matches the canonical service invariants:
+    /// non-empty planId and at least one step.
+    /// </summary>
+    /// <returns>Error message if invalid; null if valid.</returns>
+    private static string? ValidatePlanStructure(
+        System.Text.Json.JsonElement plan,
+        out string planId)
+    {
+        planId = string.Empty;
+
+        if (plan.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return "The 'plan' input must be a JSON object.";
+
+        // Require planId (mirrors HonuaProcessService.EnsurePlanExecutable)
+        if (!plan.TryGetProperty("planId", out var planIdProp)
+            && !plan.TryGetProperty("plan_id", out planIdProp))
+        {
+            return "The analysis plan must contain a 'planId' property.";
+        }
+
+        planId = planIdProp.GetString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(planId))
+            return "The analysis plan 'planId' must not be empty.";
+
+        // Require at least one step (mirrors HonuaProcessService.EnsurePlanExecutable)
+        if (!plan.TryGetProperty("steps", out var stepsProp)
+            || stepsProp.ValueKind != System.Text.Json.JsonValueKind.Array
+            || stepsProp.GetArrayLength() == 0)
+        {
+            return "The analysis plan must contain at least one step.";
+        }
+
+        return null;
     }
 
     private static string CreateRequestFingerprint(string processId, string planJson)

@@ -39,6 +39,9 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8123, LogLevel.Warning, "OGC Process execution request invalid (missing plan): ProcessId={ProcessId}")]
     public static partial void ExecutionRequestInvalid(ILogger logger, string processId);
 
+    [LoggerMessage(8124, LogLevel.Warning, "OGC Process plan structure invalid: ProcessId={ProcessId}, Reason={Reason}")]
+    public static partial void PlanStructureInvalid(ILogger logger, string processId, string reason);
+
     // 8130-8139: Job lifecycle
     [LoggerMessage(8130, LogLevel.Information, "OGC Job status requested: JobId={JobId}")]
     public static partial void JobStatusRequested(ILogger logger, string jobId);

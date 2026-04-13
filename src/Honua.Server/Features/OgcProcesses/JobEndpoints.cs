@@ -30,7 +30,7 @@ internal static class JobEndpoints
             .WithTags(Tag)
             .WithName("OgcProcessesJobList")
             .WithSummary("List jobs")
-            .Produces<OgcStatusInfo[]>()
+            .Produces<OgcJobList>()
             .ExcludeFromDescription();
 
         endpoints.MapGet($"{BasePath}/jobs/{{jobId}}", GetJobStatus)
@@ -62,6 +62,7 @@ internal static class JobEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IOptions<OgcProcessesOptions> options,
+        [FromQuery] int? limit = null,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobList");
@@ -70,23 +71,30 @@ internal static class JobEndpoints
         if (jobStore == null)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return Results.Json(
-                Array.Empty<OgcStatusInfo>(),
-                OgcProcessesJsonContext.Default.OgcStatusInfoArray,
-                MediaTypes.Json);
+            return JobStoreUnavailableResult();
         }
 
         var jobs = await jobStore.ListActiveAsync(
             ExecutionJobKind.Geoprocessing,
             context.RequestAborted).ConfigureAwait(false);
 
+        var effectiveLimit = limit ?? options.Value.DefaultJobLimit;
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfos = jobs
-            .Take(options.Value.DefaultJobLimit)
-            .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(j, null, baseUrl))
-            .ToArray();
+            .Take(effectiveLimit)
+            .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                j, ProcessEndpoints.CanonicalProcessId, baseUrl))
+            .ToImmutableArray();
 
-        return Results.Json(statusInfos, OgcProcessesJsonContext.Default.OgcStatusInfoArray, MediaTypes.Json);
+        var jobList = new OgcJobList
+        {
+            Jobs = statusInfos,
+            Links = ImmutableArray.Create(
+                Link.Create($"{baseUrl}{BasePath}/jobs", RelationTypes.Self, MediaTypes.Json, "This document"))
+        };
+
+        return Results.Json(jobList, OgcProcessesJsonContext.Default.OgcJobList, MediaTypes.Json);
     }
 
     private static async Task<IResult> GetJobStatus(
@@ -101,7 +109,7 @@ internal static class JobEndpoints
         if (jobStore == null)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobNotFoundResult(jobId);
+            return JobStoreUnavailableResult();
         }
 
         var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
@@ -112,7 +120,8 @@ internal static class JobEndpoints
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl);
+        var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(
+            job, ProcessEndpoints.CanonicalProcessId, baseUrl);
 
         return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json);
     }
@@ -129,7 +138,7 @@ internal static class JobEndpoints
         if (jobStore == null)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobNotFoundResult(jobId);
+            return JobStoreUnavailableResult();
         }
 
         var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
@@ -208,7 +217,7 @@ internal static class JobEndpoints
         if (jobStore == null)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobNotFoundResult(jobId);
+            return JobStoreUnavailableResult();
         }
 
         var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
@@ -223,7 +232,8 @@ internal static class JobEndpoints
         {
             var baseUrl2 = BaseUrlResolver.GetBaseUrl(context);
             return Results.Json(
-                OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl2),
+                OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                    job, ProcessEndpoints.CanonicalProcessId, baseUrl2),
                 OgcProcessesJsonContext.Default.OgcStatusInfo,
                 MediaTypes.Json);
         }
@@ -281,10 +291,23 @@ internal static class JobEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         return Results.Json(
-            OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl),
+            OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                job, ProcessEndpoints.CanonicalProcessId, baseUrl),
             OgcProcessesJsonContext.Default.OgcStatusInfo,
             MediaTypes.Json);
     }
+
+    private static IResult JobStoreUnavailableResult() => Results.Json(
+        new OgcProcessError
+        {
+            Type = "about:blank",
+            Title = "Service unavailable",
+            Status = StatusCodes.Status503ServiceUnavailable,
+            Detail = "Job operations require Redis-backed durable storage."
+        },
+        OgcProcessesJsonContext.Default.OgcProcessError,
+        MediaTypes.Json,
+        StatusCodes.Status503ServiceUnavailable);
 
     private static IResult JobNotFoundResult(string jobId) => Results.Json(
         new OgcProcessError

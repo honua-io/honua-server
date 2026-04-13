@@ -32,6 +32,8 @@ namespace Honua.Server.Features.OgcProcesses;
 [JsonSerializable(typeof(OgcStatusInfo))]
 [JsonSerializable(typeof(OgcProcessError))]
 [JsonSerializable(typeof(OgcResultsDocument))]
+[JsonSerializable(typeof(OgcJobList))]
+[JsonSerializable(typeof(ImmutableArray<OgcStatusInfo>))]
 [JsonSerializable(typeof(OgcStatusInfo[]))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(JsonElement))]

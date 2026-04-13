@@ -290,6 +290,24 @@ public sealed record OgcProcessError
 }
 
 /// <summary>
+/// OGC API Processes job list response per §11.2 (jobList.yaml schema).
+/// </summary>
+public sealed record OgcJobList
+{
+    /// <summary>
+    /// List of job status documents.
+    /// </summary>
+    [JsonPropertyName("jobs")]
+    public required ImmutableArray<OgcStatusInfo> Jobs { get; init; }
+
+    /// <summary>
+    /// Navigation links (self, next, prev).
+    /// </summary>
+    [JsonPropertyName("links")]
+    public ImmutableArray<Ogc.Common.Link>? Links { get; init; }
+}
+
+/// <summary>
 /// OGC API Processes document-mode results response.
 /// Keys are stable output identifiers, values are the output payloads.
 /// </summary>
