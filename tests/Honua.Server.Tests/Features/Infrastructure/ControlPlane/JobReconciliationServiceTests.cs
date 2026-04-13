@@ -212,6 +212,59 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// Regression: a heartbeat arriving between the sweep snapshot and the
+    /// reconciler handler must prevent the transition — the worker is alive.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_SkipsTransition_WhenHeartbeatRefreshedSinceSweep()
+    {
+        var snapshot = CreateRunningJob(
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                // Large timeout so only the heartbeat check fires.
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        // The fresh record has a recent heartbeat — worker sent one after the snapshot.
+        var refreshed = snapshot with
+        {
+            LastHeartbeatAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(refreshed);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler,
+            NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        // The reconciler must NOT requeue or fail the job.
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed || j.Status == ExecutionJobStatus.Queued),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public async Task HeartbeatExpiry_StillRetries_WhenJobRemainsActiveAndOwnedBySameWorker()
     {

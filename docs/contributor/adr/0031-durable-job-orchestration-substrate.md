@@ -105,8 +105,11 @@ Millisecond timestamps break ties within a band.
 ### Cancellation
 
 - API-side cancellation uses the existing `IJobCancellationNotifier` to signal
-  in-flight workers. If the worker owns the terminal state transition, the API
-  defers; otherwise it marks the job as Cancelled directly.
+  in-flight workers. The worker registers its per-job cancellation token source
+  before the `Provisioning → Running` transition so that operator cancellation
+  arriving during that window is delivered through the token rather than as a
+  direct store write. If no worker token is registered, the API marks the job
+  as Cancelled directly.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
 
@@ -155,14 +158,19 @@ backoff delay.
 
 Both the worker and the reconciler re-read the current job record before writing
 any state transition. If the record is already terminal or the claim owner has
-changed, the writer skips its update. This bidirectional guard prevents two race
-windows:
+changed, the writer skips its update. Additionally, the reconciler re-validates
+the heartbeat expiry predicate against the fresh record — a heartbeat that
+landed between the sweep snapshot and the handler invocation means the worker is
+still alive and the transition is skipped. This bidirectional guard prevents
+three race windows:
 
 - The reconciler snapshots active jobs, then a worker finalizes before the
   reconciler handler runs — the reconciler would otherwise overwrite the
   terminal state.
 - The reconciler requeues or fails a job, then the worker's post-execution
   handler runs — the worker would otherwise overwrite the reconciler's update.
+- A heartbeat arrives between the sweep snapshot and the reconciler handler —
+  the reconciler would otherwise requeue or fail a healthy running job.
 
 If a worker crashes without clean abandonment, `JobReconciliationService`
 detects the stale heartbeat and performs the same recovery.

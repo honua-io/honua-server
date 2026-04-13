@@ -83,19 +83,23 @@ curl http://localhost:8080/healthz/ready
 
 Honua's durable job orchestration substrate
 ([ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
-separates API-side and worker-side concerns:
+separates API-side and worker-side concerns at the service-registration level:
 
-- **API-only image**: Registers shared queue and log store
-  (`AddJobOrchestration`). Stays lean — no execution or reconciliation
-  overhead. Suitable for request-serving replicas.
-- **Worker or combined image**: Additionally registers the execution host and
-  reconciliation sweep (`AddJobWorker`). Claims and runs queued
-  geoprocessing, ETL, and tile-cache jobs.
+- `AddJobOrchestration()` registers shared queue and log store dependencies.
+  Safe for a lean, request-serving image.
+- `AddJobWorker()` additionally registers the execution host and
+  reconciliation sweep. Intended for worker or combined-mode hosts.
 
-In Scenarios 1–2, a combined image running both API and worker is typical. In
-Scenario 3, consider separating API-serving replicas from worker replicas to
-scale them independently and keep heavyweight execution dependencies out of the
-request path.
+**Current release:** All deployments run a **combined host** that calls both
+methods. Separate API-only and worker-only images are a planned topology for
+Scenario 3 (enterprise scale-out) but are not yet wired as distinct host
+entrypoints. Follow-on work will add build targets or configuration switches
+for independent API and worker images.
+
+In Scenarios 1–2, the combined host is the expected deployment mode. The
+registration split exists so that future enterprise deployments can scale API
+and worker replicas independently and keep heavyweight execution dependencies
+out of the request path.
 
 ---
 

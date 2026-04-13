@@ -92,6 +92,15 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        // Register the per-job CTS before the ownership re-check and Running
+        // transition so that operator cancellation arriving from this point is
+        // delivered through the token rather than as a direct store write that
+        // the subsequent Running transition could overwrite.
+        var timeoutPolicy = job.TimeoutPolicy ?? JobTimeoutPolicy.Default;
+        using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
+        using var jobCts = cancellationTokens.CreateLinkedTokenSource(
+            operationId, stoppingToken, timeoutCts.Token);
+
         // Re-read before promoting to Running to catch cancellations that arrived
         // after the claim but before the worker registered its CTS.
         job = await jobStore.GetAsync(operationId, stoppingToken).ConfigureAwait(false);
@@ -102,6 +111,7 @@ internal sealed partial class JobExecutionService(
                 Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
             }
 
+            cancellationTokens.Remove(operationId);
             await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
             return;
         }
@@ -118,15 +128,6 @@ internal sealed partial class JobExecutionService(
         await jobStore.SetAsync(running, cancellationToken: stoppingToken).ConfigureAwait(false);
 
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
-
-        // Separate timeout CTS so we can distinguish timeout from operator cancellation.
-        var timeoutPolicy = job.TimeoutPolicy ?? JobTimeoutPolicy.Default;
-        using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
-
-        // Register with cancellation token registry so operator cancellation can reach us.
-        // The linked CTS combines host stopping, timeout, and operator cancellation.
-        using var jobCts = cancellationTokens.CreateLinkedTokenSource(
-            operationId, stoppingToken, timeoutCts.Token);
 
         // Create execution context with heartbeat pump.
         using var context = new JobExecutionContext(

@@ -142,6 +142,16 @@ internal sealed partial class JobReconciliationService(
             return;
         }
 
+        // Re-validate heartbeat expiry against the fresh record. A heartbeat
+        // landing between the sweep snapshot and this handler means the worker
+        // is still alive — skip the transition to avoid duplicate execution.
+        var freshNow = DateTimeOffset.UtcNow;
+        if (!ShouldExpireHeartbeat(current!, freshNow))
+        {
+            Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
+            return;
+        }
+
         var retryPolicy = current!.RetryPolicy ?? JobRetryPolicy.Default;
 
         if (retryPolicy.ShouldRetry(current.AttemptCount))
@@ -254,5 +264,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9047, LogLevel.Information, "Reconciliation skipped for job {OperationId}: current status is {Status} (state changed since sweep snapshot)")]
         public static partial void ReconciliationSkippedStale(ILogger logger, string operationId, string status);
+
+        [LoggerMessage(9048, LogLevel.Information, "Reconciliation skipped for job {OperationId}: heartbeat refreshed since sweep snapshot")]
+        public static partial void ReconciliationSkippedHeartbeatRefreshed(ILogger logger, string operationId);
     }
 }
