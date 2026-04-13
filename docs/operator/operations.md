@@ -228,12 +228,15 @@ a single worker host processes all kinds.
 
 ### Heartbeat and Liveness
 
-Workers pump heartbeats at a configurable interval (default: 30 seconds).
+Workers poll for claimable jobs every 5 seconds. Once a job is claimed,
+the worker pumps heartbeats at the configured interval (default: 30 seconds).
 The reconciliation service sweeps active jobs every 30 seconds. If a
 worker's last heartbeat exceeds the heartbeat timeout (default: 90 seconds),
-the job is considered abandoned. If retries remain, the reconciler requeues
-the job with a computed backoff delay; otherwise the job transitions to
-Failed.
+the job is considered abandoned. When `LastHeartbeatAt` has not yet been set
+(the window between claim and first heartbeat pump), the reconciler uses
+`ClaimedAt` as the reference timestamp. If retries remain, the reconciler
+requeues the job with a computed backoff delay; otherwise the job transitions
+to Failed.
 
 ### Priority Queue
 
@@ -270,7 +273,7 @@ heartbeats.
 Workers append `ExecutionLogEntry` records (timestamp, level, message,
 phase, optional metadata) through `IExecutionLogStore`. Logs are
 append-only during execution and read-only after terminal state. Redis-backed
-with configurable retention (default: 7 days).
+with 7-day retention applied when the owning worker finalizes the job.
 
 > **Note:** Execution logs are stored internally but are not yet exposed
 > through a public REST endpoint. Retrieval is available only through

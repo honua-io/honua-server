@@ -50,6 +50,23 @@ internal sealed partial class RedisJobQueue(
         return 0
         """;
 
+    /// <summary>
+    /// Lua script that atomically removes a job from the claimed set and adds it
+    /// back to the pending set. Optionally sets or clears visibility metadata.
+    /// KEYS[1] = claimed set, KEYS[2] = pending set, KEYS[3] = claim meta hash.
+    /// ARGV[1] = operationId, ARGV[2] = score, ARGV[3] = visibleAfterMs (empty to clear meta).
+    /// </summary>
+    private const string AtomicRequeueScript = """
+        redis.call('ZREM', KEYS[1], ARGV[1])
+        redis.call('ZADD', KEYS[2], ARGV[2], ARGV[1])
+        if ARGV[3] ~= '' then
+            redis.call('HSET', KEYS[3], 'visibleAfter', ARGV[3])
+        else
+            redis.call('DEL', KEYS[3])
+        end
+        return 1
+        """;
+
     private readonly IDatabase _database = redis.GetDatabase();
 
     public async Task EnqueueAsync(
@@ -196,29 +213,31 @@ internal sealed partial class RedisJobQueue(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Remove from claimed set.
-        await _database.SortedSetRemoveAsync(ClaimedSetKey, operationId).ConfigureAwait(false);
+        // Atomically move from claimed → pending and update visibility metadata
+        // in a single Lua evaluation to prevent the window where the job exists
+        // in neither set.
+        var metaKey = GetClaimMetaKey(operationId);
 
-        // Set visibility delay if requested, and encode the visibility time into the
-        // sorted-set score so delayed jobs sort after currently-visible jobs within
-        // the same priority band.
         if (visibleAfter.HasValue && visibleAfter.Value > TimeSpan.Zero)
         {
             var visibleAt = DateTimeOffset.UtcNow.Add(visibleAfter.Value);
-            await _database.HashSetAsync(GetClaimMetaKey(operationId),
-            [
-                new HashEntry("visibleAfter", visibleAt.ToUnixTimeMilliseconds().ToString())
-            ]).ConfigureAwait(false);
-
             var score = ComputeScore(priority, visibleAt);
-            await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
+
+            await _database.ScriptEvaluateAsync(
+                AtomicRequeueScript,
+                [(RedisKey)ClaimedSetKey, (RedisKey)QueueKey, (RedisKey)metaKey],
+                [(RedisValue)operationId, score, visibleAt.ToUnixTimeMilliseconds().ToString()])
+                .ConfigureAwait(false);
         }
         else
         {
-            await _database.KeyDeleteAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
-
             var score = ComputeScore(priority, DateTimeOffset.UtcNow);
-            await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
+
+            await _database.ScriptEvaluateAsync(
+                AtomicRequeueScript,
+                [(RedisKey)ClaimedSetKey, (RedisKey)QueueKey, (RedisKey)metaKey],
+                [(RedisValue)operationId, score, RedisValue.EmptyString])
+                .ConfigureAwait(false);
         }
 
         Log.JobRequeued(logger, operationId);

@@ -38,7 +38,18 @@ Admin-only diagnostics:
 ## Job Orchestration Observability
 
 Worker hosts running `AddJobWorker()` emit log entries from the
-`JobReconciliationService` background sweep:
+`JobExecutionService` claim loop and the `JobReconciliationService`
+background sweep.
+
+**JobExecutionService** (claim and execution):
+
+| Level | Signal |
+|-------|--------|
+| Information | Worker started/stopped, job execution started, job completed, operator cancellation |
+| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup |
+| Error | Job execution exception, claim loop error, job timeout |
+
+**JobReconciliationService** (liveness sweep):
 
 | Level | Signal |
 |-------|--------|
@@ -46,9 +57,10 @@ Worker hosts running `AddJobWorker()` emit log entries from the
 | Warning | Heartbeat expired — job requeued for retry |
 | Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
 
-Monitor for `JobReconciliationService` entries in worker hosts to detect
-stale heartbeats, abandoned jobs, and retry exhaustion. For lifecycle
-details and tuning, see [Operations — Job Orchestration](operations.md#job-orchestration).
+Monitor for both `JobExecutionService` and `JobReconciliationService`
+entries in worker hosts to detect execution failures, stale heartbeats,
+abandoned jobs, and retry exhaustion. For lifecycle details and tuning,
+see [Operations — Job Orchestration](operations.md#job-orchestration).
 
 ---
 

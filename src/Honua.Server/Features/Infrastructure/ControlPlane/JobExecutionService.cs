@@ -25,10 +25,19 @@ internal sealed partial class JobExecutionService(
     private readonly Dictionary<ExecutionJobKind, IJobExecutor> _executorMap =
         executors.ToDictionary(e => e.Kind);
 
+    private readonly HashSet<ExecutionJobKind> _acceptedKinds =
+        new(executors.Select(e => e.Kind));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var raw = $"worker-{Environment.MachineName}-{Guid.NewGuid():N}";
         var workerId = raw.Length > 48 ? raw[..48] : raw;
+
+        if (_acceptedKinds.Count == 0)
+        {
+            Log.NoExecutorsRegistered(logger, workerId);
+        }
+
         Log.WorkerStarted(logger, workerId);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -36,7 +45,7 @@ internal sealed partial class JobExecutionService(
             try
             {
                 var claimedId = await jobQueue.TryClaimAsync(
-                    workerId, cancellationToken: stoppingToken).ConfigureAwait(false);
+                    workerId, _acceptedKinds, stoppingToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {
@@ -148,7 +157,9 @@ internal sealed partial class JobExecutionService(
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             // Worker is shutting down; abandon the job so it can be retried.
-            await AbandonJobAsync(running, "Worker shutdown.", stoppingToken).ConfigureAwait(false);
+            // Use CancellationToken.None so store/queue cleanup can complete
+            // after the host stopping signal has fired.
+            await AbandonJobAsync(running, "Worker shutdown.", CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
@@ -328,6 +339,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9060, LogLevel.Information, "Job cancelled by operator: {OperationId}")]
         public static partial void JobCancelledByOperator(ILogger logger, string operationId);
+
+        [LoggerMessage(9061, LogLevel.Warning, "No job executors registered for worker {WorkerId}; claim loop will not match any jobs")]
+        public static partial void NoExecutorsRegistered(ILogger logger, string workerId);
     }
 }
 
