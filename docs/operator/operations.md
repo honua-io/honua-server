@@ -247,8 +247,10 @@ For full lifecycle semantics, see the
 ### GPServer Job Lifecycle
 
 GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
-Esri clients. The mapping between admin operation tracking and GPServer
-responses:
+Esri clients. Currently, job status polling and cancellation are functional;
+`submitJob` and `execute` return 501 pending process catalog and ExecutePlan
+support. The mapping between admin operation tracking and GPServer responses
+(once submission is available):
 
 | Admin operation state | GPServer `jobStatus` | Endpoint |
 |-----------------------|----------------------|----------|

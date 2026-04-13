@@ -15,7 +15,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
-| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (async job submission and status; result route registered, retrieval pending) |
+| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (job status polling, cancellation; submission and result retrieval routes registered, pending process catalog) |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---
@@ -269,7 +269,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 ## **GeoServices REST GPServer**
 
-**Best for**: Esri geoprocessing workflows (async job submission and status polling; result retrieval pending)
+**Best for**: Esri geoprocessing workflows (job status polling and cancellation functional; submission and result retrieval routes registered, pending process catalog)
 
 **Endpoint structure:**
 ```
@@ -295,7 +295,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
 - `execute`, `submitJob`, and `cancel` accept both GET and POST per Esri GP convention. All other endpoints are GET-only. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
-- `submitJob` returns HTTP 202 (Accepted) with the job envelope (`jobId`, `jobStatus`). This differs from Esri's convention of HTTP 200 but carries the same response body shape.
+- `submitJob` currently returns 501 because task resolution requires a formal process catalog (not yet available). Once the catalog is wired, `submitJob` will return HTTP 202 (Accepted) with the job envelope (`jobId`, `jobStatus`), differing from Esri's convention of HTTP 200 but carrying the same response body shape.
 - Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
 - Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
 - Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
