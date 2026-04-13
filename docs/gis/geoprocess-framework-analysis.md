@@ -247,10 +247,11 @@ The critical adapter difference is result access pattern:
   Adapters should establish a binding between the process definition's
   output parameter name and the artifact, using `ArtifactRef.Metadata`
   with a well-known key or a follow-on field addition to `ArtifactRef`
-- **OGC adapter** (#529): v1 supports document-mode, by-value results only —
-  return all artifacts in a single `/jobs/{jobId}/results` JSON response.
-  Raw-mode responses, reference-based transmission, and multipart output are
-  deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
+- **OGC adapter** (#529): v1 targets document-mode, by-value results — a single
+  `/jobs/{jobId}/results` JSON response keyed by output identifier. V1 currently
+  stubs the endpoint (successful jobs return `404` until the execution engine
+  populates result storage). Raw-mode responses, reference-based transmission,
+  and multipart output are deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
 
 ## Cancellation Semantics
 

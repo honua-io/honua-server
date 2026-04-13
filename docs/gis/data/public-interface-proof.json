@@ -754,6 +754,19 @@
           "status": "implemented",
           "linkedTicket": "honua-server#529",
           "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
+          "executionLane": "ci:architecture",
+          "evidenceLocations": [
+            "tests/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "src/Honua.Server/ogc-processes-openapi.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#529",
+          "versionCaptureRule": null
         }
       ]
     },

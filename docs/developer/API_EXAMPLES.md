@@ -12,6 +12,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | **MapServer REST** | Map rendering | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs |
 | **STAC API** | Catalog discovery and item search | `/stac` | STAC browsers, catalog tooling |
 | **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
+| **OGC API Processes** | Async geoprocessing | `/ogc/processes` | OGC-compliant process clients |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
 
