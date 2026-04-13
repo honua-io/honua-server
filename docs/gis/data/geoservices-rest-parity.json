@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-04-08",
+  "lastReviewed": "2026-04-12",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -1814,6 +1814,73 @@
         "Only JSON-style responses are supported.",
         "clip uses the envelope of the supplied clip geometry, not the full clip shape.",
         "The implemented area and length routes are Honua-specific helpers rather than drop-in replacements for Esri areasAndLengths and lengths."
+      ]
+    },
+    {
+      "id": "gp-server",
+      "displayName": "GPServer",
+      "parity": "not_implemented",
+      "drillDownDoc": "docs/gis/geoprocess-framework-analysis.md",
+      "implementedSurface": [],
+      "knownGaps": [
+        "task discovery",
+        "execute (synchronous)",
+        "submitJob (asynchronous)",
+        "job status polling",
+        "per-parameter result access",
+        "cancel job"
+      ],
+      "evidence": {
+        "canonicalModel": [
+          "docs/gis/geoprocess-framework-analysis.md",
+          "docs/contributor/adr/0029-geoprocess-canonical-model-mappings.md"
+        ],
+        "code": [],
+        "tests": []
+      },
+      "operations": {
+        "implemented": [],
+        "not_implemented": [
+          {
+            "name": "GP Task List",
+            "esriPath": "/rest/services/{serviceId}/GPServer",
+            "methods": ["GET"],
+            "notes": "Deferred to #723. Canonical model maps task list to CatalogService process definitions."
+          },
+          {
+            "name": "Execute Task (sync)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
+            "methods": ["POST"],
+            "notes": "Deferred to #723. Maps to ProcessService.ExecutePlan."
+          },
+          {
+            "name": "Submit Job (async)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
+            "methods": ["POST"],
+            "notes": "Deferred to #723. Maps to ProcessService.SubmitPlanJob."
+          },
+          {
+            "name": "Job Status",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}",
+            "methods": ["GET"],
+            "notes": "Deferred to #723. Maps to ProcessService.GetJob → ExecutionJobRecord."
+          },
+          {
+            "name": "Job Results",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}",
+            "methods": ["GET"],
+            "notes": "Deferred to #723. Maps to ProcessService.GetJobResults → individual ArtifactRef from AnalysisResultPackage.Artifacts."
+          },
+          {
+            "name": "Cancel Job",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel",
+            "methods": ["POST"],
+            "notes": "Deferred to #723. Maps to ProcessService.CancelJob."
+          }
+        ]
+      },
+      "knownLimitations": [
+        "No GPServer REST surface is implemented. Canonical model and lifecycle state mappings are established in #360; protocol adapter is downstream work in #723."
       ]
     }
   ]

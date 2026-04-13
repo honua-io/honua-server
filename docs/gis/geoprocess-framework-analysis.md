@@ -228,7 +228,7 @@ Honua uses `AnalysisResultPackage` as the canonical result envelope:
 | `AnalysisResultPackage` Field | GPServer Projection | OGC Projection |
 | --- | --- | --- |
 | `ResultPackageId` | — (no equivalent) | — (no equivalent) |
-| `Status` | Map from `GeoprocessingWorkflowStatus` to `jobStatus` | Not projected through `/results`; serve OGC `status` from `ExecutionJobRecord.Status` on `GET /jobs/{jobId}` |
+| `Status` | Terminal result metadata only — records the final `GeoprocessingWorkflowStatus` at completion. Live job status comes from `ExecutionJobRecord.Status` via `GetJob` (see [GPServer adapter mapping](#gpserver-adapter-honua-server723)) | Not projected through `/results`; serve OGC `status` from `ExecutionJobRecord.Status` on `GET /jobs/{jobId}` |
 | `Summary` (title, description) | Map to job messages | Deferred / non-standard for OGC Part 1 Core results; not included in the v1 `/results` payload |
 | `Assumptions` | — (not in GPServer) | — (not in OGC) |
 | `Artifacts` (list of `ArtifactRef`) | Project each artifact as a result parameter keyed by a stable output identifier (see adapter note below) | V1: project all artifacts as a document-mode JSON results object keyed by output identifier (see §7.13 subset below) |
