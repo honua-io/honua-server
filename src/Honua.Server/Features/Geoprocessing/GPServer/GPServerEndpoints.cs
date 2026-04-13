@@ -180,52 +180,54 @@ internal static class GPServerEndpoints
         EnrichActivity("SubmitJob", serviceId, taskName);
         var logger = ResolveLogger(context);
 
-        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context);
-
-        // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
-        // with a clear 400 instead of silently stripping them.
-        var envError = RejectUnsupportedEnvControls(context, logger, parameters);
-        if (envError != null)
-        {
-            return envError;
-        }
-
-        // Build a minimal AnalysisPlan from the GP task parameters.
-        // The serviceId:taskName becomes the scoped process identity;
-        // parameters map to step inputs.
-        var plan = new AnalysisPlan
-        {
-            PlanId = $"gpserver-{Guid.NewGuid():N}",
-            IntentId = $"gpserver:{serviceId}:{taskName}",
-            Steps =
-            [
-                new AnalysisPlanStep
-                {
-                    StepId = "step-1",
-                    Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = $"{serviceId}:{taskName}",
-                    Inputs = GPServerParameterTranslation.TranslateInbound(
-                        FilterGpParameters(parameters))
-                }
-            ]
-        };
-
-        // Persist the GPServer route binding so status/result/cancel can
-        // validate that the route serviceId/taskName match the originating job.
-        var protocolMetadata = new Dictionary<string, string>
-        {
-            ["gpserver.serviceId"] = serviceId,
-            ["gpserver.taskName"] = taskName
-        };
-
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
 
         try
         {
+            // Auth must precede parameter reading to guarantee 401/403 before 400
+            // on invalid input from unauthenticated callers (see IGeoprocessingJobService contract).
             jobService.EnsureCallerAuthorized(
                 context.User,
                 OperatorResourceType.Process,
                 OperatorOperation.Execute);
+
+            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context);
+
+            // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
+            // with a clear 400 instead of silently stripping them.
+            var envError = RejectUnsupportedEnvControls(context, logger, parameters);
+            if (envError != null)
+            {
+                return envError;
+            }
+
+            // Build a minimal AnalysisPlan from the GP task parameters.
+            // The serviceId:taskName becomes the scoped process identity;
+            // parameters map to step inputs.
+            var plan = new AnalysisPlan
+            {
+                PlanId = $"gpserver-{Guid.NewGuid():N}",
+                IntentId = $"gpserver:{serviceId}:{taskName}",
+                Steps =
+                [
+                    new AnalysisPlanStep
+                    {
+                        StepId = "step-1",
+                        Kind = AnalysisPlanStepKind.Geoprocess,
+                        ProcessId = $"{serviceId}:{taskName}",
+                        Inputs = GPServerParameterTranslation.TranslateInbound(
+                            FilterGpParameters(parameters))
+                    }
+                ]
+            };
+
+            // Persist the GPServer route binding so status/result/cancel can
+            // validate that the route serviceId/taskName match the originating job.
+            var protocolMetadata = new Dictionary<string, string>
+            {
+                ["gpserver.serviceId"] = serviceId,
+                ["gpserver.taskName"] = taskName
+            };
 
             var jobRecord = await jobService.SubmitJobAsync(
                 plan, null, context.User, protocolMetadata, ct);

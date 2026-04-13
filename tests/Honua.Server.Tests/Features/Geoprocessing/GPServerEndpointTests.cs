@@ -2,13 +2,20 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -405,5 +412,54 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             "/rest/services/TestService/GPServer/BufferAnalysis/jobs/?f=json");
 
         response.IsSuccessStatusCode.Should().BeFalse();
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth-before-validation ordering
+    // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_UnauthenticatedWithInvalidEnvControls_Returns401BeforeBadRequest()
+    {
+        // Dedicated fixture with auth denial to verify auth-before-validation ordering
+        // (see IGeoprocessingJobService contract: adapters must pre-authorize).
+        var authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var authFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperatorAuthorizationEvaluator>();
+                services.AddSingleton(authEvaluator);
+            });
+
+        await authFixture.InitializeAsync();
+        try
+        {
+            var client = authFixture.Client;
+
+            // Include env:outSR which would trigger a 400 if auth were skipped.
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["input_features"] = "test-layer",
+                ["env:outSR"] = "4326"
+            });
+
+            var response = await client.PostAsync(
+                "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+
+            // Auth must be checked before parameter validation — expect 401 not 400.
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                "auth must be checked before env-control rejection per IGeoprocessingJobService contract");
+        }
+        finally
+        {
+            await authFixture.DisposeAsync();
+        }
     }
 }

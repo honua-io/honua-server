@@ -290,7 +290,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 **Typical use cases:**
 - ArcGIS Pro / SDK geoprocessing tool connectivity
 - Async analysis workflows with job lifecycle polling
-- Result retrieval per named output parameter
+- Result retrieval per named output parameter (route registered; actual output retrieval pending execution-engine/result-storage support)
 
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
