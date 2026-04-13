@@ -28,10 +28,16 @@ internal interface IGeoprocessingJobService
     /// <summary>
     /// Submits a plan for asynchronous execution and returns the job record.
     /// </summary>
+    /// <param name="plan">The analysis plan to execute.</param>
+    /// <param name="idempotencyKey">Optional idempotency key for deduplication.</param>
+    /// <param name="principal">The requesting principal.</param>
+    /// <param name="protocolMetadata">Optional protocol-specific metadata stored in <see cref="ExecutionJobSpec.Parameters"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,
         string? idempotencyKey,
         ClaimsPrincipal principal,
+        IReadOnlyDictionary<string, string>? protocolMetadata = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

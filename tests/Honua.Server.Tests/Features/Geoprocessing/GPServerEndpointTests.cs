@@ -224,6 +224,72 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     // -----------------------------------------------------------------------
+    // Route binding validation
+    // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task JobStatus_WithMismatchedService_ReturnsNotFound()
+    {
+        // Submit under TestService/BufferAnalysis
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["input_features"] = "test-layer"
+        });
+
+        var submitResponse = await _client.PostAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+
+        if (submitResponse.StatusCode != HttpStatusCode.Accepted)
+        {
+            // Without Redis, skip binding validation — store unavailable
+            return;
+        }
+
+        var submitJson = await submitResponse.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(submitJson);
+        var jobId = doc.RootElement.GetProperty("jobId").GetString()!;
+
+        // Query status under a different service — should be rejected
+        var statusResponse = await _client.GetAsync(
+            $"/rest/services/OtherService/GPServer/BufferAnalysis/jobs/{jobId}?f=json");
+
+        statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task JobStatus_WithMismatchedTask_ReturnsNotFound()
+    {
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["input_features"] = "test-layer"
+        });
+
+        var submitResponse = await _client.PostAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+
+        if (submitResponse.StatusCode != HttpStatusCode.Accepted)
+        {
+            return;
+        }
+
+        var submitJson = await submitResponse.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(submitJson);
+        var jobId = doc.RootElement.GetProperty("jobId").GetString()!;
+
+        // Query status under a different task — should be rejected
+        var statusResponse = await _client.GetAsync(
+            $"/rest/services/TestService/GPServer/DifferentTask/jobs/{jobId}?f=json");
+
+        statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // -----------------------------------------------------------------------
     // GP environment controls
     // -----------------------------------------------------------------------
 

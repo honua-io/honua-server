@@ -35,4 +35,7 @@ internal static partial class GPServerLog
 
     [LoggerMessage(8108, LogLevel.Information, "GPServer rejected unsupported environment controls: {ControlNames}")]
     public static partial void UnsupportedEnvControlsRejected(ILogger logger, string controlNames);
+
+    [LoggerMessage(8109, LogLevel.Warning, "GPServer job binding mismatch: JobId={JobId}, RouteService={ServiceId}, RouteTask={TaskName}")]
+    public static partial void JobBindingMismatch(ILogger logger, string jobId, string serviceId, string taskName);
 }

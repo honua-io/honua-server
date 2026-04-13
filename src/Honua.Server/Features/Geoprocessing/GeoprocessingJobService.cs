@@ -116,6 +116,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         AnalysisPlan plan,
         string? idempotencyKey,
         ClaimsPrincipal principal,
+        IReadOnlyDictionary<string, string>? protocolMetadata = null,
         CancellationToken cancellationToken = default)
     {
         EnsureAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Execute);
@@ -128,6 +129,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
+
+        var specParams = protocolMetadata != null
+            ? new Dictionary<string, string>(protocolMetadata)
+            : new Dictionary<string, string>();
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -147,7 +152,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "local",
-                WorkloadName = $"geoprocessing:{plan.PlanId}"
+                WorkloadName = $"geoprocessing:{plan.PlanId}",
+                Parameters = specParams
             }
         };
 

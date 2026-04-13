@@ -190,11 +190,12 @@ internal static class GPServerEndpoints
         }
 
         // Build a minimal AnalysisPlan from the GP task parameters.
-        // The taskName becomes the process ID; parameters map to step inputs.
+        // The serviceId:taskName becomes the scoped process identity;
+        // parameters map to step inputs.
         var plan = new AnalysisPlan
         {
             PlanId = $"gpserver-{Guid.NewGuid():N}",
-            IntentId = $"gpserver:{taskName}",
+            IntentId = $"gpserver:{serviceId}:{taskName}",
             Steps =
             [
                 new AnalysisPlanStep
@@ -208,12 +209,20 @@ internal static class GPServerEndpoints
             ]
         };
 
+        // Persist the GPServer route binding so status/result/cancel can
+        // validate that the route serviceId/taskName match the originating job.
+        var protocolMetadata = new Dictionary<string, string>
+        {
+            ["gpserver.serviceId"] = serviceId,
+            ["gpserver.taskName"] = taskName
+        };
+
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
 
         try
         {
             var jobRecord = await jobService.SubmitJobAsync(
-                plan, null, context.User, ct);
+                plan, null, context.User, protocolMetadata, ct);
 
             var esriStatus = GPServerStatusMapping.ToEsriJobStatus(jobRecord.Status);
             GPServerLog.JobSubmitted(logger, jobRecord.OperationId, taskName);
@@ -251,6 +260,13 @@ internal static class GPServerEndpoints
         try
         {
             var job = await jobService.GetJobAsync(jobId, context.User, ct);
+
+            var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
+            if (bindingError != null)
+            {
+                return bindingError;
+            }
+
             var esriStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status);
             GPServerLog.JobStatusPolled(logger, jobId, esriStatus);
 
@@ -333,6 +349,14 @@ internal static class GPServerEndpoints
 
         try
         {
+            // Validate route binding before accessing results.
+            var job = await jobService.GetJobAsync(jobId, context.User, ct);
+            var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
+            if (bindingError != null)
+            {
+                return bindingError;
+            }
+
             // GetJobResultsAsync currently throws GeoprocessingNotFoundException
             // because result storage is not yet implemented.
             var results = await jobService.GetJobResultsAsync(jobId, context.User, ct);
@@ -385,6 +409,14 @@ internal static class GPServerEndpoints
 
         try
         {
+            // Validate route binding before attempting cancellation.
+            var existing = await jobService.GetJobAsync(jobId, context.User, ct);
+            var bindingError = ValidateJobBinding(context, logger, existing, serviceId, taskName);
+            if (bindingError != null)
+            {
+                return bindingError;
+            }
+
             await jobService.CancelJobAsync(jobId, context.User, ct);
 
             // Re-read the job to return the updated status
@@ -429,6 +461,36 @@ internal static class GPServerEndpoints
     // -----------------------------------------------------------------------
     // Shared helpers
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Validates that the route <paramref name="serviceId"/> and <paramref name="taskName"/>
+    /// match the protocol metadata stored with the job when it was submitted.
+    /// Returns a 404 result when the binding does not match; null when it does.
+    /// Jobs without stored binding metadata (e.g. submitted via gRPC) pass through.
+    /// </summary>
+    private static IResult? ValidateJobBinding(
+        HttpContext context, ILogger logger, ExecutionJobRecord job,
+        string serviceId, string taskName)
+    {
+        var storedService = job.Spec.Parameters.GetValueOrDefault("gpserver.serviceId");
+        var storedTask = job.Spec.Parameters.GetValueOrDefault("gpserver.taskName");
+
+        // Jobs without GPServer binding metadata (e.g. submitted via gRPC) skip validation.
+        if (storedService == null && storedTask == null)
+        {
+            return null;
+        }
+
+        if (string.Equals(storedService, serviceId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(storedTask, taskName, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        GPServerLog.JobBindingMismatch(logger, job.OperationId, serviceId, taskName);
+        return StandardErrorHelpers.CreateNotFound(context,
+            $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'.");
+    }
 
     /// <summary>
     /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>,

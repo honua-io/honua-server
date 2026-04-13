@@ -89,7 +89,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
                 : request.IdempotencyKey;
             var jobRecord = await _jobService.SubmitJobAsync(
                 domainPlan, idempotencyKey,
-                context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
+                context.GetHttpContext().User, null, context.CancellationToken).ConfigureAwait(false);
             return GeoprocessingConversionHelpers.ToProtoExecutionJob(jobRecord);
         }
         catch (Exception ex) when (ex is not RpcException)

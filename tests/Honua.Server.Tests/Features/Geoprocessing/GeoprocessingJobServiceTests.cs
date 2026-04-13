@@ -103,6 +103,41 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithProtocolMetadata_StoresInSpecParameters()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var metadata = new Dictionary<string, string>
+        {
+            ["gpserver.serviceId"] = "MyService",
+            ["gpserver.taskName"] = "BufferAnalysis"
+        };
+
+        var plan = CreateValidPlan();
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal(), metadata);
+
+        job.Spec.Parameters.Should().ContainKey("gpserver.serviceId").WhoseValue.Should().Be("MyService");
+        job.Spec.Parameters.Should().ContainKey("gpserver.taskName").WhoseValue.Should().Be("BufferAnalysis");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithoutProtocolMetadata_HasEmptySpecParameters()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var plan = CreateValidPlan();
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithoutJobStore_ThrowsStoreUnavailable()
     {
         var sut = new GeoprocessingJobService(
