@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.ServiceRegistration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
@@ -12,27 +13,27 @@ namespace Honua.Server.Features.Infrastructure.Authentication;
 /// Validates OidcAuthenticationOptions configuration to ensure secure OIDC authentication setup.
 /// Enforces provider-specific validation rules and security best practices.
 /// </summary>
-internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<OidcAuthenticationOptions>
+internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidator<OidcAuthenticationOptions>
 {
     /// <summary>
     /// Validates the OIDC authentication options configuration using derived class-specific logic.
     /// </summary>
     /// <param name="options">The OIDC authentication options instance to validate</param>
-    /// <param name="failures">List to add validation errors to</param>
-    protected override void ValidateOptions(OidcAuthenticationOptions options, List<string> failures)
+    /// <param name="errors">List to add validation errors to</param>
+    protected override void PerformFeatureSpecificValidation(OidcAuthenticationOptions options, List<string> errors)
     {
         // Complex business rule validations
-        ValidateGeneralSettings(options, failures);
-        ValidateProviderSettings(options, failures);
-        ValidateClaimsMapping(options.ClaimsMapping, failures);
-        ValidateTokenValidation(options.TokenValidation, failures);
+        ValidateGeneralSettings(options, errors);
+        ValidateProviderSettings(options, errors);
+        ValidateClaimsMapping(options.ClaimsMapping, errors);
+        ValidateTokenValidation(options.TokenValidation, errors);
     }
 
 
     /// <summary>
     /// Validates general OIDC settings.
     /// </summary>
-    private static void ValidateGeneralSettings(OidcAuthenticationOptions options, List<string> failures)
+    private static void ValidateGeneralSettings(OidcAuthenticationOptions options, List<string> errors)
     {
         // When OIDC is enabled, at least one provider must be configured
         if (options.Enabled)
@@ -45,16 +46,16 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
 
             if (!hasEnabledProvider)
             {
-                failures.Add("At least one OIDC provider must be enabled when OIDC authentication is enabled");
+                errors.Add("At least one OIDC provider must be enabled when OIDC authentication is enabled");
             }
         }
 
         // Validate DefaultRole
-        ValidateRequiredString(options.DefaultRole, "DefaultRole", failures);
-        ValidateStringLength(options.DefaultRole, 50, "DefaultRole", failures);
+        ValidateRequiredString(options.DefaultRole, "DefaultRole", errors);
+        ValidateStringLength(options.DefaultRole, 50, "DefaultRole", errors);
 
         // Validate AdminRoles
-        ValidateCollectionCount(options.AdminRoles, 1, int.MaxValue, "AdminRoles", failures);
+        ValidateCollectionCount(options.AdminRoles, 1, int.MaxValue, "AdminRoles", errors);
 
         if (options.AdminRoles != null)
         {
@@ -62,11 +63,11 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
             {
                 if (string.IsNullOrWhiteSpace(role))
                 {
-                    failures.Add("AdminRoles cannot contain empty or whitespace-only role names");
+                    errors.Add("AdminRoles cannot contain empty or whitespace-only role names");
                 }
                 else
                 {
-                    ValidateStringLength(role, 50, $"AdminRoles role '{role}'", failures);
+                    ValidateStringLength(role, 50, $"AdminRoles role '{role}'", errors);
                 }
             }
         }
@@ -74,209 +75,209 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
         // HTTPS requirement validation
         if (options.Enabled && !options.RequireHttps)
         {
-            failures.Add("RequireHttps should be true for OIDC authentication in production environments for security");
+            errors.Add("RequireHttps should be true for OIDC authentication in production environments for security");
         }
     }
 
     /// <summary>
     /// Validates provider-specific settings.
     /// </summary>
-    private static void ValidateProviderSettings(OidcAuthenticationOptions options, List<string> failures)
+    private static void ValidateProviderSettings(OidcAuthenticationOptions options, List<string> errors)
     {
         // Validate Azure AD provider
         if (options.AzureAd?.Enabled == true)
         {
-            ValidateAzureAdProvider(options.AzureAd, failures);
+            ValidateAzureAdProvider(options.AzureAd, errors);
         }
 
         // Validate Google provider
         if (options.Google?.Enabled == true)
         {
-            ValidateGoogleProvider(options.Google, failures);
+            ValidateGoogleProvider(options.Google, errors);
         }
 
         // Validate Generic provider
         if (options.Generic?.Enabled == true)
         {
-            ValidateGenericProvider(options.Generic, failures);
+            ValidateGenericProvider(options.Generic, errors);
         }
 
         // Validate Okta provider
         if (options.Okta?.Enabled == true)
         {
-            ValidateOktaProvider(options.Okta, failures);
+            ValidateOktaProvider(options.Okta, errors);
         }
 
         // Validate Auth0 provider
         if (options.Auth0?.Enabled == true)
         {
-            ValidateAuth0Provider(options.Auth0, failures);
+            ValidateAuth0Provider(options.Auth0, errors);
         }
 
         // Check for conflicting callback paths
-        ValidateCallbackPaths(options, failures);
+        ValidateCallbackPaths(options, errors);
     }
 
     /// <summary>
     /// Validates Azure AD provider configuration.
     /// </summary>
-    private static void ValidateAzureAdProvider(AzureAdProviderOptions azureAd, List<string> failures)
+    private static void ValidateAzureAdProvider(AzureAdProviderOptions azureAd, List<string> errors)
     {
-        ValidateRequiredString(azureAd.TenantId, "AzureAd.TenantId", failures);
+        ValidateRequiredString(azureAd.TenantId, "AzureAd.TenantId", errors);
         if (!string.IsNullOrWhiteSpace(azureAd.TenantId) &&
             !IsValidGuid(azureAd.TenantId) &&
             azureAd.TenantId != "common" && azureAd.TenantId != "organizations" && azureAd.TenantId != "consumers")
         {
-            failures.Add("AzureAd.TenantId must be a valid GUID or one of 'common', 'organizations', 'consumers'");
+            errors.Add("AzureAd.TenantId must be a valid GUID or one of 'common', 'organizations', 'consumers'");
         }
 
-        ValidateRequiredString(azureAd.ClientId, "AzureAd.ClientId", failures);
+        ValidateRequiredString(azureAd.ClientId, "AzureAd.ClientId", errors);
         if (!string.IsNullOrWhiteSpace(azureAd.ClientId))
         {
-            ValidateGuid(azureAd.ClientId, "AzureAd.ClientId", failures);
+            ValidateGuid(azureAd.ClientId, "AzureAd.ClientId", errors);
         }
 
         // Instance URL validation
-        ValidateUrl(azureAd.Instance, "AzureAd.Instance", failures, requireHttps: true);
+        ValidateUrl(azureAd.Instance, "AzureAd.Instance", errors, requireHttps: true);
 
-        ValidateCallbackPath(azureAd.CallbackPath, "AzureAd.CallbackPath", failures);
-        ValidateCallbackPath(azureAd.SignedOutCallbackPath, "AzureAd.SignedOutCallbackPath", failures);
-        ValidateScopes(azureAd.Scopes, "AzureAd.Scopes", failures);
+        ValidateCallbackPath(azureAd.CallbackPath, "AzureAd.CallbackPath", errors);
+        ValidateCallbackPath(azureAd.SignedOutCallbackPath, "AzureAd.SignedOutCallbackPath", errors);
+        ValidateScopes(azureAd.Scopes, "AzureAd.Scopes", errors);
     }
 
     /// <summary>
     /// Validates Google provider configuration.
     /// </summary>
-    private static void ValidateGoogleProvider(GoogleProviderOptions google, List<string> failures)
+    private static void ValidateGoogleProvider(GoogleProviderOptions google, List<string> errors)
     {
-        ValidateRequiredString(google.ClientId, "Google.ClientId", failures);
-        ValidateRequiredString(google.ClientSecret, "Google.ClientSecret", failures);
+        ValidateRequiredString(google.ClientId, "Google.ClientId", errors);
+        ValidateRequiredString(google.ClientSecret, "Google.ClientSecret", errors);
 
-        ValidateCallbackPath(google.CallbackPath, "Google.CallbackPath", failures);
-        ValidateScopes(google.Scopes, "Google.Scopes", failures);
+        ValidateCallbackPath(google.CallbackPath, "Google.CallbackPath", errors);
+        ValidateScopes(google.Scopes, "Google.Scopes", errors);
     }
 
     /// <summary>
     /// Validates Generic OIDC provider configuration.
     /// </summary>
-    private static void ValidateGenericProvider(GenericOidcProviderOptions generic, List<string> failures)
+    private static void ValidateGenericProvider(GenericOidcProviderOptions generic, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(generic.Authority))
         {
-            failures.Add("Generic.Authority cannot be empty when Generic OIDC is enabled");
+            errors.Add("Generic.Authority cannot be empty when Generic OIDC is enabled");
         }
         else if (!Uri.TryCreate(generic.Authority, UriKind.Absolute, out var authorityUri))
         {
-            failures.Add("Generic.Authority must be a valid absolute URL");
+            errors.Add("Generic.Authority must be a valid absolute URL");
         }
         else if (authorityUri.Scheme != "https")
         {
-            failures.Add("Generic.Authority must use HTTPS for security");
+            errors.Add("Generic.Authority must use HTTPS for security");
         }
 
         if (string.IsNullOrWhiteSpace(generic.ClientId))
         {
-            failures.Add("Generic.ClientId cannot be empty when Generic OIDC is enabled");
+            errors.Add("Generic.ClientId cannot be empty when Generic OIDC is enabled");
         }
 
         // Display name validation
         if (string.IsNullOrWhiteSpace(generic.DisplayName))
         {
-            failures.Add("Generic.DisplayName cannot be empty");
+            errors.Add("Generic.DisplayName cannot be empty");
         }
         else if (generic.DisplayName.Length > 100)
         {
-            failures.Add("Generic.DisplayName should not exceed 100 characters");
+            errors.Add("Generic.DisplayName should not exceed 100 characters");
         }
 
         // Response type validation
         var validResponseTypes = new[] { "code", "id_token", "token", "id_token token", "code id_token", "code token", "code id_token token" };
         if (!validResponseTypes.Contains(generic.ResponseType))
         {
-            failures.Add($"Generic.ResponseType '{generic.ResponseType}' is not a valid OIDC response type");
+            errors.Add($"Generic.ResponseType '{generic.ResponseType}' is not a valid OIDC response type");
         }
 
-        ValidateCallbackPath(generic.CallbackPath, "Generic.CallbackPath", failures);
-        ValidateCallbackPath(generic.SignedOutCallbackPath, "Generic.SignedOutCallbackPath", failures);
-        ValidateScopes(generic.Scopes, "Generic.Scopes", failures);
+        ValidateCallbackPath(generic.CallbackPath, "Generic.CallbackPath", errors);
+        ValidateCallbackPath(generic.SignedOutCallbackPath, "Generic.SignedOutCallbackPath", errors);
+        ValidateScopes(generic.Scopes, "Generic.Scopes", errors);
     }
 
     /// <summary>
     /// Validates Okta provider configuration.
     /// </summary>
-    private static void ValidateOktaProvider(OktaProviderOptions okta, List<string> failures)
+    private static void ValidateOktaProvider(OktaProviderOptions okta, List<string> errors)
     {
-        ValidateRequiredString(okta.OrgUrl, "Okta.OrgUrl", failures);
+        ValidateRequiredString(okta.OrgUrl, "Okta.OrgUrl", errors);
         if (!string.IsNullOrWhiteSpace(okta.OrgUrl))
         {
             if (okta.OrgUrl.Contains("://"))
             {
-                failures.Add("Okta.OrgUrl must be a domain only (e.g. 'dev-12345.okta.com'), not a full URL");
+                errors.Add("Okta.OrgUrl must be a domain only (e.g. 'dev-12345.okta.com'), not a full URL");
             }
             else if (!Uri.TryCreate($"https://{okta.OrgUrl}", UriKind.Absolute, out _))
             {
-                failures.Add("Okta.OrgUrl must form a valid hostname");
+                errors.Add("Okta.OrgUrl must form a valid hostname");
             }
         }
 
-        ValidateRequiredString(okta.ClientId, "Okta.ClientId", failures);
+        ValidateRequiredString(okta.ClientId, "Okta.ClientId", errors);
 
         if (!string.IsNullOrEmpty(okta.AuthorizationServerId) && string.IsNullOrWhiteSpace(okta.AuthorizationServerId))
         {
-            failures.Add("Okta.AuthorizationServerId cannot be whitespace-only");
+            errors.Add("Okta.AuthorizationServerId cannot be whitespace-only");
         }
 
-        ValidateCallbackPath(okta.CallbackPath, "Okta.CallbackPath", failures);
-        ValidateCallbackPath(okta.SignedOutCallbackPath, "Okta.SignedOutCallbackPath", failures);
-        ValidateScopes(okta.Scopes, "Okta.Scopes", failures);
+        ValidateCallbackPath(okta.CallbackPath, "Okta.CallbackPath", errors);
+        ValidateCallbackPath(okta.SignedOutCallbackPath, "Okta.SignedOutCallbackPath", errors);
+        ValidateScopes(okta.Scopes, "Okta.Scopes", errors);
     }
 
     /// <summary>
     /// Validates Auth0 provider configuration.
     /// </summary>
-    private static void ValidateAuth0Provider(Auth0ProviderOptions auth0, List<string> failures)
+    private static void ValidateAuth0Provider(Auth0ProviderOptions auth0, List<string> errors)
     {
-        ValidateRequiredString(auth0.Domain, "Auth0.Domain", failures);
+        ValidateRequiredString(auth0.Domain, "Auth0.Domain", errors);
         if (!string.IsNullOrWhiteSpace(auth0.Domain))
         {
             if (auth0.Domain.Contains("://"))
             {
-                failures.Add("Auth0.Domain must be a domain only (e.g. 'myapp.us.auth0.com'), not a full URL");
+                errors.Add("Auth0.Domain must be a domain only (e.g. 'myapp.us.auth0.com'), not a full URL");
             }
             else if (!Uri.TryCreate($"https://{auth0.Domain}", UriKind.Absolute, out _))
             {
-                failures.Add("Auth0.Domain must form a valid hostname");
+                errors.Add("Auth0.Domain must form a valid hostname");
             }
         }
 
-        ValidateRequiredString(auth0.ClientId, "Auth0.ClientId", failures);
+        ValidateRequiredString(auth0.ClientId, "Auth0.ClientId", errors);
 
         if (!string.IsNullOrEmpty(auth0.Audience) && string.IsNullOrWhiteSpace(auth0.Audience))
         {
-            failures.Add("Auth0.Audience cannot be whitespace-only when set");
+            errors.Add("Auth0.Audience cannot be whitespace-only when set");
         }
 
         if (!string.IsNullOrWhiteSpace(auth0.RoleClaimNamespace))
         {
             if (!Uri.TryCreate(auth0.RoleClaimNamespace, UriKind.Absolute, out var nsUri))
             {
-                failures.Add("Auth0.RoleClaimNamespace must be a valid absolute URI when set");
+                errors.Add("Auth0.RoleClaimNamespace must be a valid absolute URI when set");
             }
             else if (nsUri.Scheme != "https")
             {
-                failures.Add("Auth0.RoleClaimNamespace must use HTTPS");
+                errors.Add("Auth0.RoleClaimNamespace must use HTTPS");
             }
         }
 
-        ValidateCallbackPath(auth0.CallbackPath, "Auth0.CallbackPath", failures);
-        ValidateCallbackPath(auth0.SignedOutCallbackPath, "Auth0.SignedOutCallbackPath", failures);
-        ValidateScopes(auth0.Scopes, "Auth0.Scopes", failures);
+        ValidateCallbackPath(auth0.CallbackPath, "Auth0.CallbackPath", errors);
+        ValidateCallbackPath(auth0.SignedOutCallbackPath, "Auth0.SignedOutCallbackPath", errors);
+        ValidateScopes(auth0.Scopes, "Auth0.Scopes", errors);
     }
 
     /// <summary>
     /// Validates that callback paths are unique across providers.
     /// </summary>
-    private static void ValidateCallbackPaths(OidcAuthenticationOptions options, List<string> failures)
+    private static void ValidateCallbackPaths(OidcAuthenticationOptions options, List<string> errors)
     {
         var callbackPaths = new List<(string path, string provider)>();
 
@@ -318,19 +319,19 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
         foreach (var duplicate in duplicates)
         {
             var providers = string.Join(", ", duplicate.Select(x => x.provider));
-            failures.Add($"Callback path '{duplicate.Key}' is used by multiple providers: {providers}");
+            errors.Add($"Callback path '{duplicate.Key}' is used by multiple providers: {providers}");
         }
     }
 
     /// <summary>
     /// Validates claims mapping configuration.
     /// </summary>
-    private static void ValidateClaimsMapping(ClaimsMappingOptions claimsMapping, List<string> failures)
+    private static void ValidateClaimsMapping(ClaimsMappingOptions claimsMapping, List<string> errors)
     {
-        ValidateRequiredString(claimsMapping.NameClaimType, "ClaimsMapping.NameClaimType", failures);
-        ValidateRequiredString(claimsMapping.RoleClaimType, "ClaimsMapping.RoleClaimType", failures);
-        ValidateRequiredString(claimsMapping.EmailClaimType, "ClaimsMapping.EmailClaimType", failures);
-        ValidateRequiredString(claimsMapping.UserIdClaimType, "ClaimsMapping.UserIdClaimType", failures);
+        ValidateRequiredString(claimsMapping.NameClaimType, "ClaimsMapping.NameClaimType", errors);
+        ValidateRequiredString(claimsMapping.RoleClaimType, "ClaimsMapping.RoleClaimType", errors);
+        ValidateRequiredString(claimsMapping.EmailClaimType, "ClaimsMapping.EmailClaimType", errors);
+        ValidateRequiredString(claimsMapping.UserIdClaimType, "ClaimsMapping.UserIdClaimType", errors);
 
         // Validate custom mappings
         if (claimsMapping.CustomMappings != null)
@@ -339,12 +340,12 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
             {
                 if (string.IsNullOrWhiteSpace(mapping.Key))
                 {
-                    failures.Add("ClaimsMapping.CustomMappings cannot have empty source claim names");
+                    errors.Add("ClaimsMapping.CustomMappings cannot have empty source claim names");
                 }
 
                 if (string.IsNullOrWhiteSpace(mapping.Value))
                 {
-                    failures.Add($"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot have empty target claim name");
+                    errors.Add($"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot have empty target claim name");
                 }
             }
         }
@@ -356,7 +357,7 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
             {
                 if (string.IsNullOrWhiteSpace(claimType))
                 {
-                    failures.Add("ClaimsMapping.AdditionalRoleClaimTypes cannot contain empty or whitespace-only entries");
+                    errors.Add("ClaimsMapping.AdditionalRoleClaimTypes cannot contain empty or whitespace-only entries");
                 }
             }
         }
@@ -365,30 +366,30 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
     /// <summary>
     /// Validates token validation configuration.
     /// </summary>
-    private static void ValidateTokenValidation(TokenValidationOptions tokenValidation, List<string> failures)
+    private static void ValidateTokenValidation(TokenValidationOptions tokenValidation, List<string> errors)
     {
         if (!string.IsNullOrWhiteSpace(tokenValidation.SymmetricSigningKey))
         {
             var keyBytes = Encoding.UTF8.GetByteCount(tokenValidation.SymmetricSigningKey);
             if (keyBytes < 32)
             {
-                failures.Add("TokenValidation.SymmetricSigningKey must be at least 32 UTF-8 bytes for HS256 security.");
+                errors.Add("TokenValidation.SymmetricSigningKey must be at least 32 UTF-8 bytes for HS256 security.");
             }
         }
 
         // Clock skew validation
-        ValidateTimeSpan(tokenValidation.ClockSkew, TimeSpan.Zero, TimeSpan.FromMinutes(30), "TokenValidation.ClockSkew", failures);
+        ValidateTimeSpan(tokenValidation.ClockSkew, TimeSpan.Zero, TimeSpan.FromMinutes(30), "TokenValidation.ClockSkew", errors);
 
         // Token replay protection validation
         if (tokenValidation.EnableTokenReplayProtection)
         {
             if (tokenValidation.TokenReplayCacheDuration < TimeSpan.Zero)
             {
-                failures.Add("TokenValidation.TokenReplayCacheDuration must be positive");
+                errors.Add("TokenValidation.TokenReplayCacheDuration must be positive");
             }
             else if (tokenValidation.TokenReplayCacheDuration > TimeSpan.FromHours(24))
             {
-                failures.Add("TokenValidation.TokenReplayCacheDuration must be between 0 seconds and 24 hours");
+                errors.Add("TokenValidation.TokenReplayCacheDuration must be between 0 seconds and 24 hours");
             }
         }
     }
@@ -396,56 +397,56 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
     /// <summary>
     /// Validates a callback path format.
     /// </summary>
-    private static void ValidateCallbackPath(string path, string propertyName, List<string> failures)
+    private static void ValidateCallbackPath(string path, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            failures.Add($"{propertyName} cannot be empty");
+            errors.Add($"{propertyName} cannot be empty");
             return;
         }
 
         if (!path.StartsWith('/'))
         {
-            failures.Add($"{propertyName} must start with '/' to be a valid path");
+            errors.Add($"{propertyName} must start with '/' to be a valid path");
         }
 
         if (path.Contains("//"))
         {
-            failures.Add($"{propertyName} cannot contain consecutive slashes");
+            errors.Add($"{propertyName} cannot contain consecutive slashes");
         }
 
         if (path.Length > 200)
         {
-            failures.Add($"{propertyName} should not exceed 200 characters");
+            errors.Add($"{propertyName} should not exceed 200 characters");
         }
     }
 
     /// <summary>
     /// Validates OIDC scopes.
     /// </summary>
-    private static void ValidateScopes(string[] scopes, string propertyName, List<string> failures)
+    private static void ValidateScopes(string[] scopes, string propertyName, List<string> errors)
     {
         if (scopes == null || scopes.Length == 0)
         {
-            failures.Add($"{propertyName} must contain at least one scope");
+            errors.Add($"{propertyName} must contain at least one scope");
             return;
         }
 
         // OpenID Connect requires 'openid' scope
         if (!scopes.Contains("openid", StringComparer.OrdinalIgnoreCase))
         {
-            failures.Add($"{propertyName} must include 'openid' scope for OIDC compliance");
+            errors.Add($"{propertyName} must include 'openid' scope for OIDC compliance");
         }
 
         foreach (var scope in scopes)
         {
             if (string.IsNullOrWhiteSpace(scope))
             {
-                failures.Add($"{propertyName} cannot contain empty or whitespace-only scope names");
+                errors.Add($"{propertyName} cannot contain empty or whitespace-only scope names");
             }
             else if (scope.Length > 100)
             {
-                failures.Add($"{propertyName} scope '{scope}' should not exceed 100 characters");
+                errors.Add($"{propertyName} scope '{scope}' should not exceed 100 characters");
             }
         }
     }

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;

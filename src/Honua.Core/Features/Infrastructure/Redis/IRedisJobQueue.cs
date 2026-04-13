@@ -4,30 +4,29 @@
 namespace Honua.Core.Features.Infrastructure.Redis;
 
 /// <summary>
-/// Interface for Redis-backed job processing with fallback capabilities.
+/// Interface for Redis-backed job queue with fallback capabilities.
 /// </summary>
-/// <typeparam name="T">The type of jobs handled by this processor</typeparam>
-public interface IRedisJobProcessor<T> : IRedisService
+public interface IRedisJobQueue : IRedisService
 {
     /// <summary>
-    /// Gets the queue key used by this job processor.
+    /// Gets the queue key used by this job queue.
     /// </summary>
     string QueueKey { get; }
 
     /// <summary>
     /// Enqueues a job for processing.
     /// </summary>
-    /// <param name="job">The job to enqueue</param>
+    /// <param name="job">The job to enqueue (JSON serializable)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Task representing the async operation</returns>
-    Task EnqueueAsync(T job, CancellationToken cancellationToken = default);
+    Task EnqueueAsync(string job, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Dequeues a job for processing.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The dequeued job, or null if no jobs are available</returns>
-    Task<T?> DequeueAsync(CancellationToken cancellationToken = default);
+    /// <returns>The dequeued job as JSON string, or null if no jobs are available</returns>
+    Task<string?> DequeueAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the current queue length.
@@ -35,4 +34,11 @@ public interface IRedisJobProcessor<T> : IRedisService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The number of jobs in the queue</returns>
     Task<long> GetQueueLengthAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the number of jobs being processed.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The number of jobs currently being processed</returns>
+    Task<long> GetProcessingCountAsync(CancellationToken cancellationToken = default);
 }
