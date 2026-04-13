@@ -234,7 +234,9 @@ at 10 minutes. Per-job override is supported via `JobRetryPolicy` on the
 
 Default maximum execution duration is 1 hour. Long-running ETL or
 geoprocessing workloads can use the 24-hour policy. Jobs exceeding their
-timeout are marked Failed by the reconciler.
+timeout are marked Failed directly by the worker (without retry). The
+reconciler serves as a fallback for jobs whose workers stop reporting
+heartbeats.
 
 ### Structured Execution Logs
 

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
@@ -71,6 +72,10 @@ internal static class JobOrchestrationServiceCollectionExtensions
         {
             return services;
         }
+
+        services.TryAddSingleton<ExecutionJobCancellationTokens>();
+        services.AddSingleton<IJobCancellationNotifier>(
+            sp => sp.GetRequiredService<ExecutionJobCancellationTokens>());
 
         services.AddHostedService<JobExecutionService>();
         services.AddHostedService<JobReconciliationService>();

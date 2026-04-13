@@ -15,6 +15,7 @@ internal sealed partial class JobExecutionService(
     IJobQueue jobQueue,
     IExecutionJobStore jobStore,
     IEnumerable<IJobExecutor> executors,
+    ExecutionJobCancellationTokens cancellationTokens,
     IExecutionLogStore? logStore,
     ILogger<JobExecutionService> logger) : BackgroundService
 {
@@ -26,7 +27,8 @@ internal sealed partial class JobExecutionService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var workerId = $"worker-{Environment.MachineName}-{Guid.NewGuid():N}"[..48];
+        var raw = $"worker-{Environment.MachineName}-{Guid.NewGuid():N}";
+        var workerId = raw.Length > 48 ? raw[..48] : raw;
         Log.WorkerStarted(logger, workerId);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -94,12 +96,14 @@ internal sealed partial class JobExecutionService(
 
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
 
-        // Create cancellation that combines host stopping and per-job cancellation.
-        using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-
-        // Set up timeout if configured.
+        // Separate timeout CTS so we can distinguish timeout from operator cancellation.
         var timeoutPolicy = job.TimeoutPolicy ?? JobTimeoutPolicy.Default;
-        jobCts.CancelAfter(timeoutPolicy.MaxDuration);
+        using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
+
+        // Register with cancellation token registry so operator cancellation can reach us.
+        // The linked CTS combines host stopping, timeout, and operator cancellation.
+        using var jobCts = cancellationTokens.CreateLinkedTokenSource(
+            operationId, stoppingToken, timeoutCts.Token);
 
         // Create execution context with heartbeat pump.
         using var context = new JobExecutionContext(
@@ -131,12 +135,22 @@ internal sealed partial class JobExecutionService(
             // Worker is shutting down; abandon the job so it can be retried.
             await AbandonJobAsync(running, "Worker shutdown.", stoppingToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+        {
+            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
+            // Timeout — terminal failure, do not retry.
+            await TerminateJobAsync(operationId, ExecutionJobStatus.Failed,
+                $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
+                .ConfigureAwait(false);
+        }
         catch (OperationCanceledException)
         {
             await heartbeatCts.CancelAsync().ConfigureAwait(false);
-            // Timeout or cancellation — route through retry policy.
-            await AbandonJobAsync(running, "Job was cancelled or timed out.", stoppingToken)
-                .ConfigureAwait(false);
+            Log.JobCancelledByOperator(logger, operationId);
+            // Operator cancellation — terminal cancelled state.
+            await TerminateJobAsync(operationId, ExecutionJobStatus.Cancelled,
+                "Cancelled by operator.", CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -144,6 +158,10 @@ internal sealed partial class JobExecutionService(
             Log.JobExecutionFailed(logger, operationId, ex);
             // Execution exception — route through retry policy.
             await AbandonJobAsync(running, ex.Message, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            cancellationTokens.Remove(operationId);
         }
 
         // Ensure heartbeat pump stops cleanly.
@@ -189,6 +207,39 @@ internal sealed partial class JobExecutionService(
         }
 
         Log.JobExecutionCompleted(logger, operationId, result.Status.ToString());
+    }
+
+    private async Task TerminateJobAsync(
+        string operationId,
+        ExecutionJobStatus terminalStatus,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (job == null)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var terminal = job with
+        {
+            Status = terminalStatus,
+            UpdatedAt = now,
+            CompletedAt = now,
+            ErrorMessage = reason,
+            CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled ? "Cancelled" : "Failed"
+        };
+
+        await jobStore.SetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+
+        if (logStore != null)
+        {
+            await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
+        }
+
+        Log.JobExecutionCompleted(logger, operationId, terminalStatus.ToString());
     }
 
     private async Task AbandonJobAsync(
@@ -266,6 +317,12 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9058, LogLevel.Error, "Claim loop error")]
         public static partial void ClaimLoopError(ILogger logger, Exception exception);
+
+        [LoggerMessage(9059, LogLevel.Warning, "Job timed out: {OperationId}, MaxDuration={MaxDuration}")]
+        public static partial void JobTimedOut(ILogger logger, string operationId, TimeSpan maxDuration);
+
+        [LoggerMessage(9060, LogLevel.Information, "Job cancelled by operator: {OperationId}")]
+        public static partial void JobCancelledByOperator(ILogger logger, string operationId);
     }
 }
 
