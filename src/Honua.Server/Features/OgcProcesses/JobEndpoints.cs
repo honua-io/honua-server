@@ -295,19 +295,6 @@ internal static class JobEndpoints
             return ProcessEndpoints.FormatOgcAuthError(authDecision);
         }
 
-        // Dismiss is a destructive operation — gate through approval.
-        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Execute,
-            IsDestructive = true
-        });
-        if (approval.IsRequired)
-        {
-            OgcProcessesLog.DismissRejectedApprovalRequired(logger, approval.PolicyRef ?? "unknown");
-            return ProcessEndpoints.FormatOgcApprovalError(approval);
-        }
-
         OgcProcessesLog.JobDismissRequested(logger, jobId);
 
         if (jobStore == null)

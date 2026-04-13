@@ -64,9 +64,6 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8135, LogLevel.Warning, "OGC Job dismiss rejected (terminal): JobId={JobId}, Status={Status}")]
     public static partial void DismissRejectedTerminal(ILogger logger, string jobId, string status);
 
-    [LoggerMessage(8136, LogLevel.Warning, "OGC Job dismiss rejected: approval required (policy: {PolicyRef})")]
-    public static partial void DismissRejectedApprovalRequired(ILogger logger, string policyRef);
-
     // 8140-8149: Job list
     [LoggerMessage(8140, LogLevel.Information, "OGC Job list requested")]
     public static partial void JobListRequested(ILogger logger);
