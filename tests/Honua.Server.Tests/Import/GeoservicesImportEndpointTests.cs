@@ -305,6 +305,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         var distributedCache = new TrackingDistributedCache();
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
+        RedisImportTestStubs.ConfigureDurableProgressTransactions(database);
         database.ListLeftPushAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
             .Returns(_ => Task.FromException<long>(new RedisConnectionException(ConnectionFailureType.UnableToResolvePhysicalConnection, "queue unavailable")));
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>())

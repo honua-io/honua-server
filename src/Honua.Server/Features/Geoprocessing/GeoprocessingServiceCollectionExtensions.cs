@@ -58,6 +58,9 @@ internal static class GeoprocessingServiceCollectionExtensions
                     sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
         }
 
+        // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
+        services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
+
         return services;
     }
 }

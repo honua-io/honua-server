@@ -262,9 +262,9 @@ The critical adapter difference is result access pattern:
 
 Adapter notes:
 
-- GPServer adapter: should accept POST to cancel and return the current job
-  status; the `esriJobCancelling` transient state can be synthesized if the
-  backend has not yet acknowledged cancellation
+- GPServer adapter (#723): accepts both GET and POST to cancel and returns the
+  current job status; does not synthesize `esriJobCancelling` — cancellation is
+  best-effort and the response reflects the post-cancellation state
 - OGC adapter: should accept DELETE and return 200 with the dismissed job
   status; if the protocol expects the job resource to be removed after
   dismissal, the adapter can return 404 on subsequent GET requests while the
@@ -382,15 +382,16 @@ This ticket builds the canonical process contract. It must:
 - Ensure `AnalysisResultPackage` is populated by the execution engine
 - Not introduce protocol-specific concepts into the canonical model
 
-### honua-server#723 — GeoServices GPServer Adapter
+### honua-server#723 — GeoServices GPServer Adapter ✓
 
-This is a **protocol adapter** ticket. It must:
+**Implemented.** The GPServer adapter is a protocol adapter that:
 
-- Implement GPServer REST routes that project canonical process service operations
-- Translate Esri GP parameter types to/from canonical step inputs and `ArtifactKind`
-- Map `ExecutionJobStatus` to Esri job status strings per the state matrix above
-- Decompose `AnalysisResultPackage.Artifacts` into per-parameter result endpoints
-- Not add internal domain types or lifecycle states
+- Maps GPServer REST routes over canonical process service operations (`GPServerEndpoints.cs`)
+- Translates Esri GP parameter types to/from canonical step inputs and `ArtifactKind` (`GPServerParameterTranslation.cs`)
+- Maps `ExecutionJobStatus` to Esri job status strings per the state matrix above (`GPServerStatusMapping.cs`)
+- Routes per-parameter result endpoints via the `geoservices.output_parameter` metadata key (route registered; actual output retrieval pending execution-engine/result-storage support)
+- Persists route binding metadata (`gpserver.serviceId`, `gpserver.taskName`) at submit time and validates it on status/result/cancel to prevent cross-protocol job access
+- Does not add internal domain types or lifecycle states
 
 ### honua-server#529 — OGC API Processes Adapter
 

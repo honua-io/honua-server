@@ -15,6 +15,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
+| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (job status polling and cancellation; submitJob route registered, pending process catalog; result retrieval route registered, pending execution-engine/result-storage support) |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---
@@ -266,6 +267,43 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 ---
 
+## **GeoServices REST GPServer**
+
+**Best for**: Esri geoprocessing workflows (job status polling and cancellation functional; submission and result retrieval routes registered, pending process catalog)
+
+**Endpoint structure:**
+```
+/rest/services/{service-name}/GPServer
+|-- /                                      (service info — available tasks)
+|-- /{taskName}                            (task info — parameters, data types)
+|-- /{taskName}/execute                    (synchronous execution — 501 pending)
+|-- /{taskName}/submitJob                  (async job submission)
+|-- /{taskName}/jobs/{jobId}               (job status polling)
+|-- /{taskName}/jobs/{jobId}/results/{paramName}  (named output result)
+|-- /{taskName}/jobs/{jobId}/cancel        (cancel in-flight job)
+```
+
+**Output formats:** JSON (Esri camelCase convention)
+
+**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Task info and `submitJob` return 501 until a formal process catalog is available for task resolution. Service info returns stub metadata (empty task list) until the catalog is formalized. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
+
+**Typical use cases:**
+- ArcGIS Pro / SDK geoprocessing tool connectivity
+- Async analysis workflows with job lifecycle polling
+- Per-parameter result retrieval (route registered; output retrieval pending execution-engine support)
+
+**Contract notes:**
+- GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
+- `execute`, `submitJob`, and `cancel` accept both GET and POST per Esri GP convention. All other endpoints are GET-only. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
+- `submitJob` currently returns 501 because task resolution requires a formal process catalog (not yet available). Once the catalog is wired, `submitJob` will return HTTP 202 (Accepted) with the job envelope (`jobId`, `jobStatus`), differing from Esri's convention of HTTP 200 but carrying the same response body shape.
+- Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
+- Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
+- Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
+- For endpoints that currently return 501 (`execute`, `submitJob`), authentication (401/403) and parameter validation (400 for unsupported env controls) are enforced before the 501. Callers always see auth and validation errors before feature-availability errors.
+- See [ADR-0029](../contributor/adr/0029-geoprocess-canonical-model-mappings.md) for adapter invariants and the [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) for the full canonical model mapping.
+
+---
+
 ## **Vector Tiles (MVT) + TileJSON**
 
 **Best for**: High-performance web maps
@@ -329,7 +367,7 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [MapServer Coverage Matrix](map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
 - [ImageServer Coverage Matrix](image-server-matrix.md) — aligned to [Esri REST Image Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/)
 - [Geometry Service Matrix](geometry-service-matrix.md) — buffer, simplify, project, intersect, union, clip, difference, plus Honua supplemental `area`/`length` routes
-- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer canonical model mapping, lifecycle state matrix, and adapter invariants (protocol adapter is downstream #723)
+- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer canonical model mapping, lifecycle state matrix, and adapter invariants
 
 **OGC API:**
 - [OGC API Features Coverage](specifications/ogc-api-features-coverage.md)
@@ -375,3 +413,4 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [MapServer Coverage Matrix](map-server-matrix.md)
 - [ImageServer Coverage Matrix](image-server-matrix.md)
 - [Geometry Service Matrix](geometry-service-matrix.md)
+- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md)

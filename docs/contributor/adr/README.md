@@ -34,7 +34,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0026](0026-ai-first-operator-contract.md) | AI-First Operator Contract as Primary Public Contract | Proposed | 2026-04 |
 | [0027](0027-deterministic-intent-clarification-workflow.md) | Deterministic Intent, Clarification, and Plan Validation Workflow | Proposed | 2026-04 |
 | [0028](0028-ai-data-editing-not-allowed.md) | AI-Driven Data Editing Is Not Allowed | Accepted | 2026-04 |
-| [0029](0029-geoprocess-canonical-model-mappings.md) | Geoprocess Canonical Model Mappings | Proposed | 2026-04 |
+| [0029](0029-geoprocess-canonical-model-mappings.md) | Geoprocess Canonical Model Mappings | Accepted | 2026-04 |
 
 ## Template
 

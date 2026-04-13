@@ -42,9 +42,15 @@ public sealed class GrpcProcessServiceTests
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.NotRequired());
 
+        var jobService = new GeoprocessingJobService(
+            _progressStore, _cancellationNotifier,
+            _authEvaluator, _approvalEvaluator,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore);
+
         _sut = new HonuaProcessService(
-            _jobStore, _progressStore, _cancellationNotifier,
-            _authEvaluator, _approvalEvaluator);
+            jobService,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
 
     // -----------------------------------------------------------------------
@@ -182,6 +188,9 @@ public sealed class GrpcProcessServiceTests
     [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
     public async Task ExecutePlan_Unauthorized_ThrowsPermissionDenied()
     {
+        // Even though ExecutePlan is unimplemented (#721), auth is enforced first
+        // so that unauthorized callers get 403 rather than an implementation-detail
+        // 501 (consistent with the contract: auth on all mutating RPCs).
         _authEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(AccessDecision.Forbidden());
@@ -709,6 +718,70 @@ public sealed class GrpcProcessServiceTests
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth-before-validation ordering
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public async Task ValidatePlan_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var request = new Proto.ValidatePlanRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.ValidatePlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
+            "auth must be checked before proto structural validation");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
+            "auth must be checked before proto structural validation");
     }
 
     // -----------------------------------------------------------------------

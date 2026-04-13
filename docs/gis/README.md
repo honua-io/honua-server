@@ -21,7 +21,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Protocol Coverage
 
-- [GeoServices REST Parity](geoservices-rest-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, and Geometry Service
+- [GeoServices REST Parity](geoservices-rest-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, Geometry Service, and GPServer
 - [GeoServices REST Parity Data (JSON)](data/geoservices-rest-parity.json) — Machine-readable export of the same parity contract
 - [FeatureServer Matrix](feature-server-matrix.md) — Esri FeatureServer endpoint coverage
 - [MapServer Matrix](map-server-matrix.md) — MapServer, WMS 1.3, WMTS 1.0 coverage

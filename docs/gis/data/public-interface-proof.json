@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-09T00:00:00Z",
+  "updatedUtc": "2026-04-13T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -900,6 +900,50 @@
           "status": "planned",
           "linkedTicket": "#478",
           "versionCaptureRule": "When the OGC API Maps client lane lands, record the exact client version, run date, and immutable .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
+        }
+      ]
+    },
+    {
+      "surfaceId": "gpserver-adapter",
+      "displayName": "GeoServices REST GPServer Adapter",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST GPServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/GPServer/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/rest/services/{serviceId}/GPServer"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "GPServer adapter retains happy-path and negative-path depth for endpoint routing, parameter translation, and status mapping",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
+            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#723",
+          "versionCaptureRule": null
         }
       ]
     },

@@ -38,7 +38,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **OGC Tiles**: tilesets metadata and vector tiles.
 - **OData**: CRUD + query options ($filter, $select, $orderby, $top, $skip, $count, $search, $apply, $batch).
 - **Tiles**: MVT + TileJSON.
-- **Geoprocessing**: gRPC `ProcessService` — plan validation, dry-run estimation, async job lifecycle. Workspace lifecycle management — artifact storage, retention policies, quota evaluation, promotion from temporary to durable workspaces, and background cleanup.
+- **Geoprocessing**: gRPC `ProcessService` — plan validation, dry-run estimation, async job lifecycle. GeoServices REST GPServer adapter — job status polling and cancellation over the canonical process runtime; routes registered for service info (stub), task info, submitJob, execute, and per-parameter result retrieval (pending process catalog and execution engine). Workspace lifecycle management — artifact storage, retention policies, quota evaluation, promotion from temporary to durable workspaces, and background cleanup.
 - **Admin**: connections, publishing, metadata, styles, imports, operations, observability.
 - **Import**: file import pipeline + Esri service import.
 
