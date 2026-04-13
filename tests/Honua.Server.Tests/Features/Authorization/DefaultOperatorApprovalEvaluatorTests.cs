@@ -13,7 +13,7 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     private static DefaultOperatorApprovalEvaluator CreateEvaluator(
         bool publishRequiresApproval = true,
         bool destructiveActionsRequireApproval = true,
-        bool adminExemptFromApproval = true)
+        bool adminExemptFromApproval = false)
     {
         var options = Options.Create(new OperatorApprovalOptions
         {
@@ -200,7 +200,7 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     }
 
     [UnitTest]
-    public void Evaluate_AdminPrincipal_ExemptFromApprovalByDefault()
+    public void Evaluate_AdminPrincipal_GatedByDefault()
     {
         var evaluator = CreateEvaluator(publishRequiresApproval: true);
         var request = new OperatorAuthorizationRequest
@@ -211,13 +211,15 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
 
         var result = evaluator.Evaluate(CreateAdminPrincipal(), request);
 
-        result.IsRequired.Should().BeFalse();
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.publish");
+        result.ReasonCodes.Should().Contain("publish-requires-approval");
     }
 
     [UnitTest]
-    public void Evaluate_AdminPrincipal_GatedWhenExemptionDisabled()
+    public void Evaluate_AdminPrincipal_ExemptWhenExplicitlyConfigured()
     {
-        var evaluator = CreateEvaluator(publishRequiresApproval: true, adminExemptFromApproval: false);
+        var evaluator = CreateEvaluator(publishRequiresApproval: true, adminExemptFromApproval: true);
         var request = new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Deployment,
@@ -226,7 +228,7 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
 
         var result = evaluator.Evaluate(CreateAdminPrincipal(), request);
 
-        result.IsRequired.Should().BeTrue();
+        result.IsRequired.Should().BeFalse();
     }
 
     [UnitTest]
