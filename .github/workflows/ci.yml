@@ -538,7 +538,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload OpenLayers Evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: openlayers-compat-results
@@ -606,7 +606,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: esri-leaflet-browser-results
@@ -683,7 +683,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-compat-results
           path: |
