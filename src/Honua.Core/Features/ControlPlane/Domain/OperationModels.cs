@@ -636,6 +636,70 @@ public sealed record ExecutionJobRecord
     /// Backend execution specification.
     /// </summary>
     public required ExecutionJobSpec Spec { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Claim and heartbeat fields (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Stable identifier of the worker that claimed this job for execution.
+    /// Null when the job has not been claimed.
+    /// </summary>
+    public string? ClaimedBy { get; init; }
+
+    /// <summary>
+    /// Time when the job was claimed by a worker.
+    /// </summary>
+    public DateTimeOffset? ClaimedAt { get; init; }
+
+    /// <summary>
+    /// Time of the most recent heartbeat signal from the executing worker.
+    /// </summary>
+    public DateTimeOffset? LastHeartbeatAt { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Retry tracking (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Number of execution attempts completed so far (including the current attempt).
+    /// </summary>
+    public int AttemptCount { get; init; }
+
+    /// <summary>
+    /// Earliest time the next retry attempt may begin.
+    /// Null when no retry is pending.
+    /// </summary>
+    public DateTimeOffset? NextRetryAt { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Policies (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Retry policy governing failure retry behavior. Null uses the system default.
+    /// </summary>
+    public JobRetryPolicy? RetryPolicy { get; init; }
+
+    /// <summary>
+    /// Heartbeat policy governing worker liveness detection. Null uses the system default.
+    /// </summary>
+    public JobHeartbeatPolicy? HeartbeatPolicy { get; init; }
+
+    /// <summary>
+    /// Timeout policy governing maximum execution duration. Null uses the system default.
+    /// </summary>
+    public JobTimeoutPolicy? TimeoutPolicy { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Artifact references (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// References to artifacts produced during execution, appended by the worker
+    /// through the execution context.
+    /// </summary>
+    public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>

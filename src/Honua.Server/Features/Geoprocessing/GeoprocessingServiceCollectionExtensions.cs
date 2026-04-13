@@ -61,6 +61,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
 
+        // Job orchestration substrate: queue, log store (ticket #681)
+        services.AddJobOrchestration();
+
         return services;
     }
 }
