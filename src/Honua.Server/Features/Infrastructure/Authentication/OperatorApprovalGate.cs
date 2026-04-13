@@ -119,7 +119,7 @@ internal sealed class OperatorApprovalGate(
     public AccessDecision CheckAuthorization(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
     {
         var decision = authEvaluator.Evaluate(principal, request);
-        EnrichActivity(request, decision.IsAllowed ? "allowed" : "denied");
+        EnrichAuthorizationActivity(request, decision.IsAllowed ? "allowed" : "denied");
         return decision;
     }
 
@@ -138,15 +138,25 @@ internal sealed class OperatorApprovalGate(
         OperatorAuthorizationLog.ApprovalGateEvaluated(
             logger, userId, request.ResourceType, request.Operation, outcome);
 
-        EnrichActivity(request, $"approval-{outcome}");
+        EnrichApprovalActivity(request, outcome);
         return approval;
     }
 
-    private static void EnrichActivity(OperatorAuthorizationRequest request, string outcome)
+    private static void EnrichAuthorizationActivity(OperatorAuthorizationRequest request, string outcome)
     {
         var activity = Activity.Current;
         if (activity == null) return;
-        activity.SetTag(HonuaTelemetry.Tags.Operation, $"{request.ResourceType}.{request.Operation}");
+        activity.SetTag("honua.gate.resource_type", request.ResourceType.ToString());
+        activity.SetTag("honua.gate.operation", request.Operation.ToString());
+        activity.SetTag("honua.authorization.outcome", outcome);
+    }
+
+    private static void EnrichApprovalActivity(OperatorAuthorizationRequest request, string outcome)
+    {
+        var activity = Activity.Current;
+        if (activity == null) return;
+        activity.SetTag("honua.gate.resource_type", request.ResourceType.ToString());
+        activity.SetTag("honua.gate.operation", request.Operation.ToString());
         activity.SetTag("honua.approval.outcome", outcome);
     }
 }

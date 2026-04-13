@@ -97,10 +97,16 @@ internal sealed class DeployWorkflowService
             }
             : await backend.PlanAsync(spec, cancellationToken).ConfigureAwait(false);
 
-        // If the backend returned its own plan, override RequiresApproval with the bridged value.
+        // If the backend returned its own plan, override RequiresApproval with the bridged value
+        // and recompute IsReadyToSubmit — backends derive it from spec.RequiresApproval which
+        // does not yet include the canonical evaluator's decision.
         if (backend != null && requiresApproval != plan.RequiresApproval)
         {
-            plan = plan with { RequiresApproval = requiresApproval };
+            plan = plan with
+            {
+                RequiresApproval = requiresApproval,
+                IsReadyToSubmit = plan.IsReadyToSubmit && !requiresApproval
+            };
         }
 
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
