@@ -106,6 +106,38 @@ public class HttpResiliencePolicyTests
     }
 
     [Fact]
+    public void GetHttpPolicy_WithEquivalentOptions_ReusesCachedPolicy()
+    {
+        // Arrange
+        var serviceType = $"test-service-{Guid.NewGuid():N}";
+        var firstOptions = new ResiliencePolicyOptions
+        {
+            MaxRetryAttempts = 2,
+            BaseDelay = TimeSpan.FromMilliseconds(25),
+            BackoffExponent = 1.5,
+            JitterPercentage = 0.1,
+            CircuitBreakerFailures = 4,
+            CircuitBreakDuration = TimeSpan.FromSeconds(5)
+        };
+        var secondOptions = new ResiliencePolicyOptions
+        {
+            MaxRetryAttempts = 2,
+            BaseDelay = TimeSpan.FromMilliseconds(25),
+            BackoffExponent = 1.5,
+            JitterPercentage = 0.1,
+            CircuitBreakerFailures = 4,
+            CircuitBreakDuration = TimeSpan.FromSeconds(5)
+        };
+
+        // Act
+        var first = HttpResiliencePolicies.GetHttpPolicy(serviceType, firstOptions);
+        var second = HttpResiliencePolicies.GetHttpPolicy(serviceType, secondOptions);
+
+        // Assert
+        Assert.Same(first, second);
+    }
+
+    [Fact]
     public void IsTransientHttpFailure_WithTransientErrors_ReturnsTrue()
     {
         // Arrange & Act & Assert

@@ -1,14 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Configuration.Validation;
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using System.ComponentModel.DataAnnotations;
 using Xunit;
 
 namespace Honua.Core.Tests.Configuration;
+
+file static class SecretProviderTestData
+{
+    internal static readonly string[] SupportedProviders = ["env", "azure", "aws"];
+}
 
 public class SecretProviderTests
 {
@@ -34,7 +42,7 @@ public class SecretProviderTests
     {
         // Arrange
         _mockResolver.Setup(r => r.GetSupportedProviders())
-            .Returns(new[] { "env", "azure", "aws" });
+            .Returns(SecretProviderTestData.SupportedProviders);
 
         var provider = CreateSecretProvider();
 
@@ -198,7 +206,7 @@ public class ConfigurationValidationAttributeTests
         // Arrange
         var attribute = new SecretReferenceAttribute
         {
-            AllowedProviders = new[] { "env", "azure", "aws" },
+            AllowedProviders = SecretProviderTestData.SupportedProviders,
             AllowPlainTextInDevelopment = false
         };
 
@@ -211,7 +219,7 @@ public class ConfigurationValidationAttributeTests
         Assert.True(IsValid(attribute, null)); // Null is valid
     }
 
-    private static bool IsValid(ConfigurationValidationAttribute attribute, object? value)
+    private static bool IsValid(ValidationAttribute attribute, object? value)
     {
         var context = new System.ComponentModel.DataAnnotations.ValidationContext(new object())
         {
@@ -219,7 +227,7 @@ public class ConfigurationValidationAttributeTests
         };
         context.Items["IsDevelopment"] = false; // Production mode
 
-        var result = attribute.IsValid(value, context);
+        var result = attribute.GetValidationResult(value, context);
         return result == System.ComponentModel.DataAnnotations.ValidationResult.Success;
     }
 }
@@ -244,33 +252,37 @@ public class SecretProvider : ISecretProvider, IDisposable
         _supportedProviders = _resolver.GetSupportedProviders();
     }
 
-    public async Task<string?> GetSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    public string ProviderName => "TestSecretProvider";
+
+    public bool CanProvideSecret(string secretKey) => IsSecretReference(secretKey);
+
+    public async Task<string?> GetSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
-        if (_options.EnableCaching && _cache.TryGetValue(secretRef, out var cached))
+        if (_options.EnableCaching && _cache.TryGetValue(secretKey, out var cached))
         {
             return cached;
         }
 
         try
         {
-            var value = await _resolver.ResolveConnectionStringAsync(secretRef, cancellationToken);
+            var value = await _resolver.ResolveConnectionStringAsync(secretKey, cancellationToken);
             if (_options.EnableCaching && !string.IsNullOrEmpty(value))
             {
-                _cache[secretRef] = value;
+                _cache[secretKey] = value;
             }
             return value;
         }
         catch (Exception ex)
         {
-            throw new SecretNotFoundException(secretRef, ex.Message, ex);
+            throw new SecretNotFoundException(secretKey, ex.Message, ex);
         }
     }
 
-    public async Task<string?> GetSecretOrDefaultAsync(string secretRef, string? defaultValue = null, CancellationToken cancellationToken = default)
+    public async Task<string?> GetSecretOrDefaultAsync(string secretKey, string? defaultValue = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            return await GetSecretAsync(secretRef, cancellationToken);
+            return await GetSecretAsync(secretKey, cancellationToken);
         }
         catch (SecretNotFoundException)
         {
@@ -278,14 +290,14 @@ public class SecretProvider : ISecretProvider, IDisposable
         }
     }
 
-    public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(secretRef))
+        if (string.IsNullOrWhiteSpace(secretKey))
         {
             return Task.FromResult(false);
         }
 
-        return _resolver.CanResolveSecretAsync(secretRef, cancellationToken);
+        return _resolver.CanResolveSecretAsync(secretKey, cancellationToken);
     }
 
     public string[] GetSupportedProviders() => _supportedProviders;

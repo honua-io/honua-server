@@ -173,7 +173,8 @@ internal static partial class SecureConnectionEndpoints
                     parsedSslMode);
             }
 
-            var isHealthy = await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);
+            var healthStatus = await connectionTester.TestConnectionAsync(connectionString, context.RequestAborted);
+            var isHealthy = healthStatus == ConnectionHealthStatus.Healthy;
             var result = new ConnectionTestResult
             {
                 ConnectionId = Guid.Empty,
@@ -615,7 +616,7 @@ internal static partial class SecureConnectionEndpoints
                 SecretRef = secretRef,
                 SecretType = secretType,
                 CreatedAt = existing.CreatedAt,
-                UpdatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
                 CreatedBy = existing.CreatedBy,
                 IsActive = isActive,
                 LastHealthCheck = existing.LastHealthCheck,

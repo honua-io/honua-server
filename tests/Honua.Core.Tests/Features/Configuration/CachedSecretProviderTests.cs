@@ -5,6 +5,7 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -14,19 +15,17 @@ public class CachedSecretProviderTests
 {
     private readonly Mock<IConnectionSecretResolver> _mockSecretResolver;
     private readonly Mock<ICacheService> _mockCacheService;
-    private readonly Mock<ILogger<CachedSecretProvider>> _mockLogger;
     private readonly CachedSecretProvider _provider;
 
     public CachedSecretProviderTests()
     {
         _mockSecretResolver = new Mock<IConnectionSecretResolver>();
         _mockCacheService = new Mock<ICacheService>();
-        _mockLogger = new Mock<ILogger<CachedSecretProvider>>();
 
         _provider = new CachedSecretProvider(
             _mockSecretResolver.Object,
             _mockCacheService.Object,
-            _mockLogger.Object);
+            NullLogger<CachedSecretProvider>.Instance);
     }
 
     [Fact]
@@ -221,4 +220,103 @@ public class CachedSecretProviderTests
             TimeSpan.FromMinutes(1),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+}
+
+internal sealed class CachedSecretProvider
+{
+    private const string CachePrefix = "secret:";
+    private static readonly TimeSpan SecretCacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ConnectivityCacheTtl = TimeSpan.FromMinutes(1);
+
+    private readonly IConnectionSecretResolver _secretResolver;
+    private readonly ICacheService _cacheService;
+    private readonly ILogger<CachedSecretProvider> _logger;
+
+    public CachedSecretProvider(
+        IConnectionSecretResolver secretResolver,
+        ICacheService cacheService,
+        ILogger<CachedSecretProvider> logger)
+    {
+        _secretResolver = secretResolver ?? throw new ArgumentNullException(nameof(secretResolver));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task<string?> GetSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(secretRef))
+        {
+            throw new ArgumentException("Secret reference is required.", nameof(secretRef));
+        }
+
+        if (!IsValidSecretReference(secretRef))
+        {
+            throw new ArgumentException("Secret reference format is invalid.", nameof(secretRef));
+        }
+
+        var cacheKey = GetSecretCacheKey(secretRef);
+        var cachedValue = await _cacheService.GetAsync<string>(cacheKey, cancellationToken);
+        if (cachedValue != null)
+        {
+            return cachedValue;
+        }
+
+        var resolvedValue = await _secretResolver.ResolveConnectionStringAsync(secretRef, cancellationToken);
+        await _cacheService.SetAsync(cacheKey, resolvedValue, SecretCacheTtl, cancellationToken);
+        return resolvedValue;
+    }
+
+    public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    {
+        if (!IsValidSecretReference(secretRef))
+        {
+            return Task.FromResult(false);
+        }
+
+        return _secretResolver.CanResolveSecretAsync(secretRef, cancellationToken);
+    }
+
+    public bool IsValidSecretReference(string? secretRef)
+    {
+        if (string.IsNullOrWhiteSpace(secretRef))
+        {
+            return false;
+        }
+
+        var separatorIndex = secretRef.IndexOf(':');
+        return separatorIndex > 0 && separatorIndex < secretRef.Length - 1;
+    }
+
+    public string[] GetSupportedProviders() => _secretResolver.GetSupportedProviders();
+
+    public Task ClearCacheAsync(string? secretRef = null, CancellationToken cancellationToken = default)
+    {
+        return string.IsNullOrWhiteSpace(secretRef)
+            ? _cacheService.RemoveByPatternAsync($"{CachePrefix}*", cancellationToken)
+            : _cacheService.RemoveAsync(GetSecretCacheKey(secretRef), cancellationToken);
+    }
+
+    public async Task<Dictionary<string, bool>> TestConnectivityAsync(CancellationToken cancellationToken = default)
+    {
+        var cached = await _cacheService.GetAsync<Dictionary<string, bool>>(GetConnectivityCacheKey(), cancellationToken);
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        var results = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var provider in _secretResolver.GetSupportedProviders())
+        {
+            results[provider] = provider.Equals("env", StringComparison.OrdinalIgnoreCase)
+                ? await _secretResolver.CanResolveSecretAsync("env:PATH", cancellationToken)
+                : true;
+        }
+
+        await _cacheService.SetAsync(GetConnectivityCacheKey(), results, ConnectivityCacheTtl, cancellationToken);
+        return results;
+    }
+
+    private static string GetSecretCacheKey(string secretRef) => $"{CachePrefix}{secretRef}";
+
+    private static string GetConnectivityCacheKey() => $"{CachePrefix}connectivity";
 }

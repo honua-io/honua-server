@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -40,6 +41,12 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
             _cacheCleanupTimer = new Timer(CleanupExpiredEntries, null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
         }
     }
+
+    /// <inheritdoc />
+    public string ProviderName => "CompositeSecretProvider";
+
+    /// <inheritdoc />
+    public bool CanProvideSecret(string secretKey) => IsSecretReference(secretKey);
 
     /// <summary>
     /// Retrieves a secret value using the specified secret reference.

@@ -11,6 +11,24 @@ namespace Honua.Core.Features.Security.Abstractions;
 public interface IDatabaseConnectionStringBuilder
 {
     /// <summary>
+    /// Builds a connection string from individual components.
+    /// </summary>
+    /// <param name="host">Database host.</param>
+    /// <param name="port">Database port.</param>
+    /// <param name="databaseName">Database name.</param>
+    /// <param name="username">Database user name.</param>
+    /// <param name="password">Database password.</param>
+    /// <param name="sslMode">SSL mode.</param>
+    /// <returns>The constructed connection string.</returns>
+    string BuildConnectionString(
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string password,
+        SslMode sslMode);
+
+    /// <summary>
     /// Builds a connection string from a data connection configuration.
     /// </summary>
     /// <param name="connection">The data connection configuration</param>

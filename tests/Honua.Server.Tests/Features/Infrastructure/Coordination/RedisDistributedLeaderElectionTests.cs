@@ -138,15 +138,14 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
     [Operation(Operations.Infrastructure)]
     public async Task TryAcquireLeadershipAsync_WithConnectedRedis_UsesRedisLock()
     {
-        // Setup Redis as connected
-        _redis.IsConnected.Returns(true);
+        using var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .Returns(true);
 
-        var result = await _leaderElection.TryAcquireLeadershipAsync();
+        var result = await election.TryAcquireLeadershipAsync();
 
         result.Should().BeTrue();
-        _leaderElection.IsLeader.Should().BeTrue();
+        election.IsLeader.Should().BeTrue();
         await _database.Received(1).StringSetAsync(
             Arg.Any<RedisKey>(),
             Arg.Any<RedisValue>(),
@@ -158,35 +157,37 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
     [Operation(Operations.Infrastructure)]
     public async Task TryAcquireLeadershipAsync_WithConnectedRedis_WhenLockTaken_ReturnsFalse()
     {
-        // Setup Redis as connected but lock already taken
-        _redis.IsConnected.Returns(true);
+        using var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .Returns(false);
 
-        var result = await _leaderElection.TryAcquireLeadershipAsync();
+        var result = await election.TryAcquireLeadershipAsync();
 
         result.Should().BeFalse();
-        _leaderElection.IsLeader.Should().BeFalse();
+        election.IsLeader.Should().BeFalse();
     }
 
     [UnitTest]
     [Operation(Operations.Infrastructure)]
     public async Task HeartbeatAsync_WithConnectedRedis_ExtendsLease()
     {
-        // Setup Redis as connected and acquire leadership
-        _redis.IsConnected.Returns(true);
+        using var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .Returns(true);
-        _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.Exists)
-            .Returns(true);
+        _database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>())
+            .Returns(1);
 
-        await _leaderElection.TryAcquireLeadershipAsync();
+        await election.TryAcquireLeadershipAsync();
 
-        var result = await _leaderElection.HeartbeatAsync();
+        var result = await election.HeartbeatAsync();
 
         result.Should().BeTrue();
-        _leaderElection.IsLeader.Should().BeTrue();
-        await _database.Received(1).StringSetAsync(
+        election.IsLeader.Should().BeTrue();
+        await _database.Received(1).ScriptEvaluateAsync(
+            Arg.Any<string>(),
+            Arg.Any<RedisKey[]>(),
+            Arg.Any<RedisValue[]>());
+        await _database.DidNotReceive().StringSetAsync(
             Arg.Any<RedisKey>(),
             Arg.Any<RedisValue>(),
             Arg.Any<TimeSpan?>(),
@@ -195,40 +196,38 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Infrastructure)]
-    public async Task HeartbeatAsync_WhenLeaseExpired_LosesLeadership()
+    public async Task HeartbeatAsync_WhenLeaseIsNoLongerOwned_LosesLeadership()
     {
-        // Setup Redis as connected, acquire leadership, then lose it
-        _redis.IsConnected.Returns(true);
+        using var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .Returns(true);
-        _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.Exists)
-            .Returns(false);
+        _database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>())
+            .Returns(0);
 
-        await _leaderElection.TryAcquireLeadershipAsync();
-        _leaderElection.IsLeader.Should().BeTrue();
+        await election.TryAcquireLeadershipAsync();
+        election.IsLeader.Should().BeTrue();
 
-        var result = await _leaderElection.HeartbeatAsync();
+        var result = await election.HeartbeatAsync();
 
         result.Should().BeFalse();
-        _leaderElection.IsLeader.Should().BeFalse();
+        election.IsLeader.Should().BeFalse();
     }
 
     [UnitTest]
     [Operation(Operations.Infrastructure)]
     public async Task ReleaseLeadershipAsync_WithConnectedRedis_DeletesLock()
     {
-        // Setup Redis as connected and acquire leadership
-        _redis.IsConnected.Returns(true);
+        using var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .Returns(true);
         _database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>())
             .Returns(1);
 
-        await _leaderElection.TryAcquireLeadershipAsync();
+        await election.TryAcquireLeadershipAsync();
 
-        await _leaderElection.ReleaseLeadershipAsync();
+        await election.ReleaseLeadershipAsync();
 
-        _leaderElection.IsLeader.Should().BeFalse();
+        election.IsLeader.Should().BeFalse();
         await _database.Received(1).ScriptEvaluateAsync(
             Arg.Any<string>(),
             Arg.Any<RedisKey[]>(),
@@ -239,29 +238,27 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
     [Operation(Operations.Infrastructure)]
     public async Task RedisFailure_FallsBackToLocalMode()
     {
-        // Setup Redis as connected initially
-        _redis.IsConnected.Returns(true);
+        using var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .ThrowsAsync(new RedisException("Connection failed"));
 
-        var result = await _leaderElection.TryAcquireLeadershipAsync();
+        var result = await election.TryAcquireLeadershipAsync();
 
         result.Should().BeTrue("should fallback to local leadership on Redis failure");
-        _leaderElection.IsLeader.Should().BeTrue();
+        election.IsLeader.Should().BeTrue();
     }
 
     [UnitTest]
     [Operation(Operations.Infrastructure)]
     public async Task RedisFailure_WithoutFallback_ReturnsFalse()
     {
+        _redis.IsConnected.Returns(true);
         var election = new RedisDistributedLeaderElection(
             "test-key",
             _redis,
             NullLogger<RedisDistributedLeaderElection>.Instance,
             allowFallback: false);
 
-        // Setup Redis as connected but failing
-        _redis.IsConnected.Returns(true);
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .ThrowsAsync(new RedisException("Connection failed"));
 
@@ -277,17 +274,16 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
     [Operation(Operations.Infrastructure)]
     public async Task Dispose_ReleasesLeadershipGracefully()
     {
-        // Setup Redis as connected and acquire leadership
-        _redis.IsConnected.Returns(true);
+        var election = CreateRedisBackedElection();
         _database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), When.NotExists)
             .Returns(true);
         _database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>())
             .Returns(1);
 
-        await _leaderElection.TryAcquireLeadershipAsync();
-        _leaderElection.IsLeader.Should().BeTrue();
+        await election.TryAcquireLeadershipAsync();
+        election.IsLeader.Should().BeTrue();
 
-        _leaderElection.Dispose();
+        election.Dispose();
 
         // Give some time for async cleanup
         await Task.Delay(50);
@@ -296,5 +292,15 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             Arg.Any<string>(),
             Arg.Any<RedisKey[]>(),
             Arg.Any<RedisValue[]>());
+    }
+
+    private RedisDistributedLeaderElection CreateRedisBackedElection()
+    {
+        _redis.IsConnected.Returns(true);
+
+        return new RedisDistributedLeaderElection(
+            "test-leader-key",
+            _redis,
+            NullLogger<RedisDistributedLeaderElection>.Instance);
     }
 }

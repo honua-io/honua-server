@@ -9,6 +9,11 @@ namespace Honua.Core.Tests.Features.Infrastructure.Validation;
 
 public class ValidatedServiceBaseTests
 {
+    private sealed class ValidationBuilderAccessor : ValidatedServiceBase
+    {
+        public static ValidationBuilder Create() => Validate();
+    }
+
     private sealed class TestService : ValidatedServiceBase
     {
         public TestService(string param1, object param2, IOptions<TestOptions> options)
@@ -110,7 +115,7 @@ public class ValidatedServiceBaseTests
 
         // Act & Assert
         var exception = Assert.Throws<ArgumentNullException>(() => ValidatedServiceBase.ValidateOptions(optionsWrapper));
-        Assert.Equal("options.Value", exception.ParamName);
+        Assert.Equal("optionsWrapper.Value", exception.ParamName);
     }
 
     [Fact]
@@ -206,7 +211,7 @@ public class ValidatedServiceBaseTests
         var collection = new[] { 1, 2, 3 };
 
         // Act & Assert (should not throw)
-        ValidatedServiceBase.Validate()
+        ValidationBuilderAccessor.Create()
             .Required(str)
             .Required(obj)
             .CollectionNotEmpty(collection)
@@ -220,7 +225,7 @@ public class ValidatedServiceBaseTests
     {
         // Arrange & Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ValidatedServiceBase.Validate()
+            ValidationBuilderAccessor.Create()
                 .That(false, new InvalidOperationException("Custom exception")));
 
         Assert.Equal("Custom exception", exception.Message);
@@ -231,10 +236,10 @@ public class ValidatedServiceBaseTests
     {
         // Arrange & Act & Assert
         var exception = Assert.Throws<ArgumentException>(() =>
-            ValidatedServiceBase.Validate()
+            ValidationBuilderAccessor.Create()
                 .That(false, "Custom message", "paramName"));
 
-        Assert.Equal("Custom message", exception.Message);
+        Assert.StartsWith("Custom message", exception.Message, StringComparison.Ordinal);
         Assert.Equal("paramName", exception.ParamName);
     }
 

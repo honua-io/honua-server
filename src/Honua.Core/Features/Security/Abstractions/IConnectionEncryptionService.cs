@@ -34,4 +34,10 @@ public interface IConnectionEncryptionService
     /// </summary>
     /// <returns>True if encryption is working correctly</returns>
     Task<bool> ValidateEncryptionAsync();
+
+    /// <summary>
+    /// Rotates the encryption key and returns the new version.
+    /// </summary>
+    /// <returns>The new key version.</returns>
+    Task<int> RotateKeyAsync();
 }

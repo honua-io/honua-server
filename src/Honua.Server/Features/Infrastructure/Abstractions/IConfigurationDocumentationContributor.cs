@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Infrastructure.Abstractions;
 /// Contributes feature-owned configuration metadata to the admin documentation endpoint
 /// without introducing direct feature-to-feature dependencies.
 /// </summary>
-internal interface IConfigurationDocumentationContributor
+public interface IConfigurationDocumentationContributor
 {
     /// <summary>
     /// Returns additional configuration sections for the admin documentation response.

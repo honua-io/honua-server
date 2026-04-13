@@ -1,13 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+// This validator builds reflective configuration metadata for admin tooling and startup validation.
+// The code is intentionally dynamic and localized here rather than in request-path components.
+#pragma warning disable IL2067, IL2071, IL2072, IL2090
+
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
+using Honua.Core.Configuration;
 using Honua.Core.Configuration.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
@@ -32,6 +38,16 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc />
+    public string ConfigurationSection => string.Empty;
+
+    /// <inheritdoc />
+    public IEnumerable<string> ValidateConfiguration(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return ValidateAllAsync().GetAwaiter().GetResult().AllErrors;
     }
 
     /// <summary>
@@ -245,7 +261,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
                 };
 
                 var value = property.GetValue(options);
-                var result = attribute.IsValid(value, propertyContext);
+                var result = attribute.GetValidationResult(value, propertyContext);
 
                 if (result != null && result != ValidationResult.Success)
                 {
@@ -326,3 +342,5 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         return property.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description;
     }
 }
+
+#pragma warning restore IL2067, IL2071, IL2072, IL2090

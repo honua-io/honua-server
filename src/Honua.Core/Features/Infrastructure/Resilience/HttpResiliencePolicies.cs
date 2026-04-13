@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
@@ -30,8 +30,8 @@ public static class HttpResiliencePolicies
     /// </summary>
     internal const string OnCircuitBreakerCallbackKey = "OnCircuitBreakerCallback";
 
-    // Per-service-type policy caches for circuit breaker isolation
-    private static readonly ConditionalWeakTable<string, IAsyncPolicy<HttpResponseMessage>> _httpPolicies = new();
+    // Per-service-type policy caches for circuit breaker isolation.
+    private static readonly ConcurrentDictionary<string, IAsyncPolicy<HttpResponseMessage>> _httpPolicies = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Standard HTTP resilience options for external services.
@@ -87,7 +87,7 @@ public static class HttpResiliencePolicies
         var effectiveOptions = options ?? HttpDefaults;
         var cacheKey = $"{serviceType}|{GetOptionsHash(effectiveOptions)}";
 
-        return _httpPolicies.GetValue(cacheKey, _ => BuildHttpPolicy(effectiveOptions));
+        return _httpPolicies.GetOrAdd(cacheKey, _ => BuildHttpPolicy(effectiveOptions));
     }
 
     /// <summary>

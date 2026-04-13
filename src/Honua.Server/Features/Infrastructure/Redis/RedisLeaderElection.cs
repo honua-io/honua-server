@@ -10,7 +10,7 @@ namespace Honua.Server.Features.Infrastructure.Redis;
 /// <summary>
 /// Redis-based distributed leader election with automatic lease renewal and fallback handling.
 /// </summary>
-internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLeaderElection
+internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLeaderElection, IDisposable
 {
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RenewalInterval = TimeSpan.FromSeconds(20); // Renew at 1/3 of lease duration
@@ -55,7 +55,7 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
     public string? CurrentLeader => _currentLeader;
     public TimeSpan LeaseDuration => _leaseDuration;
 
-    public event EventHandler<LeadershipChangedEventArgs>? LeadershipChanged;
+    public event EventHandler<Honua.Core.Features.Infrastructure.Redis.LeadershipChangedEventArgs>? LeadershipChanged;
 
     public async Task<bool> TryAcquireOrExtendLeadershipAsync(CancellationToken cancellationToken = default)
     {
@@ -203,7 +203,9 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         if (changed)
         {
             Log.LeadershipStatusChanged(Logger, _nodeId, isLeader);
-            LeadershipChanged?.Invoke(this, new LeadershipChangedEventArgs(isLeader, previousLeader, newLeader));
+            LeadershipChanged?.Invoke(
+                this,
+                new Honua.Core.Features.Infrastructure.Redis.LeadershipChangedEventArgs(isLeader, previousLeader, newLeader));
         }
     }
 

@@ -253,10 +253,10 @@ internal sealed class FeatureServerQueryHandler(
                 inputSrid = layer.SpatialReference.ToSrid();
             }
 
-            if (parsedGeometry != null && inputSrid.HasValue && queryLimits.MaxBboxAreaSqKm.HasValue)
+            if (parsedGeometry != null && inputSrid.HasValue && queryLimits.MaxBboxAreaSqKm > 0)
             {
                 var areaLimitSpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
-                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, areaLimitSpatialReference, queryLimits.MaxBboxAreaSqKm.Value);
+                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, areaLimitSpatialReference, queryLimits.MaxBboxAreaSqKm);
                 if (!areaLimitResult.IsValid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,

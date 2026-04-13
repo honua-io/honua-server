@@ -94,7 +94,7 @@ internal static class ServiceDataEditorAuthorization
             service.Metadata?.AccessPolicy);
         if (policyDecision is not null)
         {
-            return Task.FromResult(policyDecision);
+            return Task.FromResult(policyDecision.Value);
         }
 
         return EvaluateServiceAccessAsync(context, service.Name, cancellationToken);
@@ -152,7 +152,7 @@ internal static class ServiceDataEditorAuthorization
             service?.Metadata?.AccessPolicy);
         if (policyDecision is not null)
         {
-            return Task.FromResult(policyDecision);
+            return Task.FromResult(policyDecision.Value);
         }
 
         return service != null

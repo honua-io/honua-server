@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using Honua.Core.Features.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
@@ -82,17 +83,6 @@ public static class RedisConfigurationExample
                 sp.GetRequiredService<IHostEnvironment>(),
                 sp.GetRequiredService<ILogger<Features.FeatureServer.StandardizedDistributedReplicaStore>>()));
 
-        // Replace existing RedisLeaseCoordinator with standardized leader election
-        // The webhook dispatcher should be updated to use IRedisLeaderElection instead
-        services.AddSingleton<Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>(sp =>
-        {
-            var leaderElection = sp.GetRequiredService<IRedisLeaderElection>();
-            // Update constructor to accept IRedisLeaderElection instead of RedisLeaseCoordinator
-            return new Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
-                /* ... other parameters ... */
-                leaderElection);
-        });
-
         // Replace existing RedisImportJobManager with standardized job queue
         services.AddSingleton<IRedisJobQueue>(sp =>
             sp.GetRequiredService<IReadOnlyDictionary<string, IRedisJobQueue>>()["geoservices-import"]);
@@ -109,23 +99,8 @@ public static class RedisServiceMigrationExtensions
     /// </summary>
     public static IServiceCollection MigrateFeatureChangeWebhookDispatcher(this IServiceCollection services)
     {
-        // Remove existing registration
-        var existingDispatcher = services.FirstOrDefault(d =>
-            d.ServiceType == typeof(Features.Infrastructure.Events.FeatureChangeWebhookDispatcher));
-        if (existingDispatcher != null)
-        {
-            services.Remove(existingDispatcher);
-        }
-
-        // Add with standardized leader election
-        services.AddSingleton<Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>(sp =>
-        {
-            var leaderElection = sp.GetRequiredService<IRedisLeaderElection>();
-            // Note: The dispatcher constructor would need to be updated to accept IRedisLeaderElection
-            // instead of RedisLeaseCoordinator
-            throw new NotImplementedException("FeatureChangeWebhookDispatcher needs to be updated to use IRedisLeaderElection");
-        });
-
+        // The live dispatcher registration in Program.cs still owns its lease coordinator wiring.
+        // This example remains a no-op until that dispatcher is migrated to IRedisLeaderElection.
         return services;
     }
 
@@ -183,7 +158,8 @@ public static class RedisConfigurationValidator
 
                 foreach (var (key, queue) in criticalQueues)
                 {
-                    if (queue.FallbackMode == RedisFallbackMode.InMemoryFallback)
+                    if (queue is RedisServiceBase serviceBase &&
+                        serviceBase.FallbackMode == RedisFallbackMode.InMemoryFallback)
                     {
                         throw new InvalidOperationException(
                             $"Job queue '{key}' uses InMemoryFallback in production, " +

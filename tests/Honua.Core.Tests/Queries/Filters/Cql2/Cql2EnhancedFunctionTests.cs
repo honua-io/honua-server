@@ -31,8 +31,16 @@ public class Cql2EnhancedFunctionTests
         // Should parse without throwing exceptions
         if (result is BinaryExpression binary)
         {
-            // For functions that return values used in comparisons
-            (binary.Left.Should().BeOfType<FunctionCall>().Or.BeOfType<PropertyReference>());
+            if (cql.Contains("BETWEEN", StringComparison.OrdinalIgnoreCase))
+            {
+                binary.Operator.Should().Be(BinaryOperator.And);
+                binary.Left.Should().BeOfType<BinaryExpression>();
+                ((BinaryExpression)binary.Left).Left.Should().BeOfType<FunctionCall>();
+            }
+            else
+            {
+                Assert.True(binary.Left is FunctionCall or PropertyReference);
+            }
         }
         else if (result is FunctionCall)
         {
@@ -59,7 +67,16 @@ public class Cql2EnhancedFunctionTests
         result.Should().BeOfType<BinaryExpression>();
 
         var binary = (BinaryExpression)result;
-        binary.Left.Should().BeOfType<FunctionCall>();
+        if (cql.Contains("BETWEEN", StringComparison.OrdinalIgnoreCase))
+        {
+            binary.Operator.Should().Be(BinaryOperator.And);
+            binary.Left.Should().BeOfType<BinaryExpression>();
+            ((BinaryExpression)binary.Left).Left.Should().BeOfType<FunctionCall>();
+        }
+        else
+        {
+            binary.Left.Should().BeOfType<FunctionCall>();
+        }
     }
 
     [Theory]
@@ -78,7 +95,16 @@ public class Cql2EnhancedFunctionTests
         result.Should().BeOfType<BinaryExpression>();
 
         var binary = (BinaryExpression)result;
-        binary.Left.Should().BeOfType<FunctionCall>();
+        if (cql.Contains("BETWEEN", StringComparison.OrdinalIgnoreCase))
+        {
+            binary.Operator.Should().Be(BinaryOperator.And);
+            binary.Left.Should().BeOfType<BinaryExpression>();
+            ((BinaryExpression)binary.Left).Left.Should().BeOfType<FunctionCall>();
+        }
+        else
+        {
+            binary.Left.Should().BeOfType<FunctionCall>();
+        }
     }
 
     [Theory]

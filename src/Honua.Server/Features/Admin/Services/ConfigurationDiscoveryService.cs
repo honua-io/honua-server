@@ -1,6 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+// This admin-only discovery service intentionally uses reflection to inspect option types.
+// The reflective code path is not part of request hot paths or NativeAOT-critical execution.
+#pragma warning disable IL2070, IL2071, IL2072, IL3000
+
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
@@ -9,6 +13,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Configuration;
 using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
@@ -355,9 +360,9 @@ public sealed class ConfigurationDiscoveryService
                     rule.MaxLength = stringLength.MaximumLength;
                     break;
                 case ValidTtlAttribute ttlAttr:
-                    rule.MinimumTtl = ttlAttr.MinimumTtl;
-                    rule.MaximumTtl = ttlAttr.MaximumTtl;
-                    rule.RecommendedMinimumInProduction = ttlAttr.RecommendedMinimumInProduction;
+                    rule.MinimumTtl = ttlAttr.MinimumTtl.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
+                    rule.MaximumTtl = ttlAttr.MaximumTtl.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
+                    rule.RecommendedMinimumInProduction = ttlAttr.RecommendedMinimumInProduction?.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
                     break;
             }
 
@@ -743,12 +748,14 @@ public sealed class ConfigurationDiscoveryService
         if (key.Contains("__"))
             return "Environment Variables";
 
-        if (key.Contains(":"))
+        if (key.Contains(':'))
             return "Configuration File";
 
         return "Other";
     }
 }
+
+#pragma warning restore IL2070, IL2071, IL2072, IL3000
 
 // Additional model classes for the discovery service...
 

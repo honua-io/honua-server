@@ -34,7 +34,17 @@ public sealed class SecureConfigurationOptions
     /// <summary>
     /// Whether to validate configuration signatures.
     /// </summary>
-    public bool ValidateSignatures { get; init; } = false;
+    public bool ValidateSignatures { get; init; }
+
+    /// <summary>
+    /// Whether startup should fail when secret validation fails outside development.
+    /// </summary>
+    public bool FailOnSecretValidationError { get; set; } = true;
+
+    /// <summary>
+    /// Whether secret references should be resolved automatically after binding.
+    /// </summary>
+    public bool AutoResolveSecrets { get; set; } = true;
 
     /// <summary>
     /// Allowed configuration sources.

@@ -9,6 +9,11 @@ namespace Honua.Core.Features.Infrastructure.Domain;
 public sealed record CloudStorageOptions
 {
     /// <summary>
+    /// Whether storage integration is enabled.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
     /// The cloud storage provider to use
     /// </summary>
     public CloudStorageProvider Provider { get; set; } = CloudStorageProvider.Local;

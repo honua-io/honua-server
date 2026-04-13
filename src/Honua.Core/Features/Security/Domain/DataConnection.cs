@@ -179,6 +179,37 @@ public class DataConnection
     }
 
     /// <summary>
+    /// Creates a data connection with encrypted credentials and description metadata.
+    /// </summary>
+    public static DataConnection CreateWithEncryptedCredentials(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        byte[] encryptedConnectionString,
+        int encryptionKeyVersion,
+        string createdBy,
+        string? description,
+        bool sslRequired,
+        SslMode sslMode)
+    {
+        var connection = CreateWithEncryptedCredentials(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            encryptedConnectionString,
+            encryptionKeyVersion,
+            createdBy,
+            sslRequired,
+            sslMode);
+        connection.Description = description;
+        return connection;
+    }
+
+    /// <summary>
     /// Creates a data connection with a secret reference.
     /// </summary>
     public static DataConnection CreateWithSecretReference(
@@ -216,6 +247,37 @@ public class DataConnection
             IsActive = true,
             DatabaseType = "PostgreSQL"
         };
+    }
+
+    /// <summary>
+    /// Creates a data connection with a secret reference and description metadata.
+    /// </summary>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy,
+        string? description,
+        bool sslRequired,
+        SslMode sslMode)
+    {
+        var connection = CreateWithSecretReference(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            secretRef,
+            secretType,
+            createdBy,
+            sslRequired,
+            sslMode);
+        connection.Description = description;
+        return connection;
     }
 
     /// <summary>
@@ -270,6 +332,15 @@ public class DataConnection
             _ => false
         };
     }
+
+    /// <summary>
+    /// Checks if an SSL requirement is compatible with the selected SSL mode.
+    /// </summary>
+    /// <param name="requirement">Whether SSL is required.</param>
+    /// <param name="mode">The SSL mode to check.</param>
+    /// <returns>True if SSL mode is compatible with the requirement.</returns>
+    public static bool IsSslModeCompatibleWithRequirement(bool requirement, SslMode mode)
+        => IsSslModeCompatibleWithRequirement(mode, requirement);
 }
 
 /// <summary>

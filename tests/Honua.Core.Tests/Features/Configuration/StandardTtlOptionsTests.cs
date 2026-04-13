@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Configuration;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 
@@ -166,15 +167,16 @@ public class StandardTtlOptionsTests
         Assert.Equal(expectedCategory, category);
     }
 
-    private static IHostEnvironment CreateEnvironment(string environmentName)
+    private static TestHostEnvironment CreateEnvironment(string environmentName)
     {
         return new TestHostEnvironment { EnvironmentName = environmentName };
     }
 
-    private class TestHostEnvironment : IHostEnvironment
+    private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = "Test";
         public string ApplicationName { get; set; } = "Test";
         public string ContentRootPath { get; set; } = "/";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

@@ -1,7 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geocoding.Abstractions;
+using Honua.Core.Features.Geocoding.Domain;
+using Honua.Core.Features.Geocoding.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Geocoding;
 
@@ -10,6 +15,32 @@ namespace Honua.Core.Features.Geocoding;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the core geocoding services and configuration.
+    /// </summary>
+    /// <param name="services">Service collection.</param>
+    /// <param name="configuration">Application configuration.</param>
+    /// <returns>Service collection for chaining.</returns>
+    public static IServiceCollection AddGeocodingCore(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<GeocodingConfiguration>()
+            .Bind(configuration.GetSection(GeocodingConfiguration.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<GeocodingConfiguration>, GeocodingConfigurationValidator>();
+
+        services.AddScoped<IGeocodeProviderRegistry, GeocodeProviderRegistry>();
+        services.AddScoped<IGeocodeProviderFactory>(sp => (GeocodeProviderRegistry)sp.GetRequiredService<IGeocodeProviderRegistry>());
+        services.AddScoped<IGeocodeCoordinatorService, GeocodeCoordinatorService>();
+        services.AddScoped<IGeocodeProviderCoordinator, GeocodeProviderCoordinator>();
+
+        return services;
+    }
+
     /// <summary>
     /// Register a geocoding provider.
     /// </summary>
@@ -22,12 +53,13 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         string providerName,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TProvider : class
+        where TProvider : class, IGeocodeProvider
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(providerName);
 
         services.Add(new ServiceDescriptor(typeof(TProvider), typeof(TProvider), lifetime));
+        services.Add(new ServiceDescriptor(typeof(IGeocodeProvider), sp => sp.GetRequiredService<TProvider>(), lifetime));
         return services;
     }
 
@@ -44,13 +76,14 @@ public static class ServiceCollectionExtensions
         string providerName,
         Func<IServiceProvider, TProvider> factory,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TProvider : class
+        where TProvider : class, IGeocodeProvider
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(providerName);
         ArgumentNullException.ThrowIfNull(factory);
 
         services.Add(new ServiceDescriptor(typeof(TProvider), factory, lifetime));
+        services.Add(new ServiceDescriptor(typeof(IGeocodeProvider), sp => sp.GetRequiredService<TProvider>(), lifetime));
         return services;
     }
 }

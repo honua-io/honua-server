@@ -92,7 +92,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
                     key = le.LeadershipKey,
                     is_leader = le.IsLeader,
                     node_id = le.NodeId,
-                    configured = le.IsConfigured
+                    configured = le.IsRedisConfigured
                 }).ToArray();
             }
 
@@ -104,9 +104,9 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 {
                     key = jq.QueueKey,
                     using_redis = jq.IsUsingRedis,
-                    fallback_mode = jq.FallbackMode.ToString(),
-                    fallback_queue_length = jq.FallbackQueueLength,
-                    in_flight_count = jq.InFlightCount
+                    fallback_mode = jq is RedisServiceBase serviceBase ? serviceBase.FallbackMode.ToString() : "Unknown",
+                    fallback_queue_length = jq is RedisJobQueue redisJobQueue ? redisJobQueue.FallbackQueueLength : 0,
+                    in_flight_count = jq is RedisJobQueue redisJobQueue2 ? redisJobQueue2.InFlightCount : 0
                 }).ToArray();
             }
 
@@ -119,7 +119,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
                     name = kvp.Key,
                     key = kvp.Value.QueueKey,
                     using_redis = kvp.Value.IsUsingRedis,
-                    fallback_mode = kvp.Value.FallbackMode.ToString()
+                    fallback_mode = kvp.Value is RedisServiceBase serviceBase ? serviceBase.FallbackMode.ToString() : "Unknown"
                 }).ToArray();
             }
         }

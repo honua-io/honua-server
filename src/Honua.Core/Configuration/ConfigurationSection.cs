@@ -50,6 +50,11 @@ public class ConfigurationProperty
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the full configuration path for the property.
+    /// </summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the description of the property.
     /// </summary>
     public string Description { get; set; } = string.Empty;
@@ -65,6 +70,11 @@ public class ConfigurationProperty
     public object? DefaultValue { get; set; }
 
     /// <summary>
+    /// Gets or sets the current value of the property.
+    /// </summary>
+    public object? CurrentValue { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether this property is required.
     /// </summary>
     public bool IsRequired { get; set; }
@@ -72,12 +82,27 @@ public class ConfigurationProperty
     /// <summary>
     /// Gets or sets the environment variable information for this property.
     /// </summary>
-    public EnvironmentVariableInfo? EnvironmentVariable { get; set; }
+    public string? EnvironmentVariable { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this property contains sensitive data.
+    /// </summary>
+    public bool IsSensitive { get; set; }
 
     /// <summary>
     /// Gets or sets validation information for this property.
     /// </summary>
     public List<string> ValidationRules { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets a human-readable validation summary.
+    /// </summary>
+    public string? Validation { get; set; }
+
+    /// <summary>
+    /// Gets or sets the source of the current value.
+    /// </summary>
+    public string? Source { get; set; }
 }
 
 /// <summary>
@@ -91,9 +116,29 @@ public class EnvironmentVariableInfo
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the configuration path this variable maps to.
+    /// </summary>
+    public string ConfigPath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the description of the environment variable.
     /// </summary>
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the default value.
+    /// </summary>
+    public string? Default { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this variable is required.
+    /// </summary>
+    public bool Required { get; set; }
+
+    /// <summary>
+    /// Gets or sets an example value.
+    /// </summary>
+    public string? Example { get; set; }
 
     /// <summary>
     /// Gets or sets example values for the environment variable.
@@ -115,6 +160,16 @@ public class ConfigurationDocumentation
     /// Gets or sets the version of the configuration schema.
     /// </summary>
     public string Version { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the environment variable quick reference.
+    /// </summary>
+    public List<EnvironmentVariableInfo> EnvironmentVariables { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the environment the documentation was generated for.
+    /// </summary>
+    public string Environment { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets general configuration information.

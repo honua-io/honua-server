@@ -24,7 +24,7 @@ internal sealed class DeploymentOptions
     /// <summary>
     /// Whether deployment control endpoints are enabled.
     /// </summary>
-    public bool EnableDeploymentControl { get; init; } = false;
+    public bool EnableDeploymentControl { get; init; }
 
     /// <summary>
     /// Maximum rollback history to maintain.

@@ -14,6 +14,30 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LeaseRenewalInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RedisRetryBackoff = TimeSpan.FromSeconds(30);
+    private const string RenewLeadershipScript = @"
+        local key = KEYS[1]
+        local instanceId = ARGV[1]
+        local leaseMilliseconds = tonumber(ARGV[2])
+
+        if redis.call('GET', key) ~= instanceId then
+            return 0
+        end
+
+        redis.call('PEXPIRE', key, leaseMilliseconds)
+        return 1
+    ";
+    private const string ReleaseLeadershipScript = @"
+        local key = KEYS[1]
+        local instanceId = ARGV[1]
+
+        local current = redis.call('GET', key)
+        if current == instanceId then
+            redis.call('DEL', key)
+            return 1
+        end
+
+        return 0
+    ";
 
     private readonly IDatabase? _redisDb;
     private readonly string _leaderKey;
@@ -141,7 +165,10 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         try
         {
-            var extended = await _redisDb.StringSetAsync(_leaderKey, _instanceId, DefaultLeaseDuration, When.Exists);
+            var extended = (int)await _redisDb.ScriptEvaluateAsync(
+                RenewLeadershipScript,
+                new RedisKey[] { _leaderKey },
+                new RedisValue[] { _instanceId, (long)DefaultLeaseDuration.TotalMilliseconds }) == 1;
 
             if (!extended)
             {
@@ -173,7 +200,7 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
     /// <inheritdoc />
     public async Task ReleaseLeadershipAsync(CancellationToken cancellationToken = default)
     {
-        if (_disposed || !_isLeader)
+        if (!_isLeader)
         {
             return;
         }
@@ -188,21 +215,11 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         try
         {
-            // Only release if we own the lock
-            var script = @"
-                local key = KEYS[1]
-                local instanceId = ARGV[1]
-
-                local current = redis.call('GET', key)
-                if current == instanceId then
-                    redis.call('DEL', key)
-                    return 1
-                end
-
-                return 0
-            ";
-
-            var released = (int)await _redisDb.ScriptEvaluateAsync(script, new RedisKey[] { _leaderKey }, new RedisValue[] { _instanceId });
+            // Only release if we still own the lock.
+            var released = (int)await _redisDb.ScriptEvaluateAsync(
+                ReleaseLeadershipScript,
+                new RedisKey[] { _leaderKey },
+                new RedisValue[] { _instanceId });
 
             if (released == 1)
             {
@@ -235,7 +252,13 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
     private void StopLeaseRenewal()
     {
-        _renewalTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        try
+        {
+            _renewalTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+        }
     }
 
     private async void RenewLeaseAsync(object? state)
@@ -288,10 +311,7 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
             return;
         }
 
-        _disposed = true;
-
         StopLeaseRenewal();
-        _renewalTimer.Dispose();
 
         // Release leadership if we have it
         if (_isLeader && _useRedis)
@@ -305,6 +325,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
                 // Ignore disposal exceptions
             }
         }
+
+        _disposed = true;
+        _renewalTimer.Dispose();
     }
 
     private static partial class Log

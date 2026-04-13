@@ -56,6 +56,11 @@ public class LimitsOptions
     public GeometryLimits Geometry { get; set; } = new();
 
     /// <summary>
+    /// Geometry validation behavior and safety limits.
+    /// </summary>
+    public GeometryValidationOptions Validation { get; set; } = new();
+
+    /// <summary>
     /// Edit operation limits.
     /// </summary>
     public EditLimits Edits { get; set; } = new();
@@ -74,6 +79,16 @@ public class LimitsOptions
     /// Database connection limits.
     /// </summary>
     public ConnectionLimits Connections { get; set; } = new();
+
+    /// <summary>
+    /// File import limits.
+    /// </summary>
+    public ImportLimits Imports { get; set; } = new();
+
+    /// <summary>
+    /// Spatial analytics limits.
+    /// </summary>
+    public AnalyticsLimits Analytics { get; set; } = new();
 }
 
 /// <summary>
@@ -134,6 +149,12 @@ public class QueryLimits
     /// </summary>
     [Range(0.1, 10000)]
     public double MaxBboxAreaSqKm { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum H3 cells returned by H3 aggregation queries.
+    /// </summary>
+    [Range(100, 1000000)]
+    public int MaxH3CellsPerQuery { get; set; } = 100000;
 
     /// <summary>
     /// Query timeout duration.

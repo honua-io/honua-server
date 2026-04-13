@@ -235,7 +235,8 @@ internal sealed class StartupConnectivityTestService
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-            var isHealthy = await healthTester.TestConnectionAsync(connectionString, combinedCts.Token);
+            var healthStatus = await healthTester.TestConnectionAsync(connectionString, combinedCts.Token);
+            var isHealthy = healthStatus == Honua.Core.Features.Security.Domain.ConnectionHealthStatus.Healthy;
             test.Success = isHealthy;
             if (!isHealthy)
             {
@@ -383,11 +384,11 @@ internal sealed class StartupConnectivityTestService
                 // Basic connectivity test for cloud storage
                 // This would depend on the specific cloud storage implementation
                 var options = cloudStorageOptions.Value;
-                test.Details.Add("Provider", options.Provider);
+                test.Details.Add("Provider", options.Provider.ToString());
                 test.Details.Add("Enabled", options.Enabled.ToString());
 
                 // For now, just verify configuration is valid
-                if (string.IsNullOrEmpty(options.Provider))
+                if (!Enum.IsDefined(options.Provider))
                 {
                     test.Success = false;
                     test.Error = "Cloud storage provider not specified";

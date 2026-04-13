@@ -20,9 +20,35 @@ public interface IRedisHealthMonitor
     bool WasRedisEverAvailable { get; }
 
     /// <summary>
+    /// Gets the last successful Redis contact time, if any.
+    /// </summary>
+    DateTimeOffset? LastSuccessfulContact { get; }
+
+    /// <summary>
+    /// Gets the last Redis failure time, if any.
+    /// </summary>
+    DateTimeOffset? LastFailure { get; }
+
+    /// <summary>
+    /// Gets the current consecutive failure count.
+    /// </summary>
+    int ConsecutiveFailures { get; }
+
+    /// <summary>
     /// Gets a value indicating whether Redis should be retried based on circuit breaker logic.
     /// </summary>
     bool ShouldRetryRedis { get; }
+
+    /// <summary>
+    /// Records a successful Redis interaction.
+    /// </summary>
+    void RecordSuccess();
+
+    /// <summary>
+    /// Records a failed Redis interaction.
+    /// </summary>
+    /// <param name="exception">The failure exception.</param>
+    void RecordFailure(Exception exception);
 
     /// <summary>
     /// Tests Redis connectivity asynchronously.

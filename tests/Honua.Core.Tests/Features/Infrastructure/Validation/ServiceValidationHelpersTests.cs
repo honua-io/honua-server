@@ -217,6 +217,8 @@ public class ServiceValidationHelpersTests
     // Test classes for dependency validation
     private sealed class TestConnectionProvider : IDatabaseConnectionProvider
     {
+        public string GetConnectionString() => "Host=localhost;Database=test;";
+
         public Task<System.Data.Common.DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
@@ -232,12 +234,12 @@ public class ServiceValidationHelpersTests
             => throw new NotImplementedException();
     }
 
-    private sealed class TestLogger : ILogger<TestConnectionProvider>;
-    private sealed class TestServiceLogger : ILogger<TestService>;
-    private sealed class TestHandlerLogger : ILogger<TestHandler>;
-    private sealed class TestBackgroundServiceLogger : ILogger<TestBackgroundService>;
-    private sealed class TestRepositoryLogger : ILogger<TestRepository>;
-    private sealed class TestEventServiceLogger : ILogger<TestEventService>;
+    private sealed class TestLogger : NoopLogger<TestConnectionProvider>;
+    private sealed class TestServiceLogger : NoopLogger<TestService>;
+    private sealed class TestHandlerLogger : NoopLogger<TestHandler>;
+    private sealed class TestBackgroundServiceLogger : NoopLogger<TestBackgroundService>;
+    private sealed class TestRepositoryLogger : NoopLogger<TestRepository>;
+    private sealed class TestEventServiceLogger : NoopLogger<TestEventService>;
 
     private sealed class TestOptions
     {
@@ -262,4 +264,28 @@ public class ServiceValidationHelpersTests
     private sealed class TestDependency4;
     private sealed class TestDependency5;
     private sealed class TestDependency6;
+
+    private abstract class NoopLogger<T> : ILogger<T>
+    {
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose()
+            {
+            }
+        }
+    }
 }

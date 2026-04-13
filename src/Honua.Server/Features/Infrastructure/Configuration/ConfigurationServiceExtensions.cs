@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Core.Configuration.Validation;
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +21,30 @@ namespace Honua.Server.Features.Infrastructure.Configuration;
 /// </summary>
 public static class ConfigurationServiceExtensions
 {
+    /// <summary>
+    /// Adds centralized configuration management with environment-aware defaults.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The application configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddConfigurationManagement(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var environmentName =
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ??
+            Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var isDevelopment = string.Equals(
+            environmentName,
+            Environments.Development,
+            StringComparison.OrdinalIgnoreCase);
+
+        return services.AddStandardConfiguration(configuration, isDevelopment);
+    }
+
     /// <summary>
     /// Adds centralized secret management services to the dependency injection container.
     /// </summary>
@@ -118,7 +144,8 @@ public static class ConfigurationServiceExtensions
     /// <param name="isRequired">Whether this configuration is required for startup</param>
     /// <param name="enableSecretResolution">Whether to enable automatic secret resolution</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection ConfigureWithValidation<TOptions>(
+    public static IServiceCollection ConfigureWithValidation<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TOptions>(
         this IServiceCollection services,
         IConfiguration configuration,
         string sectionName,
@@ -200,7 +227,8 @@ public static class ConfigurationServiceExtensions
 /// <summary>
 /// Post-configuration service that resolves secrets in options after binding.
 /// </summary>
-internal sealed class SecretResolutionPostConfigureOptions<TOptions> : IPostConfigureOptions<TOptions>
+internal sealed class SecretResolutionPostConfigureOptions<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TOptions> : IPostConfigureOptions<TOptions>
     where TOptions : class
 {
     private readonly ISecretProvider _secretProvider;

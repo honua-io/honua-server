@@ -197,7 +197,7 @@ public class ValidationExtensionsTests
         const string param3 = "test3";
 
         // Act
-        var result = ValidationExtensions.ValidateConstructorParameters(param1, param2, param3);
+        var result = ValidationExtensions.ValidateConstructorParameters<string, string, string>(param1, param2, param3);
 
         // Assert
         Assert.Equal(param1, result.Item1);
@@ -215,7 +215,7 @@ public class ValidationExtensionsTests
         const string param4 = "test4";
 
         // Act
-        var result = ValidationExtensions.ValidateConstructorParameters(param1, param2, param3, param4);
+        var result = ValidationExtensions.ValidateConstructorParameters<string, string, string, string>(param1, param2, param3, param4);
 
         // Assert
         Assert.Equal(param1, result.Item1);
@@ -235,7 +235,7 @@ public class ValidationExtensionsTests
         const string param5 = "test5";
 
         // Act
-        var result = ValidationExtensions.ValidateConstructorParameters(param1, param2, param3, param4, param5);
+        var result = ValidationExtensions.ValidateConstructorParameters<string, string, string, string, string>(param1, param2, param3, param4, param5);
 
         // Assert
         Assert.Equal(param1, result.Item1);

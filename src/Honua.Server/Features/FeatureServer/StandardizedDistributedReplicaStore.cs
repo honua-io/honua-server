@@ -55,7 +55,7 @@ internal sealed partial class StandardizedDistributedReplicaStore : RedisService
                     {
                         var key = BuildKey(replica.ReplicaId);
                         var payload = JsonSerializer.SerializeToUtf8Bytes(
-                            new ReplicaStateEnvelope(replica, expirationTime),
+                            new DistributedReplicaStore.ReplicaStateEnvelope(replica, expirationTime),
                             FeatureServerJsonContext.Default.ReplicaStateEnvelope);
 
                         await _distributedCache.SetAsync(key, payload, new DistributedCacheEntryOptions

@@ -105,7 +105,7 @@ internal abstract class RedisServiceBase : IRedisService
         }
 
         // Fallback not allowed - throw appropriate exception
-        throw FallbackStrategy.GetUnavailableException(operation, HealthMonitor.LastFailure?.Data["LastException"] as Exception);
+        throw FallbackStrategy.GetUnavailableException(operation);
     }
 
     /// <summary>
@@ -135,7 +135,7 @@ internal abstract class RedisServiceBase : IRedisService
         return await ExecuteWithFallbackAsync(
             operation,
             redisOperation,
-            fallbackOperation: null,
+            fallbackOperation: (Func<CancellationToken, Task<T>>?)null,
             cancellationToken).ConfigureAwait(false);
     }
 
