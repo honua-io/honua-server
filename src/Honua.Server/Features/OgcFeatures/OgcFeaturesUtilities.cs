@@ -12,6 +12,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -388,6 +389,44 @@ internal static class OgcExtentTransformer
 
         coordinate = default;
         return false;
+    }
+
+    public static async Task<(double MinLon, double MinLat, double MaxLon, double MaxLat)?> TryTransformExtentToCrs84Async(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        int fromSrid,
+        ICoordinateTransformService? transformService,
+        CancellationToken cancellationToken = default)
+    {
+        if (fromSrid == 4326)
+        {
+            return (minX, minY, maxX, maxY);
+        }
+
+        try
+        {
+            var transformed = CoordinateTransformer.TransformExtent(
+                new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY),
+                fromSrid,
+                4326);
+            return (transformed.MinX, transformed.MinY, transformed.MaxX, transformed.MaxY);
+        }
+        catch (NotSupportedException)
+        {
+            if (transformService == null)
+            {
+                return null;
+            }
+
+            var transformed = await transformService
+                .TransformExtentAsync(minX, minY, maxX, maxY, fromSrid, 4326, cancellationToken)
+                .ConfigureAwait(false);
+            return transformed.HasValue
+                ? (transformed.Value.MinX, transformed.Value.MinY, transformed.Value.MaxX, transformed.Value.MaxY)
+                : null;
+        }
     }
 
     private static bool IsWebMercatorSrid(int srid)

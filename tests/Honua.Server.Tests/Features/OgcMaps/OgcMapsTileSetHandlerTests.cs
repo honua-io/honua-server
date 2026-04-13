@@ -26,6 +26,8 @@ namespace Honua.Server.Tests.Features.OgcMaps;
 [Protocol(Protocols.OgcApiMaps)]
 public class OgcMapsTileSetHandlerTests
 {
+    private const string OgcApiMapsProtocol = "OGC-API-Maps";
+
     private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
     private readonly OgcMapsTileSetHandler _handler;
 
@@ -61,7 +63,26 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await _handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
 
-        result.Should().BeOfType<NotFound>();
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_MultiServiceLayer_PrefersMapsProtocolEnabledService()
+    {
+        var layer = CreatePublicLayer();
+        var alpha = CreateProtocolDisabledService(layer) with { Name = "alpha-service" };
+        var beta = CreateProtocolEnabledService(layer) with { Name = "beta-service" };
+
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([alpha, beta]);
+
+        var result = await _handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
+
+        result.Should().BeOfType<Ok<TileSetsList>>();
     }
 
     [UnitTest]
@@ -291,6 +312,18 @@ public class OgcMapsTileSetHandlerTests
             Metadata = new CatalogMetadata
             {
                 EnabledProtocols = ServiceProtocols.All
+            }
+        };
+
+    private static ServiceDefinition CreateProtocolEnabledService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "protocol-enabled-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = [OgcApiMapsProtocol]
             }
         };
 

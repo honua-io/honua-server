@@ -26,6 +26,8 @@ namespace Honua.Server.Tests.Features.Caching;
 [Protocol(Protocols.TestQuality)]
 public sealed class RedisCacheServiceTests : IDisposable
 {
+    private const string ScopedKeyPrefix = "test:scope:default:";
+    private static readonly string[] ExpectedIndexedLayerKeys = [$"{ScopedKeyPrefix}layer:1", $"{ScopedKeyPrefix}layer:2"];
     private readonly RedisCacheService _cacheService;
     private readonly CacheOptions _options;
     private readonly IPerformanceMonitor _performanceMonitor;
@@ -692,6 +694,125 @@ public sealed class RedisCacheServiceTests : IDisposable
         result.HasValue.Should().BeTrue();
         result.Value!.Name.Should().Be("objectid");
         result.RemainingTtl.Should().Be(TimeSpan.Zero);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task SetAsync_WhenRedisMultiplexerIsAvailable_WritesPayloadAndIndexInOneTransaction()
+    {
+        var distributedCache = Substitute.For<IDistributedCache>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction().Returns(transaction);
+        transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+
+        using var cache = new RedisCacheService(
+            distributedCache,
+            Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor,
+            redis);
+
+        await cache.SetAsync("layer:42", new FieldDefinition("objectid", FieldType.Integer, Nullable: false), TimeSpan.FromSeconds(30));
+
+        database.Received(1).CreateTransaction();
+        _ = transaction.Received(1).ExecuteAsync(Arg.Any<CommandFlags>());
+        _ = transaction.Received(1).SetAddAsync(
+            Arg.Is<RedisKey>(key => key.ToString() == $"{ScopedKeyPrefix}__cache_key_index__"),
+            Arg.Is<RedisValue>(value => value.ToString() == $"{ScopedKeyPrefix}layer:42"),
+            Arg.Any<CommandFlags>());
+        await distributedCache.DidNotReceive()
+            .SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task RemoveAsync_WhenRedisMultiplexerIsAvailable_RemovesPayloadAndIndexInOneTransaction()
+    {
+        var distributedCache = Substitute.For<IDistributedCache>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction().Returns(transaction);
+        transaction.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        transaction.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+
+        using var cache = new RedisCacheService(
+            distributedCache,
+            Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor,
+            redis);
+
+        await cache.RemoveAsync("layer:42");
+
+        database.Received(1).CreateTransaction();
+        _ = transaction.Received(1).KeyDeleteAsync(
+            Arg.Is<RedisKey>(key => key.ToString() == $"{ScopedKeyPrefix}layer:42"),
+            Arg.Any<CommandFlags>());
+        _ = transaction.Received(1).SetRemoveAsync(
+            Arg.Is<RedisKey>(key => key.ToString() == $"{ScopedKeyPrefix}__cache_key_index__"),
+            Arg.Is<RedisValue>(value => value.ToString() == $"{ScopedKeyPrefix}layer:42"),
+            Arg.Any<CommandFlags>());
+        await distributedCache.DidNotReceive()
+            .RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task RemoveByPatternAsync_WhenRedisMultiplexerIsAvailable_DeletesKeysAndIndexMembersInOneTransaction()
+    {
+        var distributedCache = Substitute.For<IDistributedCache>();
+        var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.SetMembersAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(
+                [
+                    (RedisValue)$"{ScopedKeyPrefix}layer:1",
+                    (RedisValue)$"{ScopedKeyPrefix}layer:2",
+                    (RedisValue)$"{ScopedKeyPrefix}service:1"
+                ]);
+        database.CreateTransaction().Returns(transaction);
+        transaction.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(2L));
+        transaction.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(2L));
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+
+        using var cache = new RedisCacheService(
+            distributedCache,
+            Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor,
+            redis);
+
+        await cache.RemoveByPatternAsync("layer:*");
+
+        database.Received(1).CreateTransaction();
+        _ = transaction.Received(1).KeyDeleteAsync(
+            Arg.Is<RedisKey[]>(keys => keys.Select(key => key.ToString()).OrderBy(static key => key).SequenceEqual(ExpectedIndexedLayerKeys)),
+            Arg.Any<CommandFlags>());
+        _ = transaction.Received(1).SetRemoveAsync(
+            Arg.Is<RedisKey>(key => key.ToString() == $"{ScopedKeyPrefix}__cache_key_index__"),
+            Arg.Is<RedisValue[]>(values => values.Select(value => value.ToString()).OrderBy(static value => value).SequenceEqual(ExpectedIndexedLayerKeys)),
+            Arg.Any<CommandFlags>());
+        await distributedCache.DidNotReceive()
+            .RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
 }

@@ -6,9 +6,11 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Server.Features.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.FeatureServer;
 
@@ -240,7 +242,62 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         gen2.Should().BeGreaterThanOrEqualTo(gen1, "generation should be monotonically non-decreasing");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ExtractChanges_WithBaselineReplicaExceedingConfiguredLimit_ReturnsBadRequest()
+    {
+        var limitedFixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Limits:Query:MaxRecordCount"] = "10",
+                    ["Limits:Query:DefaultRecordCount"] = "10"
+                });
+            });
+        });
+
+        await limitedFixture.InitializeAsync();
+        try
+        {
+            await limitedFixture.EnsureLargeTestDatasetAsync();
+            await InsertAdditionalFeaturesAsync(limitedFixture, 25);
+            var replicaId = await CreateReplicaAsync(limitedFixture, "LargeReplica");
+            var replicaStore = limitedFixture.GetService<IReplicaStore>();
+            var replica = await replicaStore.GetAsync(replicaId);
+            replica.Should().NotBeNull();
+
+            await replicaStore.SetAsync(replica! with { LastSyncGeneration = 0 });
+            var rewrittenReplica = await replicaStore.GetAsync(replicaId);
+            rewrittenReplica.Should().NotBeNull();
+            rewrittenReplica!.LastSyncGeneration.Should().Be(0);
+
+            var extractPayload = JsonSerializer.Serialize(new
+            {
+                replicaID = replicaId,
+                f = "json"
+            });
+
+            var response = await limitedFixture.Client.PostAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
+                new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("initial extract exceeds the configured per-layer record limit");
+        }
+        finally
+        {
+            await limitedFixture.DisposeAsync();
+        }
+    }
+
     private async Task<string> CreateReplicaAsync(string name)
+        => await CreateReplicaAsync(_fixture, name);
+
+    private static async Task<string> CreateReplicaAsync(WebAppFixture fixture, string name)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -250,7 +307,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -258,5 +315,24 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(content);
         return doc.RootElement.GetProperty("replicaID").GetString()!;
+    }
+
+    private static async Task InsertAdditionalFeaturesAsync(WebAppFixture fixture, int count)
+    {
+        fixture.CurrentSchema.Should().NotBeNullOrWhiteSpace();
+
+        await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, geometry, attributes)
+            SELECT 0,
+                   ST_SetSRID(ST_MakePoint(-157.9 + (n * 0.0001), 21.3 + (n * 0.0001)), 4326),
+                   jsonb_build_object(
+                       'Name', format('Replication Limit Test %s', n),
+                       'Category', 'ReplicationLimit')
+            FROM generate_series(1, @count) AS n;
+            """;
+        command.Parameters.AddWithValue("count", count);
+        await command.ExecuteNonQueryAsync();
     }
 }

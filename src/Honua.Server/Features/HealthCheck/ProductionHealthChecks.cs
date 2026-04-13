@@ -106,7 +106,6 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
             var startTime = DateTimeOffset.UtcNow;
             var poolUtilization = _connectionPoolMetrics.GetPoolUtilization();
             var activeConnections = _connectionTracker.GetActiveCount();
-            var totalFailures = _connectionPoolMetrics.GetTotalFailures();
 
             // Test database connectivity with a simple query
             await using var connection = _dataSource.CreateConnection();
@@ -124,12 +123,12 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
                 ["poolUtilization"] = poolUtilization,
                 ["poolUtilizationPercentage"] = $"{poolUtilization:P2}",
                 ["activeConnections"] = activeConnections,
-                ["connectionFailures"] = totalFailures,
+                ["connectionFailures"] = _connectionPoolMetrics.GetTotalFailures(),
                 ["connectionTimeouts"] = _connectionPoolMetrics.GetTotalTimeouts()
             };
 
-            // Determine health status based on metrics
-            if (poolUtilization > 0.9 || totalFailures > 0 || connectionLatency.TotalMilliseconds > 5000)
+            // Health is based on current connectivity and latency; cumulative counters are telemetry only.
+            if (poolUtilization > 0.9 || connectionLatency.TotalMilliseconds > 5000)
             {
                 return HealthCheckResult.Degraded(
                     "Database is experiencing high utilization or latency",
@@ -153,7 +152,6 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
                 ex,
                 new Dictionary<string, object>
                 {
-                    ["error"] = ex.Message,
                     ["errorType"] = ex.GetType().Name
                 });
         }
@@ -223,7 +221,6 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 ["pingLatencyMs"] = pingLatency.TotalMilliseconds,
                 ["totalLatencyMs"] = totalLatency.TotalMilliseconds,
                 ["isConnected"] = _redis.IsConnected,
-                ["configuration"] = _redis.Configuration,
                 ["cacheOperationSuccess"] = retrievedValue == testValue
             };
 
@@ -252,7 +249,6 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 ex,
                 new Dictionary<string, object>
                 {
-                    ["error"] = ex.Message,
                     ["errorType"] = ex.GetType().Name
                 });
         }
@@ -288,7 +284,7 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
         try
         {
             var queueSnapshot = _uploadQueueMetricsProvider.GetQueueSnapshot();
-            var queueUtilization = (double)queueSnapshot.QueueDepth / queueSnapshot.MaxQueueDepth;
+            var queueUtilization = GetQueueUtilization(queueSnapshot.QueueDepth, queueSnapshot.MaxQueueDepth);
 
             var data = new Dictionary<string, object>
             {
@@ -301,6 +297,13 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
             };
 
             // Determine health status based on queue metrics
+            if (queueSnapshot.MaxQueueDepth <= 0)
+            {
+                return HealthCheckResult.Unhealthy(
+                    "Upload queue capacity is misconfigured",
+                    data: data);
+            }
+
             if (queueUtilization >= 1.0)
             {
                 return HealthCheckResult.Unhealthy(
@@ -325,11 +328,13 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
                 ex,
                 new Dictionary<string, object>
                 {
-                    ["error"] = ex.Message,
                     ["errorType"] = ex.GetType().Name
                 });
         }
     }
+
+    private static double GetQueueUtilization(int queueDepth, int maxQueueDepth)
+        => maxQueueDepth > 0 ? (double)queueDepth / maxQueueDepth : 0.0;
 }
 
 /// <summary>
@@ -337,76 +342,42 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
 /// </summary>
 internal sealed class ExternalServiceHealthCheck : IHealthCheck
 {
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ExternalServiceHealthCheck> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ExternalServiceHealthCheck"/> class.
     /// </summary>
-    /// <param name="httpClientFactory">HTTP client factory.</param>
     /// <param name="logger">Logger instance.</param>
     public ExternalServiceHealthCheck(
-        IHttpClientFactory httpClientFactory,
         ILogger<ExternalServiceHealthCheck> logger)
     {
-        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
     /// <inheritdoc/>
-    public async Task<HealthCheckResult> CheckHealthAsync(
+    public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var results = new Dictionary<string, object>();
-            var overallHealthy = true;
-
-            // Test connectivity to configured external services
-            var httpClient = _httpClientFactory.CreateClient("IdentityProviderTest");
-
-            // This is a basic connectivity test - in production you might want to test actual endpoints
-            try
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Head, "https://www.google.com");
-                request.Headers.Add("User-Agent", "Honua-HealthCheck/1.0");
-
-                var response = await httpClient.SendAsync(request, cancellationToken);
-                results["externalConnectivity"] = response.IsSuccessStatusCode;
-
-                if (!response.IsSuccessStatusCode)
+            return Task.FromResult(HealthCheckResult.Healthy(
+                "No external service probes are configured",
+                new Dictionary<string, object>
                 {
-                    overallHealthy = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                results["externalConnectivity"] = false;
-                results["connectivityError"] = ex.Message;
-                overallHealthy = false;
-            }
-
-            if (!overallHealthy)
-            {
-                return HealthCheckResult.Degraded(
-                    "Some external services are not reachable",
-                    data: results);
-            }
-
-            return HealthCheckResult.Healthy("External services are reachable", results);
+                    ["configuredProbes"] = 0
+                }));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "External service health check failed");
-            return HealthCheckResult.Degraded(
+            return Task.FromResult(HealthCheckResult.Degraded(
                 "External service connectivity check failed",
                 ex,
                 new Dictionary<string, object>
                 {
-                    ["error"] = ex.Message,
                     ["errorType"] = ex.GetType().Name
-                });
+                }));
         }
     }
 }
@@ -470,7 +441,6 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
                 ex,
                 new Dictionary<string, object>
                 {
-                    ["error"] = ex.Message,
                     ["errorType"] = ex.GetType().Name
                 });
         }

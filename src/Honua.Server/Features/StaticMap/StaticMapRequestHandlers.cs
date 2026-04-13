@@ -461,13 +461,20 @@ internal static partial class StaticMapEndpoints
             return false;
         }
 
-        if (xmin >= xmax || ymin >= ymax)
+        if (xmin < -180.0 || xmin > 180.0 ||
+            xmax < -180.0 || xmax > 180.0 ||
+            ymin < -90.0 || ymin > 90.0 ||
+            ymax < -90.0 || ymax > 90.0)
         {
             return false;
         }
 
-        // Validate geographic bounds (SRID 4326)
-        if (xmin < -180 || xmax > 180 || ymin < -90 || ymax > 90)
+        if (ymin >= ymax)
+        {
+            return false;
+        }
+
+        if (xmin >= xmax && !CoordinateTransformer.IsWrappedGeographicExtent(new SkiaMapRenderer.RenderExtent(xmin, ymin, xmax, ymax)))
         {
             return false;
         }

@@ -43,14 +43,21 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<long> ExecuteCountQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        sw.Stop();
+        return await ExecuteQueryOperationAsync(
+            layerId,
+            "count",
+            async ct =>
+            {
+                var sw = Stopwatch.StartNew();
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                sw.Stop();
 
-        RecordQueryMetrics("count", layerId, sw.Elapsed, 1);
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+                RecordQueryMetrics("count", layerId, sw.Elapsed, 1);
+                return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -58,42 +65,56 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
-        var sw = Stopwatch.StartNew();
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteQueryOperationAsync(
+            layerId,
+            "select",
+            async ct =>
+            {
+                var sw = Stopwatch.StartNew();
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-        var features = ImmutableArray.CreateBuilder<Feature>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            features.Add(ReadFeature(reader, mapping));
-        }
+                var features = ImmutableArray.CreateBuilder<Feature>();
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    features.Add(ReadFeature(reader, mapping));
+                }
 
-        sw.Stop();
-        RecordQueryMetrics("select", layerId, sw.Elapsed, features.Count);
-        return features.ToImmutable();
+                sw.Stop();
+                RecordQueryMetrics("select", layerId, sw.Elapsed, features.Count);
+                return features.ToImmutable();
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteQueryOperationAsync(
+            layerId,
+            "select_points",
+            async ct =>
+            {
+                var sw = Stopwatch.StartNew();
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-        var points = ImmutableArray.CreateBuilder<ProjectedPoint>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var x = reader.GetDouble(0);
-            var y = reader.GetDouble(1);
-            points.Add(new ProjectedPoint { X = x, Y = y });
-        }
+                var points = ImmutableArray.CreateBuilder<ProjectedPoint>();
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var x = reader.GetDouble(0);
+                    var y = reader.GetDouble(1);
+                    points.Add(new ProjectedPoint { X = x, Y = y });
+                }
 
-        sw.Stop();
-        RecordQueryMetrics("select_points", layerId, sw.Elapsed, points.Count);
-        return points.ToImmutable();
+                sw.Stop();
+                RecordQueryMetrics("select_points", layerId, sw.Elapsed, points.Count);
+                return points.ToImmutable();
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -161,20 +182,27 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     public async Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteQueryOperationAsync(
+            layerId,
+            "select_objectids",
+            async ct =>
+            {
+                var sw = Stopwatch.StartNew();
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-        var ids = ImmutableArray.CreateBuilder<long>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            ids.Add(reader.GetInt64(0));
-        }
+                var ids = ImmutableArray.CreateBuilder<long>();
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    ids.Add(reader.GetInt64(0));
+                }
 
-        sw.Stop();
-        RecordQueryMetrics("select_objectids", layerId, sw.Elapsed, ids.Count);
-        return ids.ToImmutable();
+                sw.Stop();
+                RecordQueryMetrics("select_objectids", layerId, sw.Elapsed, ids.Count);
+                return ids.ToImmutable();
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -216,16 +244,23 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         var sql = $"SELECT {selectCols} FROM {mapping.QuotedTableName} WHERE {mapping.QuotedObjectIdColumn} = $1";
         var pq = new ParameterizedQuery(sql, [featureId]);
 
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, pq);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteQueryOperationAsync<Feature?>(
+            layerId,
+            "get_feature",
+            async ct =>
+            {
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, pq);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return ReadFeature(reader, mapping);
-        }
+                if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    return ReadFeature(reader, mapping);
+                }
 
-        return null;
+                return null;
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -237,26 +272,33 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             return null;
         }
 
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            if (reader.IsDBNull(0))
+        return await ExecuteQueryOperationAsync<FeatureExtent?>(
+            layerId,
+            "get_extent",
+            async ct =>
             {
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+                if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    if (reader.IsDBNull(0))
+                    {
+                        return null;
+                    }
+
+                    return FeatureExtent.Create(
+                        Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture),
+                        Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture),
+                        Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture),
+                        Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture),
+                        featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? 4326);
+                }
+
                 return null;
-            }
-
-            return FeatureExtent.Create(
-                Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture), // xmin
-                Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture), // ymin
-                Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture), // xmax
-                Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture), // ymax
-                featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? 4326);
-        }
-
-        return null;
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -268,44 +310,58 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
             return null;
         }
 
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteQueryOperationAsync<TemporalExtentResult?>(
+            layerId,
+            "get_temporal_extent",
+            async ct =>
+            {
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var minValue = reader.IsDBNull(0) ? (DateTimeOffset?)null : new DateTimeOffset(reader.GetDateTime(0), TimeSpan.Zero);
-            var maxValue = reader.IsDBNull(1) ? (DateTimeOffset?)null : new DateTimeOffset(reader.GetDateTime(1), TimeSpan.Zero);
-            return TemporalExtentResult.Create(minValue, maxValue);
-        }
+                if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var minValue = reader.IsDBNull(0) ? (DateTimeOffset?)null : new DateTimeOffset(reader.GetDateTime(0), TimeSpan.Zero);
+                    var maxValue = reader.IsDBNull(1) ? (DateTimeOffset?)null : new DateTimeOffset(reader.GetDateTime(1), TimeSpan.Zero);
+                    return TemporalExtentResult.Create(minValue, maxValue);
+                }
 
-        return null;
+                return null;
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> ExecuteStatisticsQueryAsync(
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-        var results = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-            for (var i = 0; i < reader.FieldCount; i++)
+        return await ExecuteQueryOperationAsync(
+            layerId,
+            "statistics",
+            async ct =>
             {
-                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-            }
+                var sw = Stopwatch.StartNew();
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-            results.Add(row);
-        }
+                var results = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>();
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    for (var i = 0; i < reader.FieldCount; i++)
+                    {
+                        row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                    }
 
-        sw.Stop();
-        RecordQueryMetrics("statistics", layerId, sw.Elapsed, results.Count);
-        return results.ToImmutable();
+                    results.Add(row);
+                }
+
+                sw.Stop();
+                RecordQueryMetrics("statistics", layerId, sw.Elapsed, results.Count);
+                return results.ToImmutable();
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -320,11 +376,16 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var (connection, command, reader) = await ExecuteReaderWithHandlingAsync(
+            layerId,
+            "stream_features",
+            query,
+            cancellationToken).ConfigureAwait(false);
+        await using var ownedConnection = connection;
+        await using var ownedCommand = command;
+        await using var ownedReader = reader;
 
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        while (await ReadNextWithHandlingAsync(reader, layerId, "stream_features", cancellationToken).ConfigureAwait(false))
         {
             yield return ReadFeature(reader, mapping);
         }
@@ -336,11 +397,16 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var (connection, command, reader) = await ExecuteReaderWithHandlingAsync(
+            layerId,
+            "stream_gml",
+            query,
+            cancellationToken).ConfigureAwait(false);
+        await using var ownedConnection = connection;
+        await using var ownedCommand = command;
+        await using var ownedReader = reader;
 
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        while (await ReadNextWithHandlingAsync(reader, layerId, "stream_gml", cancellationToken).ConfigureAwait(false))
         {
             var id = reader.GetInt64(0);
             var gml = reader.IsDBNull(1) ? null : reader.GetString(1);
@@ -447,20 +513,109 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         Func<DbDataReader, DuckDBLayerMapping, T> readRow)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
-        var sw = Stopwatch.StartNew();
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = CreateCommand(connection, query);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteQueryOperationAsync(
+            layerId,
+            operationType,
+            async ct =>
+            {
+                var sw = Stopwatch.StartNew();
+                await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
+                await using var cmd = CreateCommand(connection, query);
+                await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
-        var results = ImmutableArray.CreateBuilder<T>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                var results = ImmutableArray.CreateBuilder<T>();
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    results.Add(readRow(reader, mapping));
+                }
+
+                sw.Stop();
+                RecordQueryMetrics(operationType, layerId, sw.Elapsed, results.Count);
+                return results.ToImmutable();
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<T> ExecuteQueryOperationAsync<T>(
+        int layerId,
+        string operationType,
+        Func<CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            results.Add(readRow(reader, mapping));
+            return await operation(cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ShouldWrapQueryException(ex))
+        {
+            _logger.LogError(ex, "DuckDB {OperationType} query failed for layer {LayerId}.", operationType, layerId);
+            throw CreateSafeQueryException(layerId, operationType, ex);
+        }
+    }
 
-        sw.Stop();
-        RecordQueryMetrics(operationType, layerId, sw.Elapsed, results.Count);
-        return results.ToImmutable();
+    internal static bool ShouldWrapQueryException(Exception ex)
+        => ex is DbException or IOException or TimeoutException or InvalidOperationException;
+
+    internal static Exception CreateSafeQueryException(int layerId, string operationType, Exception ex)
+    {
+        return ex switch
+        {
+            TimeoutException => new TimeoutException(
+                $"DuckDB {operationType} query timed out for layer {layerId}.",
+                ex),
+            _ => new InvalidOperationException(
+                $"DuckDB {operationType} query failed for layer {layerId}.",
+                ex)
+        };
+    }
+
+    private async Task<(DbConnection Connection, DbCommand Command, DbDataReader Reader)> ExecuteReaderWithHandlingAsync(
+        int layerId,
+        string operationType,
+        ParameterizedQuery query,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            var command = CreateCommand(connection, query);
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return (connection, command, reader);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ShouldWrapQueryException(ex))
+        {
+            _logger.LogError(ex, "DuckDB {OperationType} query failed for layer {LayerId}.", operationType, layerId);
+            throw CreateSafeQueryException(layerId, operationType, ex);
+        }
+    }
+
+    private async Task<bool> ReadNextWithHandlingAsync(
+        DbDataReader reader,
+        int layerId,
+        string operationType,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ShouldWrapQueryException(ex))
+        {
+            _logger.LogError(ex, "DuckDB {OperationType} query failed for layer {LayerId}.", operationType, layerId);
+            throw CreateSafeQueryException(layerId, operationType, ex);
+        }
     }
 
     private void RecordQueryMetrics(string operationType, int layerId, TimeSpan elapsed, int recordCount)

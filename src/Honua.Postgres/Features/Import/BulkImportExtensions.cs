@@ -61,28 +61,26 @@ internal static class BulkImportExtensions
         var sridArray = new int[features.Count];
         var propertiesArray = new string[features.Count];
 
-        // Pre-allocate and serialize in parallel where possible
-        var tasks = new Task[features.Count];
-        for (var i = 0; i < features.Count; i++)
+        // Bound serialization concurrency to avoid creating one Task per feature.
+        var parallelOptions = new ParallelOptions
         {
-            var index = i;
-            var feature = features[i];
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = Math.Max(1, Math.Min(Environment.ProcessorCount, features.Count))
+        };
 
-            tasks[i] = Task.Run(() =>
-            {
-                // WKB serialization
-                wkbArray[index] = CreateWkb(feature, wkbWriter) ?? Array.Empty<byte>();
+        await Parallel.ForEachAsync(Enumerable.Range(0, features.Count), parallelOptions, (index, ct) =>
+        {
+            var feature = features[index];
 
-                // SRID extraction with fallback (matches individual insert behavior)
-                var featureSrid = feature.Geometry?.SRID;
-                sridArray[index] = featureSrid is > 0 ? featureSrid.Value : fallbackSourceSrid;
+            // WKBWriter is not thread-safe; use one per worker iteration.
+            wkbArray[index] = CreateWkb(feature, new WKBWriter()) ?? Array.Empty<byte>();
 
-                // JSON serialization
-                propertiesArray[index] = BuildPropertiesJson(feature);
-            }, cancellationToken);
-        }
+            var featureSrid = feature.Geometry?.SRID;
+            sridArray[index] = featureSrid is > 0 ? featureSrid.Value : fallbackSourceSrid;
+            propertiesArray[index] = BuildPropertiesJson(feature);
 
-        await Task.WhenAll(tasks);
+            return ValueTask.CompletedTask;
+        }).ConfigureAwait(false);
 
         await using var command = new NpgsqlCommand(BulkInsertSql, connection);
         command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;

@@ -360,6 +360,13 @@ internal static class SearchEndpoints
                 return false;
             }
 
+            if (!StacFilterHelpers.TryValidateBboxCoordinates(
+                    bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3],
+                    out error))
+            {
+                return false;
+            }
+
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
@@ -880,6 +887,12 @@ internal static class SearchEndpoints
                 error = "bbox contains an invalid numeric value.";
                 return false;
             }
+        }
+
+        if (!StacFilterHelpers.TryValidateBboxCoordinates(parsed[0], parsed[1], parsed[2], parsed[3], out error))
+        {
+            values = default;
+            return false;
         }
 
         values = ImmutableArray.Create(parsed);

@@ -60,6 +60,7 @@ internal sealed class Wfs20Handler
     private readonly IFilterExpressionService _filterExpressionService;
     private readonly OgcFeaturesGeometryServices _geometryServices;
     private readonly Wfs20Options _wfs20Options;
+    private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly ICrsRegistry _crsRegistry;
     private readonly FeatureMutationValidator _mutationValidator;
     private readonly FeatureMutationEventService _mutationEventService;
@@ -76,6 +77,7 @@ internal sealed class Wfs20Handler
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _filterExpressionService = queryServices.FilterExpressionService;
         _geometryServices = queryServices.GeometryServices;
+        _coordinateTransformService = queryServices.CoordinateTransformService;
         _crsRegistry = queryServices.CrsRegistry;
         _wfs20Options = queryServices.Wfs20Options;
         _mutationValidator = queryServices.MutationValidator;
@@ -117,7 +119,8 @@ internal sealed class Wfs20Handler
                 FeatureTypeList = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
                     ? new FeatureTypeList
                     {
-                        FeatureTypes = featureTypes.Select(BuildFeatureType).ToArray()
+                        FeatureTypes = await Task.WhenAll(
+                            featureTypes.Select(featureType => BuildFeatureTypeAsync(featureType, cancellationToken)))
                     }
                     : null,
                 FilterCapabilities = ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")
@@ -366,6 +369,19 @@ internal sealed class Wfs20Handler
             }
 
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
+            if (unknownTypes.Length > 0)
+            {
+                var requestedTypeMessage = unknownTypes.Length == 1
+                    ? $"Unknown feature type '{unknownTypes[0]}'."
+                    : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.";
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    "InvalidParameterValue",
+                    requestedTypeMessage,
+                    "typeNames");
+            }
+
             var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
             if (selectedTypes.Length == 0)
@@ -614,6 +630,19 @@ internal sealed class Wfs20Handler
         try
         {
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
+            if (unknownTypes.Length > 0)
+            {
+                var requestedTypeMessage = unknownTypes.Length == 1
+                    ? $"Unknown feature type '{unknownTypes[0]}'."
+                    : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.";
+                return Wfs20ErrorResults.CreateBadRequest(
+                    context,
+                    "InvalidParameterValue",
+                    requestedTypeMessage,
+                    "typeNames");
+            }
+
             var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (selectedTypes.Length == 0)
             {
@@ -714,26 +743,11 @@ internal sealed class Wfs20Handler
                     "request");
             }
 
-            if (prepared.LayerIdCount > 1)
-            {
-                return Wfs20ErrorResults.CreateNotImplemented(
-                    context,
-                    "OperationNotSupported",
-                    "Transactions spanning multiple feature types are not yet supported.",
-                    "typeName");
-            }
-
             Wfs20Log.TransactionRequested(_logger, prepared.InsertCount, prepared.UpdateCount, prepared.DeleteCount);
 
-            var editBatch = FeatureEditBatch.Create(
-                rollbackOnFailure: rollbackOnFailure,
-                operations: prepared.Operations
-                    .Select(static operation => operation.EditOperation)
-                    .ToImmutableArray());
-
-            var editResult = await _featureWriter.ApplyEditsAsync(
-                prepared.LayerId,
-                editBatch,
+            var editResult = await ApplyPreparedTransactionAsync(
+                prepared,
+                rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
 
             if (editResult.HasErrors)
@@ -751,20 +765,23 @@ internal sealed class Wfs20Handler
                     "Transaction");
             }
 
-            var serviceId = await FeatureMutationEventService.ResolveServiceIdAsync(
-                context,
-                prepared.LayerId,
-                ServiceProtocols.Wfs20,
-                cancellationToken).ConfigureAwait(false);
-
             if ((editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
             {
-                await _mutationEventService.InvalidateLayerAsync(serviceId, prepared.LayerId, CancellationToken.None).ConfigureAwait(false);
+                var serviceIdsByLayer = await ResolveTransactionServiceIdsAsync(
+                    context,
+                    prepared,
+                    cancellationToken).ConfigureAwait(false);
+
+                foreach (var (layerId, serviceId) in serviceIdsByLayer)
+                {
+                    await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, CancellationToken.None).ConfigureAwait(false);
+                }
+
                 await PublishTransactionEventsAsync(
                     context,
-                    serviceId,
                     prepared,
                     editResult,
+                    serviceIdsByLayer,
                     CancellationToken.None).ConfigureAwait(false);
             }
 
@@ -960,6 +977,7 @@ internal sealed class Wfs20Handler
                 featureElement,
                 cancellationToken).ConfigureAwait(false);
             operations.Add(new PreparedTransactionOperation(
+                operations.Count,
                 descriptor,
                 TransactionActionKind.Insert,
                 FeatureEditOperation.Create(feature),
@@ -1046,6 +1064,7 @@ internal sealed class Wfs20Handler
                 changes,
                 cancellationToken).ConfigureAwait(false);
             operations.Add(new PreparedTransactionOperation(
+                operations.Count,
                 descriptor,
                 TransactionActionKind.Update,
                 FeatureEditOperation.Update(updatedFeature),
@@ -1126,6 +1145,7 @@ internal sealed class Wfs20Handler
             }
 
             operations.Add(new PreparedTransactionOperation(
+                operations.Count,
                 descriptor,
                 TransactionActionKind.Delete,
                 FeatureEditOperation.Delete(objectId),
@@ -1206,6 +1226,7 @@ internal sealed class Wfs20Handler
             featureElement,
             cancellationToken).ConfigureAwait(false);
         operations.Add(new PreparedTransactionOperation(
+            operations.Count,
             descriptor,
             TransactionActionKind.Replace,
             FeatureEditOperation.Update(replacement),
@@ -1544,7 +1565,8 @@ internal sealed class Wfs20Handler
 
         return await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
             context,
-            layerId,
+            layerValidation.Layer!,
+            primaryService,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -2038,7 +2060,7 @@ internal sealed class Wfs20Handler
 
         try
         {
-            return XDocument.Parse(body, LoadOptions.PreserveWhitespace);
+            return SecureXmlDocumentParser.Parse(body, LoadOptions.PreserveWhitespace);
         }
         catch (XmlException ex)
         {
@@ -2072,11 +2094,166 @@ internal sealed class Wfs20Handler
             ?? "Transaction failed.";
     }
 
+    private async Task<FeatureEditResult> ApplyPreparedTransactionAsync(
+        TransactionPreparationResult prepared,
+        bool rollbackOnFailure,
+        CancellationToken cancellationToken)
+    {
+        if (prepared.LayerIdCount <= 1)
+        {
+            var editBatch = FeatureEditBatch.Create(
+                rollbackOnFailure: rollbackOnFailure,
+                operations: prepared.Operations
+                    .Select(static operation => operation.EditOperation)
+                    .ToImmutableArray());
+
+            return await _featureWriter.ApplyEditsAsync(
+                prepared.LayerId,
+                editBatch,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var createResultIndexes = new Dictionary<int, int>();
+        var updateResultIndexes = new Dictionary<int, int>();
+        var deleteResultIndexes = new Dictionary<int, int>();
+        var createResultIndex = 0;
+        var updateResultIndex = 0;
+        var deleteResultIndex = 0;
+
+        foreach (var operation in prepared.Operations)
+        {
+            switch (operation.EditOperation.Kind)
+            {
+                case FeatureEditOperationKind.Create:
+                    createResultIndexes[operation.Sequence] = createResultIndex++;
+                    break;
+
+                case FeatureEditOperationKind.Update:
+                    updateResultIndexes[operation.Sequence] = updateResultIndex++;
+                    break;
+
+                case FeatureEditOperationKind.Delete:
+                    deleteResultIndexes[operation.Sequence] = deleteResultIndex++;
+                    break;
+            }
+        }
+
+        var aggregatedCreateResults = new EditOperationResult[prepared.InsertCount];
+        var aggregatedUpdateResults = new EditOperationResult[prepared.UpdateCount + prepared.ReplaceCount];
+        var aggregatedDeleteResults = new EditOperationResult[prepared.DeleteCount];
+        var createdIdSlots = new long?[prepared.InsertCount];
+        var createdCount = 0;
+        var updatedCount = 0;
+        var deletedCount = 0;
+
+        foreach (var layerGroup in prepared.Operations
+                     .GroupBy(static operation => operation.Descriptor.Layer.Id)
+                     .OrderBy(static group => group.Min(operation => operation.Sequence)))
+        {
+            var operations = layerGroup.OrderBy(static operation => operation.Sequence).ToImmutableArray();
+            var editBatch = FeatureEditBatch.Create(
+                rollbackOnFailure: false,
+                operations: operations
+                    .Select(static operation => operation.EditOperation)
+                    .ToImmutableArray());
+
+            var layerResult = await _featureWriter.ApplyEditsAsync(
+                layerGroup.Key,
+                editBatch,
+                cancellationToken).ConfigureAwait(false);
+
+            createdCount += layerResult.CreatedCount;
+            updatedCount += layerResult.UpdatedCount;
+            deletedCount += layerResult.DeletedCount;
+
+            var localCreateIndex = 0;
+            var localUpdateIndex = 0;
+            var localDeleteIndex = 0;
+
+            foreach (var operation in operations)
+            {
+                switch (operation.EditOperation.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        {
+                            var result = localCreateIndex < layerResult.CreateResults.Length
+                                ? layerResult.CreateResults[localCreateIndex]
+                                : default;
+                            localCreateIndex++;
+
+                            var globalIndex = createResultIndexes[operation.Sequence];
+                            aggregatedCreateResults[globalIndex] = result;
+                            if (result.IsSuccess && result.ObjectId.HasValue)
+                            {
+                                createdIdSlots[globalIndex] = result.ObjectId.Value;
+                            }
+
+                            break;
+                        }
+
+                    case FeatureEditOperationKind.Update:
+                        {
+                            var result = localUpdateIndex < layerResult.UpdateResults.Length
+                                ? layerResult.UpdateResults[localUpdateIndex]
+                                : default;
+                            localUpdateIndex++;
+
+                            aggregatedUpdateResults[updateResultIndexes[operation.Sequence]] = result;
+                            break;
+                        }
+
+                    case FeatureEditOperationKind.Delete:
+                        {
+                            var result = localDeleteIndex < layerResult.DeleteResults.Length
+                                ? layerResult.DeleteResults[localDeleteIndex]
+                                : default;
+                            localDeleteIndex++;
+
+                            aggregatedDeleteResults[deleteResultIndexes[operation.Sequence]] = result;
+                            break;
+                        }
+                }
+            }
+        }
+
+        return FeatureEditResult.Success(
+            createdCount,
+            updatedCount,
+            deletedCount,
+            createdIds: createdIdSlots
+                .Where(static id => id.HasValue)
+                .Select(static id => id!.Value)
+                .ToImmutableArray(),
+            createResults: aggregatedCreateResults.ToImmutableArray(),
+            updateResults: aggregatedUpdateResults.ToImmutableArray(),
+            deleteResults: aggregatedDeleteResults.ToImmutableArray());
+    }
+
+    private async Task<IReadOnlyDictionary<int, string>> ResolveTransactionServiceIdsAsync(
+        HttpContext context,
+        TransactionPreparationResult prepared,
+        CancellationToken cancellationToken)
+    {
+        var serviceIdsByLayer = new Dictionary<int, string>();
+        foreach (var layerId in prepared.Operations
+                     .Select(static operation => operation.Descriptor.Layer.Id)
+                     .Distinct())
+        {
+            serviceIdsByLayer[layerId] = await FeatureMutationEventService.ResolveServiceIdAsync(
+                context,
+                layerId,
+                ServiceProtocols.Wfs20,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return serviceIdsByLayer;
+    }
+
     private async Task PublishTransactionEventsAsync(
         HttpContext context,
-        string serviceId,
         TransactionPreparationResult prepared,
         FeatureEditResult editResult,
+        IReadOnlyDictionary<int, string> serviceIdsByLayer,
         CancellationToken cancellationToken)
     {
         var createIndex = 0;
@@ -2099,16 +2276,17 @@ internal sealed class Wfs20Handler
                             break;
                         }
 
+                        var layerId = operation.Descriptor.Layer.Id;
                         var createdFeature = operation.MutationFeature.Value with { Id = result.ObjectId.Value };
                         await _mutationEventService.PublishAsync(
                             context,
-                            prepared.LayerId,
+                            layerId,
                             result.ObjectId.Value,
                             "create",
                             HonuaTelemetry.Protocols.Wfs20,
                             cancellationToken,
                             mutationFeature: createdFeature,
-                            serviceId: serviceId,
+                            serviceId: serviceIdsByLayer[layerId],
                             serviceProtocol: ServiceProtocols.Wfs20).ConfigureAwait(false);
                         break;
                     }
@@ -2125,15 +2303,16 @@ internal sealed class Wfs20Handler
                             break;
                         }
 
+                        var layerId = operation.Descriptor.Layer.Id;
                         await _mutationEventService.PublishAsync(
                             context,
-                            prepared.LayerId,
+                            layerId,
                             result.ObjectId.Value,
                             "update",
                             HonuaTelemetry.Protocols.Wfs20,
                             cancellationToken,
                             mutationFeature: operation.MutationFeature.Value,
-                            serviceId: serviceId,
+                            serviceId: serviceIdsByLayer[layerId],
                             serviceProtocol: ServiceProtocols.Wfs20).ConfigureAwait(false);
                         break;
                     }
@@ -2150,15 +2329,16 @@ internal sealed class Wfs20Handler
                             break;
                         }
 
+                        var layerId = operation.Descriptor.Layer.Id;
                         await _mutationEventService.PublishAsync(
                             context,
-                            prepared.LayerId,
+                            layerId,
                             result.ObjectId.Value,
                             "delete",
                             HonuaTelemetry.Protocols.Wfs20,
                             cancellationToken,
                             mutationFeature: operation.DeleteSnapshot,
-                            serviceId: serviceId,
+                            serviceId: serviceIdsByLayer[layerId],
                             serviceProtocol: ServiceProtocols.Wfs20).ConfigureAwait(false);
                         break;
                     }
@@ -2739,7 +2919,7 @@ internal sealed class Wfs20Handler
         XDocument document;
         try
         {
-            document = XDocument.Parse(filter, LoadOptions.PreserveWhitespace);
+            document = SecureXmlDocumentParser.Parse(filter, LoadOptions.PreserveWhitespace);
         }
         catch (XmlException)
         {
@@ -2892,9 +3072,10 @@ internal sealed class Wfs20Handler
                 ? layerCrs
                 : throw new ArgumentException($"Unsupported layer spatial reference '{layer.SpatialReference.ToSrid()}'.");
         var axisOrder = crsDefinition.AxisOrder;
+        var bboxCoordinates = parts.Length == 5 ? string.Join(',', parts[..4]) : bbox;
 
         if (!RasterParsingHelpers.TryParseBoundingBox(
-                bbox,
+                bboxCoordinates,
                 axisOrder,
                 crsDefinition.IsGeographic,
                 out var minX,
@@ -2906,18 +3087,38 @@ internal sealed class Wfs20Handler
         }
 
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(crsDefinition.Srid);
-        var polygon = geometryFactory.CreatePolygon(
-        [
-            new Coordinate(minX, minY),
-            new Coordinate(maxX, minY),
-            new Coordinate(maxX, maxY),
-            new Coordinate(minX, maxY),
-            new Coordinate(minX, minY)
-        ]);
+        Geometry geometry = crsDefinition.IsGeographic && minX > maxX
+            ? geometryFactory.CreateMultiPolygon(
+                [
+                    geometryFactory.CreatePolygon(
+                    [
+                        new Coordinate(minX, minY),
+                        new Coordinate(180.0, minY),
+                        new Coordinate(180.0, maxY),
+                        new Coordinate(minX, maxY),
+                        new Coordinate(minX, minY)
+                    ]),
+                    geometryFactory.CreatePolygon(
+                    [
+                        new Coordinate(-180.0, minY),
+                        new Coordinate(maxX, minY),
+                        new Coordinate(maxX, maxY),
+                        new Coordinate(-180.0, maxY),
+                        new Coordinate(-180.0, minY)
+                    ])
+                ])
+            : geometryFactory.CreatePolygon(
+                [
+                    new Coordinate(minX, minY),
+                    new Coordinate(maxX, minY),
+                    new Coordinate(maxX, maxY),
+                    new Coordinate(minX, maxY),
+                    new Coordinate(minX, minY)
+                ]);
 
         return new SpatialFilter
         {
-            Geometry = BboxWkbWriter.Write(polygon),
+            Geometry = BboxWkbWriter.Write(geometry),
             Srid = crsDefinition.Srid,
             SpatialRelationship = SpatialRelationship.Intersects
         };
@@ -2974,7 +3175,10 @@ internal sealed class Wfs20Handler
 
             if (!long.TryParse(candidate, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
             {
-                continue;
+                throw new WfsQueryException(
+                    "InvalidParameterValue",
+                    $"resourceId '{rawResourceId}' is malformed.",
+                    Wfs20Utilities.ParameterNames.ResourceId);
             }
 
             ids.Add(parsed);
@@ -3113,6 +3317,21 @@ internal sealed class Wfs20Handler
         return matches.ToImmutable();
     }
 
+    private static string[] GetUnknownRequestedFeatureTypes(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
+        string[] requestedTypes)
+    {
+        if (requestedTypes.Length == 0)
+        {
+            return [];
+        }
+
+        return requestedTypes
+            .Where(requestedType => !publishedTypes.Any(featureType => MatchesRequestedType(featureType, requestedType)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static bool MatchesRequestedType(WfsFeatureTypeDescriptor featureType, string requestedType)
     {
         var normalizedRequested = FilterExpressionHelpers.NormalizeIdentifier(requestedType);
@@ -3124,18 +3343,14 @@ internal sealed class Wfs20Handler
 
     private static bool IsPublishedForWfs(HttpContext context, LayerDefinition layer, ServiceDefinition[] services)
     {
-        if (!ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Wfs20))
-        {
-            return false;
-        }
-
         var relatedServices = services
             .Where(service => service.Layers.Any(candidate => candidate.Id == layer.Id))
             .ToArray();
 
         if (relatedServices.Length == 0)
         {
-            return AccessPolicyHelpers.IsLayerAccessible(context, layer);
+            return ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Wfs20) &&
+                AccessPolicyHelpers.IsLayerAccessible(context, layer);
         }
 
         return relatedServices
@@ -3143,7 +3358,9 @@ internal sealed class Wfs20Handler
             .Any(service => AccessPolicyHelpers.IsLayerAccessible(context, layer, service));
     }
 
-    private static FeatureType BuildFeatureType(WfsFeatureTypeDescriptor featureType)
+    private async Task<FeatureType> BuildFeatureTypeAsync(
+        WfsFeatureTypeDescriptor featureType,
+        CancellationToken cancellationToken)
     {
         var layer = featureType.Layer;
         string[]? otherCrs = layer.SpatialReference.ToSrid() == 3857
@@ -3162,7 +3379,7 @@ internal sealed class Wfs20Handler
             {
                 Formats = Wfs20Utilities.OutputFormats.All.ToArray()
             },
-            WGS84BoundingBox = BuildWgs84BoundingBox(layer)
+            WGS84BoundingBox = await BuildWgs84BoundingBoxAsync(layer, cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -3191,7 +3408,9 @@ internal sealed class Wfs20Handler
             .ToArray();
     }
 
-    private static WGS84BoundingBox? BuildWgs84BoundingBox(LayerDefinition layer)
+    private async Task<WGS84BoundingBox?> BuildWgs84BoundingBoxAsync(
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
     {
         if (layer.Extent == null)
         {
@@ -3199,16 +3418,25 @@ internal sealed class Wfs20Handler
         }
 
         var extent = layer.Extent.Value;
-        if (!OgcExtentTransformer.TryTransformToCrs84(extent.MinX, extent.MinY, extent.SpatialReference, out var min) ||
-            !OgcExtentTransformer.TryTransformToCrs84(extent.MaxX, extent.MaxY, extent.SpatialReference, out var max))
+        var transformedExtent = await OgcExtentTransformer
+            .TryTransformExtentToCrs84Async(
+                extent.MinX,
+                extent.MinY,
+                extent.MaxX,
+                extent.MaxY,
+                extent.SpatialReference,
+                _coordinateTransformService,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (transformedExtent is null)
         {
             return null;
         }
 
         return new WGS84BoundingBox
         {
-            LowerCorner = $"{FormatCoordinate(min.Lon)} {FormatCoordinate(min.Lat)}",
-            UpperCorner = $"{FormatCoordinate(max.Lon)} {FormatCoordinate(max.Lat)}"
+            LowerCorner = $"{FormatCoordinate(transformedExtent.Value.MinLon)} {FormatCoordinate(transformedExtent.Value.MinLat)}",
+            UpperCorner = $"{FormatCoordinate(transformedExtent.Value.MaxLon)} {FormatCoordinate(transformedExtent.Value.MaxLat)}"
         };
     }
 
@@ -4865,6 +5093,7 @@ internal sealed class Wfs20Handler
     }
 
     private sealed record PreparedTransactionOperation(
+        int Sequence,
         WfsFeatureTypeDescriptor Descriptor,
         TransactionActionKind ActionKind,
         FeatureEditOperation EditOperation,

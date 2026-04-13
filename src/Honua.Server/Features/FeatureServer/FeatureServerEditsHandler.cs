@@ -89,6 +89,7 @@ internal sealed class FeatureServerEditsHandler(
             var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
                 httpContext,
                 service,
+                layer,
                 cancellationToken);
             if (rbacError != null)
             {

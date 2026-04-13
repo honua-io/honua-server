@@ -4,6 +4,8 @@
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
@@ -371,30 +373,51 @@ public class Cql2ParserTests
     }
 
     [Fact]
-    public void Parse_Bbox3D_ParsesCorrectCoordinateOrder()
+    public void Parse_Bbox_AntimeridianCrossing_ReturnsMultiPolygonGeometry()
     {
-        // 3D BBOX: BBOX(minX, minY, minZ, maxX, maxY, maxZ)
-        // The parser should use minX, minY, maxX, maxY (values 0,1,3,4) for the 2D polygon
-        const string cql = "S_INTERSECTS(geom, BBOX(-180, -90, -1000, 180, 90, 1000))";
+        const string cql = "S_INTERSECTS(geom, BBOX(170,-10,-170,10))";
 
         var result = _parser.Parse(cql);
 
         result.Should().BeOfType<SpatialPredicate>();
         var spatial = (SpatialPredicate)result;
-        spatial.Right.Should().BeOfType<GeometryLiteral>();
-
         var geometry = (GeometryLiteral)spatial.Right;
-        geometry.OriginalFormat.Should().StartWith("BBOX");
-        // If parsed correctly: minX=-180, minY=-90, maxX=180, maxY=90
-        // (minZ=-1000, maxZ=1000 are discarded for the 2D polygon)
-        // The WKB should represent a valid envelope polygon, not an inverted one
-        geometry.Wkb.Should().NotBeNull();
+
+        var parsed = new WKBReader().Read(geometry.Wkb);
+        parsed.Should().BeOfType<MultiPolygon>();
+        ((MultiPolygon)parsed).NumGeometries.Should().Be(2);
+    }
+
+    [Fact]
+    public void Parse_Bbox_OutOfRangeGeographicCoordinates_ThrowsArgumentException()
+    {
+        const string cql = "S_INTERSECTS(geom, BBOX(200,-10,210,10))";
+
+        var action = () => _parser.Parse(cql);
+
+        var exception = action.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().StartWith("Failed to parse CQL2 expression.");
+        exception.InnerException.Should().BeOfType<ArgumentException>()
+            .Which.Message.Should().Contain("Invalid BBOX coordinates");
+    }
+
+    [Fact]
+    public void Parse_Bbox3D_ThrowsArgumentException()
+    {
+        const string cql = "S_INTERSECTS(geom, BBOX(-180, -90, -1000, 180, 90, 1000))";
+
+        var action = () => _parser.Parse(cql);
+
+        var exception = action.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().StartWith("Failed to parse CQL2 expression.");
+        exception.InnerException.Should().BeOfType<ArgumentException>()
+            .Which.Message.Should().Contain("3D bounding boxes are not supported");
     }
 
     [Fact]
     public void Parse_BboxInvalidValueCount_ThrowsArgumentException()
     {
-        // 5 values is not valid for BBOX (needs 4 or 6)
+        // 5 values is not valid for BBOX.
         const string cql = "S_INTERSECTS(geom, BBOX(0, 0, 1, 1, 2))";
 
         var action = () => _parser.Parse(cql);
@@ -402,7 +425,7 @@ public class Cql2ParserTests
         exception.Message.Should().StartWith("Failed to parse CQL2 expression.");
         exception.ParamName.Should().Be("cql2Text");
         exception.InnerException.Should().BeOfType<ArgumentException>()
-            .Which.Message.Should().Contain("4 or 6");
+            .Which.Message.Should().Contain("got 5");
     }
 
     [Fact]

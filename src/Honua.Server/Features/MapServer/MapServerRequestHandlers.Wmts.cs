@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
@@ -273,10 +274,19 @@ internal static partial class MapServerEndpoints
 
             MapServerLog.WmtsRequested(logger, serviceId, "GetCapabilities");
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
             var visibleLayers = svcDef.Layers
                 .Where(layer => layer.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, layer, svcDef))
                 .ToArray();
-            var xml = BuildWmtsCapabilities(svcDef, visibleLayers, serviceId, baseUrl, sections, wmtsMaxZoom);
+            var xml = await BuildWmtsCapabilitiesAsync(
+                svcDef,
+                visibleLayers,
+                serviceId,
+                baseUrl,
+                sections,
+                wmtsMaxZoom,
+                coordinateTransformService,
+                context.RequestAborted).ConfigureAwait(false);
             return Results.Content(xml, responseMimeType);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -1020,13 +1030,15 @@ internal static partial class MapServerEndpoints
         return sb.ToString();
     }
 
-    private static string BuildWmtsCapabilities(
+    private static async Task<string> BuildWmtsCapabilitiesAsync(
         ServiceDefinition service,
         LayerDefinition[] visibleLayers,
         string serviceId,
         string baseUrl,
         WmtsCapabilitiesSections sections,
-        int wmtsMaxZoom)
+        int wmtsMaxZoom,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
     {
         var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
@@ -1175,7 +1187,8 @@ internal static partial class MapServerEndpoints
                 sb.AppendLine("    <Layer>");
                 sb.Append("      <ows:Title>").Append(EscapeXml(layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture))).AppendLine("</ows:Title>");
                 sb.Append("      <ows:Identifier>").Append(layerId).AppendLine("</ows:Identifier>");
-                AppendWmtsWgs84BoundingBox(sb, layer);
+                await AppendWmtsWgs84BoundingBoxAsync(sb, layer, coordinateTransformService, cancellationToken)
+                    .ConfigureAwait(false);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
                 sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
@@ -1667,47 +1680,62 @@ internal static partial class MapServerEndpoints
             : (int)((1L << tileMatrix) - 1);
     }
 
-    private static void AppendWmtsWgs84BoundingBox(StringBuilder sb, LayerDefinition layer)
+    private static async Task AppendWmtsWgs84BoundingBoxAsync(
+        StringBuilder sb,
+        LayerDefinition layer,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
     {
-        if (!TryGetWmtsWgs84BoundingBox(layer, out var lowerCorner, out var upperCorner))
+        var boundingBox = await TryGetWmtsWgs84BoundingBoxAsync(
+                layer,
+                coordinateTransformService,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (boundingBox is null)
         {
             return;
         }
 
         sb.AppendLine("      <ows:WGS84BoundingBox>");
-        sb.Append("        <ows:LowerCorner>").Append(lowerCorner).AppendLine("</ows:LowerCorner>");
-        sb.Append("        <ows:UpperCorner>").Append(upperCorner).AppendLine("</ows:UpperCorner>");
+        sb.Append("        <ows:LowerCorner>").Append(boundingBox.Value.LowerCorner).AppendLine("</ows:LowerCorner>");
+        sb.Append("        <ows:UpperCorner>").Append(boundingBox.Value.UpperCorner).AppendLine("</ows:UpperCorner>");
         sb.AppendLine("      </ows:WGS84BoundingBox>");
     }
 
-    private static bool TryGetWmtsWgs84BoundingBox(
+    private static async Task<(string LowerCorner, string UpperCorner)?> TryGetWmtsWgs84BoundingBoxAsync(
         LayerDefinition layer,
-        out string lowerCorner,
-        out string upperCorner)
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
     {
-        lowerCorner = string.Empty;
-        upperCorner = string.Empty;
-
         if (layer.Extent is null)
         {
-            return false;
+            return null;
         }
 
         var extent = layer.Extent.Value;
-        if (!OgcExtentTransformer.TryTransformToCrs84(extent.MinX, extent.MinY, extent.SpatialReference, out var min) ||
-            !OgcExtentTransformer.TryTransformToCrs84(extent.MaxX, extent.MaxY, extent.SpatialReference, out var max))
+        var transformedExtent = await OgcExtentTransformer
+            .TryTransformExtentToCrs84Async(
+                extent.MinX,
+                extent.MinY,
+                extent.MaxX,
+                extent.MaxY,
+                extent.SpatialReference,
+                coordinateTransformService,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (transformedExtent is null)
         {
-            return false;
+            return null;
         }
 
-        var minLon = Math.Min(min.Lon, max.Lon);
-        var minLat = Math.Min(min.Lat, max.Lat);
-        var maxLon = Math.Max(min.Lon, max.Lon);
-        var maxLat = Math.Max(min.Lat, max.Lat);
+        var minLon = Math.Min(transformedExtent.Value.MinLon, transformedExtent.Value.MaxLon);
+        var minLat = Math.Min(transformedExtent.Value.MinLat, transformedExtent.Value.MaxLat);
+        var maxLon = Math.Max(transformedExtent.Value.MinLon, transformedExtent.Value.MaxLon);
+        var maxLat = Math.Max(transformedExtent.Value.MinLat, transformedExtent.Value.MaxLat);
 
-        lowerCorner = $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}";
-        upperCorner = $"{FormatWmtsCoordinate(maxLon)} {FormatWmtsCoordinate(maxLat)}";
-        return true;
+        return (
+            $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}",
+            $"{FormatWmtsCoordinate(maxLon)} {FormatWmtsCoordinate(maxLat)}");
     }
 
     private static string FormatWmtsCoordinate(double value)

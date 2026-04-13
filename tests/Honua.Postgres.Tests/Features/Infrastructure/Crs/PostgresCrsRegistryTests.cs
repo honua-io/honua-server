@@ -14,6 +14,7 @@ namespace Honua.Postgres.Tests.Features.Infrastructure.Crs;
 public sealed class PostgresCrsRegistryTests : IAsyncLifetime
 {
     private const int TestSrid = 998999;
+    private const int GeocentricTestSrid = 998998;
     private readonly PostgresFixture _fixture = new();
     private PostgresCrsRegistry? _registry;
 
@@ -29,6 +30,7 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await RemoveTestCrsAsync();
+        await RemoveGeocentricTestCrsAsync();
         await _fixture.DisposeAsync();
     }
 
@@ -43,6 +45,19 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
         definition!.Value.Srid.Should().Be(TestSrid);
         definition.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
         definition.Value.IsGeographic.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ResolveBySridAsync_WithGeocentricWkt_ReturnsProjectedDefinition()
+    {
+        await InsertGeocentricTestCrsAsync();
+
+        var definition = await _registry!.ResolveBySridAsync(GeocentricTestSrid);
+
+        definition.Should().NotBeNull();
+        definition!.Value.Srid.Should().Be(GeocentricTestSrid);
+        definition.Value.IsGeographic.Should().BeFalse();
+        definition.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
     private async Task InsertTestCrsAsync()
@@ -74,6 +89,37 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
             "DELETE FROM spatial_ref_sys WHERE srid = @srid",
             connection);
         command.Parameters.AddWithValue("srid", TestSrid);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertGeocentricTestCrsAsync()
+    {
+        const string srtext =
+            "GEODCRS[\"Test Geocentric CRS\",DATUM[\"World Geodetic System 1984\",ELLIPSOID[\"WGS 84\",6378137,298.257223563]]," +
+            "CS[Cartesian,3],AXIS[\"X\",geocentricX],AXIS[\"Y\",geocentricY],AXIS[\"Z\",geocentricZ],UNIT[\"metre\",1]]";
+
+        await using var connection = await _fixture.GetConnectionAsync();
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, srtext, proj4text)
+            VALUES (@srid, 'EPSG', @srid, @srtext, '+proj=geocent +datum=WGS84 +no_defs')
+            ON CONFLICT (srid) DO UPDATE
+            SET auth_name = EXCLUDED.auth_name,
+                auth_srid = EXCLUDED.auth_srid,
+                srtext = EXCLUDED.srtext,
+                proj4text = EXCLUDED.proj4text
+            """, connection);
+        command.Parameters.AddWithValue("srid", GeocentricTestSrid);
+        command.Parameters.AddWithValue("srtext", srtext);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task RemoveGeocentricTestCrsAsync()
+    {
+        await using var connection = await _fixture.GetConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "DELETE FROM spatial_ref_sys WHERE srid = @srid",
+            connection);
+        command.Parameters.AddWithValue("srid", GeocentricTestSrid);
         await command.ExecuteNonQueryAsync();
     }
 }

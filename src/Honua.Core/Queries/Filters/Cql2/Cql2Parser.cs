@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Shared.Models;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -747,44 +748,86 @@ public sealed class Cql2Parser
         double minX, minY, maxX, maxY;
         if (values.Count == 6)
         {
-            // BBOX(minX, minY, minZ, maxX, maxY, maxZ) — Z values are discarded for 2D polygon
-            minX = values[0];
-            minY = values[1];
-            maxX = values[3];
-            maxY = values[4];
+            throw new ArgumentException("3D bounding boxes are not supported.");
         }
-        else if (values.Count == 4)
+        if (values.Count != 4)
         {
-            // BBOX(minX, minY, maxX, maxY)
-            minX = values[0];
-            minY = values[1];
-            maxX = values[2];
-            maxY = values[3];
+            throw new ArgumentException($"BBOX requires 4 values, got {values.Count}");
         }
-        else
-        {
-            throw new ArgumentException($"BBOX requires 4 or 6 values, got {values.Count}");
-        }
+
+        minX = values[0];
+        minY = values[1];
+        maxX = values[2];
+        maxY = values[3];
 
         Consume(Cql2TokenType.RightParen, "Expected ')' after BBOX");
 
-        var coordinates = new[]
-        {
-            new Coordinate(minX, minY),
-            new Coordinate(maxX, minY),
-            new Coordinate(maxX, maxY),
-            new Coordinate(minX, maxY),
-            new Coordinate(minX, minY)
-        };
-
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
-        var polygon = geometryFactory.CreatePolygon(coordinates);
+        ValidateGeographicBbox(minX, minY, maxX, maxY);
+        var geometry = CreateBboxGeometry(geometryFactory, minX, minY, maxX, maxY);
         var writer = new WKBWriter();
-        var wkb = writer.Write(polygon);
+        var wkb = writer.Write(geometry);
 
         var original = _input[bboxToken.Position..(Previous().Position + Previous().Length)];
         return new GeometryLiteral(wkb, 4326, original);
     }
+
+    private static Geometry CreateBboxGeometry(
+        GeometryFactory geometryFactory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+    {
+        if (minX > maxX)
+        {
+            var eastHemisphere = CreateBboxPolygon(geometryFactory, minX, minY, 180.0, maxY);
+            var westHemisphere = CreateBboxPolygon(geometryFactory, -180.0, minY, maxX, maxY);
+            return geometryFactory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+        }
+
+        return geometryFactory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
+    }
+
+    private static Polygon CreateBboxPolygon(
+        GeometryFactory geometryFactory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+        => geometryFactory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(minX, maxY),
+            new Coordinate(minX, minY)
+            ]);
+
+    private static void ValidateGeographicBbox(double minX, double minY, double maxX, double maxY)
+    {
+        if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
+            !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
+            minY >= maxY ||
+            minX == maxX ||
+            !IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
+            !IsValidLatitude(minY) || !IsValidLatitude(maxY))
+        {
+            throw new ArgumentException("Invalid BBOX coordinates");
+        }
+    }
+
+    private static bool IsValidCoordinate(double coordinate)
+        => !double.IsNaN(coordinate) &&
+           !double.IsInfinity(coordinate) &&
+           coordinate >= -40_000_000 &&
+           coordinate <= 40_000_000;
+
+    private static bool IsValidLongitude(double coordinate)
+        => coordinate >= -180.0 && coordinate <= 180.0;
+
+    private static bool IsValidLatitude(double coordinate)
+        => coordinate >= -90.0 && coordinate <= 90.0;
 
     private Literal ParseNumericLiteral()
     {

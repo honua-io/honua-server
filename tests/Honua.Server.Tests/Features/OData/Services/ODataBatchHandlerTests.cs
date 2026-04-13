@@ -11,13 +11,20 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OData.Services;
@@ -31,10 +38,13 @@ public sealed class ODataBatchHandlerTests
         var featureReader = Substitute.For<IFeatureReader>();
         var featureWriter = Substitute.For<IFeatureWriter>();
         var layer = CreateLayer();
+        var service = CreateService(layer);
         var createdFeature = CreateFeature(101, "Persisted name");
 
         layerCatalog.GetLayerAsync(layer.Id, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<LayerDefinition?>(layer));
+        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new[] { service }));
         featureReader.GetAsync(layer.Id, 101, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(createdFeature));
         featureWriter.ApplyEditsAsync(default, default!, default)
@@ -54,7 +64,7 @@ public sealed class ODataBatchHandlerTests
                 {
                     Id = "create-city",
                     Method = "POST",
-                    Url = "/odata/Features",
+                    Url = $"Layers({layer.Id})/Features",
                     AtomicityGroup = "g1",
                     Body = new Dictionary<string, object?>
                     {
@@ -68,7 +78,7 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(CreateContext(layerCatalog, "admin"), request, "https://example.test", CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var createResponse = response.Responses[0];
@@ -91,11 +101,14 @@ public sealed class ODataBatchHandlerTests
         var featureReader = Substitute.For<IFeatureReader>();
         var featureWriter = Substitute.For<IFeatureWriter>();
         var layer = CreateLayer();
+        var service = CreateService(layer);
         var existingFeature = CreateFeature(25, "Before");
         var persistedFeature = CreateFeature(25, "Persisted after");
 
         layerCatalog.GetLayerAsync(layer.Id, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<LayerDefinition?>(layer));
+        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new[] { service }));
         featureReader.GetAsync(layer.Id, existingFeature.Id, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(existingFeature), Task.FromResult<Feature?>(persistedFeature));
         featureWriter.ApplyEditsAsync(default, default!, default)
@@ -114,7 +127,7 @@ public sealed class ODataBatchHandlerTests
                 {
                     Id = "update-city",
                     Method = "PATCH",
-                    Url = $"/odata/Features({layer.Id},{existingFeature.Id})",
+                    Url = $"Features({layer.Id},{existingFeature.Id})",
                     AtomicityGroup = "g1",
                     Body = new Dictionary<string, object?>
                     {
@@ -127,7 +140,7 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(CreateContext(layerCatalog, "admin"), request, "https://example.test", CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var updateResponse = response.Responses[0];
@@ -166,6 +179,30 @@ public sealed class ODataBatchHandlerTests
             Substitute.For<ILogger>());
     }
 
+    private static DefaultHttpContext CreateContext(ILayerCatalog? layerCatalog = null, params string[] roles)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
+        if (layerCatalog != null)
+        {
+            services.AddSingleton(layerCatalog);
+        }
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider()
+        };
+
+        if (roles.Length > 0)
+        {
+            var claims = roles.Select(role => new Claim(ClaimTypes.Role, role)).ToArray();
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
+        }
+
+        return context;
+    }
+
     private sealed class NoOpFeatureChangeEventPublisher : IFeatureChangeEventPublisher
     {
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
@@ -183,6 +220,17 @@ public sealed class ODataBatchHandlerTests
                 new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 128)
             ]);
+
+    private static ServiceDefinition CreateService(LayerDefinition layer)
+        => new(
+            "cities",
+            "cities service",
+            [layer],
+            SpatialReference.WGS84,
+            Metadata: new CatalogMetadata
+            {
+                EnabledProtocols = [ServiceProtocols.OData]
+            });
 
     private static Feature CreateFeature(long id, string name)
         => Feature.Create(

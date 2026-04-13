@@ -361,7 +361,7 @@ internal sealed class OgcMapsRenderingHandler
         CancellationToken cancellationToken)
     {
         var services = await _layerCatalog.ListServicesAsync(cancellationToken);
-        return LayerValidationHelpers.BuildPrimaryServiceMap(services);
+        return LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiMapsProtocol);
     }
 
     private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)

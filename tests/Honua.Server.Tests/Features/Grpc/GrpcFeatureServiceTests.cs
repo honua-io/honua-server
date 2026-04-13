@@ -145,6 +145,52 @@ public sealed class GrpcFeatureServiceTests
     [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
     [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WhenEventPublishFails_ReturnsResponse()
+    {
+        var applyResult = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 1,
+            deletedCount: 1,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)),
+            updateResults: ImmutableArray.Create(EditOperationResult.Success(11)),
+            deleteResults: ImmutableArray.Create(EditOperationResult.Success(12)));
+
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(applyResult));
+        _featureChangeEventPublisher
+            .PublishAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("publish failed"));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "new feature" } }
+        });
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "updated feature" } }
+        });
+        request.Deletes.Add(12);
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.AddResults.Should().ContainSingle();
+        response.UpdateResults.Should().ContainSingle();
+        response.DeleteResults.Should().ContainSingle();
+        response.AddResults[0].ObjectId.Should().Be(101);
+        response.UpdateResults[0].ObjectId.Should().Be(11);
+        response.DeleteResults[0].ObjectId.Should().Be(12);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WithMissingUpdateObjectId_ThrowsInvalidArgument()
     {
         var request = new Proto.ApplyEditsRequest
@@ -279,6 +325,102 @@ public sealed class GrpcFeatureServiceTests
         });
 
         var response = await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
+
+        response.AddResults.Should().ContainSingle();
+        response.AddResults[0].ObjectId.Should().Be(101);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_AnonymousWriteLayerPolicyWithoutAuthentication_AllowsWrite()
+    {
+        var anonymousWriteLayer = _testLayer with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymousWrite = true
+                }
+            }
+        };
+        var anonymousWriteService = _testService with
+        {
+            Layers = [anonymousWriteLayer]
+        };
+        var applyResult = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 0,
+            deletedCount: 0,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)));
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("anonymous-write-layer", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((anonymousWriteService, anonymousWriteLayer)));
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(applyResult));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "anonymous-write-layer",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
+
+        response.AddResults.Should().ContainSingle();
+        response.AddResults[0].ObjectId.Should().Be(101);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_LayerWriteRolePolicyWithoutDataEditorRole_AllowsWrite()
+    {
+        var roleProtectedLayer = _testLayer with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowedWriteRoles = ["layer-writer"]
+                }
+            }
+        };
+        var roleProtectedService = _testService with
+        {
+            Layers = [roleProtectedLayer]
+        };
+        var applyResult = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 0,
+            deletedCount: 0,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)));
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("layer-write-role", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((roleProtectedService, roleProtectedLayer)));
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(applyResult));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "layer-write-role",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
+        });
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext(CreateAuthenticatedUser("layer-writer")));
 
         response.AddResults.Should().ContainSingle();
         response.AddResults[0].ObjectId.Should().Be(101);
@@ -728,6 +870,47 @@ public sealed class GrpcFeatureServiceTests
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
         ex.Which.Status.Detail.Should().Be("Invalid spatial_filter.spatial_reference value.");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithSpatialFilterLatestWkid_PrefersLatestWkidOverWkid()
+    {
+        var features = ImmutableArray.Create(Feature.Create(1, null));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            SpatialFilter = new Proto.SpatialFilter
+            {
+                SpatialRelationship = Proto.SpatialRelationship.Intersects,
+                SpatialReference = new Proto.SpatialReference
+                {
+                    Wkid = 3857,
+                    LatestWkid = 4326
+                },
+                Geometry = new Proto.Geometry
+                {
+                    Point = new Proto.PointGeometry
+                    {
+                        X = -157.85,
+                        Y = 21.30
+                    }
+                }
+            }
+        };
+
+        _ = await _sut.QueryFeatures(request, CreateCallContext());
+
+        await _featureReader.Received(1).QueryAsync(
+            0,
+            Arg.Is<FeatureQuery>(q =>
+                q.SpatialFilter.HasValue &&
+                q.SpatialFilter.Value.Srid == 4326),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

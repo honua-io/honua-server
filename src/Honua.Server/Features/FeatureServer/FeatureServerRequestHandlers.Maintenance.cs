@@ -68,19 +68,31 @@ internal static partial class FeatureServerEndpoints
             return validationResult.ErrorResult!;
         }
 
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
+        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service,
+            layer,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
+        }
+
         var (features, parseError) = TryParseEditsArray(values, context);
         if (parseError != null)
         {
             return parseError;
         }
 
-        if (features == null || features.Length == 0)
-        {
-            var emptyResponse = new AppendResponse { Success = true, NumFeaturesAppended = 0, NumFeaturesFailed = 0 };
-            return Results.Json(emptyResponse, FeatureServerJsonContext.Default.AppendResponse, contentType: "application/json");
-        }
-
-        return await ExecuteAppendAsync(context, serviceId, layerId, features, cancellationToken);
+        return await ExecuteAppendAsync(context, serviceId, layerId, features ?? [], cancellationToken);
     }
 
     private static async Task<IResult> HandleLayerAppend(
@@ -119,19 +131,31 @@ internal static partial class FeatureServerEndpoints
             return validationResult.ErrorResult!;
         }
 
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
+        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service,
+            layer,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
+        }
+
         var (features, parseError) = TryParseEditsArray(values, context);
         if (parseError != null)
         {
             return parseError;
         }
 
-        if (features == null || features.Length == 0)
-        {
-            var emptyResponse = new AppendResponse { Success = true, NumFeaturesAppended = 0, NumFeaturesFailed = 0 };
-            return Results.Json(emptyResponse, FeatureServerJsonContext.Default.AppendResponse, contentType: "application/json");
-        }
-
-        return await ExecuteAppendAsync(context, serviceId, layerId, features, cancellationToken);
+        return await ExecuteAppendAsync(context, serviceId, layerId, features ?? [], cancellationToken);
     }
 
     private static async Task<IResult> ExecuteAppendAsync(
@@ -203,6 +227,7 @@ internal static partial class FeatureServerEndpoints
         var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
             context,
             service,
+            layer,
             cancellationToken);
         if (rbacError != null)
         {

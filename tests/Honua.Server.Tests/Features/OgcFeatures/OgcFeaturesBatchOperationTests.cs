@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -244,6 +245,50 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
         featureResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.BulkCreate, Operations.BulkUpdate)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    public async Task Batch_WhenEventPublishFails_ReturnsSuccess()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
+        await fixture.InitializeAsync();
+
+        var existingId = await fixture.InsertFeatureAsync(TestLayerId, "Batch Original");
+        var batchRequest = new BatchRequest
+        {
+            Operations =
+            [
+                new BatchOperation
+                {
+                    Id = "create-1",
+                    Type = "CREATE",
+                    Feature = CreatePointFeature("Batch Created", "[-122.4194, 37.7749]")
+                },
+                new BatchOperation
+                {
+                    Id = "update-1",
+                    Type = "UPDATE",
+                    FeatureId = existingId.ToString(CultureInfo.InvariantCulture),
+                    Feature = CreatePointFeature("Batch Updated", "[-122.5, 37.8]")
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        var response = await fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/batch",
+            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var batchResponse = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.BatchOperationResponse);
+
+        batchResponse.Should().NotBeNull();
+        batchResponse!.HasErrors.Should().BeFalse();
+        batchResponse.SuccessCount.Should().Be(2);
+    }
+
     private static GeoJsonFeature CreatePointFeature(string name, string coordinatesJson)
     {
         return new GeoJsonFeature
@@ -274,6 +319,12 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
         });
         var result = await command.ExecuteScalarAsync();
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private sealed class ThrowingFeatureChangeEventPublisher : IFeatureChangeEventPublisher
+    {
+        public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("publish failed");
     }
 
 }

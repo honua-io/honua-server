@@ -313,22 +313,21 @@ internal sealed class RateLimitingMiddleware
     /// <returns>Client IP address.</returns>
     private static string? GetClientIpAddress(HttpContext context)
     {
-        // Check for forwarded headers first (load balancer/proxy scenarios)
-        var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(forwardedFor))
+        // Trust the connection IP only. If forwarded headers are enabled, the
+        // ASP.NET Core forwarded-headers middleware will already have rewritten
+        // RemoteIpAddress after validating the proxy against the known-proxy list.
+        var remoteIp = context.Connection.RemoteIpAddress;
+        if (remoteIp is null)
         {
-            // X-Forwarded-For can contain multiple IPs, take the first one
-            return forwardedFor.Split(',')[0].Trim();
+            return null;
         }
 
-        var realIp = context.Request.Headers["X-Real-IP"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(realIp))
+        if (remoteIp.IsIPv4MappedToIPv6)
         {
-            return realIp;
+            remoteIp = remoteIp.MapToIPv4();
         }
 
-        // Fall back to connection remote IP
-        return context.Connection.RemoteIpAddress?.ToString();
+        return remoteIp.ToString();
     }
 
     /// <summary>

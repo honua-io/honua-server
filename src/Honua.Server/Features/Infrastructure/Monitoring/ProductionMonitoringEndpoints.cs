@@ -103,17 +103,21 @@ internal static class ProductionMonitoringEndpoints
     private static IResult GetConnectionPoolMetrics(
         [FromServices] ConnectionPoolMetrics connectionPoolMetrics)
     {
-        var utilization = connectionPoolMetrics.GetPoolUtilization();
+        var hasUtilization = connectionPoolMetrics.TryGetPoolUtilization(out var utilization);
         var failures = connectionPoolMetrics.GetTotalFailures();
         var timeouts = connectionPoolMetrics.GetTotalTimeouts();
+        var healthStatus = ResolveConnectionPoolHealthStatus(hasUtilization, utilization);
 
         var response = new ConnectionPoolMetricsResponse
         {
-            Utilization = utilization,
-            UtilizationPercentage = $"{utilization:P2}",
+            Utilization = hasUtilization ? utilization : 0.0,
+            HasUtilizationData = hasUtilization,
+            UtilizationStatus = hasUtilization ? "available" : "unavailable",
+            UtilizationPercentage = hasUtilization ? $"{utilization:P2}" : "unavailable",
             TotalFailures = failures,
             TotalTimeouts = timeouts,
-            IsHealthy = utilization <= 0.8 && failures == 0 && timeouts == 0,
+            HealthStatus = healthStatus,
+            IsHealthy = string.Equals(healthStatus, "Healthy", StringComparison.Ordinal),
             Timestamp = DateTimeOffset.UtcNow
         };
 
@@ -208,8 +212,8 @@ internal static class ProductionMonitoringEndpoints
             MaxQueueDepth = queueSnapshot.MaxQueueDepth,
             ActiveUploads = queueSnapshot.ActiveUploads,
             MaxConcurrentUploads = queueSnapshot.MaxConcurrentUploads,
-            QueueUtilization = (double)queueSnapshot.QueueDepth / queueSnapshot.MaxQueueDepth,
-            IsHealthy = queueSnapshot.QueueDepth < queueSnapshot.MaxQueueDepth * 0.8,
+            QueueUtilization = GetQueueUtilization(queueSnapshot.QueueDepth, queueSnapshot.MaxQueueDepth),
+            IsHealthy = IsUploadQueueHealthy(queueSnapshot.QueueDepth, queueSnapshot.MaxQueueDepth),
             Timestamp = DateTimeOffset.UtcNow
         };
 
@@ -275,10 +279,14 @@ internal static class ProductionMonitoringEndpoints
     /// Gets comprehensive health status from all production health checks.
     /// </summary>
     /// <param name="healthCheckService">Health check service.</param>
+    /// <param name="loggerFactory">Logger factory.</param>
     /// <returns>Comprehensive health status.</returns>
     private static async Task<IResult> GetComprehensiveHealth(
-        [FromServices] Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckService healthCheckService)
+        [FromServices] Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckService healthCheckService,
+        [FromServices] ILoggerFactory loggerFactory)
     {
+        var logger = loggerFactory.CreateLogger(typeof(ProductionMonitoringEndpoints));
+
         try
         {
             var healthReport = await healthCheckService.CheckHealthAsync();
@@ -294,8 +302,8 @@ internal static class ProductionMonitoringEndpoints
                         Status = entry.Value.Status.ToString(),
                         Duration = entry.Value.Duration,
                         Description = entry.Value.Description,
-                        Exception = entry.Value.Exception?.Message,
-                        Data = entry.Value.Data
+                        Exception = entry.Value.Exception is null ? null : "See server logs for details.",
+                        Data = SanitizeHealthCheckData(entry.Value.Data)
                     }),
                 Timestamp = DateTimeOffset.UtcNow
             };
@@ -304,9 +312,10 @@ internal static class ProductionMonitoringEndpoints
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Comprehensive health endpoint failed.");
             return Results.Problem(
                 title: "Health check failed",
-                detail: ex.Message,
+                detail: "The comprehensive health report could not be generated. See server logs for details.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -316,28 +325,36 @@ internal static class ProductionMonitoringEndpoints
     /// </summary>
     /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
     /// <param name="metricsCollector">Production metrics collector.</param>
+    /// <param name="loggerFactory">Logger factory.</param>
     /// <returns>Database resilience metrics.</returns>
     private static IResult GetDatabaseResilienceMetrics(
         [FromServices] ConnectionPoolMetrics connectionPoolMetrics,
-        [FromServices] ProductionMetricsCollector metricsCollector)
+        [FromServices] ProductionMetricsCollector metricsCollector,
+        [FromServices] ILoggerFactory loggerFactory)
     {
+        var logger = loggerFactory.CreateLogger(typeof(ProductionMonitoringEndpoints));
+
         try
         {
-            var poolUtilization = connectionPoolMetrics.GetPoolUtilization();
+            var hasPoolUtilization = connectionPoolMetrics.TryGetPoolUtilization(out var poolUtilization);
             var totalFailures = connectionPoolMetrics.GetTotalFailures();
             var totalTimeouts = connectionPoolMetrics.GetTotalTimeouts();
             var healthMetrics = metricsCollector.GetHealthMetrics();
+            var healthStatus = ResolveConnectionPoolHealthStatus(hasPoolUtilization, poolUtilization);
 
             var response = new DatabaseResilienceMetricsResponse
             {
                 ConnectionPool = new DatabaseConnectionPoolMetrics
                 {
-                    Utilization = poolUtilization,
-                    UtilizationPercentage = $"{poolUtilization:P2}",
+                    Utilization = hasPoolUtilization ? poolUtilization : 0.0,
+                    HasUtilizationData = hasPoolUtilization,
+                    UtilizationStatus = hasPoolUtilization ? "available" : "unavailable",
+                    UtilizationPercentage = hasPoolUtilization ? $"{poolUtilization:P2}" : "unavailable",
                     ActiveConnections = healthMetrics.ActiveConnections,
                     TotalFailures = totalFailures,
                     TotalTimeouts = totalTimeouts,
-                    IsHealthy = poolUtilization <= 0.8 && totalFailures == 0 && totalTimeouts == 0
+                    HealthStatus = healthStatus,
+                    IsHealthy = string.Equals(healthStatus, "Healthy", StringComparison.Ordinal)
                 },
                 Resilience = new DatabaseResilienceStatus
                 {
@@ -347,7 +364,7 @@ internal static class ProductionMonitoringEndpoints
                     ErrorRate = healthMetrics.ErrorRate,
                     ErrorRatePercentage = $"{healthMetrics.ErrorRate:P2}"
                 },
-                Alerts = GetDatabaseAlerts(poolUtilization, totalFailures, totalTimeouts, healthMetrics.ErrorRate),
+                Alerts = GetDatabaseAlerts(hasPoolUtilization, poolUtilization, healthMetrics.ErrorRate),
                 Timestamp = DateTimeOffset.UtcNow
             };
 
@@ -355,9 +372,10 @@ internal static class ProductionMonitoringEndpoints
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Database resilience metrics endpoint failed.");
             return Results.Problem(
                 title: "Database resilience metrics failed",
-                detail: ex.Message,
+                detail: "The database resilience metrics could not be generated. See server logs for details.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -365,32 +383,25 @@ internal static class ProductionMonitoringEndpoints
     /// <summary>
     /// Gets database-specific alerts based on metrics.
     /// </summary>
+    /// <param name="hasPoolUtilization">Whether pool utilization data is available.</param>
     /// <param name="poolUtilization">Pool utilization ratio.</param>
-    /// <param name="totalFailures">Total connection failures.</param>
-    /// <param name="totalTimeouts">Total connection timeouts.</param>
     /// <param name="errorRate">Query error rate.</param>
     /// <returns>List of database alerts.</returns>
-    private static List<string> GetDatabaseAlerts(double poolUtilization, long totalFailures, long totalTimeouts, double errorRate)
+    private static List<string> GetDatabaseAlerts(bool hasPoolUtilization, double poolUtilization, double errorRate)
     {
         var alerts = new List<string>();
 
-        if (poolUtilization > 0.9)
+        if (!hasPoolUtilization)
+        {
+            alerts.Add("Warning: Database connection pool utilization telemetry is unavailable.");
+        }
+        else if (poolUtilization > 0.9)
         {
             alerts.Add($"Critical: Database connection pool utilization is very high ({poolUtilization:P2})");
         }
         else if (poolUtilization > 0.8)
         {
             alerts.Add($"Warning: Database connection pool utilization is high ({poolUtilization:P2})");
-        }
-
-        if (totalFailures > 0)
-        {
-            alerts.Add($"Error: Database connection failures detected ({totalFailures} total)");
-        }
-
-        if (totalTimeouts > 0)
-        {
-            alerts.Add($"Warning: Database connection timeouts detected ({totalTimeouts} total)");
         }
 
         if (errorRate > 0.1)
@@ -404,6 +415,69 @@ internal static class ProductionMonitoringEndpoints
 
         return alerts;
     }
+
+    private static double GetQueueUtilization(int queueDepth, int maxQueueDepth)
+        => maxQueueDepth > 0 ? (double)queueDepth / maxQueueDepth : 0.0;
+
+    private static bool IsUploadQueueHealthy(int queueDepth, int maxQueueDepth)
+        => maxQueueDepth > 0 && queueDepth < maxQueueDepth * 0.8;
+
+    private static string ResolveConnectionPoolHealthStatus(bool hasUtilization, double utilization)
+    {
+        if (!hasUtilization)
+        {
+            return "Unknown";
+        }
+
+        return utilization <= 0.8 ? "Healthy" : "Degraded";
+    }
+
+    private static Dictionary<string, object?>? SanitizeHealthCheckData(
+        IReadOnlyDictionary<string, object>? data)
+    {
+        if (data == null || data.Count == 0)
+        {
+            return null;
+        }
+
+        var sanitized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in data)
+        {
+            sanitized[key] = IsSensitiveHealthKey(key)
+                ? "[redacted]"
+                : SanitizeHealthValue(value);
+        }
+
+        return sanitized;
+    }
+
+    private static bool IsSensitiveHealthKey(string key)
+        => key.Contains("config", StringComparison.OrdinalIgnoreCase) ||
+           key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+           key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+           key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+           key.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
+           key.Contains("error", StringComparison.OrdinalIgnoreCase);
+
+    private static object? SanitizeHealthValue(object? value)
+        => value switch
+        {
+            null => null,
+            string stringValue => stringValue,
+            bool boolValue => boolValue,
+            byte byteValue => byteValue,
+            sbyte sbyteValue => sbyteValue,
+            short shortValue => shortValue,
+            ushort ushortValue => ushortValue,
+            int intValue => intValue,
+            uint uintValue => uintValue,
+            long longValue => longValue,
+            ulong ulongValue => ulongValue,
+            float floatValue => floatValue,
+            double doubleValue => doubleValue,
+            decimal decimalValue => decimalValue,
+            _ => value.ToString()
+        };
 }
 
 /// <summary>
@@ -454,6 +528,18 @@ internal sealed class ConnectionPoolMetricsResponse
     public required double Utilization { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether utilization data is available.
+    /// </summary>
+    [JsonPropertyName("hasUtilizationData")]
+    public required bool HasUtilizationData { get; set; }
+
+    /// <summary>
+    /// Gets or sets the utilization availability status.
+    /// </summary>
+    [JsonPropertyName("utilizationStatus")]
+    public required string UtilizationStatus { get; set; }
+
+    /// <summary>
     /// Gets or sets the utilization percentage string.
     /// </summary>
     [JsonPropertyName("utilizationPercentage")]
@@ -470,6 +556,12 @@ internal sealed class ConnectionPoolMetricsResponse
     /// </summary>
     [JsonPropertyName("totalTimeouts")]
     public required long TotalTimeouts { get; set; }
+
+    /// <summary>
+    /// Gets or sets the connection pool health status.
+    /// </summary>
+    [JsonPropertyName("healthStatus")]
+    public required string HealthStatus { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the connection pool is healthy.
@@ -727,7 +819,7 @@ internal sealed class HealthCheckEntryResponse
     /// Gets or sets additional data.
     /// </summary>
     [JsonPropertyName("data")]
-    public IReadOnlyDictionary<string, object>? Data { get; set; }
+    public IReadOnlyDictionary<string, object?>? Data { get; set; }
 }
 
 /// <summary>
@@ -772,6 +864,18 @@ internal sealed class DatabaseConnectionPoolMetrics
     public required double Utilization { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether utilization data is available.
+    /// </summary>
+    [JsonPropertyName("hasUtilizationData")]
+    public required bool HasUtilizationData { get; set; }
+
+    /// <summary>
+    /// Gets or sets the utilization availability status.
+    /// </summary>
+    [JsonPropertyName("utilizationStatus")]
+    public required string UtilizationStatus { get; set; }
+
+    /// <summary>
     /// Gets or sets the utilization percentage.
     /// </summary>
     [JsonPropertyName("utilizationPercentage")]
@@ -794,6 +898,12 @@ internal sealed class DatabaseConnectionPoolMetrics
     /// </summary>
     [JsonPropertyName("totalTimeouts")]
     public required long TotalTimeouts { get; set; }
+
+    /// <summary>
+    /// Gets or sets the connection pool health status.
+    /// </summary>
+    [JsonPropertyName("healthStatus")]
+    public required string HealthStatus { get; set; }
 
     /// <summary>
     /// Gets or sets whether the connection pool is healthy.

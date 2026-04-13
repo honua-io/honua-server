@@ -157,6 +157,19 @@ public sealed class StacItemsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_OutOfRangeBbox_Returns400()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?bbox=200,95,210,100");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_WithDatelineCrossingBbox_ReturnsMatchingItem()
     {
         var featureId = await InsertDatelineFeatureAsync(179.9, 0.0, "Dateline STAC Item");
@@ -320,6 +333,35 @@ public sealed class StacItemsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
+    public async Task GetItem_ByStacId_PrefersCanonicalStacIdBeyondIdCollisions()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var canonicalItemId = $"stac-collision-{Guid.NewGuid():N}";
+
+        for (var index = 0; index < 8; index++)
+        {
+            var collisionFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"Collision Item {index}");
+            await SetFeatureAttributeAsync(collisionFeatureId, "id", canonicalItemId);
+        }
+
+        var targetFeatureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Canonical STAC ID Item");
+        await SetFeatureAttributeAsync(targetFeatureId, "stac_id", canonicalItemId);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items/{canonicalItemId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("id").GetString().Should().Be(canonicalItemId);
+        json.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Canonical STAC ID Item");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_ByNumericLookingStacId_ReturnsStacItemBeforeObjectIdFallback()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -382,15 +424,19 @@ public sealed class StacItemsTests : IAsyncLifetime
     }
 
     private async Task PromoteStacItemIdAsync(long featureId, string itemId)
+        => await SetFeatureAttributeAsync(featureId, "id", itemId);
+
+    private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE features
-            SET attributes = attributes || jsonb_build_object('id', @itemId)
+            SET attributes = attributes || jsonb_build_object(@attributeName, @attributeValue)
             WHERE objectid = @featureId;
             """;
-        command.Parameters.Add(new NpgsqlParameter { ParameterName = "@itemId", Value = itemId });
+        command.Parameters.Add(new NpgsqlParameter { ParameterName = "@attributeName", Value = attributeName });
+        command.Parameters.Add(new NpgsqlParameter { ParameterName = "@attributeValue", Value = attributeValue });
         command.Parameters.Add(new NpgsqlParameter { ParameterName = "@featureId", Value = featureId });
         await command.ExecuteNonQueryAsync();
     }

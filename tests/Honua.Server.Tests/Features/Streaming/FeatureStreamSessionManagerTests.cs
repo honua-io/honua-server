@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using Honua.Server.Features.Streaming;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
@@ -40,6 +41,46 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.NotEqual(Guid.Empty, session.SessionId);
         Assert.NotNull(session.Reader);
         Assert.False(session.DisconnectToken.IsCancellationRequested);
+    }
+
+    [UnitTest]
+    public async Task CreateSession_EnforcesConcurrentCapUnderLoad()
+    {
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions
+            {
+                HeartbeatInterval = TimeSpan.FromSeconds(30),
+                MaxBufferPerConnection = 4,
+                MaxConcurrentSessions = 1,
+                ReplayBatchSize = 100
+            }),
+            NullLogger<FeatureStreamSessionManager>.Instance);
+
+        var startGate = new ManualResetEventSlim(false);
+        var sessions = new ConcurrentBag<FeatureStreamSession>();
+
+        var tasks = Enumerable.Range(0, 16)
+            .Select(_ => Task.Run(() =>
+            {
+                startGate.Wait();
+                var session = manager.TryCreateSession("WebSocket", "load-test");
+                if (session is not null)
+                {
+                    sessions.Add(session);
+                }
+            }))
+            .ToArray();
+
+        startGate.Set();
+        await Task.WhenAll(tasks);
+
+        Assert.Single(sessions);
+        Assert.Equal(1, manager.SessionCount);
+
+        foreach (var session in sessions)
+        {
+            session.Dispose();
+        }
     }
 
     [UnitTest]
@@ -521,22 +562,163 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         using var localSession = localManager.CreateSession("WebSocket", "local");
         using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
 
-        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 42)));
+        var localDelivered = localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 42)));
 
         Assert.True(localSession.Reader.TryRead(out var localMessage));
         Assert.True(remoteSession.Reader.TryRead(out var remoteMessage));
+        Assert.Equal(1, localDelivered);
         Assert.Equal(42, localMessage.Envelope.Cursor);
         Assert.Equal(localMessage.Envelope.Cursor, remoteMessage.Envelope.Cursor);
         Assert.Equal(localMessage.Envelope.ServiceId, remoteMessage.Envelope.ServiceId);
+    }
+
+    [UnitTest]
+    public void Broadcast_DropsDuplicateEventIdForSession()
+    {
+        using var session = _manager.CreateSession("WebSocket", null);
+
+        const string eventId = "evt-duplicate";
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 77, eventId: eventId)));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 12, eventId: eventId)));
+
+        Assert.True(session.Reader.TryRead(out var firstMessage));
+        Assert.False(session.Reader.TryRead(out _));
+        Assert.Equal(77L, firstMessage.Envelope.Cursor);
+    }
+
+    [UnitTest]
+    public void Broadcast_AllowsOutOfOrderLowerCursorWithDifferentEventId()
+    {
+        using var session = _manager.CreateSession("WebSocket", null);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 22, eventId: "evt-22")));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 21, eventId: "evt-21")));
+
+        Assert.True(session.Reader.TryRead(out var firstMessage));
+        Assert.True(session.Reader.TryRead(out var secondMessage));
+        Assert.Equal(22L, firstMessage.Envelope.Cursor);
+        Assert.Equal(21L, secondMessage.Envelope.Cursor);
+    }
+
+    [UnitTest]
+    public void Broadcast_RecoversClusterSubscriptionAfterInitialFailure()
+    {
+        var subscriber = Substitute.For<ISubscriber>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var handlers = new List<Action<RedisChannel, RedisValue>>();
+        var subscribeAttempts = 0;
+
+        redis.GetSubscriber().Returns(subscriber);
+        subscriber.When(x => x.Subscribe(Arg.Any<RedisChannel>(), Arg.Any<Action<RedisChannel, RedisValue>>()))
+            .Do(callInfo =>
+            {
+                subscribeAttempts++;
+                if (subscribeAttempts == 1)
+                {
+                    throw new InvalidOperationException("subscribe failed");
+                }
+
+                handlers.Add((Action<RedisChannel, RedisValue>)callInfo.Args()[1]);
+            });
+        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var channel = callInfo.Arg<RedisChannel>();
+                var value = callInfo.Arg<RedisValue>();
+                foreach (var handler in handlers)
+                {
+                    handler(channel, value);
+                }
+
+                return handlers.Count;
+            });
+
+        var options = Options.Create(new FeatureStreamOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            MaxBufferPerConnection = 4,
+            ReplayBatchSize = 100
+        });
+
+        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var localSession = localManager.CreateSession("WebSocket", "local");
+        using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
+
+        var delivered = localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 91)));
+
+        Assert.Equal(1, delivered);
+        Assert.True(localSession.Reader.TryRead(out var localMessage));
+        Assert.True(remoteSession.Reader.TryRead(out var remoteMessage));
+        Assert.Equal(91L, localMessage.Envelope.Cursor);
+        Assert.Equal(localMessage.Envelope.Cursor, remoteMessage.Envelope.Cursor);
+        Assert.Equal(3, subscribeAttempts);
+    }
+
+    [UnitTest]
+    public void Broadcast_QueuesClusterPayloadWhenRedisPublishFails_ThenFlushesOnNextBroadcast()
+    {
+        var subscriber = Substitute.For<ISubscriber>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var handlers = new List<Action<RedisChannel, RedisValue>>();
+        var publishAttempts = 0;
+
+        redis.GetSubscriber().Returns(subscriber);
+        subscriber.Subscribe(Arg.Any<RedisChannel>(), Arg.Do<Action<RedisChannel, RedisValue>>(handler => handlers.Add(handler)));
+        subscriber.Publish(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                publishAttempts++;
+                if (publishAttempts == 1)
+                {
+                    throw new InvalidOperationException("publish failed");
+                }
+
+                var channel = callInfo.Arg<RedisChannel>();
+                var value = callInfo.Arg<RedisValue>();
+                foreach (var handler in handlers)
+                {
+                    handler(channel, value);
+                }
+
+                return handlers.Count;
+            });
+
+        var options = Options.Create(new FeatureStreamOptions
+        {
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            MaxBufferPerConnection = 4,
+            ReplayBatchSize = 100
+        });
+
+        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var localSession = localManager.CreateSession("WebSocket", "local");
+        using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
+
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 101)));
+        localManager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 102)));
+
+        Assert.True(localSession.Reader.TryRead(out var firstLocal));
+        Assert.True(localSession.Reader.TryRead(out var secondLocal));
+        Assert.Equal(101L, firstLocal.Envelope.Cursor);
+        Assert.Equal(102L, secondLocal.Envelope.Cursor);
+
+        Assert.True(remoteSession.Reader.TryRead(out var firstRemote));
+        Assert.True(remoteSession.Reader.TryRead(out var secondRemote));
+        Assert.Equal(101L, firstRemote.Envelope.Cursor);
+        Assert.Equal(102L, secondRemote.Envelope.Cursor);
     }
 
     private static FeatureStreamEnvelope CreateEnvelope(long cursor) => CreateEnvelope(cursor, layerId: 0, serviceId: "test-svc");
 
     private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId) => CreateEnvelope(cursor, layerId, serviceId: "test-svc");
 
-    private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId, string serviceId) => new()
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor, string eventId) => CreateEnvelope(cursor, layerId: 0, serviceId: "test-svc", eventId: eventId);
+
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId, string serviceId, string? eventId = null) => new()
     {
-        EventId = Guid.NewGuid().ToString(),
+        EventId = eventId ?? Guid.NewGuid().ToString(),
         Cursor = cursor,
         Timestamp = DateTimeOffset.UtcNow,
         ServiceId = serviceId,

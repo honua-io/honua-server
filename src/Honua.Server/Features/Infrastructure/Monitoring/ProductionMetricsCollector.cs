@@ -18,6 +18,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
     private readonly IMemoryCache _memoryCache;
     private readonly ConnectionPoolMetrics _connectionPoolMetrics;
     private readonly IActiveDbConnectionTracker _connectionTracker;
+    private readonly ICacheMetricsSnapshotProvider _cacheMetricsSnapshotProvider;
     private readonly CacheOptions _cacheOptions;
     private readonly ILogger<ProductionMetricsCollector> _logger;
     private readonly IServiceProvider _serviceProvider;
@@ -46,6 +47,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
     /// <param name="memoryCache">Memory cache instance.</param>
     /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
     /// <param name="connectionTracker">Connection tracker.</param>
+    /// <param name="cacheMetricsSnapshotProvider">Live cache metrics snapshot provider.</param>
     /// <param name="cacheOptions">Cache options.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="serviceProvider">Service provider for accessing upload service.</param>
@@ -53,6 +55,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
         IMemoryCache memoryCache,
         ConnectionPoolMetrics connectionPoolMetrics,
         IActiveDbConnectionTracker connectionTracker,
+        ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider,
         IOptions<CacheOptions> cacheOptions,
         ILogger<ProductionMetricsCollector> logger,
         IServiceProvider serviceProvider)
@@ -60,6 +63,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
         _memoryCache = memoryCache;
         _connectionPoolMetrics = connectionPoolMetrics;
         _connectionTracker = connectionTracker;
+        _cacheMetricsSnapshotProvider = cacheMetricsSnapshotProvider;
         _cacheOptions = cacheOptions.Value;
         _logger = logger;
         _serviceProvider = serviceProvider;
@@ -220,14 +224,15 @@ internal sealed class ProductionMetricsCollector : IDisposable
     public ProductionHealthMetrics GetHealthMetrics()
     {
         var memoryUsage = GC.GetTotalMemory(false);
-        var poolUtilization = _connectionPoolMetrics.GetPoolUtilization();
+        var hasPoolUtilization = _connectionPoolMetrics.TryGetPoolUtilization(out var utilization);
         var cacheHitRatio = CalculateCacheHitRatio();
 
         return new ProductionHealthMetrics
         {
             MemoryUsageBytes = memoryUsage,
             MemoryPressureLevel = GetMemoryPressureLevel(memoryUsage),
-            DatabaseConnectionPoolUtilization = poolUtilization,
+            DatabaseConnectionPoolUtilization = hasPoolUtilization ? utilization : 0.0,
+            HasDatabaseConnectionPoolUtilization = hasPoolUtilization,
             CacheHitRatio = cacheHitRatio,
             TotalQueries = Volatile.Read(ref _totalQueries),
             TotalErrors = Volatile.Read(ref _totalErrors),
@@ -246,8 +251,9 @@ internal sealed class ProductionMetricsCollector : IDisposable
     /// <returns>Cache hit ratio (0.0-1.0).</returns>
     private double CalculateCacheHitRatio()
     {
-        var hits = Volatile.Read(ref _cacheHits);
-        var misses = Volatile.Read(ref _cacheMisses);
+        var snapshot = _cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot();
+        var hits = snapshot.TotalHits;
+        var misses = snapshot.TotalMisses;
         var total = hits + misses;
 
         return total > 0 ? (double)hits / total : 0.0;
@@ -374,6 +380,11 @@ public sealed class ProductionHealthMetrics
     public required double DatabaseConnectionPoolUtilization { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether database connection pool utilization is available.
+    /// </summary>
+    public required bool HasDatabaseConnectionPoolUtilization { get; set; }
+
+    /// <summary>
     /// Gets or sets cache hit ratio.
     /// </summary>
     public required double CacheHitRatio { get; set; }
@@ -425,11 +436,9 @@ public sealed class ProductionHealthMetrics
     public bool IsHealthy()
     {
         return CacheHitRatio >= 0.8 &&
-               DatabaseConnectionPoolUtilization <= 0.8 &&
+               (!HasDatabaseConnectionPoolUtilization || DatabaseConnectionPoolUtilization <= 0.8) &&
                ErrorRate <= 0.05 &&
-               MemoryPressureLevel != "critical" &&
-               ConnectionAcquisitionTimeouts == 0 &&
-               ConnectionAcquisitionFailures == 0;
+               MemoryPressureLevel != "critical";
     }
 
     /// <summary>
@@ -445,7 +454,7 @@ public sealed class ProductionHealthMetrics
             alerts.Add($"Low cache hit ratio: {CacheHitRatio:P2}");
         }
 
-        if (DatabaseConnectionPoolUtilization > 0.8)
+        if (HasDatabaseConnectionPoolUtilization && DatabaseConnectionPoolUtilization > 0.8)
         {
             alerts.Add($"High database connection pool utilization: {DatabaseConnectionPoolUtilization:P2}");
         }
@@ -458,16 +467,6 @@ public sealed class ProductionHealthMetrics
         if (MemoryPressureLevel == "critical")
         {
             alerts.Add($"Critical memory pressure: {MemoryUsageBytes / (1024 * 1024)}MB");
-        }
-
-        if (ConnectionAcquisitionTimeouts > 0)
-        {
-            alerts.Add($"Database connection acquisition timeouts: {ConnectionAcquisitionTimeouts}");
-        }
-
-        if (ConnectionAcquisitionFailures > 0)
-        {
-            alerts.Add($"Database connection acquisition failures: {ConnectionAcquisitionFailures}");
         }
 
         return alerts;

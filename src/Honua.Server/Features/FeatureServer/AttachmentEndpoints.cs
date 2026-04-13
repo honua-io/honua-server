@@ -570,6 +570,7 @@ internal static class AttachmentEndpoints
             var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
                 context,
                 validationResult.Service!,
+                validationResult.Layer!,
                 context.RequestAborted);
             if (rbacError != null)
             {

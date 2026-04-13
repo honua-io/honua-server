@@ -27,6 +27,7 @@ internal sealed class Wfs20QueryServices(
     OgcFeaturesGeometryServices geometryServices,
     FeatureMutationValidator mutationValidator,
     FeatureMutationEventService mutationEventService,
+    ICoordinateTransformService coordinateTransformService,
     ICrsRegistry crsRegistry,
     IOptions<Wfs20Options> wfs20Options,
     IOptions<LimitsOptions> limitsOptions)
@@ -46,6 +47,8 @@ internal sealed class Wfs20QueryServices(
     internal FeatureMutationValidator MutationValidator { get; } = mutationValidator;
 
     internal FeatureMutationEventService MutationEventService { get; } = mutationEventService;
+
+    internal ICoordinateTransformService CoordinateTransformService { get; } = coordinateTransformService;
 
     internal ICrsRegistry CrsRegistry { get; } = crsRegistry;
 

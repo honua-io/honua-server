@@ -5,6 +5,8 @@ using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.TestKit.Attributes;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Queries.Filters.Fes20;
 
@@ -64,7 +66,7 @@ public sealed class Fes20ParserTests
             <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
               <fes:DWithin>
                 <fes:ValueReference>geom</fes:ValueReference>
-                <fes:Envelope srsName="EPSG:4326">
+                <fes:Envelope srsName="CRS84">
                   <fes:lowerCorner>-157.9 21.3</fes:lowerCorner>
                   <fes:upperCorner>-157.8 21.4</fes:upperCorner>
                 </fes:Envelope>
@@ -80,6 +82,73 @@ public sealed class Fes20ParserTests
         spatial.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("geom");
         spatial.Right.Should().BeOfType<GeometryLiteral>();
         spatial.Distance.Should().BeOfType<Literal>().Which.Value.Should().Be(25.5);
+    }
+
+    [UnitTest]
+    public void ParseFilter_BboxWithDatelineCrossing_ReturnsMultiPolygonGeometry()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Envelope srsName="CRS84">
+                  <gml:lowerCorner>170 -10</gml:lowerCorner>
+                  <gml:upperCorner>-170 10</gml:upperCorner>
+                </gml:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        var geometry = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+
+        var parsed = new WKBReader().Read(geometry.Wkb);
+        parsed.Should().BeOfType<MultiPolygon>();
+        ((MultiPolygon)parsed).NumGeometries.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void ParseFilter_BboxWithProjectedCrsAndInvertedX_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Envelope srsName="EPSG:3857">
+                  <gml:lowerCorner>10 -10</gml:lowerCorner>
+                  <gml:upperCorner>-10 10</gml:upperCorner>
+                </gml:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*Invalid envelope coordinates*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_BboxWithGeographicCrsAndOutOfRangeCoordinates_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Envelope srsName="EPSG:4326">
+                  <gml:lowerCorner>200 -10</gml:lowerCorner>
+                  <gml:upperCorner>210 10</gml:upperCorner>
+                </gml:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*Invalid envelope coordinates*");
     }
 
     [UnitTest]

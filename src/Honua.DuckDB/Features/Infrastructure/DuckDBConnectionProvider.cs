@@ -33,9 +33,17 @@ internal sealed class DuckDBConnectionProvider : IDatabaseConnectionProvider
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new DuckDBConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await _spatialBootstrap.EnsureSpatialExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
-        return connection;
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await _spatialBootstrap.EnsureSpatialExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -44,8 +52,16 @@ internal sealed class DuckDBConnectionProvider : IDatabaseConnectionProvider
         CancellationToken cancellationToken = default)
     {
         var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        return (connection, transaction);
+        try
+        {
+            var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            return (connection, transaction);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <inheritdoc />

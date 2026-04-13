@@ -22,6 +22,9 @@ internal sealed partial class AlertPipeline : IAlertPipeline
     private readonly IAlertEvaluator _evaluator;
     private readonly IAlertEditionPolicy _editionPolicy;
     private readonly ILogger<AlertPipeline> _logger;
+    private readonly record struct PendingAlertDispatch(
+        AlertEventEnvelope AlertEvent,
+        ImmutableArray<AlertChannelType> Channels);
 
     public AlertPipeline(
         IAlertChangeReader changeReader,
@@ -96,6 +99,8 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 ? null
                 : await GetFeatureAsync(change.LayerId, change.ObjectId, featureCache, cancellationToken).ConfigureAwait(false);
             var evaluatedAt = DateTimeOffset.UtcNow;
+            var pendingStateUpdates = new List<AlertStateSnapshot>(rules.Count);
+            var pendingDispatches = new List<PendingAlertDispatch>();
 
             foreach (var rule in rules)
             {
@@ -114,7 +119,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
                 if (evaluation.UpdatedState is not null)
                 {
-                    await _stateStore.UpsertAsync(evaluation.UpdatedState, cancellationToken).ConfigureAwait(false);
+                    pendingStateUpdates.Add(evaluation.UpdatedState);
                     stateByKey[new AlertStateLookupKey(
                         evaluation.UpdatedState.RuleId,
                         evaluation.UpdatedState.LayerId,
@@ -128,18 +133,16 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
                 foreach (var alertEvent in evaluation.Events)
                 {
-                    var eventId = await _eventStore.TryAppendAsync(alertEvent, cancellationToken).ConfigureAwait(false);
-                    if (!eventId.HasValue)
-                    {
-                        LogEventDeduplicated(_logger, alertEvent.DedupeKey, alertEvent.RuleId, alertEvent.ObjectId);
-                        continue;
-                    }
-
-                    var channels = GetDeliverableChannels(rule);
-
-                    await _dispatchStore.EnqueueAsync(eventId.Value, channels, cancellationToken).ConfigureAwait(false);
+                    pendingDispatches.Add(new PendingAlertDispatch(alertEvent, GetDeliverableChannels(rule)));
                 }
             }
+
+            if (pendingStateUpdates.Count > 0)
+            {
+                await _stateStore.UpsertManyAsync(pendingStateUpdates, cancellationToken).ConfigureAwait(false);
+            }
+
+            await PersistDispatchesAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
         }
 
         return maxGeneration;
@@ -165,6 +168,8 @@ internal sealed partial class AlertPipeline : IAlertPipeline
             .ToDictionary();
         var zones = await LoadZonesAsync(ruleById.Values.ToArray(), cancellationToken).ConfigureAwait(false);
         var featureCache = new Dictionary<(int LayerId, long ObjectId), Feature?>();
+        var pendingStateUpdates = new List<AlertStateSnapshot>(states.Count);
+        var pendingDispatches = new List<PendingAlertDispatch>();
         var evaluated = 0;
         foreach (var state in states)
         {
@@ -203,26 +208,46 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
             if (evaluation.UpdatedState is not null)
             {
-                await _stateStore.UpsertAsync(evaluation.UpdatedState, cancellationToken).ConfigureAwait(false);
+                pendingStateUpdates.Add(evaluation.UpdatedState);
             }
 
             foreach (var alertEvent in evaluation.Events)
             {
-                var eventId = await _eventStore.TryAppendAsync(alertEvent, cancellationToken).ConfigureAwait(false);
-                if (!eventId.HasValue)
-                {
-                    continue;
-                }
-
-                var channels = GetDeliverableChannels(rule);
-
-                await _dispatchStore.EnqueueAsync(eventId.Value, channels, cancellationToken).ConfigureAwait(false);
+                pendingDispatches.Add(new PendingAlertDispatch(alertEvent, GetDeliverableChannels(rule)));
             }
 
             evaluated++;
         }
 
+        if (pendingStateUpdates.Count > 0)
+        {
+            await _stateStore.UpsertManyAsync(pendingStateUpdates, cancellationToken).ConfigureAwait(false);
+        }
+
+        await PersistDispatchesAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
+
         return evaluated;
+    }
+
+    private async Task PersistDispatchesAsync(
+        IReadOnlyList<PendingAlertDispatch> pendingDispatches,
+        CancellationToken cancellationToken)
+    {
+        foreach (var pendingDispatch in pendingDispatches)
+        {
+            var eventId = await _eventStore.TryAppendAsync(pendingDispatch.AlertEvent, cancellationToken).ConfigureAwait(false);
+            if (!eventId.HasValue)
+            {
+                LogEventDeduplicated(
+                    _logger,
+                    pendingDispatch.AlertEvent.DedupeKey,
+                    pendingDispatch.AlertEvent.RuleId,
+                    pendingDispatch.AlertEvent.ObjectId);
+                continue;
+            }
+
+            await _dispatchStore.EnqueueAsync(eventId.Value, pendingDispatch.Channels, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>> LoadRulesForChangesAsync(

@@ -128,6 +128,33 @@ public sealed class CachingLayerCatalogTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task ListLayersAsync_MultipleConcurrentCacheMisses_QueryInnerCatalogOnce()
+    {
+        // Arrange
+        _innerCatalog.ListLayersCallCount = 0;
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _innerCatalog.ListLayersEntered = entered;
+        _innerCatalog.ListLayersRelease = release;
+
+        // Act
+        var tasks = Enumerable.Range(0, 8)
+            .Select(_ => _cachingCatalog.ListLayersAsync())
+            .ToArray();
+
+        await entered.Task.ConfigureAwait(false);
+        _innerCatalog.ListLayersCallCount.Should().Be(1);
+        release.SetResult(true);
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        // Assert
+        results.Should().OnlyContain(layers => layers.Length == 2);
+        _innerCatalog.ListLayersCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task GetServiceAsync_FirstCall_QueriesInnerCatalog()
     {
         // Arrange
@@ -155,6 +182,33 @@ public sealed class CachingLayerCatalogTests : IDisposable
 
         // Assert
         _innerCatalog.GetServiceCallCount.Should().Be(1); // Only called once
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task ListServicesAsync_MultipleConcurrentCacheMisses_QueryInnerCatalogOnce()
+    {
+        // Arrange
+        _innerCatalog.ListServicesCallCount = 0;
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _innerCatalog.ListServicesEntered = entered;
+        _innerCatalog.ListServicesRelease = release;
+
+        // Act
+        var tasks = Enumerable.Range(0, 8)
+            .Select(_ => _cachingCatalog.ListServicesAsync())
+            .ToArray();
+
+        await entered.Task.ConfigureAwait(false);
+        _innerCatalog.ListServicesCallCount.Should().Be(1);
+        release.SetResult(true);
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        // Assert
+        results.Should().OnlyContain(services => services.Length == 2);
+        _innerCatalog.ListServicesCallCount.Should().Be(1);
     }
 
     [UnitTest]
@@ -207,6 +261,62 @@ public sealed class CachingLayerCatalogTests : IDisposable
         var second = await _cachingCatalog.LayerExistsAsync(77);
         second.Should().BeFalse();
         _innerCatalog.LayerExistsCallCount.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task LayerExistsAsync_MultipleConcurrentCacheMisses_QueryInnerCatalogOnce()
+    {
+        // Arrange
+        _innerCatalog.MissingLayerIds.Add(88);
+        _innerCatalog.LayerExistsCallCount = 0;
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _innerCatalog.LayerExistsEntered = entered;
+        _innerCatalog.LayerExistsRelease = release;
+
+        // Act
+        var tasks = Enumerable.Range(0, 8)
+            .Select(_ => _cachingCatalog.LayerExistsAsync(88))
+            .ToArray();
+
+        await entered.Task.ConfigureAwait(false);
+        _innerCatalog.LayerExistsCallCount.Should().Be(1);
+        release.SetResult(true);
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        // Assert
+        results.Should().OnlyContain(exists => !exists);
+        _innerCatalog.LayerExistsCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task ServiceExistsAsync_MultipleConcurrentCacheMisses_QueryInnerCatalogOnce()
+    {
+        // Arrange
+        _innerCatalog.MissingServiceNames.Add("missing-concurrent");
+        _innerCatalog.ServiceExistsCallCount = 0;
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _innerCatalog.ServiceExistsEntered = entered;
+        _innerCatalog.ServiceExistsRelease = release;
+
+        // Act
+        var tasks = Enumerable.Range(0, 8)
+            .Select(_ => _cachingCatalog.ServiceExistsAsync("missing-concurrent"))
+            .ToArray();
+
+        await entered.Task.ConfigureAwait(false);
+        _innerCatalog.ServiceExistsCallCount.Should().Be(1);
+        release.SetResult(true);
+
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        // Assert
+        results.Should().OnlyContain(exists => !exists);
+        _innerCatalog.ServiceExistsCallCount.Should().Be(1);
     }
 
     [UnitTest]
@@ -499,6 +609,14 @@ public sealed class CachingLayerCatalogTests : IDisposable
         public int ServiceExistsCallCount { get; set; }
         public int GetRelationshipCallCount { get; set; }
         public int ListRelationshipsCallCount { get; set; }
+        public TaskCompletionSource<bool>? ListLayersEntered { get; set; }
+        public TaskCompletionSource<bool>? ListLayersRelease { get; set; }
+        public TaskCompletionSource<bool>? ListServicesEntered { get; set; }
+        public TaskCompletionSource<bool>? ListServicesRelease { get; set; }
+        public TaskCompletionSource<bool>? LayerExistsEntered { get; set; }
+        public TaskCompletionSource<bool>? LayerExistsRelease { get; set; }
+        public TaskCompletionSource<bool>? ServiceExistsEntered { get; set; }
+        public TaskCompletionSource<bool>? ServiceExistsRelease { get; set; }
         private readonly string _namePrefix;
 
         public MockLayerCatalog(string namePrefix = "")
@@ -516,10 +634,16 @@ public sealed class CachingLayerCatalogTests : IDisposable
             return Task.FromResult<LayerDefinition?>(CreateTestLayer(layerId, _namePrefix));
         }
 
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
+        public async Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
         {
             ListLayersCallCount++;
-            return Task.FromResult(new[] { CreateTestLayer(1, _namePrefix), CreateTestLayer(2, _namePrefix) });
+            ListLayersEntered?.TrySetResult(true);
+            if (ListLayersRelease != null)
+            {
+                await ListLayersRelease.Task.ConfigureAwait(false);
+            }
+
+            return [CreateTestLayer(1, _namePrefix), CreateTestLayer(2, _namePrefix)];
         }
 
         public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
@@ -532,30 +656,49 @@ public sealed class CachingLayerCatalogTests : IDisposable
             return Task.FromResult<ServiceDefinition?>(CreateTestService(serviceName, _namePrefix));
         }
 
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
+        public async Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
         {
             ListServicesCallCount++;
-            return Task.FromResult(new[] { CreateTestService("Service1", _namePrefix), CreateTestService("Service2", _namePrefix) });
+            ListServicesEntered?.TrySetResult(true);
+            if (ListServicesRelease != null)
+            {
+                await ListServicesRelease.Task.ConfigureAwait(false);
+            }
+
+            return [CreateTestService("Service1", _namePrefix), CreateTestService("Service2", _namePrefix)];
         }
 
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
+        public async Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
         {
             LayerExistsCallCount++;
+            LayerExistsEntered?.TrySetResult(true);
+            if (LayerExistsRelease != null)
+            {
+                await LayerExistsRelease.Task.ConfigureAwait(false);
+            }
+
             if (MissingLayerIds.Contains(layerId))
             {
-                return Task.FromResult(false);
+                return false;
             }
-            return Task.FromResult(layerId > 0 && layerId <= 2);
+            return layerId > 0 && layerId <= 2;
         }
 
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+        public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
         {
             ServiceExistsCallCount++;
+            ServiceExistsEntered?.TrySetResult(true);
+            if (ServiceExistsRelease != null)
+            {
+                await ServiceExistsRelease.Task.ConfigureAwait(false);
+            }
+
             if (MissingServiceNames.Contains(serviceName))
             {
-                return Task.FromResult(false);
+                return false;
             }
-            return Task.FromResult(!string.IsNullOrEmpty(serviceName));
+
+            return !string.IsNullOrEmpty(serviceName);
         }
 
         public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)

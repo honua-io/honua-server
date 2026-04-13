@@ -524,12 +524,7 @@ public static class Fes20Parser
 
         var lower = CreateCoordinate(minX, minY, axisOrder);
         var upper = CreateCoordinate(maxX, maxY, axisOrder);
-        var wkbGeometry = CreateEnvelopeWkb(
-            Math.Min(lower.X, upper.X),
-            Math.Min(lower.Y, upper.Y),
-            Math.Max(lower.X, upper.X),
-            Math.Max(lower.Y, upper.Y),
-            srid);
+        var wkbGeometry = CreateEnvelopeWkb(lower.X, lower.Y, upper.X, upper.Y, srid);
 
         return new GeometryLiteral(
             wkbGeometry,
@@ -932,17 +927,74 @@ public static class Fes20Parser
     private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY, int srid)
     {
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
-        var polygon = geometryFactory.CreatePolygon(
-        [
-            new Coordinate(minX, minY),
-            new Coordinate(maxX, minY),
-            new Coordinate(maxX, maxY),
-            new Coordinate(minX, maxY),
-            new Coordinate(minX, minY)
-        ]);
+        var isGeographic = SpatialReference.Create(srid).IsGeographic;
+        ValidateEnvelopeCoordinates(minX, minY, maxX, maxY, isGeographic);
+        Geometry geometry;
 
-        return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(polygon);
+        if (isGeographic && minX > maxX)
+        {
+            var eastHemisphere = CreateEnvelopePolygon(geometryFactory, minX, minY, 180.0, maxY);
+            var westHemisphere = CreateEnvelopePolygon(geometryFactory, -180.0, minY, maxX, maxY);
+            geometry = geometryFactory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+        }
+        else
+        {
+            geometry = geometryFactory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
+        }
+
+        return new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(geometry);
     }
+
+    private static void ValidateEnvelopeCoordinates(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        bool isGeographic)
+    {
+        if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
+            !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
+            minY >= maxY ||
+            (!isGeographic && minX >= maxX) ||
+            (isGeographic && minX == maxX))
+        {
+            throw new Fes20ParseException("Invalid envelope coordinates");
+        }
+
+        if (isGeographic &&
+            (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
+             !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
+        {
+            throw new Fes20ParseException("Invalid envelope coordinates");
+        }
+    }
+
+    private static bool IsValidCoordinate(double coordinate)
+        => !double.IsNaN(coordinate) &&
+           !double.IsInfinity(coordinate) &&
+           coordinate >= -40_000_000 &&
+           coordinate <= 40_000_000;
+
+    private static bool IsValidLongitude(double coordinate)
+        => coordinate >= -180.0 && coordinate <= 180.0;
+
+    private static bool IsValidLatitude(double coordinate)
+        => coordinate >= -90.0 && coordinate <= 90.0;
+
+    private static Polygon CreateEnvelopePolygon(
+        GeometryFactory geometryFactory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+        => geometryFactory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(minX, maxY),
+                new Coordinate(minX, minY)
+            ]);
 }
 
 /// <summary>

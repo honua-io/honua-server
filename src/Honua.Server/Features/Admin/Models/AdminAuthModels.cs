@@ -121,11 +121,17 @@ internal sealed class AdminAuthLogoutUrlResponse
 
 internal sealed class AdminAuthOidcDiscoveryDocument
 {
+    [System.Text.Json.Serialization.JsonPropertyName("issuer")]
+    public string? Issuer { get; init; }
+
     [System.Text.Json.Serialization.JsonPropertyName("authorization_endpoint")]
     public string AuthorizationEndpoint { get; init; } = string.Empty;
 
     [System.Text.Json.Serialization.JsonPropertyName("token_endpoint")]
     public string TokenEndpoint { get; init; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("jwks_uri")]
+    public string? JwksUri { get; init; }
 
     [System.Text.Json.Serialization.JsonPropertyName("end_session_endpoint")]
     public string? EndSessionEndpoint { get; init; }

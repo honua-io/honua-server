@@ -28,6 +28,8 @@ namespace Honua.Server.Tests.Features.OgcMaps;
 [Protocol(Protocols.OgcApiMaps)]
 public class OgcMapsRenderingHandlerTests
 {
+    private const string OgcApiMapsProtocol = "OGC-API-Maps";
+
     private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
     private readonly IRasterMapRenderer _mapRenderer = Substitute.For<IRasterMapRenderer>();
     private readonly OgcMapsRenderingHandler _handler;
@@ -71,6 +73,36 @@ public class OgcMapsRenderingHandlerTests
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_MultiServiceLayer_PrefersMapsProtocolEnabledService()
+    {
+        var layer = CreatePublicLayerWithExtent();
+        var alpha = CreateProtocolDisabledService(layer) with { Name = "alpha-service" };
+        var beta = CreateProtocolEnabledService(layer) with { Name = "beta-service" };
+
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([alpha, beta]);
+        _mapRenderer.RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857
+            });
+
+        var result = await _handler.RenderCollectionMapAsync(
+            1,
+            CreateDefaultRequest(),
+            CreateAnonymousOgcMapsContext());
+
+        result.Should().BeOfType<FileContentHttpResult>();
     }
 
     [UnitTest]
@@ -772,6 +804,18 @@ public class OgcMapsRenderingHandlerTests
             Metadata = new CatalogMetadata
             {
                 EnabledProtocols = ServiceProtocols.All
+            }
+        };
+
+    private static ServiceDefinition CreateProtocolEnabledService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "protocol-enabled-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = [OgcApiMapsProtocol]
             }
         };
 

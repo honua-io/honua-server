@@ -20,6 +20,8 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 {
     private static readonly TimeSpan _layerSridCacheRetention = TimeSpan.FromHours(24);
     private const int MaxLayerSridCacheEntries = 10000;
+    private const int MaxLayerSridExpiryScansPerCleanup = 512;
+    private const int MaxLayerSridOverflowRemovalsPerCleanup = 256;
 
     // Cache state is static so it persists across scoped instances (FeatureCacheManager is registered
     // as scoped because it depends on scoped IDatabaseConnectionProvider, but the cached values are
@@ -336,29 +338,39 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     private static void CleanupCacheIfNeeded()
     {
         var now = DateTimeOffset.UtcNow;
+        var scannedEntries = 0;
 
-        // Remove expired entries
-        foreach (var (key, entry) in _layerSridCache.ToArray())
+        // Remove expired entries using a bounded scan so cleanup does not block on large caches.
+        foreach (var (key, entry) in _layerSridCache)
         {
+            if (scannedEntries++ >= MaxLayerSridExpiryScansPerCleanup)
+            {
+                break;
+            }
+
             if (IsLayerSridCacheExpired(entry, now))
             {
                 _layerSridCache.TryRemove(key, out _);
             }
         }
 
-        // Remove oldest entries if cache is too large (best-effort, snapshot-based)
+        // If the cache still exceeds the cap, trim a bounded number of entries. This cache is
+        // advisory only, so bounded best-effort eviction is preferable to a full sort of the map.
         var overflow = _layerSridCache.Count - MaxLayerSridCacheEntries;
         if (overflow > 0)
         {
-            var entriesToRemove = _layerSridCache
-                .OrderBy(kvp => kvp.Value.CreatedAt)
-                .Take(overflow)
-                .Select(kvp => kvp.Key)
-                .ToArray();
-
-            foreach (var key in entriesToRemove)
+            var removalsRemaining = Math.Min(overflow, MaxLayerSridOverflowRemovalsPerCleanup);
+            foreach (var (key, _) in _layerSridCache)
             {
-                _layerSridCache.TryRemove(key, out _);
+                if (removalsRemaining == 0)
+                {
+                    break;
+                }
+
+                if (_layerSridCache.TryRemove(key, out _))
+                {
+                    removalsRemaining--;
+                }
             }
         }
     }

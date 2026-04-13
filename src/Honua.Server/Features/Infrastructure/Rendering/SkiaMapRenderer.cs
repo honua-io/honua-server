@@ -678,7 +678,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// </summary>
     internal static Func<double, double, SKPoint> BuildTransform(RenderExtent extent, int imageWidth, int imageHeight)
     {
-        var extentWidth = extent.Width;
+        var extentWidth = CoordinateTransformer.GetEffectiveWidth(extent);
         var extentHeight = extent.Height;
 
         if (extentWidth <= 0 || extentHeight <= 0)
@@ -692,7 +692,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         var maxY = extent.MaxY;
 
         return (x, y) => new SKPoint(
-            (float)((x - minX) * scaleX),
+            (float)((CoordinateTransformer.NormalizeLongitude(x, extent) - minX) * scaleX),
             (float)((maxY - y) * scaleY) // Flip Y axis
         );
     }

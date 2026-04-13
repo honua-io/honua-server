@@ -107,6 +107,8 @@ public sealed class OutputCacheInvalidationServiceTests
 
         await outputCacheStore.Received().EvictByTagAsync("service-metadata", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("tiles", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:1:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:testservice:*", Arg.Any<CancellationToken>());
     }
 
@@ -183,7 +185,9 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received().EvictByTagAsync("tiles", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("ogc-maps", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:layer:7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:*", Arg.Any<CancellationToken>());
 
         // With resolved owners, static-map eviction should be targeted, not global.
         await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:alpha:*", Arg.Any<CancellationToken>());

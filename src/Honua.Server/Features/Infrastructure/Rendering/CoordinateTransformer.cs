@@ -13,7 +13,10 @@ internal static class CoordinateTransformer
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
+    private const double GeographicWorldWidth = 360.0;
     private const int ExtentSampleSegmentsPerEdge = 4;
+    private static readonly double WebMercatorWorldHalfWidth = Math.PI * EarthRadius;
+    private static readonly double WebMercatorWorldWidth = WebMercatorWorldHalfWidth * 2.0;
 
     /// <summary>
     /// Converts a bounding box from one SRID to another.
@@ -88,6 +91,69 @@ internal static class CoordinateTransformer
     private static bool IsWgs84Srid(int srid)
         => srid == 4326;
 
+    internal static bool IsWrappedGeographicExtent(SkiaMapRenderer.RenderExtent extent)
+    {
+        return extent.MinX > extent.MaxX &&
+            extent.MinX >= -180.0 && extent.MinX <= 180.0 &&
+            extent.MaxX >= -180.0 && extent.MaxX <= 180.0 &&
+            extent.MinY >= -90.0 && extent.MinY <= 90.0 &&
+            extent.MaxY >= -90.0 && extent.MaxY <= 90.0;
+    }
+
+    internal static bool IsWrappedWebMercatorExtent(SkiaMapRenderer.RenderExtent extent)
+    {
+        return extent.MinX > extent.MaxX &&
+            extent.MinX >= -WebMercatorWorldHalfWidth && extent.MinX <= WebMercatorWorldHalfWidth &&
+            extent.MaxX >= -WebMercatorWorldHalfWidth && extent.MaxX <= WebMercatorWorldHalfWidth &&
+            extent.MinY >= -WebMercatorWorldHalfWidth && extent.MinY <= WebMercatorWorldHalfWidth &&
+            extent.MaxY >= -WebMercatorWorldHalfWidth && extent.MaxY <= WebMercatorWorldHalfWidth;
+    }
+
+    private static bool TryGetWrappedWorldWidth(SkiaMapRenderer.RenderExtent extent, out double worldWidth)
+    {
+        if (IsWrappedGeographicExtent(extent))
+        {
+            worldWidth = GeographicWorldWidth;
+            return true;
+        }
+
+        if (IsWrappedWebMercatorExtent(extent))
+        {
+            worldWidth = WebMercatorWorldWidth;
+            return true;
+        }
+
+        worldWidth = 0;
+        return false;
+    }
+
+    internal static double GetEffectiveWidth(SkiaMapRenderer.RenderExtent extent)
+    {
+        if (!TryGetWrappedWorldWidth(extent, out var worldWidth))
+        {
+            return extent.Width;
+        }
+
+        return worldWidth - extent.MinX + extent.MaxX;
+    }
+
+    internal static double NormalizeLongitude(double longitude, SkiaMapRenderer.RenderExtent extent)
+    {
+        if (!TryGetWrappedWorldWidth(extent, out var worldWidth))
+        {
+            return longitude;
+        }
+
+        var normalized = longitude;
+        if (normalized < extent.MinX)
+        {
+            var wraps = Math.Ceiling((extent.MinX - normalized) / worldWidth);
+            normalized += wraps * worldWidth;
+        }
+
+        return normalized;
+    }
+
     // Defer to the shared SRID classifier so scale math stays aligned with the
     // rest of the server and geocentric CRS codes such as EPSG:4978 are not
     // misclassified as lat/lon.
@@ -98,6 +164,7 @@ internal static class CoordinateTransformer
         SkiaMapRenderer.RenderExtent extent,
         Func<double, double, (double X, double Y)> transform)
     {
+        var wrapped = TryGetWrappedWorldWidth(extent, out _);
         var minX = double.PositiveInfinity;
         var minY = double.PositiveInfinity;
         var maxX = double.NegativeInfinity;
@@ -106,10 +173,21 @@ internal static class CoordinateTransformer
         foreach (var (x, y) in EnumerateSampledExtentPoints(extent))
         {
             var (tx, ty) = transform(x, y);
-            minX = Math.Min(minX, tx);
             minY = Math.Min(minY, ty);
-            maxX = Math.Max(maxX, tx);
             maxY = Math.Max(maxY, ty);
+            if (!wrapped)
+            {
+                minX = Math.Min(minX, tx);
+                maxX = Math.Max(maxX, tx);
+            }
+        }
+
+        if (wrapped)
+        {
+            var (wrappedMinX, _) = transform(extent.MinX, extent.MinY);
+            var (wrappedMaxX, _) = transform(extent.MaxX, extent.MinY);
+            minX = wrappedMinX;
+            maxX = wrappedMaxX;
         }
 
         return new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
@@ -117,19 +195,67 @@ internal static class CoordinateTransformer
 
     private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(SkiaMapRenderer.RenderExtent extent)
     {
+        if (TryGetWrappedWorldBounds(extent, out var worldMinX, out var worldMaxX))
+        {
+            foreach (var point in EnumerateSampledExtentPointsForRange(extent.MinX, worldMaxX, extent.MinY, extent.MaxY))
+            {
+                yield return point;
+            }
+
+            foreach (var point in EnumerateSampledExtentPointsForRange(worldMinX, extent.MaxX, extent.MinY, extent.MaxY))
+            {
+                yield return point;
+            }
+
+            yield break;
+        }
+
+        foreach (var point in EnumerateSampledExtentPointsForRange(extent.MinX, extent.MaxX, extent.MinY, extent.MaxY))
+        {
+            yield return point;
+        }
+    }
+
+    private static bool TryGetWrappedWorldBounds(SkiaMapRenderer.RenderExtent extent, out double worldMinX, out double worldMaxX)
+    {
+        if (IsWrappedGeographicExtent(extent))
+        {
+            worldMinX = -180.0;
+            worldMaxX = 180.0;
+            return true;
+        }
+
+        if (IsWrappedWebMercatorExtent(extent))
+        {
+            worldMinX = -WebMercatorWorldHalfWidth;
+            worldMaxX = WebMercatorWorldHalfWidth;
+            return true;
+        }
+
+        worldMinX = 0;
+        worldMaxX = 0;
+        return false;
+    }
+
+    private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPointsForRange(
+        double minX,
+        double maxX,
+        double minY,
+        double maxY)
+    {
         for (var i = 0; i <= ExtentSampleSegmentsPerEdge; i++)
         {
             var t = (double)i / ExtentSampleSegmentsPerEdge;
-            var x = extent.MinX + ((extent.MaxX - extent.MinX) * t);
-            var y = extent.MinY + ((extent.MaxY - extent.MinY) * t);
+            var x = minX + ((maxX - minX) * t);
+            var y = minY + ((maxY - minY) * t);
 
-            yield return (x, extent.MinY);
-            yield return (x, extent.MaxY);
-            yield return (extent.MinX, y);
-            yield return (extent.MaxX, y);
+            yield return (x, minY);
+            yield return (x, maxY);
+            yield return (minX, y);
+            yield return (maxX, y);
         }
 
-        yield return ((extent.MinX + extent.MaxX) / 2.0, (extent.MinY + extent.MaxY) / 2.0);
+        yield return ((minX + maxX) / 2.0, (minY + maxY) / 2.0);
     }
 
     /// <summary>
@@ -170,7 +296,9 @@ internal static class CoordinateTransformer
         if (scaleDenominator <= 0 || imageWidth <= 0 || imageHeight <= 0 || dpi <= 0)
             return extent;
 
-        var centerX = (extent.MinX + extent.MaxX) / 2.0;
+        var centerX = TryGetWrappedWorldWidth(extent, out _)
+            ? extent.MinX + GetEffectiveWidth(extent) / 2.0
+            : (extent.MinX + extent.MaxX) / 2.0;
         var centerY = (extent.MinY + extent.MaxY) / 2.0;
 
         // Inverse of: scaleDenom = (extentWidthMeters / imageWidth) * (dpi / 0.0254)
@@ -194,9 +322,13 @@ internal static class CoordinateTransformer
             halfHeight = heightMeters / unitFactor / 2.0;
         }
 
-        return new SkiaMapRenderer.RenderExtent(
+        var adjusted = new SkiaMapRenderer.RenderExtent(
             centerX - halfWidth, centerY - halfHeight,
             centerX + halfWidth, centerY + halfHeight);
+
+        return IsGeographicSrid(srid)
+            ? NormalizeGeographicExtent(adjusted)
+            : adjusted;
     }
 
     /// <summary>
@@ -234,12 +366,12 @@ internal static class CoordinateTransformer
         if (IsGeographicSrid(srid))
         {
             var centerLat = (extent.MinY + extent.MaxY) / 2.0;
-            extentWidthMeters = extent.Width * Math.PI / 180.0 * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
+            extentWidthMeters = GetEffectiveWidth(extent) * Math.PI / 180.0 * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
         }
         else
         {
             // Convert projected units to meters (handles foot-based CRSs)
-            extentWidthMeters = extent.Width * LinearUnitToMeters(srid);
+            extentWidthMeters = GetEffectiveWidth(extent) * LinearUnitToMeters(srid);
         }
 
         // pixels per meter at the given DPI (1 inch = 0.0254 meters)
@@ -272,7 +404,7 @@ internal static class CoordinateTransformer
             return 0;
         }
 
-        return pixelTolerance * mapExtent.Width / imageWidth;
+        return pixelTolerance * GetEffectiveWidth(mapExtent) / imageWidth;
     }
 
     /// <summary>
@@ -327,4 +459,21 @@ internal static class CoordinateTransformer
     private static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent ToSharedExtent(
         SkiaMapRenderer.RenderExtent extent)
         => new(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
+
+    private static SkiaMapRenderer.RenderExtent NormalizeGeographicExtent(SkiaMapRenderer.RenderExtent extent)
+    {
+        var minX = extent.MinX;
+        var maxX = extent.MaxX;
+
+        if (maxX > 180.0)
+        {
+            maxX -= 360.0;
+        }
+        else if (minX < -180.0)
+        {
+            minX += 360.0;
+        }
+
+        return new SkiaMapRenderer.RenderExtent(minX, extent.MinY, maxX, extent.MaxY);
+    }
 }

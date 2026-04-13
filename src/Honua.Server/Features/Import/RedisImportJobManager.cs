@@ -10,6 +10,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Import;
@@ -224,26 +225,26 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
         {
             try
             {
-                RedisValue[] inFlight;
-                do
+                while (true)
                 {
-                    inFlight = await _redisDb.ListRangeAsync(_processingQueueKey, 0, 99).ConfigureAwait(false);
-                    foreach (var jobValue in inFlight)
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Atomically move a job back to the ready queue so a crash between
+                    // "remove from processing" and "push to ready" cannot lose work.
+                    var jobValue = await _redisDb
+                        .ListRightPopLeftPushAsync(_processingQueueKey, _queueKey)
+                        .ConfigureAwait(false);
+                    if (!jobValue.HasValue)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
+                        break;
+                    }
 
-                        var jobId = jobValue.ToString();
-                        if (string.IsNullOrWhiteSpace(jobId))
-                        {
-                            continue;
-                        }
-
-                        await _redisDb.ListRemoveAsync(_processingQueueKey, jobId, 1).ConfigureAwait(false);
-                        await _redisDb.ListLeftPushAsync(_queueKey, jobId).ConfigureAwait(false);
+                    var jobId = jobValue.ToString();
+                    if (!string.IsNullOrWhiteSpace(jobId))
+                    {
                         Log.JobRequeued(_logger, jobId);
                     }
                 }
-                while (inFlight.Length > 0);
 
                 return;
             }
@@ -374,8 +375,8 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 
 /// <summary>
 /// Redis-based leader election using StackExchange.Redis locks.
-/// Falls back to node-local leadership when Redis is unavailable so single-node
-/// imports continue processing.
+/// Falls back to node-local leadership only when Redis is not configured so
+/// single-node imports continue processing without creating split-brain risk.
 /// </summary>
 internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, IDisposable
 {
@@ -405,7 +406,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         _logger = logger;
         _lockKey = lockKey;
         _instanceId = instanceId;
-        _allowLocalFallbackLeadership = allowLocalFallbackLeadership;
+        _allowLocalFallbackLeadership = allowLocalFallbackLeadership && _redisDb == null;
         _heartbeatTimer = new Timer(HeartbeatCallback, null, Timeout.Infinite, Timeout.Infinite);
 
         if (!_useRedis && _allowLocalFallbackLeadership)
@@ -416,7 +417,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
     public bool IsLeader => _isLeader;
     public string InstanceId => _instanceId;
-    internal bool IsUsingFallback => !_useRedis || _usingLocalFallbackLeadership;
+    internal bool IsUsingFallback => _usingLocalFallbackLeadership;
 
     public async Task<bool> TryAcquireLeadershipAsync(CancellationToken cancellationToken = default)
     {
@@ -568,10 +569,8 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
             _useRedis = true;
             if (_usingLocalFallbackLeadership)
             {
-                _usingLocalFallbackLeadership = false;
-                _isLeader = false;
-                _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
                 Log.RedisLeadershipRequired(_logger, _instanceId);
+                await EnsureRedisLeadershipAsync().ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -590,19 +589,37 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
         try
         {
-            var extended = await _redisDb.LockExtendAsync(_lockKey, _instanceId, _leaseDuration).ConfigureAwait(false);
-            if (extended)
+            var hasRedisLease = await _redisDb
+                .LockExtendAsync(_lockKey, _instanceId, _leaseDuration)
+                .ConfigureAwait(false);
+            if (!hasRedisLease)
             {
+                hasRedisLease = await _redisDb
+                    .LockTakeAsync(_lockKey, _instanceId, _leaseDuration)
+                    .ConfigureAwait(false);
+            }
+
+            if (hasRedisLease)
+            {
+                _isLeader = true;
+                if (_usingLocalFallbackLeadership)
+                {
+                    _usingLocalFallbackLeadership = false;
+                    _heartbeatTimer.Change(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+                    Log.LeadershipAcquired(_logger, _instanceId);
+                }
+
                 return;
             }
 
-            var acquired = await _redisDb.LockTakeAsync(_lockKey, _instanceId, _leaseDuration).ConfigureAwait(false);
-            if (!acquired)
+            if (_usingLocalFallbackLeadership)
             {
-                _isLeader = false;
-                _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
-                Log.LeadershipLost(_logger, _instanceId);
+                _usingLocalFallbackLeadership = false;
             }
+
+            _isLeader = false;
+            _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            Log.LeadershipLost(_logger, _instanceId);
         }
         catch (Exception ex)
         {
@@ -713,7 +730,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private volatile bool _isUsingFallback;
     private bool AllowsLocalFallback => _cache == null;
-    private bool CanUseRedisDirectly => _redis != null && _cache != null && !_isUsingFallback;
+    private bool CanUseRedisDirectly =>
+        _redis != null &&
+        _cache != null &&
+        !_isUsingFallback &&
+        _cache is not MemoryDistributedCache;
 
     public RedisProgressStore(
         IDistributedCache? cache,

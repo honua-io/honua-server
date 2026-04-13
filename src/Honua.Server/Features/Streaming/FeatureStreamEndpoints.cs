@@ -353,12 +353,18 @@ internal static class FeatureStreamEndpoints
         HttpContext context,
         IStreamSubscriptionFilter? subscriptionFilter)
     {
-        using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-
         var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-        using var session = sessionManager.CreateSession(WebSocketTransport, NullIfEmpty(clientLabel), subscriptionFilter);
+        var session = sessionManager.TryCreateSession(WebSocketTransport, NullIfEmpty(clientLabel), subscriptionFilter);
+        if (session is null)
+        {
+            await WriteSessionLimitExceededAsync(context, options.MaxConcurrentSessions).ConfigureAwait(false);
+            return;
+        }
+
+        using var sessionLease = session;
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
         if (subscriptionFilter is not null)
         {
@@ -491,9 +497,13 @@ internal static class FeatureStreamEndpoints
         {
             // Normal shutdown or disconnect.
         }
-        catch (WebSocketException)
+        catch (WebSocketException ex)
         {
-            // Client disconnected abruptly.
+            FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            FeatureStreamLog.WebSocketReceiveEnded(logger, ex, session.SessionId);
         }
 
         // Signal writer to stop and wait for it.
@@ -510,8 +520,14 @@ internal static class FeatureStreamEndpoints
                     session.DisconnectToken.IsCancellationRequested ? "Session disconnected." : "Stream closed.",
                     CancellationToken.None).ConfigureAwait(false);
             }
-            catch (WebSocketException) { }
-            catch (ObjectDisposedException) { }
+            catch (WebSocketException ex)
+            {
+                FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
+            }
+            catch (ObjectDisposedException ex)
+            {
+                FeatureStreamLog.WebSocketCloseFailed(logger, ex, session.SessionId);
+            }
         }
     }
 
@@ -627,6 +643,29 @@ internal static class FeatureStreamEndpoints
         HttpContext context,
         IStreamSubscriptionFilter? subscriptionFilter)
     {
+        var clientLabel = context.Request.Query["clientLabel"].ToString();
+        var cursorParam = context.Request.Query["cursor"].ToString();
+        long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
+
+        // Also check Last-Event-ID header (standard SSE reconnect mechanism).
+        if (!cursor.HasValue)
+        {
+            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
+            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var lei))
+            {
+                cursor = lei;
+            }
+        }
+
+        var session = sessionManager.TryCreateSession(SseTransport, NullIfEmpty(clientLabel), subscriptionFilter);
+        if (session is null)
+        {
+            await WriteSessionLimitExceededAsync(context, options.MaxConcurrentSessions).ConfigureAwait(false);
+            return;
+        }
+
+        using var sessionLease = session;
+
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";
 
@@ -646,22 +685,6 @@ internal static class FeatureStreamEndpoints
         {
             return; // Client disconnected during handshake.
         }
-
-        var clientLabel = context.Request.Query["clientLabel"].ToString();
-        var cursorParam = context.Request.Query["cursor"].ToString();
-        long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
-
-        // Also check Last-Event-ID header (standard SSE reconnect mechanism).
-        if (!cursor.HasValue)
-        {
-            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
-            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var lei))
-            {
-                cursor = lei;
-            }
-        }
-
-        using var session = sessionManager.CreateSession(SseTransport, NullIfEmpty(clientLabel), subscriptionFilter);
 
         if (subscriptionFilter is not null)
         {
@@ -1004,6 +1027,13 @@ internal static class FeatureStreamEndpoints
 
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static Task WriteSessionLimitExceededAsync(HttpContext context, int maxConcurrentSessions)
+        => ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                $"Feature stream session limit of {maxConcurrentSessions} concurrent sessions reached.")
+            .ExecuteAsync(context);
 }
 
 /// <summary>

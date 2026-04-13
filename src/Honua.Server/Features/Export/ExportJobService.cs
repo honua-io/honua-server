@@ -111,6 +111,7 @@ internal sealed class ExportJobService(
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
+                leaseCoordinator.Dispose();
             }
 
             return;

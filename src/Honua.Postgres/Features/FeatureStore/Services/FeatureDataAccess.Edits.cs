@@ -544,7 +544,6 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
-    // Simplified batch operations - would need full implementation from original
     private async Task<(ImmutableArray<long> createdIds, ImmutableArray<EditOperationResult> results)> ProcessCreatesWithResultsAsync(
         int layerId,
         ImmutableArray<Feature> features,
@@ -559,33 +558,31 @@ internal sealed partial class FeatureDataAccess
 
         if (transaction == null && features.Length > 1)
         {
-            try
-            {
-                var batchCreatedIds = await CreateBatchWithConnectionAsync(
-                    layerId,
-                    features,
-                    connection,
-                    transaction,
-                    cancellationToken);
-                var batchResults = new EditOperationResult[batchCreatedIds.Length];
-                for (var i = 0; i < batchCreatedIds.Length; i++)
+            return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+                features,
+                (batch, ct) => CreateBatchWithConnectionAsync(layerId, batch, connection, transaction, ct),
+                async (feature, ct) =>
                 {
-                    batchResults[i] = EditOperationResult.Success(
-                        batchCreatedIds[i],
-                        features[i].Attributes.GetValueOrDefault("globalId")?.ToString());
-                }
-
-                return (batchCreatedIds, batchResults.ToImmutableArray());
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                // Fall back to per-feature inserts so non-transactional edit batches
-                // preserve detailed partial-success results when any create fails.
-            }
+                    try
+                    {
+                        var created = await CreateWithConnectionAsync(layerId, feature, connection, transaction, ct).ConfigureAwait(false);
+                        return (
+                            created.Id,
+                            EditOperationResult.Success(
+                                created.Id,
+                                feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                    }
+                    catch (Exception ex)
+                    {
+                        return (
+                            null,
+                            EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
+                    }
+                },
+                (feature, createdId) => EditOperationResult.Success(
+                    createdId,
+                    feature.Attributes.GetValueOrDefault("globalId")?.ToString()),
+                cancellationToken).ConfigureAwait(false);
         }
 
         var createdIds = new List<long>();
@@ -606,6 +603,77 @@ internal sealed partial class FeatureDataAccess
         }
 
         return (createdIds.ToImmutableArray(), results.ToImmutableArray());
+    }
+
+    internal static async Task<(ImmutableArray<long> createdIds, ImmutableArray<EditOperationResult> results)> ExecuteAdaptiveNonTransactionalCreateBatchAsync<TFeature>(
+        ImmutableArray<TFeature> features,
+        Func<ImmutableArray<TFeature>, CancellationToken, Task<ImmutableArray<long>>> batchCreateAsync,
+        Func<TFeature, CancellationToken, Task<(long? createdId, EditOperationResult result)>> singleCreateAsync,
+        Func<TFeature, long, EditOperationResult> createSuccessResult,
+        CancellationToken cancellationToken)
+    {
+        if (features.Length == 0)
+        {
+            return (ImmutableArray<long>.Empty, ImmutableArray<EditOperationResult>.Empty);
+        }
+
+        if (features.Length == 1)
+        {
+            var singleOutcome = await singleCreateAsync(features[0], cancellationToken).ConfigureAwait(false);
+            return singleOutcome.createdId.HasValue
+                ? ([singleOutcome.createdId.Value], [singleOutcome.result])
+                : (ImmutableArray<long>.Empty, [singleOutcome.result]);
+        }
+
+        try
+        {
+            var batchCreatedIds = await batchCreateAsync(features, cancellationToken).ConfigureAwait(false);
+            var batchResults = new EditOperationResult[batchCreatedIds.Length];
+            for (var i = 0; i < batchCreatedIds.Length; i++)
+            {
+                batchResults[i] = createSuccessResult(features[i], batchCreatedIds[i]);
+            }
+
+            return (batchCreatedIds, batchResults.ToImmutableArray());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            var midpoint = features.Length / 2;
+            var left = Slice(features, 0, midpoint);
+            var right = Slice(features, midpoint, features.Length - midpoint);
+
+            var leftOutcome = await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+                left,
+                batchCreateAsync,
+                singleCreateAsync,
+                createSuccessResult,
+                cancellationToken).ConfigureAwait(false);
+            var rightOutcome = await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
+                right,
+                batchCreateAsync,
+                singleCreateAsync,
+                createSuccessResult,
+                cancellationToken).ConfigureAwait(false);
+
+            return (
+                leftOutcome.createdIds.AddRange(rightOutcome.createdIds),
+                leftOutcome.results.AddRange(rightOutcome.results));
+        }
+    }
+
+    private static ImmutableArray<T> Slice<T>(ImmutableArray<T> source, int start, int length)
+    {
+        var builder = ImmutableArray.CreateBuilder<T>(length);
+        for (var index = start; index < start + length; index++)
+        {
+            builder.Add(source[index]);
+        }
+
+        return builder.MoveToImmutable();
     }
 
     private async Task<ImmutableArray<long>> CreateBatchWithConnectionAsync(

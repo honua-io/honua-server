@@ -59,4 +59,12 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5013, Level = LogLevel.Warning,
         Message = "Feature stream cross-node broadcast failed; live delivery is continuing locally.")]
     public static partial void ClusterBroadcastFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5014, Level = LogLevel.Debug,
+        Message = "Feature stream WebSocket close failed for session {SessionId}")]
+    public static partial void WebSocketCloseFailed(ILogger logger, Exception exception, Guid sessionId);
+
+    [LoggerMessage(EventId = 5015, Level = LogLevel.Debug,
+        Message = "Feature stream WebSocket receive loop ended for session {SessionId}")]
+    public static partial void WebSocketReceiveEnded(ILogger logger, Exception exception, Guid sessionId);
 }

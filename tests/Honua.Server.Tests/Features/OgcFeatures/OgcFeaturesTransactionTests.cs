@@ -248,6 +248,71 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task UpdateFeature_WhenEventPublishFails_ReturnsUpdated()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
+        await fixture.InitializeAsync();
+
+        var existingId = await fixture.InsertFeatureAsync(TestLayerId, "Original");
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = existingId,
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Updated Despite Publish Failure"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        var response = await fixture.Client.PutAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
+            new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task PatchFeature_WhenEventPublishFails_ReturnsUpdated()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
+        await fixture.InitializeAsync();
+
+        var existingId = await fixture.InsertFeatureAsync(TestLayerId, "Patch Despite Publish Failure");
+
+        using var patchRequest = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}")
+        {
+            Content = new StringContent(
+                """
+                {
+                    "properties": {
+                        "name": "Patched Despite Publish Failure"
+                    }
+                }
+                """,
+                Encoding.UTF8,
+                "application/merge-patch+json")
+        };
+
+        var response = await fixture.Client.SendAsync(patchRequest);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private sealed class ThrowingFeatureChangeEventPublisher : IFeatureChangeEventPublisher
     {
         public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)

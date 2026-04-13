@@ -26,6 +26,11 @@ public sealed class FeatureStreamOptions
     public int MaxBufferPerConnection { get; set; } = 256;
 
     /// <summary>
+    /// Maximum number of concurrently connected feature-stream sessions.
+    /// </summary>
+    public int MaxConcurrentSessions { get; set; } = 256;
+
+    /// <summary>
     /// Number of events fetched per batch during cursor-based replay on reconnect.
     /// </summary>
     public int ReplayBatchSize { get; set; } = 200;
@@ -55,6 +60,11 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.MaxBufferPerConnection <= 0)
         {
             failures.Add("FeatureStreaming:MaxBufferPerConnection must be a positive integer.");
+        }
+
+        if (options.MaxConcurrentSessions <= 0)
+        {
+            failures.Add("FeatureStreaming:MaxConcurrentSessions must be a positive integer.");
         }
 
         if (options.ReplayBatchSize <= 0)

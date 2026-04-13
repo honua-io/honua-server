@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Collections.Concurrent;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Import;
@@ -49,6 +50,7 @@ public sealed class ImportBackgroundServiceTests
         var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
         await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        (await jobManager.RequestStore.GetProgressAsync(jobId).ConfigureAwait(false)).Should().NotBeNull();
         await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
         await jobManager.JobQueue.EnqueueAsync(jobId);
         await jobManager.JobQueue.EnqueueAsync(jobId);
@@ -166,14 +168,27 @@ public sealed class ImportBackgroundServiceTests
         await service.StartAsync(CancellationToken.None);
         try
         {
-            await WaitForAsync(
-                async () =>
+            var importService = provider.GetRequiredService<ThrowingGeoservicesImportService>();
+            await importService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            GeoservicesImportProgress? lastObservedProgress = null;
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                lastObservedProgress = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+                if (lastObservedProgress?.Status == GeoservicesImportStatus.Queued &&
+                    string.Equals(lastObservedProgress.CurrentPhase, "Queued for recovery after leadership loss", StringComparison.Ordinal))
                 {
-                    var current = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
-                    return current?.Status == GeoservicesImportStatus.Queued &&
-                           string.Equals(current.CurrentPhase, "Queued for recovery after leadership loss", StringComparison.Ordinal);
-                },
-                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
+            }
+
+            lastObservedProgress.Should().NotBeNull();
+            lastObservedProgress!.Status.Should().Be(
+                GeoservicesImportStatus.Queued,
+                $"expected the strict-mode import to requeue after leadership loss, but observed phase '{lastObservedProgress.CurrentPhase}'");
+            lastObservedProgress.CurrentPhase.Should().Be("Queued for recovery after leadership loss");
 
             (await jobManager.RequestStore.GetProgressAsync(jobId).ConfigureAwait(false)).Should().NotBeNull();
             _ = database.DidNotReceive().ListRemoveAsync(
@@ -466,6 +481,8 @@ public sealed class ImportBackgroundServiceTests
             .Returns(
                 Task.FromResult(Array.Empty<RedisValue>()),
                 Task.FromResult(Array.Empty<RedisValue>()));
+        database.ListRightPopLeftPushAsync($"{queueKey}:processing", queueKey, Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisValue.Null));
         database.ListRightPopLeftPushAsync(queueKey, $"{queueKey}:processing", Arg.Any<CommandFlags>())
             .Returns(
                 Task.FromResult((RedisValue)jobId),
@@ -489,7 +506,11 @@ public sealed class ImportBackgroundServiceTests
         string leaderKey,
         string jobId)
     {
+        var redisStrings = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+        var durableRequestStrings = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+        var redisSets = new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>(StringComparer.Ordinal);
         var database = Substitute.For<IDatabase>();
+        var transaction = Substitute.For<ITransaction>();
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
@@ -499,6 +520,8 @@ public sealed class ImportBackgroundServiceTests
             .Returns(
                 Task.FromResult(Array.Empty<RedisValue>()),
                 Task.FromResult(Array.Empty<RedisValue>()));
+        database.ListRightPopLeftPushAsync($"{queueKey}:processing", queueKey, Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisValue.Null));
         database.ListRightPopLeftPushAsync(queueKey, $"{queueKey}:processing", Arg.Any<CommandFlags>())
             .Returns(
                 Task.FromResult((RedisValue)jobId),
@@ -512,6 +535,72 @@ public sealed class ImportBackgroundServiceTests
                 Task.FromException<bool>(new RedisConnectionException(ConnectionFailureType.SocketFailure, "simulated Redis outage")));
         database.ListRemoveAsync($"{queueKey}:processing", Arg.Any<RedisValue>(), 1, Arg.Any<CommandFlags>())
             .Returns(Task.FromResult(1L));
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<RedisKey>(0).ToString();
+                if (redisStrings.TryGetValue(key, out var value))
+                {
+                    return Task.FromResult((RedisValue)value);
+                }
+
+                return Task.FromResult(durableRequestStrings.TryGetValue(key, out var durableValue) ? (RedisValue)durableValue : RedisValue.Null);
+            });
+        database.SetMembersAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<RedisKey>(0).ToString();
+                if (!redisSets.TryGetValue(key, out var members))
+                {
+                    return Task.FromResult(Array.Empty<RedisValue>());
+                }
+
+                return Task.FromResult(members.Keys.Select(member => (RedisValue)member).ToArray());
+            });
+        database.CreateTransaction().Returns(transaction);
+
+        transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<RedisKey>(0).ToString();
+                var value = call.ArgAt<RedisValue>(1).ToString();
+                redisStrings[key] = value;
+                if (key.StartsWith("geoservices:import:request:", StringComparison.Ordinal))
+                {
+                    durableRequestStrings[key] = value;
+                }
+
+                return Task.FromResult(true);
+            });
+        transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<RedisKey>(0).ToString();
+                var set = redisSets.GetOrAdd(key, _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal));
+                set[call.ArgAt<RedisValue>(1).ToString()] = 1;
+                return Task.FromResult(true);
+            });
+        transaction.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<RedisKey>(0).ToString();
+                redisStrings.TryRemove(key, out _);
+                durableRequestStrings.TryRemove(key, out _);
+                return Task.FromResult(true);
+            });
+        transaction.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(call =>
+            {
+                var key = call.ArgAt<RedisKey>(0).ToString();
+                if (redisSets.TryGetValue(key, out var set))
+                {
+                    set.TryRemove(call.ArgAt<RedisValue>(1).ToString(), out _);
+                }
+
+                return Task.FromResult(true);
+            });
+        transaction.ExecuteAsync(Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
 
         return (redis, database);
     }

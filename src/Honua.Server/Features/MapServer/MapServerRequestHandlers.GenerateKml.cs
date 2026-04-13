@@ -143,7 +143,13 @@ internal static partial class MapServerEndpoints
             var kmlFeatureStore = featureReader as IKmlFeatureStore;
             var wkbReader = new WKBReader();
 
-            var renderLayers = ResolveRenderLayers(service, layersValue, dynamicLayers, context)
+            var (resolvedLayers, renderLayerError) = ResolveRenderLayers(service, layersValue, dynamicLayers, context);
+            if (renderLayerError != null)
+            {
+                return renderLayerError;
+            }
+
+            var renderLayers = resolvedLayers
                 .Where(static renderLayer => renderLayer.Layer.HasGeometry)
                 .ToArray();
 

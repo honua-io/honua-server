@@ -12,9 +12,12 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Features.OData.Services;
@@ -59,6 +62,7 @@ internal sealed partial class ODataBatchHandler
     /// Processes a batch request and returns the aggregated response.
     /// </summary>
     public async Task<ODataBatchResponse> ProcessBatchAsync(
+        HttpContext context,
         ODataBatchRequest batchRequest,
         string baseUrl,
         CancellationToken cancellationToken)
@@ -101,6 +105,7 @@ internal sealed partial class ODataBatchHandler
 
                 // Process atomic group - all succeed or all fail
                 var groupResponses = await ProcessAtomicGroupAsync(
+                    context,
                     groupRequests,
                     baseUrl,
                     cancellationToken);
@@ -146,6 +151,7 @@ internal sealed partial class ODataBatchHandler
                 }
 
                 var response = await ProcessSingleRequestAsync(
+                    context,
                     request,
                     baseUrl,
                     cancellationToken);
@@ -344,6 +350,7 @@ internal sealed partial class ODataBatchHandler
         Dictionary<string, ODataBatchResponseItem> ErrorsById);
 
     private async Task<ImmutableArray<ODataBatchResponseItem>> ProcessAtomicGroupAsync(
+        HttpContext context,
         ImmutableArray<ODataBatchRequestItem> requests,
         string baseUrl,
         CancellationToken cancellationToken)
@@ -425,6 +432,36 @@ internal sealed partial class ODataBatchHandler
                     }
 
                     layerCache[layerId.Value] = layer;
+                }
+
+                var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                    context,
+                    layerId.Value,
+                    ServiceProtocols.OData,
+                    cancellationToken);
+                if (!IsODataEnabled(layer, service))
+                {
+                    responses.Add(CreateErrorResponse(
+                        request.Id,
+                        404,
+                        "ResourceNotFound",
+                        "OData is not enabled for this service."));
+                    rollback = true;
+                    continue;
+                }
+
+                var accessError = await ValidateBatchRequestAccessAsync(
+                    context,
+                    request.Id,
+                    layer,
+                    service,
+                    request.Method,
+                    cancellationToken);
+                if (accessError != null)
+                {
+                    responses.Add(accessError);
+                    rollback = true;
+                    continue;
                 }
 
                 switch (request.Method.ToUpperInvariant())
@@ -890,6 +927,7 @@ internal sealed partial class ODataBatchHandler
     }
 
     private async Task<ODataBatchResponseItem> ProcessSingleRequestAsync(
+        HttpContext context,
         ODataBatchRequestItem request,
         string baseUrl,
         CancellationToken cancellationToken)
@@ -913,6 +951,32 @@ internal sealed partial class ODataBatchHandler
                 if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
                 {
                     return CreateErrorResponse(request.Id, 405, "MethodNotAllowed", "Only GET is supported for layers in batch.");
+                }
+
+                var layerService = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                    context,
+                    layerDefinition.Id,
+                    ServiceProtocols.OData,
+                    cancellationToken);
+                if (!IsODataEnabled(layerDefinition, layerService))
+                {
+                    return CreateErrorResponse(
+                        request.Id,
+                        404,
+                        "ResourceNotFound",
+                        "OData is not enabled for this service.");
+                }
+
+                var layerAccessError = await ValidateBatchRequestAccessAsync(
+                    context,
+                    request.Id,
+                    layerDefinition,
+                    layerService,
+                    request.Method,
+                    cancellationToken);
+                if (layerAccessError != null)
+                {
+                    return layerAccessError;
                 }
 
                 var layerPayload = ODataUtilityService.BuildLayerPayload(layerDefinition);
@@ -949,6 +1013,32 @@ internal sealed partial class ODataBatchHandler
             if (layer == null)
             {
                 return CreateErrorResponse(request.Id, 404, "ResourceNotFound", $"Layer {layerId} not found.");
+            }
+
+            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                context,
+                layer.Id,
+                ServiceProtocols.OData,
+                cancellationToken);
+            if (!IsODataEnabled(layer, service))
+            {
+                return CreateErrorResponse(
+                    request.Id,
+                    404,
+                    "ResourceNotFound",
+                    "OData is not enabled for this service.");
+            }
+
+            var accessError = await ValidateBatchRequestAccessAsync(
+                context,
+                request.Id,
+                layer,
+                service,
+                request.Method,
+                cancellationToken);
+            if (accessError != null)
+            {
+                return accessError;
             }
 
             switch (request.Method.ToUpperInvariant())
@@ -1205,6 +1295,80 @@ internal sealed partial class ODataBatchHandler
         }
 
         return CreateSuccessResponse(requestId, 204, null);
+    }
+
+    private async Task<ODataBatchResponseItem?> ValidateBatchRequestAccessAsync(
+        HttpContext context,
+        string requestId,
+        LayerDefinition layer,
+        ServiceDefinition? service,
+        string method,
+        CancellationToken cancellationToken)
+    {
+        var scope = IsMutationMethod(method) ? AccessScope.Write : AccessScope.Read;
+        var decision = AccessPolicyHelpers.EvaluateAccess(
+            context,
+            layer.Metadata?.AccessPolicy,
+            service?.Metadata?.AccessPolicy,
+            scope);
+        if (!decision.IsAllowed)
+        {
+            var statusCode = decision.RequiresAuthentication
+                ? StatusCodes.Status401Unauthorized
+                : StatusCodes.Status403Forbidden;
+
+            return CreateErrorResponse(
+                requestId,
+                statusCode,
+                decision.RequiresAuthentication ? "Unauthorized" : "Forbidden",
+                decision.FailureReason
+                    ?? (decision.RequiresAuthentication
+                        ? "Authentication is required to access one or more requested layers."
+                        : "Access to one or more requested layers is forbidden."));
+        }
+
+        if (scope == AccessScope.Write)
+        {
+            var rbacResult = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layer,
+                service,
+                cancellationToken);
+            if (rbacResult != null)
+            {
+                var statusCode = rbacResult is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue
+                    ? statusCodeResult.StatusCode.Value
+                    : StatusCodes.Status403Forbidden;
+
+                return CreateErrorResponse(
+                    requestId,
+                    statusCode,
+                    statusCode == StatusCodes.Status401Unauthorized ? "Unauthorized" : "Forbidden",
+                    statusCode == StatusCodes.Status401Unauthorized
+                        ? "Authentication is required to access one or more requested layers."
+                        : "Access to one or more requested layers is forbidden.");
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsMutationMethod(string? method)
+    {
+        return method != null &&
+               (method.Equals("POST", StringComparison.OrdinalIgnoreCase) ||
+                method.Equals("PATCH", StringComparison.OrdinalIgnoreCase) ||
+                method.Equals("DELETE", StringComparison.OrdinalIgnoreCase) ||
+                method.Equals("PUT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsODataEnabled(
+        LayerDefinition layer,
+        ServiceDefinition? service)
+    {
+        return service == null
+            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
+            : ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData);
     }
 
     private static ODataParsedPath ParseUrl(string url)

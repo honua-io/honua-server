@@ -81,18 +81,28 @@ public class CoordinateTransformerTests
     }
 
     [UnitTest]
-    public void TransformExtent_4326To3857_DatelineCrossing_ReturnsOrderedBounds()
+    public void TransformExtent_4326To3857_DatelineCrossing_PreservesWrappedOrientation()
     {
         var extent = new SkiaMapRenderer.RenderExtent(170, -10, -170, 10);
 
         var result = CoordinateTransformer.TransformExtent(extent, 4326, 3857);
-        var (expectedMinX, expectedMinY) = CoordinateTransformer.LonLatToWebMercator(-170, -10);
-        var (expectedMaxX, expectedMaxY) = CoordinateTransformer.LonLatToWebMercator(170, 10);
+        var (expectedMinX, expectedMinY) = CoordinateTransformer.LonLatToWebMercator(170, -10);
+        var (expectedMaxX, expectedMaxY) = CoordinateTransformer.LonLatToWebMercator(-170, 10);
 
+        result.MinX.Should().BeGreaterThan(result.MaxX);
         result.MinX.Should().BeApproximately(expectedMinX, 1.0);
         result.MinY.Should().BeApproximately(expectedMinY, 1.0);
         result.MaxX.Should().BeApproximately(expectedMaxX, 1.0);
         result.MaxY.Should().BeApproximately(expectedMaxY, 1.0);
+    }
+
+    [UnitTest]
+    public void NormalizeLongitude_WrappedGeographicExtent_ShiftsRightSideSegment()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(170, -10, -170, 10);
+
+        CoordinateTransformer.NormalizeLongitude(-175, extent).Should().BeApproximately(185, 0.0001);
+        CoordinateTransformer.NormalizeLongitude(175, extent).Should().BeApproximately(175, 0.0001);
     }
 
     [UnitTest]
@@ -170,6 +180,50 @@ public class CoordinateTransformerTests
         var scale = CoordinateTransformer.CalculateScaleDenominator(extent, 256, 96, 4326);
 
         scale.Should().BeGreaterThan(0);
+    }
+
+    [UnitTest]
+    public void CalculateScaleDenominator_WrappedGeographicExtent_UsesDatelineSpan()
+    {
+        var wrapped = new SkiaMapRenderer.RenderExtent(170, -10, -170, 10);
+        var equivalentSpan = new SkiaMapRenderer.RenderExtent(170, -10, 190, 10);
+
+        var wrappedScale = CoordinateTransformer.CalculateScaleDenominator(wrapped, 256, 96, 4326);
+        var equivalentScale = CoordinateTransformer.CalculateScaleDenominator(equivalentSpan, 256, 96, 4326);
+
+        wrappedScale.Should().BeApproximately(equivalentScale, 0.0001);
+        wrappedScale.Should().BeGreaterThan(0);
+    }
+
+    [UnitTest]
+    public void CalculateScaleDenominator_WideWrappedGeographicExtent_UsesDatelineSpan()
+    {
+        var wrapped = new SkiaMapRenderer.RenderExtent(10, -10, -10, 10);
+        var equivalentSpan = new SkiaMapRenderer.RenderExtent(10, -10, 350, 10);
+
+        var wrappedScale = CoordinateTransformer.CalculateScaleDenominator(wrapped, 256, 96, 4326);
+        var equivalentScale = CoordinateTransformer.CalculateScaleDenominator(equivalentSpan, 256, 96, 4326);
+
+        wrappedScale.Should().BeApproximately(equivalentScale, 0.0001);
+        wrappedScale.Should().BeGreaterThan(0);
+    }
+
+    [UnitTest]
+    public void CalculateScaleDenominator_WrappedProjectedExtent_UsesDatelineSpan()
+    {
+        var wrappedGeo = new SkiaMapRenderer.RenderExtent(10, -10, -10, 10);
+        var wrappedProjected = CoordinateTransformer.TransformExtent(wrappedGeo, 4326, 3857);
+        var equivalentSpan = new SkiaMapRenderer.RenderExtent(
+            wrappedProjected.MinX,
+            wrappedProjected.MinY,
+            wrappedProjected.MinX + CoordinateTransformer.GetEffectiveWidth(wrappedProjected),
+            wrappedProjected.MaxY);
+
+        var wrappedScale = CoordinateTransformer.CalculateScaleDenominator(wrappedProjected, 256, 96, 3857);
+        var equivalentScale = CoordinateTransformer.CalculateScaleDenominator(equivalentSpan, 256, 96, 3857);
+
+        wrappedScale.Should().BeApproximately(equivalentScale, 0.0001);
+        wrappedScale.Should().BeGreaterThan(0);
     }
 
     [UnitTest]
@@ -268,6 +322,19 @@ public class CoordinateTransformerTests
         var units = CoordinateTransformer.PixelToMapUnits(5, extent, 500);
 
         units.Should().BeApproximately(1.0, 0.001);
+    }
+
+    [UnitTest]
+    public void PixelToMapUnits_WrappedGeographicExtent_UsesDatelineSpan()
+    {
+        var wrapped = new SkiaMapRenderer.RenderExtent(170, -10, -170, 10);
+        var equivalentSpan = new SkiaMapRenderer.RenderExtent(170, -10, 190, 10);
+
+        var wrappedUnits = CoordinateTransformer.PixelToMapUnits(5, wrapped, 500);
+        var equivalentUnits = CoordinateTransformer.PixelToMapUnits(5, equivalentSpan, 500);
+
+        wrappedUnits.Should().BeApproximately(equivalentUnits, 0.0001);
+        wrappedUnits.Should().BeApproximately(0.2, 0.0001);
     }
 
     [UnitTest]

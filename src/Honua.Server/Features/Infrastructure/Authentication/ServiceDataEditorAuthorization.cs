@@ -23,7 +23,20 @@ internal static class ServiceDataEditorAuthorization
     {
         ArgumentNullException.ThrowIfNull(service);
 
-        var decision = await EvaluateServiceAccessAsync(context, service, cancellationToken);
+        var decision = await EvaluateServiceAccessAsync(context, service, layer: null, cancellationToken);
+        return CreateDecisionResult(context, decision);
+    }
+
+    public static async Task<IResult?> RequireServiceDataEditorAsync(
+        HttpContext context,
+        ServiceDefinition service,
+        LayerDefinition layer,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(layer);
+
+        var decision = await EvaluateServiceAccessAsync(context, service, layer, cancellationToken);
         return CreateDecisionResult(context, decision);
     }
 
@@ -61,15 +74,29 @@ internal static class ServiceDataEditorAuthorization
         HttpContext context,
         ServiceDefinition service,
         CancellationToken cancellationToken)
+        => EvaluateServiceAccessAsync(context, service, layer: null, cancellationToken);
+
+    internal static Task<AccessDecision> EvaluateServiceAccessAsync(
+        HttpContext context,
+        ServiceDefinition service,
+        LayerDefinition? layer,
+        CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
             return Task.FromCanceled<AccessDecision>(cancellationToken);
         }
 
-        return AccessPolicyHelpers.AllowsAnonymousServiceAccess(context, service, AccessScope.Write)
-            ? Task.FromResult(AccessDecision.Allowed())
-            : EvaluateServiceAccessAsync(context, service.Name, cancellationToken);
+        var policyDecision = EvaluateExplicitWritePolicy(
+            context,
+            layer?.Metadata?.AccessPolicy,
+            service.Metadata?.AccessPolicy);
+        if (policyDecision is not null)
+        {
+            return Task.FromResult(policyDecision);
+        }
+
+        return EvaluateServiceAccessAsync(context, service.Name, cancellationToken);
     }
 
     internal static Task<AccessDecision> EvaluateServiceAccessAsync(
@@ -118,9 +145,13 @@ internal static class ServiceDataEditorAuthorization
             return Task.FromCanceled<AccessDecision>(cancellationToken);
         }
 
-        if (AccessPolicyHelpers.AllowsAnonymousLayerAccess(context, layer, service, AccessScope.Write))
+        var policyDecision = EvaluateExplicitWritePolicy(
+            context,
+            layer.Metadata?.AccessPolicy,
+            service?.Metadata?.AccessPolicy);
+        if (policyDecision is not null)
         {
-            return Task.FromResult(AccessDecision.Allowed());
+            return Task.FromResult(policyDecision);
         }
 
         return service != null
@@ -204,6 +235,30 @@ internal static class ServiceDataEditorAuthorization
 
     private static IResult? CreateDecisionResult(HttpContext context, AccessDecision decision)
         => AccessPolicyHelpers.CreateAccessDeniedResult(context, decision);
+
+    private static AccessDecision? EvaluateExplicitWritePolicy(
+        HttpContext context,
+        AccessPolicy? layerPolicy,
+        AccessPolicy? servicePolicy)
+    {
+        if (!HasExplicitWritePolicy(layerPolicy) &&
+            !HasExplicitWritePolicy(servicePolicy))
+        {
+            return null;
+        }
+
+        return AccessPolicyHelpers.EvaluateAccess(
+            context,
+            layerPolicy,
+            servicePolicy,
+            AccessScope.Write);
+    }
+
+    private static bool HasExplicitWritePolicy(AccessPolicy? policy)
+        => policy is not null &&
+           (policy.AllowAnonymousWrite ||
+            policy.AllowedWriteRoles is { Length: > 0 } ||
+            policy.AllowedRoles is { Length: > 0 });
 
     private static bool IsAdmin(ClaimsPrincipal principal, RbacOptions options)
     {

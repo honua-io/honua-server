@@ -107,6 +107,52 @@ public sealed class FeatureServerServiceRbacTests
 
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Append)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
+    public async Task Append_WithAnonymousClient_AndEmptyEdits_ReturnsUnauthorized()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            edits = "[]",
+            sourceFormat = "json",
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Append)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
+    public async Task Append_WithReadOnlyRole_AndEmptyEdits_ReturnsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            edits = "[]",
+            sourceFormat = "json",
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
     [Operation(Operations.Calculate)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithAnonymousClient_ReturnsUnauthorized()
@@ -319,6 +365,8 @@ public sealed class OgcServiceRbacTests
 
 public sealed class FeatureServerServiceAccessPolicyTests
 {
+    private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
+
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
@@ -361,6 +409,270 @@ public sealed class FeatureServerServiceAccessPolicyTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymousWrite = true
+                    }
+                }));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            ServiceRbacTestFixture.CreateApplyEditsContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithLayerWriteRolePolicy_AllowsMatchingRole()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(writeRoles: ["alpha-writer"])));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+            ServiceRbacTestFixture.CreateApplyEditsContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Calculate)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymousWrite = true
+                    }
+                }));
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+}
+
+public sealed class FeatureServerReplicationAccessPolicyTests
+{
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymousWrite = true
+                    }
+                }));
+        using var client = factory.CreateClient();
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "anonymous-create",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithLayerWriteRolePolicy_AllowsMatchingRole()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(writeRoles: ["alpha-writer"])));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "role-create",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ExtractChanges_WithAnonymousClient_AndAnonymousReadLayerPolicy_AllowsMatchingLayer()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymous = true,
+                        AllowAnonymousWrite = true
+                    }
+                }));
+        using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        using var anonymousClient = factory.CreateClient();
+
+        var replicaId = await CreateReplicaAsync(
+            adminClient,
+            ServiceRbacTestFixture.AlphaService,
+            "anonymous-extract",
+            ServiceRbacTestFixture.AlphaLayerId);
+
+        var extractPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            f = "json"
+        });
+
+        var response = await anonymousClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/extractChanges",
+            new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymousWrite = true
+                    }
+                }));
+        using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        using var anonymousClient = factory.CreateClient();
+
+        var replicaId = await CreateReplicaAsync(
+            adminClient,
+            ServiceRbacTestFixture.AlphaService,
+            "anonymous-sync",
+            ServiceRbacTestFixture.AlphaLayerId);
+
+        var syncPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            f = "json"
+        });
+
+        var response = await anonymousClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
+            new StringContent(syncPayload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.UnRegisterReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
+    public async Task UnRegisterReplica_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymousWrite = true
+                    }
+                }));
+        using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        using var anonymousClient = factory.CreateClient();
+
+        var replicaId = await CreateReplicaAsync(
+            adminClient,
+            ServiceRbacTestFixture.AlphaService,
+            "anonymous-unregister",
+            ServiceRbacTestFixture.AlphaLayerId);
+
+        var unregisterPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            f = "json"
+        });
+
+        var response = await anonymousClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
+            new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    private static async Task<string> CreateReplicaAsync(
+        HttpClient client,
+        string serviceId,
+        string replicaName,
+        int layerId)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName,
+            layers = layerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{serviceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var replicaId = document.RootElement.GetProperty("replicaID").GetString();
+        replicaId.Should().NotBeNullOrWhiteSpace();
+        return replicaId!;
+    }
 }
 
 public sealed class OgcServiceAccessPolicyTests
@@ -399,6 +711,24 @@ public sealed class OgcServiceAccessPolicyTests
             new RbacTestLayerCatalog(
                 alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymousWrite: true)));
         using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items",
+            ServiceRbacTestFixture.CreateOgcFeatureContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.OgcApiFeatures)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithLayerWriteRolePolicy_AllowsMatchingRole()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(writeRoles: ["alpha-writer"])));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
 
         var response = await client.PostAsync(
             $"/ogc/features/collections/{ServiceRbacTestFixture.AlphaLayerId}/items",
@@ -512,7 +842,12 @@ public sealed class ODataServiceRbacTests
             "/odata/$batch",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = ServiceRbacTestFixture.GetPropertyCaseInsensitive(document.RootElement, "responses");
+        responses.GetArrayLength().Should().Be(1);
+        ServiceRbacTestFixture.GetPropertyCaseInsensitive(responses[0], "status").GetInt32().Should().Be(403);
     }
 
     [IntegrationTest]
@@ -647,6 +982,24 @@ public sealed class ODataServiceAccessPolicyTests
 
     [IntegrationTest]
     [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task CreateFeature_WithLayerWriteRolePolicy_AllowsMatchingRole()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(writeRoles: ["alpha-writer"])));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+
+        var response = await client.PostAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.AlphaLayerId})/Features",
+            ServiceRbacTestFixture.CreateODataFeatureContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithAdminRole_RespectsServiceWritePolicy()
@@ -684,7 +1037,12 @@ public sealed class ODataServiceAccessPolicyTests
             "/odata/$batch",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = ServiceRbacTestFixture.GetPropertyCaseInsensitive(document.RootElement, "responses");
+        responses.GetArrayLength().Should().Be(1);
+        ServiceRbacTestFixture.GetPropertyCaseInsensitive(responses[0], "status").GetInt32().Should().Be(403);
     }
 
     [IntegrationTest]

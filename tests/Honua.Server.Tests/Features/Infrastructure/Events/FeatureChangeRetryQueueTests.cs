@@ -119,6 +119,66 @@ public sealed class FeatureChangeRetryQueueTests : IDisposable
         (await cache.GetStringAsync("featurechange:retry:pending-delivered")).Should().BeNull();
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProcessQueuedAsync_WhenCleanupFails_RetrySkipsDuplicateBroadcast()
+    {
+        var cache = new FailOnceOnRemoveCache();
+        var store = new RecordingFeatureChangeEventStore();
+        var retryQueue = new FeatureChangeRetryQueue(
+            cache,
+            Channel.CreateUnbounded<PendingFeatureChangeSignal>(),
+            store,
+            _sessionManager,
+            NullLogger<FeatureChangeRetryQueue>.Instance);
+
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var pendingId = await retryQueue.EnqueueAsync(CreateRequest("req-cleanup-fail"));
+
+        await retryQueue.ProcessQueuedAsync(pendingId);
+
+        Assert.True(session.Reader.TryRead(out var firstMessage));
+        firstMessage.Envelope.RequestId.Should().Be("req-cleanup-fail");
+        store.RecordedRequests.Should().ContainSingle();
+
+        cache.FailOnRemove = false;
+        await retryQueue.ProcessQueuedAsync(pendingId);
+
+        store.RecordedRequests.Should().ContainSingle();
+        Assert.False(session.Reader.TryRead(out _));
+        (await cache.GetStringAsync($"featurechange:retry:{pendingId}")).Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProcessQueuedAsync_WhenCompletedPersistFails_RetrySkipsDuplicateBroadcast()
+    {
+        var cache = new FailOnSecondSetCache();
+        var store = new RecordingFeatureChangeEventStore();
+        var retryQueue = new FeatureChangeRetryQueue(
+            cache,
+            Channel.CreateUnbounded<PendingFeatureChangeSignal>(),
+            store,
+            _sessionManager,
+            NullLogger<FeatureChangeRetryQueue>.Instance);
+
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var pendingId = await retryQueue.EnqueueAsync(CreateRequest("req-completed-persist-fail"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => retryQueue.ProcessQueuedAsync(pendingId));
+
+        Assert.True(session.Reader.TryRead(out var firstMessage));
+        firstMessage.Envelope.RequestId.Should().Be("req-completed-persist-fail");
+        store.RecordedRequests.Should().ContainSingle();
+
+        cache.AllowPendingWrites = true;
+        await retryQueue.ProcessQueuedAsync(pendingId);
+
+        store.RecordedRequests.Should().ContainSingle();
+        Assert.False(session.Reader.TryRead(out _));
+        (await cache.GetStringAsync($"featurechange:retry:{pendingId}")).Should().BeNull();
+    }
+
     private static FeatureChangeEventRequest CreateRequest(string requestId)
         => new()
         {
@@ -167,5 +227,102 @@ public sealed class FeatureChangeRetryQueueTests : IDisposable
             int limit,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FeatureChangeEvent>>([]);
+    }
+
+    private sealed class FailOnceOnRemoveCache : IDistributedCache
+    {
+        private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
+
+        public bool FailOnRemove { get; set; } = true;
+
+        public byte[]? Get(string key) => _inner.Get(key);
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+            => _inner.GetAsync(key, token);
+
+        public void Refresh(string key) => _inner.Refresh(key);
+
+        public Task RefreshAsync(string key, CancellationToken token = default)
+            => _inner.RefreshAsync(key, token);
+
+        public void Remove(string key)
+        {
+            if (FailOnRemove && key.StartsWith("featurechange:retry:", StringComparison.Ordinal))
+            {
+                FailOnRemove = false;
+                throw new InvalidOperationException("remove failed");
+            }
+
+            _inner.Remove(key);
+        }
+
+        public Task RemoveAsync(string key, CancellationToken token = default)
+        {
+            if (FailOnRemove && key.StartsWith("featurechange:retry:", StringComparison.Ordinal))
+            {
+                FailOnRemove = false;
+                throw new InvalidOperationException("remove failed");
+            }
+
+            return _inner.RemoveAsync(key, token);
+        }
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+            => _inner.Set(key, value, options);
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+            => _inner.SetAsync(key, value, options, token);
+    }
+
+    private sealed class FailOnSecondSetCache : IDistributedCache
+    {
+        private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
+        private readonly Dictionary<string, int> _setCounts = new(StringComparer.Ordinal);
+
+        public bool AllowPendingWrites { get; set; }
+
+        public byte[]? Get(string key) => _inner.Get(key);
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+            => _inner.GetAsync(key, token);
+
+        public void Refresh(string key) => _inner.Refresh(key);
+
+        public Task RefreshAsync(string key, CancellationToken token = default)
+            => _inner.RefreshAsync(key, token);
+
+        public void Remove(string key)
+            => _inner.Remove(key);
+
+        public Task RemoveAsync(string key, CancellationToken token = default)
+            => _inner.RemoveAsync(key, token);
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+            => SetCore(key, value, options);
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+        {
+            SetCore(key, value, options);
+            return Task.CompletedTask;
+        }
+
+        private void SetCore(string key, byte[] value, DistributedCacheEntryOptions options)
+        {
+            if (!key.StartsWith("featurechange:retry:", StringComparison.Ordinal))
+            {
+                _inner.Set(key, value, options);
+                return;
+            }
+
+            var count = _setCounts.TryGetValue(key, out var existing) ? existing + 1 : 1;
+            _setCounts[key] = count;
+
+            if (count >= 2 && !AllowPendingWrites)
+            {
+                throw new InvalidOperationException("persist failed");
+            }
+
+            _inner.Set(key, value, options);
+        }
     }
 }

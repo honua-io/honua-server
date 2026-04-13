@@ -567,10 +567,10 @@ internal sealed partial class ODataQueryHandler(
         LayerDefinition layer,
         IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
     {
-        if (primaryServices.TryGetValue(layer.Id, out var service))
+        if (primaryServices.TryGetValue(layer.Id, out var service) &&
+            ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
         {
-            return ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData) &&
-                AccessPolicyHelpers.IsLayerAccessible(context, layer, service);
+            return AccessPolicyHelpers.IsLayerAccessible(context, layer, service);
         }
 
         return ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData) &&

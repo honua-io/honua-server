@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Http.Json;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Features.Admin;
 
@@ -277,10 +280,14 @@ internal static class AdminAuthEndpoints
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
             }
 
-            if (!AdminAuthClaimsProjector.TryProjectSessionClaims(
-                    tokenResponse.AccessToken,
-                    tokenResponse.IdToken,
-                    out var sessionClaims))
+            var validatedClaims = await ValidateAdminSessionIdTokenAsync(
+                httpClientFactory,
+                discovery,
+                provider,
+                tokenResponse.IdToken,
+                context.RequestAborted).ConfigureAwait(false);
+            if (validatedClaims is null ||
+                !AdminAuthClaimsProjector.TryProjectValidatedClaims(validatedClaims, out var sessionClaims))
             {
                 logger.LogWarning("OIDC token request for provider {ProviderKey} returned tokens that could not be projected into an admin session.", provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
@@ -441,6 +448,89 @@ internal static class AdminAuthEndpoints
                 cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException("OIDC discovery document response was empty.");
+    }
+
+    private static async Task<IReadOnlyList<Claim>?> ValidateAdminSessionIdTokenAsync(
+        IHttpClientFactory httpClientFactory,
+        AdminAuthOidcDiscoveryDocument discovery,
+        OidcProviderRegistration provider,
+        string? idToken,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(idToken) ||
+            string.IsNullOrWhiteSpace(discovery.Issuer) ||
+            string.IsNullOrWhiteSpace(discovery.JwksUri) ||
+            string.IsNullOrWhiteSpace(provider.ClientId))
+        {
+            return null;
+        }
+
+        var handler = new JwtSecurityTokenHandler();
+        if (!handler.CanReadToken(idToken))
+        {
+            return null;
+        }
+
+        var signingKeys = await GetOidcSigningKeysAsync(
+            httpClientFactory,
+            discovery.JwksUri,
+            cancellationToken).ConfigureAwait(false);
+        if (signingKeys.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var principal = handler.ValidateToken(
+                idToken,
+                new TokenValidationParameters
+                {
+                    RequireSignedTokens = true,
+                    RequireExpirationTime = true,
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKeys = signingKeys,
+                    ValidateIssuer = true,
+                    ValidIssuer = discovery.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience = provider.ClientId,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromMinutes(2)
+                },
+                out _);
+
+            return principal.Claims.ToArray();
+        }
+        catch (SecurityTokenException)
+        {
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<IReadOnlyList<SecurityKey>> GetOidcSigningKeysAsync(
+        IHttpClientFactory httpClientFactory,
+        string jwksUri,
+        CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
+        using var response = await client.GetAsync(jwksUri, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return [];
+        }
+
+        var jwksJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(jwksJson))
+        {
+            return [];
+        }
+
+        var keySet = new JsonWebKeySet(jwksJson);
+        return keySet.GetSigningKeys().ToArray();
     }
 
     private static async Task<HttpResponseMessage> RequestTokenAsync(

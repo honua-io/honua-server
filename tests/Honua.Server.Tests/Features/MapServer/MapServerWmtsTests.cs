@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -35,6 +37,33 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
         content.Should().Contain("WebMercatorQuad");
         content.Should().Contain("<TileMatrixSet>");
         content.Should().Contain("<ows:ServiceType>OGC WMTS</ows:ServiceType>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{ProjectedExtentLayerCatalog.ServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            content.Should().Contain("<ows:WGS84BoundingBox>");
+            content.Should().Contain("<ows:LowerCorner>-");
+            content.Should().Contain("<ows:UpperCorner>-");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

@@ -265,38 +265,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
     private static bool DetermineIsGeographic(int srid, string? wkt)
     {
-        if (!string.IsNullOrWhiteSpace(wkt))
-        {
-            // Check for projected CRS keywords first (takes precedence)
-            if (wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("PROJECTEDCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("+proj=", StringComparison.OrdinalIgnoreCase) &&
-                !wkt.Contains("+proj=longlat", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            // Check for geographic CRS keywords (WKT and proj4 formats)
-            if (wkt.Contains("GEOGCS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("GEOGCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("GEODCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("GEODETIC", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("+proj=longlat", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        // SRID-based fallback: common geographic CRS ranges
-        return srid switch
-        {
-            4326 => true,
-            4269 => true,
-            4267 => true,
-            >= 4000 and <= 4999 => true,
-            _ => false
-        };
+        return SpatialReference.Create(srid, null, null, null, wkt).IsGeographic;
     }
 
     private static AxisOrder DetermineAxisOrder(string? wkt, bool isGeographic)

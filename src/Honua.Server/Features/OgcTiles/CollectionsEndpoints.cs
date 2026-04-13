@@ -73,7 +73,7 @@ internal static class CollectionsEndpoints
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
             var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+            var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol);
             var visibleLayers = new List<LayerDefinition>(layers.Length);
             var requiresAuth = false;
             var hasDenied = false;
@@ -121,9 +121,23 @@ internal static class CollectionsEndpoints
                 return StandardErrorHelpers.CreateNotFound(context, "No collections are available.");
             }
 
-            var collectionTasks = visibleLayers
-                .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
-            var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
+            var collections = new CollectionInfo[visibleLayers.Count];
+            await Parallel.ForEachAsync(
+                visibleLayers.Select((layer, index) => (layer, index)),
+                new ParallelOptions
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = Math.Min(visibleLayers.Count, 8)
+                },
+                async (item, token) =>
+                {
+                    collections[item.index] = await CreateCollectionAsync(
+                        item.layer,
+                        baseUrl,
+                        featureReader,
+                        crsRegistry,
+                        token);
+                });
 
             var links = OgcCommonUtilities.BuildFormatLinks(
                     request,
@@ -141,7 +155,7 @@ internal static class CollectionsEndpoints
 
             var response = new Collections
             {
-                CollectionList = collections,
+                CollectionList = collections.ToImmutableArray(),
                 Links = links.ToImmutable()
             };
 
@@ -199,7 +213,7 @@ internal static class CollectionsEndpoints
         }
 
         var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
         if (!IsOgcApiTilesEnabled(layer, primaryService))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");

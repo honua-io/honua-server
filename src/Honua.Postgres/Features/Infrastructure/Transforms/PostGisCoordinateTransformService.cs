@@ -166,7 +166,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         for (var i = 0; i <= ExtentSampleSegmentsPerEdge; i++)
         {
             var t = (double)i / ExtentSampleSegmentsPerEdge;
-            var x = minX + ((maxX - minX) * t);
+            var x = InterpolateLongitude(minX, maxX, t);
             var y = minY + ((maxY - minY) * t);
 
             yield return (x, minY);
@@ -175,7 +175,37 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             yield return (maxX, y);
         }
 
-        yield return ((minX + maxX) / 2.0, (minY + maxY) / 2.0);
+        yield return (InterpolateLongitude(minX, maxX, 0.5), (minY + maxY) / 2.0);
+    }
+
+    private static double InterpolateLongitude(double minX, double maxX, double t)
+    {
+        if (!IsAntimeridianCrossing(minX, maxX))
+        {
+            return minX + ((maxX - minX) * t);
+        }
+
+        var wrappedMaxX = maxX + 360.0;
+        var value = minX + ((wrappedMaxX - minX) * t);
+        return value > 180.0 ? value - 360.0 : value;
+    }
+
+    private static bool IsAntimeridianCrossing(double minX, double maxX)
+        => minX > maxX && minX >= -180.0 && minX <= 180.0 && maxX >= -180.0 && maxX <= 180.0;
+
+    private static string BuildLongitudeSampleExpression(string minX, string maxX, string t)
+    {
+        return $$"""
+            CASE
+                WHEN {{maxX}} >= {{minX}} THEN {{minX}} + (({{maxX}} - {{minX}}) * {{t}})
+                ELSE
+                    CASE
+                        WHEN {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}}) > 180.0
+                            THEN {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}}) - 360.0
+                        ELSE {{minX}} + ((({{maxX}} + 360.0) - {{minX}}) * {{t}})
+                    END
+            END
+            """;
     }
 
     private async Task<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentWithPostGisAsync(
@@ -195,12 +225,26 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 WITH fractions AS (
                     SELECT generate_series(0, @sampleSegments)::double precision / @sampleSegments AS t
                 ),
+                longitude_samples AS (
+                    SELECT
+                        CASE
+                            WHEN @maxX >= @minX THEN @minX + ((@maxX - @minX) * t)
+                            ELSE
+                                CASE
+                                    WHEN @minX + (((@maxX + 360.0) - @minX) * t) > 180.0
+                                        THEN @minX + (((@maxX + 360.0) - @minX) * t) - 360.0
+                                    ELSE @minX + (((@maxX + 360.0) - @minX) * t)
+                                END
+                        END AS x,
+                        t
+                    FROM fractions
+                ),
                 points AS (
-                    SELECT ST_SetSRID(ST_MakePoint(@minX + ((@maxX - @minX) * t), @minY), @fromSrid) AS geom
-                    FROM fractions
+                    SELECT ST_SetSRID(ST_MakePoint(x, @minY), @fromSrid) AS geom
+                    FROM longitude_samples
                     UNION
-                    SELECT ST_SetSRID(ST_MakePoint(@minX + ((@maxX - @minX) * t), @maxY), @fromSrid) AS geom
-                    FROM fractions
+                    SELECT ST_SetSRID(ST_MakePoint(x, @maxY), @fromSrid) AS geom
+                    FROM longitude_samples
                     UNION
                     SELECT ST_SetSRID(ST_MakePoint(@minX, @minY + ((@maxY - @minY) * t)), @fromSrid) AS geom
                     FROM fractions
@@ -208,7 +252,20 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                     SELECT ST_SetSRID(ST_MakePoint(@maxX, @minY + ((@maxY - @minY) * t)), @fromSrid) AS geom
                     FROM fractions
                     UNION
-                    SELECT ST_SetSRID(ST_MakePoint((@minX + @maxX) / 2.0, (@minY + @maxY) / 2.0), @fromSrid) AS geom
+                    SELECT ST_SetSRID(
+                        ST_MakePoint(
+                            CASE
+                                WHEN @maxX >= @minX THEN (@minX + @maxX) / 2.0
+                                ELSE
+                                    CASE
+                                        WHEN @minX + (((@maxX + 360.0) - @minX) * 0.5) > 180.0
+                                            THEN @minX + (((@maxX + 360.0) - @minX) * 0.5) - 360.0
+                                        ELSE @minX + (((@maxX + 360.0) - @minX) * 0.5)
+                                    END
+                            END,
+                            (@minY + @maxY) / 2.0
+                        ),
+                        @fromSrid) AS geom
                 ),
                 transformed AS (
                     SELECT ST_Transform(geom, @toSrid) AS geom

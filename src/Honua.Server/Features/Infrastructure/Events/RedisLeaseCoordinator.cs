@@ -11,15 +11,28 @@ namespace Honua.Server.Features.Infrastructure.Events;
 internal sealed class RedisLeaseCoordinator(
     IConnectionMultiplexer? redis,
     string leaseKey,
-    TimeSpan leaseDuration)
+    TimeSpan leaseDuration) : IDisposable
 {
     private readonly IDatabase? _database = redis?.GetDatabase();
     private readonly string _leaseKey = leaseKey;
     private readonly TimeSpan _leaseDuration = leaseDuration;
     private readonly string _ownerId = Guid.NewGuid().ToString("N");
+    private readonly object _leaseStateLock = new();
+    private CancellationTokenSource _leaseLostCts = new();
     private bool _hasLease;
 
     public bool IsConfigured => _database != null;
+    public bool HasLease => _hasLease;
+    internal CancellationToken LeaseLostToken
+    {
+        get
+        {
+            lock (_leaseStateLock)
+            {
+                return _leaseLostCts.Token;
+            }
+        }
+    }
 
     public async Task<bool> TryAcquireOrExtendAsync()
     {
@@ -39,12 +52,20 @@ internal sealed class RedisLeaseCoordinator(
                 acquired = await _database.LockTakeAsync(_leaseKey, _ownerId, _leaseDuration).ConfigureAwait(false);
             }
 
-            _hasLease = acquired;
+            if (acquired)
+            {
+                MarkLeaseAcquired();
+            }
+            else
+            {
+                MarkLeaseLost();
+            }
+
             return acquired;
         }
         catch
         {
-            _hasLease = false;
+            MarkLeaseLost();
             return false;
         }
     }
@@ -78,6 +99,7 @@ internal sealed class RedisLeaseCoordinator(
     {
         if (_database == null || !_hasLease)
         {
+            MarkLeaseLost();
             return;
         }
 
@@ -91,7 +113,44 @@ internal sealed class RedisLeaseCoordinator(
         }
         finally
         {
+            MarkLeaseLost();
+        }
+    }
+
+    private void MarkLeaseAcquired()
+    {
+        lock (_leaseStateLock)
+        {
+            if (_leaseLostCts.IsCancellationRequested)
+            {
+                _leaseLostCts.Dispose();
+                _leaseLostCts = new CancellationTokenSource();
+            }
+
+            _hasLease = true;
+        }
+    }
+
+    private void MarkLeaseLost()
+    {
+        CancellationTokenSource? leaseLostCts = null;
+        lock (_leaseStateLock)
+        {
             _hasLease = false;
+            if (!_leaseLostCts.IsCancellationRequested)
+            {
+                leaseLostCts = _leaseLostCts;
+            }
+        }
+
+        leaseLostCts?.Cancel();
+    }
+
+    public void Dispose()
+    {
+        lock (_leaseStateLock)
+        {
+            _leaseLostCts.Dispose();
         }
     }
 }

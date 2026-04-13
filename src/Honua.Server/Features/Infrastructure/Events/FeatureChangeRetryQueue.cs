@@ -29,11 +29,15 @@ internal sealed partial class FeatureChangeRetryQueue(
     private const string PendingIndexKey = "featurechange:retry:index";
     private const string PendingIdsSetKey = "featurechange:retry:ids";
     private const string ClaimKeyPrefix = "featurechange:retry:claim:";
+    private const string BroadcastStateKeyPrefix = "featurechange:retry:broadcast:";
     private const int PendingRetentionHours = 24;
     private static readonly TimeSpan ClaimTtl = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RecoveryPollInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan PendingRetention = TimeSpan.FromHours(PendingRetentionHours);
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan BroadcastClaimTtl = TimeSpan.FromMinutes(2);
+    private const string BroadcastStateClaimed = "claimed";
+    private const string BroadcastStateCompleted = "completed";
     private const string PersistPendingScript = """
         redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]))
         redis.call('SADD', KEYS[2], ARGV[3])
@@ -48,6 +52,7 @@ internal sealed partial class FeatureChangeRetryQueue(
     private readonly IDatabase? _redisDb = redis?.GetDatabase();
     private readonly ConcurrentDictionary<string, PendingFeatureChangePublish> _pendingPublishes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _scheduledRetries = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _completedBroadcasts = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
 
     public async Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
@@ -138,11 +143,15 @@ internal sealed partial class FeatureChangeRetryQueue(
         }
 
         using var renewalCts = leaseCoordinator is null ? null : new CancellationTokenSource();
+        using var processingCts = leaseCoordinator is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, leaseCoordinator.LeaseLostToken);
         var renewalTask = leaseCoordinator is null
             ? Task.CompletedTask
             : RenewClaimLeaseAsync(leaseCoordinator, renewalCts!.Token);
+        var processingToken = processingCts?.Token ?? cancellationToken;
 
-        var pending = await TryGetPendingAsync(pendingId, cancellationToken).ConfigureAwait(false);
+        var pending = await TryGetPendingAsync(pendingId, processingToken).ConfigureAwait(false);
         if (pending == null)
         {
             if (renewalCts != null)
@@ -172,20 +181,36 @@ internal sealed partial class FeatureChangeRetryQueue(
 
         try
         {
-            var persisted = await _store.AppendAsync(pending.Request, cancellationToken).ConfigureAwait(false);
+            var persisted = await _store.AppendAsync(pending.Request, processingToken).ConfigureAwait(false);
+            processingToken.ThrowIfCancellationRequested();
+
+            var broadcastState = await TryAcquireBroadcastClaimAsync(persisted.EventId).ConfigureAwait(false);
+            if (broadcastState == BroadcastClaimResult.InProgress)
+            {
+                ScheduleRetry(pendingId);
+                return;
+            }
+
+            if (broadcastState == BroadcastClaimResult.Completed)
+            {
+                pending = pending with { BroadcastCompleted = true };
+                _pendingPublishes[pendingId] = pending;
+                await PersistPendingAsync(pending, CancellationToken.None).ConfigureAwait(false);
+
+                _pendingPublishes.TryRemove(pendingId, out _);
+                await RemovePendingAsync(pendingId, cancellationToken).ConfigureAwait(false);
+                LogRetryAlreadyDelivered(_logger, pendingId);
+                return;
+            }
+
+            processingToken.ThrowIfCancellationRequested();
             Broadcast(persisted);
+            await MarkBroadcastCompletedAsync(persisted.EventId).ConfigureAwait(false);
 
             var completed = pending with { BroadcastCompleted = true };
-            try
-            {
-                await PersistPendingAsync(completed, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                LogRetryPersistenceFailed(_logger, pendingId, ex);
-            }
-
             pending = completed;
+            _pendingPublishes[pendingId] = completed;
+            await PersistPendingAsync(completed, CancellationToken.None).ConfigureAwait(false);
 
             _pendingPublishes.TryRemove(pendingId, out _);
             await RemovePendingAsync(pendingId, cancellationToken).ConfigureAwait(false);
@@ -195,6 +220,10 @@ internal sealed partial class FeatureChangeRetryQueue(
         {
             ScheduleRetry(pendingId);
             throw;
+        }
+        catch (OperationCanceledException)
+        {
+            ScheduleRetry(pendingId);
         }
         catch (Exception ex)
         {
@@ -216,28 +245,76 @@ internal sealed partial class FeatureChangeRetryQueue(
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
+                leaseCoordinator.Dispose();
             }
         }
     }
 
     private void Broadcast(FeatureChangeEvent featureEvent)
     {
+        // Broadcast() returns the local delivery count only; cross-node fan-out is handled separately.
         var delivered = _sessionManager.Broadcast(
             FeatureStreamMessage.Data(
                 FeatureStreamPublisher.ToEnvelope(featureEvent),
                 featureEvent.GeometryEnvelope,
                 featureEvent.PropertiesJson));
 
-        FeatureStreamLog.EventBroadcast(_logger, delivered, featureEvent.Cursor);
+        LogLocalEventBroadcast(_logger, delivered, featureEvent.Cursor);
+    }
+
+    private async Task<BroadcastClaimResult> TryAcquireBroadcastClaimAsync(string eventId)
+    {
+        if (_redisDb != null)
+        {
+            var stateKey = GetBroadcastStateKey(eventId);
+            var claimed = await _redisDb.StringSetAsync(
+                    stateKey,
+                    BroadcastStateClaimed,
+                    BroadcastClaimTtl,
+                    when: When.NotExists)
+                .ConfigureAwait(false);
+            if (claimed)
+            {
+                return BroadcastClaimResult.Acquired;
+            }
+
+            var existingState = await _redisDb.StringGetAsync(stateKey).ConfigureAwait(false);
+            return string.Equals(existingState.ToString(), BroadcastStateCompleted, StringComparison.Ordinal)
+                ? BroadcastClaimResult.Completed
+                : BroadcastClaimResult.InProgress;
+        }
+
+        return _completedBroadcasts.ContainsKey(eventId)
+            ? BroadcastClaimResult.Completed
+            : BroadcastClaimResult.Acquired;
+    }
+
+    private async Task MarkBroadcastCompletedAsync(string eventId)
+    {
+        if (_redisDb != null)
+        {
+            await _redisDb.StringSetAsync(
+                    GetBroadcastStateKey(eventId),
+                    BroadcastStateCompleted,
+                    PendingRetention)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        _completedBroadcasts[eventId] = 0;
     }
 
     private async Task<PendingFeatureChangePublish?> TryGetPendingAsync(string pendingId, CancellationToken cancellationToken)
     {
-        if (_redisDb == null &&
-            _pendingCache == null &&
-            _pendingPublishes.TryGetValue(pendingId, out var pending))
+        if (_pendingPublishes.TryGetValue(pendingId, out var livePending))
         {
-            return pending;
+            return livePending;
+        }
+
+        if (_redisDb == null &&
+            _pendingCache == null)
+        {
+            return null;
         }
 
         if (_redisDb != null)
@@ -475,6 +552,7 @@ internal sealed partial class FeatureChangeRetryQueue(
 
     private static string GetPendingKey(string pendingId) => $"{PendingKeyPrefix}{pendingId}";
     private static string GetClaimKey(string pendingId) => $"{ClaimKeyPrefix}{pendingId}";
+    private static string GetBroadcastStateKey(string eventId) => $"{BroadcastStateKeyPrefix}{eventId}";
 
     private async Task<RedisLeaseCoordinator?> TryAcquireClaimLeaseAsync(string pendingId)
     {
@@ -520,6 +598,9 @@ internal sealed partial class FeatureChangeRetryQueue(
     [LoggerMessage(EventId = 9114, Level = LogLevel.Information, Message = "Feature-change publish retry {PendingId} was already delivered; skipping broadcast.")]
     private static partial void LogRetryAlreadyDelivered(ILogger logger, string pendingId);
 
+    [LoggerMessage(EventId = 9115, Level = LogLevel.Debug, Message = "Feature-change retry event delivered locally to {Count} sessions (cursor={Cursor})")]
+    private static partial void LogLocalEventBroadcast(ILogger logger, int count, long cursor);
+
     [LoggerMessage(EventId = 9113, Level = LogLevel.Warning, Message = "Failed to schedule retry for feature-change publish {PendingId}.")]
     private static partial void LogRetrySchedulingFailed(ILogger logger, string pendingId, Exception exception);
 
@@ -543,6 +624,13 @@ internal sealed record PendingFeatureChangePublish
 internal sealed record PendingFeatureChangeIndex
 {
     public string[] PendingIds { get; init; } = [];
+}
+
+internal enum BroadcastClaimResult
+{
+    Acquired,
+    InProgress,
+    Completed
 }
 
 internal readonly record struct PendingFeatureChangeSignal(string PendingId);

@@ -68,6 +68,7 @@ internal sealed partial class OutputCacheInvalidationService
         {
             foreach (var normalizedServiceId in normalizedServiceIds)
             {
+                responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerServicePattern(normalizedServiceId));
                 responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, layerId.Value));
             }
         }

@@ -12,6 +12,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Core.Features.Validation.Abstractions;
@@ -98,11 +99,6 @@ internal static partial class MapServerEndpoints
             }
 
             var bboxValue = GetValue(values, "bbox");
-            if (!TryParseBbox(bboxValue, out var extent))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
-            }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
             var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
@@ -177,6 +173,21 @@ internal static partial class MapServerEndpoints
             var serviceSrid = service.SpatialReference.Srid;
             bboxSrid ??= serviceSrid;
             imageSrid ??= serviceSrid;
+            var bboxCrsDefinition = SpatialReferenceHelpers.TryParseCrsDefinition(
+                bboxSrRaw ?? bboxSrid.Value.ToString(CultureInfo.InvariantCulture),
+                out var resolvedBboxDefinition)
+                ? resolvedBboxDefinition
+                : new CrsDefinition(
+                    string.Empty,
+                    bboxSrid.Value,
+                    AxisOrder.EastNorth,
+                    SpatialReference.Create(bboxSrid.Value).IsGeographic);
+
+            if (!TryParseBbox(bboxValue, bboxCrsDefinition.AxisOrder, bboxCrsDefinition.IsGeographic, out var extent))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
+            }
 
             var transformResult = await TryTransformExtentAsync(
                 context,
@@ -1047,7 +1058,7 @@ internal static partial class MapServerEndpoints
             !featureQuery.ExcludeAttributes ||
             imageWidth <= 0 ||
             imageHeight <= 0 ||
-            renderExtent.Width <= 0 ||
+            CoordinateTransformer.GetEffectiveWidth(renderExtent) <= 0 ||
             renderExtent.Height <= 0)
         {
             return false;
@@ -1055,7 +1066,7 @@ internal static partial class MapServerEndpoints
 
         circleStyle = stylePlan.SimpleCircleStyle;
         var generalizationPixels = Math.Max(PointGeneralizationPixels, circleStyle.Radius);
-        var cellWidth = renderExtent.Width / imageWidth * generalizationPixels;
+        var cellWidth = CoordinateTransformer.GetEffectiveWidth(renderExtent) / imageWidth * generalizationPixels;
         var cellHeight = renderExtent.Height / imageHeight * generalizationPixels;
         if (cellWidth <= 0 || cellHeight <= 0)
         {
@@ -1163,19 +1174,86 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    private static bool TryParseBbox(string? bbox, out SkiaMapRenderer.RenderExtent extent)
+    private static bool TryParseBbox(
+        string? bbox,
+        AxisOrder axisOrder,
+        bool isGeographic,
+        out SkiaMapRenderer.RenderExtent extent)
     {
         extent = default;
-        if (bbox is null || !RasterParsingHelpers.TryParseBoundingBox(bbox, out var minX, out var minY, out var maxX, out var maxY))
+        if (bbox is null)
         {
             return false;
         }
 
-        if (minX >= maxX || minY >= maxY)
+        if (!TryParseBoundingBoxWithMapServerAxisFallback(
+                bbox,
+                axisOrder,
+                isGeographic,
+                out var minX,
+                out var minY,
+                out var maxX,
+                out var maxY))
+        {
+            return false;
+        }
+
+        if (isGeographic &&
+            (minX < -180.0 || minX > 180.0 ||
+             maxX < -180.0 || maxX > 180.0 ||
+             minY < -90.0 || minY > 90.0 ||
+             maxY < -90.0 || maxY > 90.0))
+        {
+            return false;
+        }
+
+        if (minY >= maxY)
+            return false;
+
+        if (minX >= maxX && !CoordinateTransformer.IsWrappedGeographicExtent(new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY)))
             return false;
 
         extent = new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
         return true;
+    }
+
+    private static bool TryParseBoundingBoxWithMapServerAxisFallback(
+        string bbox,
+        AxisOrder axisOrder,
+        bool isGeographic,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+    {
+        if (RasterParsingHelpers.TryParseBoundingBox(
+                bbox,
+                axisOrder,
+                isGeographic,
+                out minX,
+                out minY,
+                out maxX,
+                out maxY))
+        {
+            return true;
+        }
+
+        if (!isGeographic)
+        {
+            return false;
+        }
+
+        var fallbackAxisOrder = axisOrder == AxisOrder.NorthEast
+            ? AxisOrder.EastNorth
+            : AxisOrder.NorthEast;
+        return RasterParsingHelpers.TryParseBoundingBox(
+            bbox,
+            fallbackAxisOrder,
+            isGeographic,
+            out minX,
+            out minY,
+            out maxX,
+            out maxY);
     }
 
     private static bool TryParseSize(
@@ -1316,6 +1394,29 @@ internal static partial class MapServerEndpoints
         }
         catch (NotSupportedException)
         {
+            var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+            if (coordinateTransformService is not null)
+            {
+                var transformedExtent = await coordinateTransformService
+                    .TransformExtentAsync(
+                        extent.MinX,
+                        extent.MinY,
+                        extent.MaxX,
+                        extent.MaxY,
+                        fromSrid,
+                        toSrid,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (transformedExtent.HasValue)
+                {
+                    return ExtentTransformResult.Success(new SkiaMapRenderer.RenderExtent(
+                        transformedExtent.Value.MinX,
+                        transformedExtent.Value.MinY,
+                        transformedExtent.Value.MaxX,
+                        transformedExtent.Value.MaxY));
+                }
+            }
+
             var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
             if (connectionProvider == null)
             {
@@ -1857,14 +1958,14 @@ internal static partial class MapServerEndpoints
             }
 
             var spec = layersParam.Trim();
-            var requestedIds = ParseLayerIds(spec);
-            if (requestedIds.Count == 0)
+            var requestedStaticLayerIds = ParseLayerIds(spec);
+            if (requestedStaticLayerIds.Count == 0)
             {
                 return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
             }
 
             var accessibleLayerIds = accessibleLayers.Select(layer => layer.Id).ToHashSet();
-            if (requestedIds.Any(id => !accessibleLayerIds.Contains(id)))
+            if (requestedStaticLayerIds.Any(id => !accessibleLayerIds.Contains(id)))
             {
                 return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
@@ -1872,7 +1973,7 @@ internal static partial class MapServerEndpoints
             }
 
             return (accessibleLayers
-                .Where(layer => requestedIds.Contains(layer.Id))
+                .Where(layer => requestedStaticLayerIds.Contains(layer.Id))
                 .Select(layer => new RenderLayer(layer, layer.Id, null))
                 .ToArray(), null);
         }

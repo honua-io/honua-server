@@ -42,6 +42,8 @@ internal sealed class DistributedImportWorkerJobManagerAdapter : IImportWorkerJo
 internal static class ImportBackgroundServiceCoordinator
 {
     private static readonly TimeSpan _processingErrorDelay = TimeSpan.FromSeconds(5);
+    private const string ImportWorkerInstanceIdKey = "ImportWorkerInstanceId";
+    private const string ImportJobIdKey = "ImportJobId";
 
     public static async Task RunAsync<TRequest, TProgress>(
         IImportWorkerJobManager<TRequest, TProgress> jobManager,
@@ -57,6 +59,7 @@ internal static class ImportBackgroundServiceCoordinator
         where TRequest : class
         where TProgress : class
     {
+        using var serviceScope = BeginWorkerScope(logger, jobManager.LeaderElection.InstanceId);
         logServiceStarting(logger, jobManager.LeaderElection.InstanceId);
         var recoveredInFlightJobs = false;
 
@@ -98,6 +101,7 @@ internal static class ImportBackgroundServiceCoordinator
                 var jobId = await jobManager.JobQueue.DequeueAsync(pollInterval, stoppingToken).ConfigureAwait(false);
                 if (jobId != null)
                 {
+                    using var jobScope = BeginJobScope(logger, jobManager.LeaderElection.InstanceId, jobId);
                     await processJobAsync(jobId, stoppingToken).ConfigureAwait(false);
                     if (!jobManager.LeaderElection.IsLeader || !jobManager.CanAcceptNewJobs)
                     {
@@ -133,6 +137,7 @@ internal static class ImportBackgroundServiceCoordinator
         where TRequest : class
         where TProgress : class
     {
+        using var monitorScope = BeginJobScope(logger, jobManager.LeaderElection.InstanceId, jobId);
         while (!token.IsCancellationRequested && !jobCancellation.IsCancellationRequested)
         {
             try
@@ -171,6 +176,23 @@ internal static class ImportBackgroundServiceCoordinator
                 return;
             }
         }
+    }
+
+    private static IDisposable? BeginWorkerScope(ILogger logger, string instanceId)
+    {
+        return logger.BeginScope(new Dictionary<string, object?>
+        {
+            [ImportWorkerInstanceIdKey] = instanceId
+        });
+    }
+
+    private static IDisposable? BeginJobScope(ILogger logger, string instanceId, string jobId)
+    {
+        return logger.BeginScope(new Dictionary<string, object?>
+        {
+            [ImportWorkerInstanceIdKey] = instanceId,
+            [ImportJobIdKey] = jobId
+        });
     }
 
     public static async Task AcknowledgeCompletionAsync(

@@ -107,6 +107,30 @@ public sealed class FeatureStreamPublisherTests : IDisposable
     }
 
     [UnitTest]
+    public async Task PublishAsync_WhenAppendFailsAndRetryQueueFails_ThrowsAndDoesNotBroadcast()
+    {
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var publisher = new FeatureStreamPublisher(
+            new ThrowingFeatureChangeEventStore(),
+            _sessionManager,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            new ThrowingRetryQueue());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "svc-1",
+                LayerId = 0,
+                ObjectId = 1,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = "req-pub-fail-queue"
+            }));
+
+        Assert.False(session.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
     public void ToEnvelope_MapsAllFields()
     {
         var changedAttrs = new Dictionary<string, object?> { ["name"] = "Test Park", ["area"] = 42.5 };
@@ -194,6 +218,22 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             Requests.Add(request);
             return Task.FromResult(Guid.NewGuid().ToString("N"));
         }
+
+        public async IAsyncEnumerable<string> ReadQueuedIdsAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public Task ProcessQueuedAsync(string pendingId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class ThrowingRetryQueue : IFeatureChangeRetryQueue
+    {
+        public Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("retry queue unavailable");
 
         public async IAsyncEnumerable<string> ReadQueuedIdsAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)

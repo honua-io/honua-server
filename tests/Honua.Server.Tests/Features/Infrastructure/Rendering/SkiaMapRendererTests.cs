@@ -204,6 +204,44 @@ public class SkiaMapRendererTests
     }
 
     [UnitTest]
+    public void BuildTransform_WrappedGeographicExtent_MapsAcrossDateline()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(170, -10, -170, 10);
+
+        var transform = SkiaMapRenderer.BuildTransform(extent, 200, 100);
+
+        var leftEdge = transform(170, 0);
+        var center = transform(180, 0);
+        var rightEdge = transform(-170, 0);
+
+        leftEdge.X.Should().BeApproximately(0f, 1f);
+        center.X.Should().BeApproximately(100f, 1f);
+        rightEdge.X.Should().BeApproximately(200f, 1f);
+        center.Y.Should().BeApproximately(50f, 1f);
+    }
+
+    [UnitTest]
+    public void BuildTransform_WrappedProjectedExtent_MapsAcrossDateline()
+    {
+        var (minX, _) = CoordinateTransformer.LonLatToWebMercator(170, 0);
+        var (maxX, _) = CoordinateTransformer.LonLatToWebMercator(-170, 0);
+        var (_, minY) = CoordinateTransformer.LonLatToWebMercator(0, -10);
+        var (_, maxY) = CoordinateTransformer.LonLatToWebMercator(0, 10);
+        var extent = new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY);
+
+        var transform = SkiaMapRenderer.BuildTransform(extent, 200, 100);
+
+        var leftEdge = transform(CoordinateTransformer.LonLatToWebMercator(170, 0).X, 0);
+        var center = transform(CoordinateTransformer.LonLatToWebMercator(180, 0).X, 0);
+        var rightEdge = transform(CoordinateTransformer.LonLatToWebMercator(-170, 0).X, 0);
+
+        leftEdge.X.Should().BeApproximately(0f, 1f);
+        center.X.Should().BeApproximately(100f, 1f);
+        rightEdge.X.Should().BeApproximately(200f, 1f);
+        center.Y.Should().BeApproximately(50f, 1f);
+    }
+
+    [UnitTest]
     public void BuildTransform_ZeroExtent_ReturnsCenterPoint()
     {
         var extent = new SkiaMapRenderer.RenderExtent(5, 5, 5, 5);

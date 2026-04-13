@@ -16,15 +16,24 @@ namespace Honua.Server.Features.Streaming;
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
     private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
+    private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
+    private const int RecentEventIdCapacity = 128;
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
+    private readonly ConcurrentQueue<string> _clusterBroadcastBacklog = new();
+    private readonly object _clusterBroadcastLock = new();
     private readonly IOptions<FeatureStreamOptions> _options;
     private readonly ILogger<FeatureStreamSessionManager> _logger;
-    private readonly ISubscriber? _subscriber;
+    private readonly IConnectionMultiplexer? _redis;
+    private ISubscriber? _subscriber;
+    private readonly Timer? _clusterBroadcastRecoveryTimer;
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
-    private readonly bool _clusterBroadcastEnabled;
+    private bool _clusterBroadcastEnabled;
+    private int _activeSessionCount;
     private long _slowConsumerDrops;
     private long _heartbeatsSent;
-    private int _clusterBroadcastFailureLogged;
+    private int _clusterBroadcastUnavailableLogged;
+    private int _clusterBroadcastFailedLogged;
+    private int _clusterBroadcastRecoveryInProgress;
 
     public FeatureStreamSessionManager(
         IOptions<FeatureStreamOptions> options,
@@ -33,15 +42,16 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _redis = redis;
 
-        if (redis is null)
+        if (_redis is null)
         {
             return;
         }
 
         try
         {
-            _subscriber = redis.GetSubscriber();
+            _subscriber = _redis.GetSubscriber();
             _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
             _clusterBroadcastEnabled = true;
         }
@@ -49,6 +59,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             LogClusterBroadcastUnavailableOnce(ex);
         }
+
+        _clusterBroadcastRecoveryTimer = new Timer(
+            _ => TryRecoverClusterBroadcast(),
+            null,
+            ClusterBroadcastRecoveryInterval,
+            ClusterBroadcastRecoveryInterval);
     }
 
     /// <summary>
@@ -64,7 +80,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// <summary>
     /// Current number of active sessions (non-allocating).
     /// </summary>
-    public int SessionCount => _sessions.Count;
+    public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
     /// <summary>
     /// Creates a new session and returns its channel reader for the transport loop.
@@ -76,8 +92,22 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         => CreateSession(transport, clientLabel, filter: null);
 
     public FeatureStreamSession CreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
+        => TryCreateSession(transport, clientLabel, filter)
+            ?? throw new InvalidOperationException(
+                $"Feature stream session limit of {_options.Value.MaxConcurrentSessions} concurrent sessions reached.");
+
+    /// <summary>
+    /// Attempts to create a new session. Returns null when the global concurrent-session
+    /// cap has been reached.
+    /// </summary>
+    public FeatureStreamSession? TryCreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
     {
         var opts = _options.Value;
+        if (!TryReserveSessionSlot(opts.MaxConcurrentSessions))
+        {
+            return null;
+        }
+
         var id = Guid.NewGuid();
         var channel = Channel.CreateBounded<FeatureStreamMessage>(new BoundedChannelOptions(opts.MaxBufferPerConnection)
         {
@@ -87,10 +117,37 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         });
         var cts = new CancellationTokenSource();
         var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter);
-        _sessions.TryAdd(id, entry);
+        if (!_sessions.TryAdd(id, entry))
+        {
+            ReleaseSessionSlot();
+            cts.Dispose();
+            throw new InvalidOperationException("Failed to register feature stream session.");
+        }
 
         FeatureStreamLog.SessionCreated(_logger, id, transport);
         return new FeatureStreamSession(id, channel.Reader, this, cts.Token);
+    }
+
+    private bool TryReserveSessionSlot(int maxConcurrentSessions)
+    {
+        while (true)
+        {
+            var currentCount = Volatile.Read(ref _activeSessionCount);
+            if (currentCount >= maxConcurrentSessions)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _activeSessionCount, currentCount + 1, currentCount) == currentCount)
+            {
+                return true;
+            }
+        }
+    }
+
+    private void ReleaseSessionSlot()
+    {
+        Interlocked.Decrement(ref _activeSessionCount);
     }
 
     /// <summary>
@@ -130,6 +187,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         if (_sessions.TryRemove(sessionId, out var entry))
         {
+            ReleaseSessionSlot();
             FeatureStreamLog.SessionRemoved(_logger, sessionId, reason);
             entry.Cts.Cancel();
             entry.Cts.Dispose();
@@ -141,36 +199,63 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// is full: pre-drain overflows are silently dropped; post-drain overflows consume a
     /// grace window (equal to the inherited replay-era backlog depth) before triggering a
     /// slow-consumer disconnect. Sessions with subscription filters only receive matching events.
+    /// Returns the number of local sessions that accepted the message; cross-node fan-out is
+    /// handled separately through Redis.
     /// </summary>
     public int Broadcast(FeatureStreamMessage message)
     {
         var delivered = BroadcastLocally(message);
 
-        if (message.IsHeartbeat || !_clusterBroadcastEnabled || _subscriber is null)
+        if (message.IsHeartbeat)
         {
             return delivered;
         }
 
+        var payload = JsonSerializer.Serialize(
+            new FeatureStreamBroadcastMessage
+            {
+                OriginInstanceId = _instanceId,
+                Envelope = message.Envelope,
+                GeometryEnvelope = message.GeometryEnvelope,
+                PropertiesJson = message.PropertiesJson
+            },
+            FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
+
+        lock (_clusterBroadcastLock)
+        {
+            if (_clusterBroadcastEnabled && _subscriber is not null)
+            {
+                TryFlushClusterBroadcastBacklogLocked();
+                if (TryPublishClusterBroadcastLocked(payload))
+                {
+                    return delivered;
+                }
+            }
+
+            _clusterBroadcastBacklog.Enqueue(payload);
+            TryRecoverClusterBroadcastLocked();
+        }
+
+        return delivered;
+    }
+
+    private bool TryPublishClusterBroadcastLocked(string payload)
+    {
+        if (!_clusterBroadcastEnabled || _subscriber is null)
+        {
+            return false;
+        }
+
         try
         {
-            var payload = JsonSerializer.Serialize(
-                new FeatureStreamBroadcastMessage
-                {
-                    OriginInstanceId = _instanceId,
-                    Envelope = message.Envelope,
-                    GeometryEnvelope = message.GeometryEnvelope,
-                    PropertiesJson = message.PropertiesJson
-                },
-                FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
-
             _subscriber.Publish(BroadcastChannel, payload);
+            return true;
         }
         catch (Exception ex)
         {
             LogClusterBroadcastFailedOnce(ex);
+            return false;
         }
-
-        return delivered;
     }
 
     private int BroadcastLocally(FeatureStreamMessage message)
@@ -204,6 +289,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
+            if (!message.IsHeartbeat && entry.HasSeenEvent(message.Envelope.EventId))
+            {
+                continue;
+            }
+
             if (!entry.Channel.Writer.TryWrite(message))
             {
                 if (entry.DrainStarted)
@@ -227,6 +317,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             {
                 delivered++;
                 entry.UpdateLastQueuedCursor(message.Envelope.Cursor);
+                if (!message.IsHeartbeat)
+                {
+                    entry.RememberEvent(message.Envelope.EventId);
+                }
             }
         }
 
@@ -260,6 +354,77 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         catch (Exception ex)
         {
             LogClusterBroadcastFailedOnce(ex);
+        }
+    }
+
+    private void TryRecoverClusterBroadcast()
+    {
+        try
+        {
+            lock (_clusterBroadcastLock)
+            {
+                TryRecoverClusterBroadcastLocked();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogClusterBroadcastUnavailableOnce(ex);
+        }
+    }
+
+    private void TryRecoverClusterBroadcastLocked()
+    {
+        if (_redis is null)
+        {
+            return;
+        }
+
+        if (!_clusterBroadcastEnabled)
+        {
+            if (Interlocked.Exchange(ref _clusterBroadcastRecoveryInProgress, 1) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                _subscriber ??= _redis.GetSubscriber();
+                _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
+                _clusterBroadcastEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                LogClusterBroadcastUnavailableOnce(ex);
+                return;
+            }
+            finally
+            {
+                Volatile.Write(ref _clusterBroadcastRecoveryInProgress, 0);
+            }
+        }
+
+        TryFlushClusterBroadcastBacklogLocked();
+    }
+
+    private void TryFlushClusterBroadcastBacklogLocked()
+    {
+        if (!_clusterBroadcastEnabled || _subscriber is null)
+        {
+            return;
+        }
+
+        while (_clusterBroadcastBacklog.TryPeek(out var payload))
+        {
+            try
+            {
+                _subscriber.Publish(BroadcastChannel, payload);
+                _clusterBroadcastBacklog.TryDequeue(out _);
+            }
+            catch (Exception ex)
+            {
+                LogClusterBroadcastFailedOnce(ex);
+                return;
+            }
         }
     }
 
@@ -329,6 +494,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return false;
         }
 
+        ReleaseSessionSlot();
         entry.Cts.Cancel();
         entry.Cts.Dispose();
         FeatureStreamLog.SessionRemoved(_logger, sessionId, FeatureStreamDisconnectReason.AdminDisconnect);
@@ -358,6 +524,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     public void Dispose()
     {
+        _clusterBroadcastRecoveryTimer?.Dispose();
         if (_subscriber is not null)
         {
             try
@@ -377,11 +544,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         _sessions.Clear();
+        Interlocked.Exchange(ref _activeSessionCount, 0);
     }
 
     private void LogClusterBroadcastUnavailableOnce(Exception exception)
     {
-        if (Interlocked.Exchange(ref _clusterBroadcastFailureLogged, 1) == 0)
+        if (Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 1) == 0)
         {
             FeatureStreamLog.ClusterBroadcastUnavailable(_logger, exception);
         }
@@ -389,7 +557,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     private void LogClusterBroadcastFailedOnce(Exception exception)
     {
-        if (Interlocked.Exchange(ref _clusterBroadcastFailureLogged, 1) == 0)
+        if (Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 1) == 0)
         {
             FeatureStreamLog.ClusterBroadcastFailed(_logger, exception);
         }
@@ -399,6 +567,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         private long _lastQueuedCursor;
         private long _drainGraceRemaining;
+        private readonly Queue<string> _recentEventIds = new();
+        private readonly HashSet<string> _recentEventIdSet = new(StringComparer.Ordinal);
+        private readonly object _recentEventLock = new();
 
         public SessionEntry(
             Guid id,
@@ -448,6 +619,32 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public bool TryConsumeDrainGrace()
         {
             return Interlocked.Decrement(ref _drainGraceRemaining) >= 0;
+        }
+
+        public bool HasSeenEvent(string eventId)
+        {
+            lock (_recentEventLock)
+            {
+                return _recentEventIdSet.Contains(eventId);
+            }
+        }
+
+        public void RememberEvent(string eventId)
+        {
+            lock (_recentEventLock)
+            {
+                if (!_recentEventIdSet.Add(eventId))
+                {
+                    return;
+                }
+
+                _recentEventIds.Enqueue(eventId);
+                while (_recentEventIds.Count > RecentEventIdCapacity &&
+                       _recentEventIds.TryDequeue(out var expired))
+                {
+                    _recentEventIdSet.Remove(expired);
+                }
+            }
         }
     }
 }

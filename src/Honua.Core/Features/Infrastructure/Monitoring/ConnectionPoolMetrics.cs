@@ -21,6 +21,7 @@ public sealed class ConnectionPoolMetrics : IDisposable
 
     private readonly IActiveDbConnectionTracker _connectionTracker;
     private volatile int _currentPoolSize;
+    private volatile bool _hasPoolSize;
     private long _acquisitionFailures;
     private long _timeouts;
 
@@ -97,7 +98,8 @@ public sealed class ConnectionPoolMetrics : IDisposable
     /// <param name="poolSize">The current pool size.</param>
     public void UpdatePoolSize(int poolSize)
     {
-        _currentPoolSize = poolSize;
+        _currentPoolSize = Math.Max(0, poolSize);
+        _hasPoolSize = _currentPoolSize > 0;
     }
 
     /// <summary>
@@ -128,7 +130,24 @@ public sealed class ConnectionPoolMetrics : IDisposable
     /// <returns>Pool utilization ratio.</returns>
     public double GetPoolUtilization()
     {
-        return _currentPoolSize > 0 ? (double)_connectionTracker.GetActiveCount() / _currentPoolSize : 0;
+        return TryGetPoolUtilization(out var utilization) ? utilization : 0;
+    }
+
+    /// <summary>
+    /// Tries to get the current pool utilization ratio when the pool size is known.
+    /// </summary>
+    /// <param name="utilization">The utilization ratio if available.</param>
+    /// <returns>True when utilization is available, otherwise false.</returns>
+    public bool TryGetPoolUtilization(out double utilization)
+    {
+        if (_hasPoolSize && _currentPoolSize > 0)
+        {
+            utilization = (double)_connectionTracker.GetActiveCount() / _currentPoolSize;
+            return true;
+        }
+
+        utilization = 0;
+        return false;
     }
 
     /// <summary>

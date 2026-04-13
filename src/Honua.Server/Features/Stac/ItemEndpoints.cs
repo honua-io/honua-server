@@ -251,11 +251,63 @@ internal static class ItemEndpoints
         {
             SqlFilter = new SqlFragment(
                 "attributes->>'stac_id' = @p0 OR attributes->>'item_id' = @p0 OR attributes->>'id' = @p0",
-                [itemId]),
-            Limit = 2
+                [itemId])
         };
 
-        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-        return result.Items.FirstOrDefault();
+        var objectIds = await featureReader.QueryObjectIdsAsync(layerId, query, cancellationToken);
+        Feature? bestMatch = null;
+        var bestRank = int.MaxValue;
+
+        foreach (var objectId in objectIds)
+        {
+            var feature = await featureReader.GetAsync(layerId, objectId, cancellationToken);
+            var matchRank = GetCanonicalItemMatchRank(feature, itemId);
+            if (!matchRank.HasValue)
+            {
+                continue;
+            }
+
+            if (matchRank.Value < bestRank)
+            {
+                bestMatch = feature;
+                bestRank = matchRank.Value;
+
+                if (bestRank == 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        return bestMatch;
+    }
+
+    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
+    {
+        var attributes = feature?.Attributes;
+        if (attributes is null)
+        {
+            return null;
+        }
+
+        var keys = ImmutableArray.Create("stac_id", "item_id", "id");
+        for (var index = 0; index < keys.Length; index++)
+        {
+            var key = keys[index];
+            if (!attributes.TryGetValue(key, out var value) || value is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    Convert.ToString(value, CultureInfo.InvariantCulture),
+                    itemId,
+                    StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return null;
     }
 }

@@ -166,7 +166,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
                 "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
         }
 
-        var isGeographic = IsGeographicSrid(targetSrid);
+        var isGeographic = SpatialReference.Create(targetSrid).IsGeographic;
         if (coords[1] > coords[3] || (!isGeographic && coords[0] > coords[2]))
         {
             return ValidationResult<BoundingBox>.Failure(
@@ -295,16 +295,6 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
 
         return false;
     }
-
-    private static bool IsGeographicSrid(int srid)
-        => srid switch
-        {
-            4326 => true,
-            4269 => true,
-            4267 => true,
-            >= 4000 and <= 4999 => true,
-            _ => false
-        };
 }
 
 /// <summary>

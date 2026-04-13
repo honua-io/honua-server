@@ -50,6 +50,67 @@ public sealed class FeatureCacheManagerTests
         }
     }
 
+    [Fact]
+    public void CleanupExpiredCacheEntries_UsesBoundedExpiryScan()
+    {
+        var layerSridCache = GetField<ConcurrentDictionary<(string Identity, int LayerId), LayerSridCacheEntry>>("_layerSridCache");
+        var expiryScanLimit = GetIntField("MaxLayerSridExpiryScansPerCleanup");
+
+        layerSridCache.Clear();
+
+        try
+        {
+            var manager = new FeatureCacheManager(
+                new StubDatabaseConnectionProvider(),
+                NullLogger<FeatureCacheManager>.Instance,
+                "tenant_a");
+
+            for (var layerId = 1; layerId <= expiryScanLimit + 25; layerId++)
+            {
+                layerSridCache[("tenant_a", layerId)] = new LayerSridCacheEntry(4326, DateTimeOffset.UtcNow.AddDays(-2));
+            }
+
+            manager.CleanupExpiredCacheEntries();
+
+            layerSridCache.Count.Should().Be(25);
+        }
+        finally
+        {
+            layerSridCache.Clear();
+        }
+    }
+
+    [Fact]
+    public void CleanupExpiredCacheEntries_UsesBoundedOverflowTrim()
+    {
+        var layerSridCache = GetField<ConcurrentDictionary<(string Identity, int LayerId), LayerSridCacheEntry>>("_layerSridCache");
+        var maxEntries = GetIntField("MaxLayerSridCacheEntries");
+        var overflowTrimLimit = GetIntField("MaxLayerSridOverflowRemovalsPerCleanup");
+
+        layerSridCache.Clear();
+
+        try
+        {
+            var manager = new FeatureCacheManager(
+                new StubDatabaseConnectionProvider(),
+                NullLogger<FeatureCacheManager>.Instance,
+                "tenant_a");
+
+            for (var layerId = 1; layerId <= maxEntries + overflowTrimLimit + 10; layerId++)
+            {
+                layerSridCache[("tenant_a", layerId)] = new LayerSridCacheEntry(4326, DateTimeOffset.UtcNow);
+            }
+
+            manager.CleanupExpiredCacheEntries();
+
+            layerSridCache.Count.Should().Be(maxEntries + 10);
+        }
+        finally
+        {
+            layerSridCache.Clear();
+        }
+    }
+
     private static T GetField<T>(string fieldName)
         where T : class
     {
@@ -58,6 +119,13 @@ public sealed class FeatureCacheManagerTests
         var value = field!.GetValue(null) as T;
         value.Should().NotBeNull();
         return value!;
+    }
+
+    private static int GetIntField(string fieldName)
+    {
+        var field = typeof(FeatureCacheManager).GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        field.Should().NotBeNull();
+        return (int)field!.GetRawConstantValue()!;
     }
 
     private sealed class StubDatabaseConnectionProvider : IDatabaseConnectionProvider

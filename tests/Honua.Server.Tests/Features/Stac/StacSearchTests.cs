@@ -18,6 +18,8 @@ namespace Honua.Server.Tests.Features.Stac;
 [Protocol(Protocols.Stac)]
 public sealed class StacSearchTests : IAsyncLifetime
 {
+    private static readonly double[] OutOfRangeBbox = [200.0, 95.0, 210.0, 100.0];
+
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -137,12 +139,39 @@ public sealed class StacSearchTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithOutOfRangeBbox_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/stac/search?bbox=200,95,210,100");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
     [Endpoint("POST /stac/search")]
     public async Task SearchPost_WithThreeDimensionalBbox_ReturnsBadRequest()
     {
         var body = JsonSerializer.Serialize(new
         {
             bbox = new[] { 170.0, -10.0, -170.0, 10.0, 5.0, 6.0 }
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithOutOfRangeBbox_ReturnsBadRequest()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            bbox = OutOfRangeBbox
         });
 
         var response = await _fixture.Client.PostAsync(

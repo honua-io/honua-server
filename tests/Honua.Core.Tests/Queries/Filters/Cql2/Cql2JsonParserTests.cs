@@ -4,6 +4,8 @@
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
@@ -108,6 +110,58 @@ public class Cql2JsonParserTests
         // Assert
         act.Should().Throw<ArgumentException>()
             .WithMessage("*Invalid geometry CRS identifier*");
+    }
+
+    [Fact]
+    public void Parse_BboxLiteral_AntimeridianCrossing_ReturnsMultiPolygonGeometry()
+    {
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[170,-10,-170,10]}]}""";
+
+        var result = _parser.Parse(json);
+
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        var geometry = spatial.Right.Should().BeOfType<GeometryLiteral>().Subject;
+
+        var parsed = new WKBReader().Read(geometry.Wkb);
+        parsed.Should().BeOfType<MultiPolygon>();
+        ((MultiPolygon)parsed).NumGeometries.Should().Be(2);
+    }
+
+    [Fact]
+    public void Parse_BboxLiteral_WithProjectedCrsAndInvertedX_ThrowsArgumentException()
+    {
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[10,-10,-10,10],"crs":"EPSG:3857"}]}""";
+
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Invalid bbox literal in CQL2-JSON*");
+    }
+
+    [Fact]
+    public void Parse_BboxLiteral_WithGeographicCrsAndOutOfRangeCoordinates_ThrowsArgumentException()
+    {
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[200,-10,210,10],"crs":"EPSG:4326"}]}""";
+
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Invalid bbox literal in CQL2-JSON*");
+    }
+
+    [Fact]
+    public void Parse_BboxLiteral_3DBox_ThrowsArgumentException()
+    {
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[-180,-90,-10,180,90,10]}]}""";
+
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*3D bounding boxes are not supported*");
     }
 
     [Fact]

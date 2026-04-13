@@ -511,6 +511,46 @@ public sealed class GitOpsWatchEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task ConfigureWatch_HttpRepositoryUrl_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var request = new GitOpsWatchConfigRequest
+        {
+            RepositoryUrl = "http://github.com/example/repo.git",
+            Branch = "main"
+        };
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/gitops/watch",
+            JsonContent.Create(request, GitOpsWatchJsonContext.Default.GitOpsWatchConfigRequest));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task ConfigureWatch_RepositoryUrlWithEmbeddedCredentials_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var request = new GitOpsWatchConfigRequest
+        {
+            RepositoryUrl = "https://user:password@github.com/example/repo.git",
+            Branch = "main"
+        };
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/gitops/watch",
+            JsonContent.Create(request, GitOpsWatchJsonContext.Default.GitOpsWatchConfigRequest));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
     public async Task ConfigureWatch_ScpStyleSshRepositoryUrl_Returns201()
     {
         var client = _fixture.CreateAdminClient();

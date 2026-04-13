@@ -179,7 +179,7 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Extract changes since last synchronization")
             .WithDescription("Returns changes made since the last synchronization for a registered replica")
             .WithTags("FeatureServer")
-            .RequireAuthorization();
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/synchronizeReplica", HandleSynchronizeReplica)
             .WithDisplayName("Synchronize Replica")

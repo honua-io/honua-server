@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Ogc.Common;
@@ -32,6 +33,7 @@ internal sealed class StacMappingService
         LayerDefinition layer,
         IFeatureReader featureReader,
         string baseUrl,
+        ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
@@ -74,7 +76,7 @@ internal sealed class StacMappingService
             type: MediaTypes.Json,
             title: "OGC API Features collection"));
 
-        var extent = BuildStacExtent(layer, featureReader, cancellationToken);
+        var extent = BuildStacExtent(layer, featureReader, coordinateTransformService, cancellationToken);
 
         return new StacCollection
         {
@@ -101,15 +103,16 @@ internal sealed class StacMappingService
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
         var itemId = ResolveItemId(feature);
         var stacBase = $"{baseUrl}/stac";
+        IReadOnlyDictionary<string, object?> attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         var selectedPropertiesLookup = selectedProperties is null
             ? null
             : new HashSet<string>(selectedProperties, StringComparer.OrdinalIgnoreCase);
 
         var properties = new Dictionary<string, object?>();
-        PopulateTemporalProperties(feature, layer, properties);
+        PopulateTemporalProperties(attributes, layer, properties);
 
         // Copy feature attributes
-        foreach (var kvp in feature.Attributes)
+        foreach (var kvp in attributes)
         {
             if (!IsItemIdAttribute(kvp.Key) &&
                 !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
@@ -196,7 +199,7 @@ internal sealed class StacMappingService
     {
         foreach (var key in new[] { "stac_id", "item_id", "id" })
         {
-            if (!feature.Attributes.TryGetValue(key, out var value) || value is null)
+            if (feature.Attributes is null || !feature.Attributes.TryGetValue(key, out var value) || value is null)
             {
                 continue;
             }
@@ -217,7 +220,7 @@ internal sealed class StacMappingService
            attributeName.Equals("item_id", StringComparison.OrdinalIgnoreCase);
 
     private static void PopulateTemporalProperties(
-        Feature feature,
+        IReadOnlyDictionary<string, object?> attributes,
         LayerDefinition layer,
         Dictionary<string, object?> properties)
     {
@@ -227,10 +230,10 @@ internal sealed class StacMappingService
         try
         {
             var temporalFields = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
-            start = TryReadTemporalValue(feature.Attributes, temporalFields.StartField.Name);
+            start = TryReadTemporalValue(attributes, temporalFields.StartField.Name);
             if (temporalFields.EndField is not null)
             {
-                end = TryReadTemporalValue(feature.Attributes, temporalFields.EndField.Name);
+                end = TryReadTemporalValue(attributes, temporalFields.EndField.Name);
             }
         }
         catch (ArgumentException)
@@ -244,15 +247,15 @@ internal sealed class StacMappingService
         // back to a single-value probe that would discard the end.
         if (start is null && end is null)
         {
-            var intervalStart = TryReadTemporalValue(feature.Attributes, "start_datetime");
+            var intervalStart = TryReadTemporalValue(attributes, "start_datetime");
             if (intervalStart is not null)
             {
                 start = intervalStart;
-                end = TryReadTemporalValue(feature.Attributes, "end_datetime");
+                end = TryReadTemporalValue(attributes, "end_datetime");
             }
         }
 
-        start ??= TryReadFallbackTemporalValue(feature.Attributes);
+        start ??= TryReadFallbackTemporalValue(attributes);
 
         if (start is not null && (end is null || end == start))
         {
@@ -319,6 +322,7 @@ internal sealed class StacMappingService
     private static async Task<StacExtent> BuildStacExtent(
         LayerDefinition layer,
         IFeatureReader featureReader,
+        ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
     {
         // Spatial extent
@@ -326,15 +330,20 @@ internal sealed class StacMappingService
         if (layer.Extent is { } extent)
         {
             var srid = extent.SpatialReference;
-            if (srid == 4326)
+            if (await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                    extent.MinX,
+                    extent.MinY,
+                    extent.MaxX,
+                    extent.MaxY,
+                    srid,
+                    coordinateTransformService,
+                    cancellationToken).ConfigureAwait(false) is { } transformedExtent)
             {
                 bbox = ImmutableArray.Create(ImmutableArray.Create(
-                    extent.MinX, extent.MinY, extent.MaxX, extent.MaxY));
-            }
-            else if (OgcExtentTransformer.TryTransformToCrs84(extent.MinX, extent.MinY, srid, out var min) &&
-                     OgcExtentTransformer.TryTransformToCrs84(extent.MaxX, extent.MaxY, srid, out var max))
-            {
-                bbox = ImmutableArray.Create(ImmutableArray.Create(min.Lon, min.Lat, max.Lon, max.Lat));
+                    transformedExtent.MinLon,
+                    transformedExtent.MinLat,
+                    transformedExtent.MaxLon,
+                    transformedExtent.MaxLat));
             }
         }
 

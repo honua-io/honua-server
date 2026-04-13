@@ -121,6 +121,15 @@ public interface IAlertStateStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Inserts or updates evaluator state for multiple rule-feature pairs in one batch.
+    /// </summary>
+    /// <param name="states">State snapshots to persist.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task UpsertManyAsync(
+        IReadOnlyCollection<AlertStateSnapshot> states,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns active state rows that are due for dwell evaluation.
     /// </summary>
     /// <param name="dueBefore">Upper bound timestamp for dwell candidates</param>

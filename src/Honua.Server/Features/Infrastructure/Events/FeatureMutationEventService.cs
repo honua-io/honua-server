@@ -5,16 +5,19 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Features.Infrastructure.Events;
 
 internal sealed class FeatureMutationEventService(
     IFeatureChangeEventPublisher featureChangeEventPublisher,
-    OutputCacheInvalidationService? outputCacheInvalidationService = null)
+    OutputCacheInvalidationService? outputCacheInvalidationService = null,
+    ILogger<FeatureMutationEventService>? logger = null)
 {
     private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = featureChangeEventPublisher
         ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
     private readonly OutputCacheInvalidationService? _outputCacheInvalidationService = outputCacheInvalidationService;
+    private readonly ILogger<FeatureMutationEventService> _logger = logger ?? NullLogger<FeatureMutationEventService>.Instance;
 
     public Task InvalidateLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
         => _outputCacheInvalidationService?.InvalidateLayerAsync(serviceId, layerId, cancellationToken)
@@ -71,20 +74,37 @@ internal sealed class FeatureMutationEventService(
             (geometryEnvelope, propertiesJson) = FeatureChangeEventEnrichment.FromFeature(mutationFeature);
         }
 
-        await _featureChangeEventPublisher.PublishAsync(
-            new FeatureChangeEventRequest
-            {
-                EventId = Guid.NewGuid().ToString("N"),
-                ServiceId = resolvedServiceId,
-                LayerId = layerId,
-                ObjectId = objectId,
-                Operation = operation,
-                Protocol = protocol,
-                RequestId = resolvedRequestId,
-                GeometryChanged = geometryChanged ?? false,
-                GeometryEnvelope = geometryEnvelope,
-                PropertiesJson = propertiesJson
-            },
-            cancellationToken).ConfigureAwait(false);
+        var requestPayload = new FeatureChangeEventRequest
+        {
+            EventId = Guid.NewGuid().ToString("N"),
+            ServiceId = resolvedServiceId,
+            LayerId = layerId,
+            ObjectId = objectId,
+            Operation = operation,
+            Protocol = protocol,
+            RequestId = resolvedRequestId,
+            GeometryChanged = geometryChanged ?? false,
+            GeometryEnvelope = geometryEnvelope,
+            PropertiesJson = propertiesJson
+        };
+
+        try
+        {
+            await _featureChangeEventPublisher.PublishAsync(
+                requestPayload,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Feature-change publish failed after write committed for event {EventId}, service {ServiceId}, layer {LayerId}, object {ObjectId}, operation {Operation}, protocol {Protocol}.",
+                requestPayload.EventId,
+                requestPayload.ServiceId,
+                requestPayload.LayerId,
+                requestPayload.ObjectId,
+                requestPayload.Operation,
+                requestPayload.Protocol);
+        }
     }
 }

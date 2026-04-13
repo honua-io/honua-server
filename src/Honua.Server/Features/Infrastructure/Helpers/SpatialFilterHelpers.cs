@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+using NetTopologySuite;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
 
@@ -11,6 +15,13 @@ namespace Honua.Server.Features.Infrastructure.Helpers;
 /// </summary>
 internal static class SpatialFilterHelpers
 {
+    private static readonly GeometryFactory _wgs84Factory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
+
+    [ThreadStatic]
+    private static WKBWriter? _wkbWriter;
+
+    private static WKBWriter GetWkbWriter() => _wkbWriter ??= new WKBWriter();
+
     /// <summary>
     /// Creates a spatial intersect filter from a bounding box.
     /// </summary>
@@ -26,34 +37,29 @@ internal static class SpatialFilterHelpers
     /// </summary>
     public static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
     {
-        var wkb = new byte[93];
-        var offset = 0;
-
-        wkb[offset++] = 1; // little-endian
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 3); // WKB Polygon
-        offset += 4;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 1); // 1 ring
-        offset += 4;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 5); // 5 points
-        offset += 4;
-
-        WritePoint(wkb, ref offset, minX, minY);
-        WritePoint(wkb, ref offset, maxX, minY);
-        WritePoint(wkb, ref offset, maxX, maxY);
-        WritePoint(wkb, ref offset, minX, maxY);
-        WritePoint(wkb, ref offset, minX, minY);
-
-        return wkb;
+        var geometry = CreateEnvelopeGeometry(minX, minY, maxX, maxY);
+        return GetWkbWriter().Write(geometry);
     }
 
-    private static void WritePoint(byte[] buffer, ref int offset, double x, double y)
+    private static Geometry CreateEnvelopeGeometry(double minX, double minY, double maxX, double maxY)
     {
-        BitConverter.TryWriteBytes(buffer.AsSpan(offset), x);
-        offset += 8;
-        BitConverter.TryWriteBytes(buffer.AsSpan(offset), y);
-        offset += 8;
+        if (BoundingBox.Create(minX, minY, maxX, maxY).IsAntimeridianCrossing)
+        {
+            var eastHemisphere = CreateEnvelopePolygon(minX, minY, 180.0, maxY);
+            var westHemisphere = CreateEnvelopePolygon(-180.0, minY, maxX, maxY);
+            return _wgs84Factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+        }
+
+        return _wgs84Factory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
     }
+
+    private static Polygon CreateEnvelopePolygon(double minX, double minY, double maxX, double maxY)
+        => _wgs84Factory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(minX, maxY),
+                new Coordinate(minX, minY)
+            ]);
 }

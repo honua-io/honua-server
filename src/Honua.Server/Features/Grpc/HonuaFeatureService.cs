@@ -505,18 +505,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             return null;
         }
 
-        if (spatialReference.Wkid > 0)
-        {
-            return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.Wkid.ToString(),
-                geometrySpatialReference: null,
-                cancellationToken).ConfigureAwait(false);
-        }
-
         if (spatialReference.LatestWkid > 0)
         {
             return await _spatialReferenceResolver.ResolveSridAsync(
                 spatialReference.LatestWkid.ToString(),
+                geometrySpatialReference: null,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (spatialReference.Wkid > 0)
+        {
+            return await _spatialReferenceResolver.ResolveSridAsync(
+                spatialReference.Wkid.ToString(),
                 geometrySpatialReference: null,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -581,6 +581,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var rbacDecision = await ServiceDataEditorAuthorization.EvaluateServiceAccessAsync(
             httpContext,
             service,
+            layer,
             context.CancellationToken).ConfigureAwait(false);
 
         if (!rbacDecision.IsAllowed)

@@ -291,7 +291,7 @@ internal sealed class OgcMapsTileSetHandler
     private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
     {
         var services = await _layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiMapsProtocol);
         return primaryServices.TryGetValue(layerId, out var service) ? service : null;
     }
 }

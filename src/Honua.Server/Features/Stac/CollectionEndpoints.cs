@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -56,7 +57,7 @@ internal static class CollectionEndpoints
         HttpContext context,
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
-
+        [FromServices] ICoordinateTransformService? coordinateTransformService,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         StacLog.CollectionsRequested(logger);
@@ -79,7 +80,12 @@ internal static class CollectionEndpoints
 
             var collections = await CollectionsEndpoints.ProjectWithLimitedConcurrencyAsync(
                 visibleLayers,
-                (layer, ct) => StacMappingService.MapLayerToCollectionAsync(layer, featureReader, baseUrl, ct),
+                (layer, ct) => StacMappingService.MapLayerToCollectionAsync(
+                    layer,
+                    featureReader,
+                    baseUrl,
+                    coordinateTransformService,
+                    ct),
                 cancellationToken).ConfigureAwait(false);
 
             var links = ImmutableArray.Create(
@@ -120,6 +126,7 @@ internal static class CollectionEndpoints
         string collectionId,
         HttpContext context,
         [FromServices] IFeatureReader featureReader,
+        [FromServices] ICoordinateTransformService? coordinateTransformService,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         StacLog.CollectionRequested(logger, collectionId);
@@ -137,7 +144,12 @@ internal static class CollectionEndpoints
 
             var layer = validation.Layer!;
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var collection = await StacMappingService.MapLayerToCollectionAsync(layer, featureReader, baseUrl, cancellationToken);
+            var collection = await StacMappingService.MapLayerToCollectionAsync(
+                layer,
+                featureReader,
+                baseUrl,
+                coordinateTransformService,
+                cancellationToken);
 
             return Results.Json(collection, StacJsonContext.Default.StacCollection, MediaTypes.Json);
         }

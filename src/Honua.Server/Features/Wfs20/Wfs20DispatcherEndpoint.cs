@@ -623,7 +623,7 @@ internal static class Wfs20DispatcherEndpoint
         XDocument document;
         try
         {
-            document = XDocument.Parse(body, LoadOptions.PreserveWhitespace);
+            document = SecureXmlDocumentParser.Parse(body, LoadOptions.PreserveWhitespace);
         }
         catch (XmlException ex)
         {

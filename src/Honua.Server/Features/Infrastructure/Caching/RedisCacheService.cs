@@ -115,9 +115,20 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    byte[]? data = await _redisGetPolicy.ExecuteAsync(
-                        ct => _distributedCache.GetAsync(prefixedKey, ct),
-                        cancellationToken).ConfigureAwait(false);
+                    byte[]? data;
+                    if (_redis != null)
+                    {
+                        data = await _redisGetPolicy.ExecuteAsync(
+                            _ => GetRedisEntryAsync(prefixedKey),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        data = await _redisGetPolicy.ExecuteAsync(
+                            ct => _distributedCache.GetAsync(prefixedKey, ct),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+
                     if (data != null)
                     {
                         if (TryDeserialize(data, prefixedKey, out T? value))
@@ -210,16 +221,26 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    var options = new DistributedCacheEntryOptions
+                    if (_redis != null)
                     {
-                        AbsoluteExpirationRelativeToNow = ttl
-                    };
+                        await _redisPolicy.ExecuteAsync(
+                            _ => SetRedisEntryWithIndexAsync(prefixedKey, data, ttl, cancellationToken),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var options = new DistributedCacheEntryOptions
+                        {
+                            AbsoluteExpirationRelativeToNow = ttl
+                        };
 
-                    await _redisPolicy.ExecuteAsync(
-                        ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
-                        cancellationToken).ConfigureAwait(false);
+                        await _redisPolicy.ExecuteAsync(
+                            ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
+                            cancellationToken).ConfigureAwait(false);
+                        await TrackIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                    }
+
                     _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
-                    await TrackIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 catch (Exception ex)
@@ -256,10 +277,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    await _redisPolicy.ExecuteAsync(
-                        ct => _distributedCache.RemoveAsync(prefixedKey, ct),
-                        cancellationToken).ConfigureAwait(false);
-                    await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                    if (_redis != null)
+                    {
+                        await _redisPolicy.ExecuteAsync(
+                            _ => RemoveRedisEntryWithIndexAsync(prefixedKey, cancellationToken),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _redisPolicy.ExecuteAsync(
+                            ct => _distributedCache.RemoveAsync(prefixedKey, ct),
+                            cancellationToken).ConfigureAwait(false);
+                        await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -303,10 +333,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 if (matchingKeys.Length > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    await db.KeyDeleteAsync(matchingKeys.Select(static key => (RedisKey)key).ToArray()).ConfigureAwait(false);
-                    await db.SetRemoveAsync(
-                        GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey)),
-                        matchingKeys.Select(static key => (RedisValue)key).ToArray()).ConfigureAwait(false);
+                    var indexKey = GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey));
+                    var redisKeys = matchingKeys.Select(static key => (RedisKey)key).ToArray();
+                    var redisValues = matchingKeys.Select(static key => (RedisValue)key).ToArray();
+                    var transaction = db.CreateTransaction();
+                    var deleteTask = transaction.KeyDeleteAsync(redisKeys);
+                    var removeIndexTask = transaction.SetRemoveAsync(indexKey, redisValues);
+                    var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+                    if (!committed)
+                    {
+                        throw new InvalidOperationException("Failed to remove cache entries and index members from Redis.");
+                    }
+
+                    await Task.WhenAll(deleteTask, removeIndexTask).ConfigureAwait(false);
                     for (var i = 0; i < matchingKeys.Length; i++)
                     {
                         RecordCacheEviction();
@@ -463,9 +502,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    byte[]? data = await _redisGetPolicy.ExecuteAsync(
-                        ct => _distributedCache.GetAsync(prefixedKey, ct),
-                        cancellationToken).ConfigureAwait(false);
+                    byte[]? data;
+                    if (_redis != null)
+                    {
+                        data = await _redisGetPolicy.ExecuteAsync(
+                            _ => GetRedisEntryAsync(prefixedKey),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        data = await _redisGetPolicy.ExecuteAsync(
+                            ct => _distributedCache.GetAsync(prefixedKey, ct),
+                            cancellationToken).ConfigureAwait(false);
+                    }
 
                     if (data != null && TryDeserialize(data, prefixedKey, out T? value))
                     {
@@ -559,9 +608,18 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         try
         {
-            await _redisGetPolicy.ExecuteAsync(
-                ct => _distributedCache.GetAsync(HealthCheckKey, ct),
-                cancellationToken).ConfigureAwait(false);
+            if (_redis != null)
+            {
+                var db = _redis.GetDatabase();
+                _ = await db.PingAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await _redisGetPolicy.ExecuteAsync(
+                    ct => _distributedCache.GetAsync(HealthCheckKey, ct),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             return true;
         }
         catch
@@ -721,10 +779,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         try
         {
-            await _redisPolicy.ExecuteAsync(
-                ct => _distributedCache.RemoveAsync(prefixedKey, ct),
-                cancellationToken).ConfigureAwait(false);
-            await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+            if (_redis != null)
+            {
+                await _redisPolicy.ExecuteAsync(
+                    _ => RemoveRedisEntryWithIndexAsync(prefixedKey, cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _redisPolicy.ExecuteAsync(
+                    ct => _distributedCache.RemoveAsync(prefixedKey, ct),
+                    cancellationToken).ConfigureAwait(false);
+                await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -859,6 +926,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to track cache key {CacheKey} in Redis index.", prefixedKey);
+                return;
             }
         }
 
@@ -885,6 +953,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to remove cache key {CacheKey} from Redis index.", prefixedKey);
+                return;
             }
         }
 
@@ -952,6 +1021,54 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     }
 
     private string GetRedisStorageKey(string prefixedKey) => $"{_distributedCacheKeyPrefix}{prefixedKey}";
+
+    private async Task<byte[]?> GetRedisEntryAsync(string prefixedKey)
+    {
+        var db = _redis!.GetDatabase();
+        var actualRedisKey = GetRedisStorageKey(prefixedKey);
+        var value = await db.StringGetAsync(actualRedisKey).ConfigureAwait(false);
+        return value.HasValue
+            ? (byte[]?)value
+            : null;
+    }
+
+    private async Task SetRedisEntryWithIndexAsync(string prefixedKey, byte[] data, TimeSpan ttl, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var db = _redis!.GetDatabase();
+        var actualRedisKey = GetRedisStorageKey(prefixedKey);
+        var indexKey = GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey));
+        var transaction = db.CreateTransaction();
+        var writeTask = transaction.StringSetAsync(actualRedisKey, data, ttl);
+        var addIndexTask = transaction.SetAddAsync(indexKey, actualRedisKey);
+        var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+        if (!committed)
+        {
+            throw new InvalidOperationException("Failed to write cache entry and index member to Redis.");
+        }
+
+        await Task.WhenAll(writeTask, addIndexTask).ConfigureAwait(false);
+    }
+
+    private async Task RemoveRedisEntryWithIndexAsync(string prefixedKey, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var db = _redis!.GetDatabase();
+        var actualRedisKey = GetRedisStorageKey(prefixedKey);
+        var indexKey = GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey));
+        var transaction = db.CreateTransaction();
+        var removeValueTask = transaction.KeyDeleteAsync(actualRedisKey);
+        var removeIndexTask = transaction.SetRemoveAsync(indexKey, actualRedisKey);
+        var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
+        if (!committed)
+        {
+            throw new InvalidOperationException("Failed to remove cache entry and index member from Redis.");
+        }
+
+        await Task.WhenAll(removeValueTask, removeIndexTask).ConfigureAwait(false);
+    }
 
     internal static string GetCacheKeyFamily(string key) => CacheKeyUtilities.GetCacheKeyFamily(key);
 

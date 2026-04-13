@@ -54,6 +54,54 @@ public class SharedModelTests
     }
 
     [Fact]
+    public void SpatialReference_Create_WithGeocentricWkidIn4000Range_IsNotGeographic()
+    {
+        var spatialRef = SpatialReference.Create(4000);
+
+        spatialRef.IsGeographic.Should().BeFalse();
+        spatialRef.IsProjected.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SpatialReference_Create_WithGeocentricItrfWkid_IsNotGeographic()
+    {
+        var spatialRef = SpatialReference.Create(4337);
+
+        spatialRef.IsGeographic.Should().BeFalse();
+        spatialRef.IsProjected.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SpatialReference_Create_WithGeodeticCartesianWkt_IsNotGeographic()
+    {
+        var spatialRef = SpatialReference.Create(
+            4978,
+            null,
+            null,
+            null,
+            "GEODCRS[\"WGS 84\",DATUM[\"World Geodetic System 1984\",ELLIPSOID[\"WGS 84\",6378137,298.257223563]]," +
+            "CS[Cartesian,3],AXIS[\"X\",geocentricX],AXIS[\"Y\",geocentricY],AXIS[\"Z\",geocentricZ],UNIT[\"metre\",1]]");
+
+        spatialRef.IsGeographic.Should().BeFalse();
+        spatialRef.IsProjected.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SpatialReference_Create_WithGeographicWkt_IsGeographic()
+    {
+        var spatialRef = SpatialReference.Create(
+            4230,
+            null,
+            null,
+            null,
+            "GEOGCRS[\"ED50\",DATUM[\"European Datum 1950\",ELLIPSOID[\"International 1924\",6378388,297]]," +
+            "CS[ellipsoidal,2],AXIS[\"longitude\",east],AXIS[\"latitude\",north],UNIT[\"degree\",0.0174532925199433]]");
+
+        spatialRef.IsGeographic.Should().BeTrue();
+        spatialRef.IsProjected.Should().BeFalse();
+    }
+
+    [Fact]
     public void ServiceError_Create_WithCodeAndMessage_SetsCorrectValues()
     {
         // Arrange & Act

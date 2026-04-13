@@ -6,12 +6,9 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.AspNetCore.WebUtilities;
@@ -75,18 +72,12 @@ internal sealed partial class ODataBatchOperationHandler(
 
             ODataLog.BatchRequested(_logger, batchRequest.Requests.Length);
 
-            var accessError = await ValidateBatchAccessAsync(context, batchRequest, effectiveToken);
-            if (accessError != null)
-            {
-                return accessError;
-            }
-
             // Process the batch
             var handler = new ODataBatchHandler(_batchDependencies, _batchDependencies.ETagService, _logger);
-            var response = await handler.ProcessBatchAsync(batchRequest, baseUrl, effectiveToken);
+            var response = await handler.ProcessBatchAsync(context, batchRequest, baseUrl, effectiveToken);
 
-            // Handle cache invalidation for mutated layers
-            await InvalidateCacheForBatchAsync(context, batchRequest, effectiveToken);
+            // Handle cache invalidation for successful mutation responses.
+            await InvalidateCacheForBatchAsync(context, batchRequest, response, effectiveToken);
             await PublishBatchFeatureEventsAsync(context, batchRequest, response, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
@@ -543,93 +534,6 @@ internal sealed partial class ODataBatchOperationHandler(
         };
     }
 
-    private async Task<IResult?> ValidateBatchAccessAsync(
-        HttpContext context,
-        ODataBatchRequest batchRequest,
-        CancellationToken cancellationToken)
-    {
-        var layerCache = new Dictionary<int, LayerDefinition?>();
-        var requiresAuth = false;
-        var hasDenied = false;
-
-        foreach (var request in batchRequest.Requests)
-        {
-            if (!TryResolveLayerId(request, out var layerId))
-            {
-                continue;
-            }
-
-            if (!layerCache.TryGetValue(layerId, out var layer))
-            {
-                layer = await _batchDependencies.LayerCatalog.GetLayerAsync(layerId, cancellationToken);
-                layerCache[layerId] = layer;
-            }
-
-            if (layer == null)
-            {
-                continue;
-            }
-
-            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                context,
-                layerId,
-                ServiceProtocols.OData,
-                cancellationToken);
-            if (!IsODataEnabled(layer, service))
-            {
-                return ODataUtilityService.CreateODataError(
-                    context,
-                    "ResourceNotFound",
-                    "OData is not enabled for this service.",
-                    StatusCodes.Status404NotFound);
-            }
-
-            var scope = IsMutationMethod(request.Method) ? AccessScope.Write : AccessScope.Read;
-            var decision = AccessPolicyHelpers.EvaluateAccess(
-                context,
-                layer.Metadata?.AccessPolicy,
-                service?.Metadata?.AccessPolicy,
-                scope);
-            if (decision.IsAllowed)
-            {
-                if (scope == AccessScope.Write)
-                {
-                    var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-                        context,
-                        layer,
-                        service,
-                        cancellationToken);
-                    if (rbacError != null)
-                    {
-                        return rbacError;
-                    }
-                }
-
-                continue;
-            }
-
-            hasDenied = true;
-            if (decision.RequiresAuthentication)
-            {
-                requiresAuth = true;
-                break;
-            }
-        }
-
-        if (!hasDenied)
-        {
-            return null;
-        }
-
-        var detail = requiresAuth
-            ? "Authentication is required to access one or more requested layers."
-            : "Access to one or more requested layers is forbidden.";
-
-        return requiresAuth
-            ? StandardErrorHelpers.CreateUnauthorized(context, detail)
-            : StandardErrorHelpers.CreateForbidden(context, detail);
-    }
-
     private static bool IsODataEnabled(
         LayerDefinition layer,
         ServiceDefinition? service)
@@ -693,12 +597,41 @@ internal sealed partial class ODataBatchOperationHandler(
     private async Task InvalidateCacheForBatchAsync(
         HttpContext context,
         ODataBatchRequest batchRequest,
+        ODataBatchResponse response,
         CancellationToken cancellationToken)
     {
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator != null)
         {
-            var mutatedLayers = CollectMutationLayerIds(batchRequest);
+            var requestsById = batchRequest.Requests
+                .GroupBy(static request => request.Id, StringComparer.Ordinal)
+                .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+
+            var mutatedLayers = new HashSet<int>();
+            var hasSuccessfulMutationWithoutLayerId = false;
+
+            foreach (var responseItem in response.Responses)
+            {
+                if (responseItem.Status < 200 || responseItem.Status >= 300)
+                {
+                    continue;
+                }
+
+                if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
+                    !IsMutationMethod(request.Method))
+                {
+                    continue;
+                }
+
+                if (TryResolveLayerId(request, out var layerId))
+                {
+                    mutatedLayers.Add(layerId);
+                    continue;
+                }
+
+                hasSuccessfulMutationWithoutLayerId = true;
+            }
+
             if (mutatedLayers.Count > 0)
             {
                 foreach (var layerId in mutatedLayers)
@@ -706,50 +639,11 @@ internal sealed partial class ODataBatchOperationHandler(
                     await _batchDependencies.MutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
                 }
             }
-            else if (ContainsMutation(batchRequest))
+            else if (hasSuccessfulMutationWithoutLayerId)
             {
                 await cacheInvalidator.InvalidateOgcMetadataAsync(cancellationToken);
             }
         }
-    }
-
-    /// <summary>
-    /// Checks if the batch contains any mutation operations
-    /// </summary>
-    private static bool ContainsMutation(ODataBatchRequest batchRequest)
-    {
-        foreach (var request in batchRequest.Requests)
-        {
-            if (IsMutationMethod(request.Method))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Collects layer IDs from mutation operations in the batch
-    /// </summary>
-    private static HashSet<int> CollectMutationLayerIds(ODataBatchRequest batchRequest)
-    {
-        var layerIds = new HashSet<int>();
-
-        foreach (var request in batchRequest.Requests)
-        {
-            if (!IsMutationMethod(request.Method))
-            {
-                continue;
-            }
-
-            if (TryResolveLayerId(request, out var layerId))
-            {
-                layerIds.Add(layerId);
-            }
-        }
-
-        return layerIds;
     }
 
     /// <summary>

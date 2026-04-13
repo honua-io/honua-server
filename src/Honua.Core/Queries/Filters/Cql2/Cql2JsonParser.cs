@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Shared.Models;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -614,28 +615,59 @@ public sealed class Cql2JsonParser
             throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
         }
 
+        if (bboxElement.GetArrayLength() == 6)
+        {
+            throw new ArgumentException("3D bounding boxes are not supported.");
+        }
+
         var minX = bboxElement[0].GetDouble();
         var minY = bboxElement[1].GetDouble();
         var maxX = bboxElement[2].GetDouble();
         var maxY = bboxElement[3].GetDouble();
         var srid = ResolveGeometrySrid(element) ?? DefaultSrid;
-
-        var coordinates = new[]
-        {
-            new Coordinate(minX, minY),
-            new Coordinate(maxX, minY),
-            new Coordinate(maxX, maxY),
-            new Coordinate(minX, maxY),
-            new Coordinate(minX, minY)
-        };
-
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: srid);
-        var polygon = geometryFactory.CreatePolygon(coordinates);
+        var geometry = CreateBboxGeometry(geometryFactory, minX, minY, maxX, maxY, srid);
         var writer = new WKBWriter();
-        var wkb = writer.Write(polygon);
+        var wkb = writer.Write(geometry);
 
         return new GeometryLiteral(wkb, srid, element.GetRawText());
     }
+
+    private static Geometry CreateBboxGeometry(
+        GeometryFactory geometryFactory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        int srid)
+    {
+        var isGeographic = SpatialReference.Create(srid).IsGeographic;
+        ValidateBbox(minX, minY, maxX, maxY, isGeographic);
+
+        if (isGeographic && minX > maxX)
+        {
+            var eastHemisphere = CreateBboxPolygon(geometryFactory, minX, minY, 180.0, maxY);
+            var westHemisphere = CreateBboxPolygon(geometryFactory, -180.0, minY, maxX, maxY);
+            return geometryFactory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+        }
+
+        return geometryFactory.ToGeometry(new Envelope(minX, maxX, minY, maxY));
+    }
+
+    private static Polygon CreateBboxPolygon(
+        GeometryFactory geometryFactory,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+        => geometryFactory.CreatePolygon(
+            [
+                new Coordinate(minX, minY),
+                new Coordinate(maxX, minY),
+                new Coordinate(maxX, maxY),
+                new Coordinate(minX, maxY),
+                new Coordinate(minX, minY)
+            ]);
 
     private static int ResolveGeometrySrid(JsonElement geometryElement, Geometry geometry)
     {
@@ -695,6 +727,37 @@ public sealed class Cql2JsonParser
                directNameElement.ValueKind == JsonValueKind.String &&
                TryParseSrid(directNameElement.GetString(), out srid);
     }
+
+    private static void ValidateBbox(double minX, double minY, double maxX, double maxY, bool isGeographic)
+    {
+        if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
+            !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
+            minY >= maxY ||
+            (!isGeographic && minX >= maxX) ||
+            (isGeographic && minX == maxX))
+        {
+            throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
+        }
+
+        if (isGeographic &&
+            (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
+             !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
+        {
+            throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
+        }
+    }
+
+    private static bool IsValidCoordinate(double coordinate)
+        => !double.IsNaN(coordinate) &&
+           !double.IsInfinity(coordinate) &&
+           coordinate >= -40_000_000 &&
+           coordinate <= 40_000_000;
+
+    private static bool IsValidLongitude(double coordinate)
+        => coordinate >= -180.0 && coordinate <= 180.0;
+
+    private static bool IsValidLatitude(double coordinate)
+        => coordinate >= -90.0 && coordinate <= 90.0;
 
     private static bool TryParseSrid(string? crsIdentifier, out int srid)
     {

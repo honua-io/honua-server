@@ -387,7 +387,22 @@ internal static class AdminGitOpsWatchEndpoints
 
         if (Uri.TryCreate(repositoryUrl, UriKind.Absolute, out var uri))
         {
-            return uri.Scheme is "http" or "https" or "ssh" or "git";
+            if (uri.Scheme is not ("https" or "ssh"))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(uri.UserInfo) ||
+                string.IsNullOrEmpty(uri.Host) ||
+                string.IsNullOrEmpty(uri.AbsolutePath) ||
+                uri.AbsolutePath == "/" ||
+                !string.IsNullOrEmpty(uri.Query) ||
+                !string.IsNullOrEmpty(uri.Fragment))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         var atIndex = repositoryUrl.IndexOf('@');

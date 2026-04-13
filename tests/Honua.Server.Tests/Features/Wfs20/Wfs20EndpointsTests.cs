@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -62,6 +63,34 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             content,
             "name=\"ImplementsResultPaging\"[\\s\\S]*?<[^>]*DefaultValue>TRUE</",
             RegexOptions.CultureInvariant).Should().BeTrue(content);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            content.Should().Contain("<ows:WGS84BoundingBox");
+            content.Should().Contain("<ows:LowerCorner>-");
+            content.Should().Contain("<ows:UpperCorner>-");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -324,6 +353,25 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_UnknownTypeNames_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=missing_layer");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"typeNames\"");
+        content.Should().Contain("Unknown feature type");
+        content.Should().Contain("missing_layer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_MultiTypeUnqualifiedResourceId_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
@@ -333,6 +381,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("must be qualified when multiple feature types are requested");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_MixedValidAndMalformedResourceIds_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID=test_layer.1,test_layer.bad");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"RESOURCEID\"");
+        content.Should().Contain("is malformed");
     }
 
     [IntegrationTest]
@@ -349,6 +413,25 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("exceptionCode=\"MissingParameterValue\"");
         content.Should().Contain("locator=\"valueReference\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_GetPropertyValue_UnknownTypeNames_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=missing_layer&VALUEREFERENCE=name");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"typeNames\"");
+        content.Should().Contain("Unknown feature type");
+        content.Should().Contain("missing_layer");
     }
 
     [IntegrationTest]
@@ -682,6 +765,73 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Update)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_MultiLayerWithoutRollback_ReturnsTransactionResponseAndCreatesFeatures()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0" rollbackOnFailure="false"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                xmlns:honua="http://honua.io/wfs">
+              <wfs:Insert handle="insert-primary">
+                <honua:test_layer>
+                  <honua:name>WFS Multi Layer Primary Insert</honua:name>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.101 -122.401</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:test_layer>
+              </wfs:Insert>
+              <wfs:Insert handle="insert-related">
+                <honua:related_test_layer_1>
+                  <honua:name>WFS Multi Layer Related Insert</honua:name>
+                  <honua:related_id>1</honua:related_id>
+                  <honua:shape>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:pos>37.202 -122.502</gml:pos>
+                    </gml:Point>
+                  </honua:shape>
+                </honua:related_test_layer_1>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalInserted>2</wfs:totalInserted>");
+        content.Should().Contain("handle=\"insert-primary\"");
+        content.Should().Contain("handle=\"insert-related\"");
+
+        var primaryRidMatch = Regex.Match(content, "rid=\"(?<rid>test_layer\\.\\d+)\"", RegexOptions.CultureInvariant);
+        primaryRidMatch.Success.Should().BeTrue(content);
+        var relatedRidMatch = Regex.Match(content, "rid=\"(?<rid>related_test_layer_1\\.\\d+)\"", RegexOptions.CultureInvariant);
+        relatedRidMatch.Success.Should().BeTrue(content);
+
+        var primaryRid = primaryRidMatch.Groups["rid"].Value;
+        var relatedRid = relatedRidMatch.Groups["rid"].Value;
+
+        var primaryQueryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={primaryRid}");
+        var primaryQueryContent = await primaryQueryResponse.Content.ReadAsStringAsync();
+        primaryQueryResponse.StatusCode.Should().Be(HttpStatusCode.OK, primaryQueryContent);
+        primaryQueryContent.Should().Contain("WFS Multi Layer Primary Insert");
+
+        var relatedQueryResponse = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=related_test_layer_1&RESOURCEID={relatedRid}");
+        var relatedQueryContent = await relatedQueryResponse.Content.ReadAsStringAsync();
+        relatedQueryResponse.StatusCode.Should().Be(HttpStatusCode.OK, relatedQueryContent);
+        relatedQueryContent.Should().Contain("WFS Multi Layer Related Insert");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_UpdateGmlNameXPathReference_UpdatesStoredQueryResult()
     {
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "WFS XPath Name Original");
@@ -897,6 +1047,30 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         responseBody.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         responseBody.Should().Contain("Invalid WFS XML request body.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    public async Task Wfs_Post_XmlBodyWithDtd_ReturnsSanitizedExceptionReport()
+    {
+        const string requestBody = """
+            <!DOCTYPE wfs:GetCapabilities [
+              <!ENTITY xxe SYSTEM "file:///etc/passwd">
+            ]>
+            <wfs:GetCapabilities service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" />
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        responseBody.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        responseBody.Should().Contain("Invalid WFS XML request body.");
+        responseBody.Should().NotContain("/etc/passwd");
     }
 
     [IntegrationTest]

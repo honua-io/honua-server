@@ -120,7 +120,7 @@ public class RasterParsingHelpersTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void TryParseBoundingBox_DefaultOverload_DatelineCrossing_ReturnsTrue()
+    public void TryParseBoundingBox_DefaultOverload_DatelineCrossing_ReturnsFalse()
     {
         var result = RasterParsingHelpers.TryParseBoundingBox(
             "170,-10,-170,10",
@@ -129,11 +129,23 @@ public class RasterParsingHelpersTests
             out var maxX,
             out var maxY);
 
-        result.Should().BeTrue();
-        minX.Should().Be(170);
-        minY.Should().Be(-10);
-        maxX.Should().Be(-170);
-        maxY.Should().Be(10);
+        result.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseBoundingBox_NonGeographicWrapStyleCoordinates_ReturnsFalse()
+    {
+        var result = RasterParsingHelpers.TryParseBoundingBox(
+            "170,-10,-170,10",
+            AxisOrder.EastNorth,
+            isGeographic: false,
+            out _,
+            out _,
+            out _,
+            out _);
+
+        result.Should().BeFalse();
     }
 
     [UnitTest]
@@ -609,6 +621,30 @@ public class RasterParsingHelpersTests
 
         result.Should().BeTrue();
         definition.Srid.Should().Be(4978);
+        definition.IsGeographic.Should().BeFalse();
+        definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseCrsDefinition_Epsg4230_ReturnsGeographicDefinition()
+    {
+        var result = SpatialReferenceHelpers.TryParseCrsDefinition("EPSG:4230", out var definition);
+
+        result.Should().BeTrue();
+        definition.Srid.Should().Be(4230);
+        definition.IsGeographic.Should().BeTrue();
+        definition.AxisOrder.Should().Be(AxisOrder.NorthEast);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseCrsDefinition_Epsg4337_ReturnsProjectedDefinition()
+    {
+        var result = SpatialReferenceHelpers.TryParseCrsDefinition("EPSG:4337", out var definition);
+
+        result.Should().BeTrue();
+        definition.Srid.Should().Be(4337);
         definition.IsGeographic.Should().BeFalse();
         definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }

@@ -140,11 +140,6 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry parameter.");
             }
 
-            if (!TryParseBbox(mapExtentValue, out var mapExtent))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "Invalid mapExtent parameter. Expected format: xmin,ymin,xmax,ymax");
-            }
-
             if (!TryParseImageDisplay(imageDisplayValue, out var imageWidth, out var imageHeight, out var imageDpi, out var imageDisplayError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, imageDisplayError ?? "Invalid imageDisplay parameter.");
@@ -190,6 +185,24 @@ internal static partial class MapServerEndpoints
             if (!TryResolveIdentifySrid(srValue, geometry, service.SpatialReference.Srid, out var geometrySrid, out var srError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, srError ?? "Invalid spatial reference.");
+            }
+
+            var mapExtentCrsDefinition = SpatialReferenceHelpers.TryParseCrsDefinition(
+                srValue ?? geometrySrid.ToString(CultureInfo.InvariantCulture),
+                out var resolvedMapExtentDefinition)
+                ? resolvedMapExtentDefinition
+                : new CrsDefinition(
+                    string.Empty,
+                    geometrySrid,
+                    AxisOrder.EastNorth,
+                    SpatialReference.Create(geometrySrid).IsGeographic);
+            if (!TryParseBbox(
+                    mapExtentValue,
+                    mapExtentCrsDefinition.AxisOrder,
+                    mapExtentCrsDefinition.IsGeographic,
+                    out var mapExtent))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Invalid mapExtent parameter. Expected format: xmin,ymin,xmax,ymax");
             }
 
             if (logger.IsEnabled(LogLevel.Information))

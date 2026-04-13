@@ -122,6 +122,76 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithDatelineCrossingBbox_ReturnsImageJson()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=170,-10,-170,10&bboxSR=4326&imageSR=4326&size=256,256&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Scale.Should().NotBeNull();
+        export.Scale.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithWideDatelineCrossingBbox_In3857_PreservesWrappedExtent()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=10,-10,-10,10&bboxSR=4326&imageSR=3857&size=256,256&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Extent.Should().NotBeNull();
+        export!.Extent!.Xmin.Should().BeGreaterThan(export.Extent.Xmax);
+        export.Scale.Should().NotBeNull();
+        export.Scale.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithProjectedBbox_In3857_ReturnsImageJson()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-20037508.34,-20037508.34,20037508.34,20037508.34&bboxSR=3857&imageSR=3857&size=256,256&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Extent.Should().NotBeNull();
+        export.Scale.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithGeographicAxisOrderBbox_In4326_ReturnsImageJson()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-90,-180,90,180&bboxSR=4326&imageSR=4326&size=256,256&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Extent.Should().NotBeNull();
+        export.Scale.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_Post_ReturnsImageJson()
     {
@@ -411,6 +481,28 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         identify.Should().NotBeNull();
         identify!.Results.Should().NotBeNull();
         identify.Results!.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_WithDatelineCrossingMapExtent_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=179.5,0&geometryType=esriGeometryPoint&mapExtent=170,-10,-170,10&imageDisplay=800,600,96&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_WithProjectedMapExtent_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-13636637.62,4509031.39&geometryType=esriGeometryPoint&sr=3857&mapExtent=-13700000,4490000,-13600000,4600000&imageDisplay=800,600,96&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

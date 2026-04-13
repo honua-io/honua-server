@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using FluentAssertions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Transforms;
@@ -157,19 +158,28 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     [IntegrationTest]
     public async Task TransformExtentAsync_AntimeridianCrossing_Wgs84ToWebMercator_ReturnsOrderedBounds()
     {
+        const double minX = 170.0;
+        const double minY = -10.0;
+        const double maxX = -170.0;
+        const double maxY = 10.0;
+        const int fromSrid = 4326;
+        const int toSrid = 3857;
+
         var result = await _service!.TransformExtentAsync(
-            170.0, -10.0, -170.0, 10.0,
-            4326, 3857);
+            minX, minY, maxX, maxY,
+            fromSrid, toSrid);
 
         result.Should().NotBeNull();
+        var projectedWestEdge = ProjectLonLatToWebMercator(-170.0, 0.0).X;
+        var projectedEastEdge = ProjectLonLatToWebMercator(170.0, 0.0).X;
+        var projectedSouth = ProjectLonLatToWebMercator(0.0, minY).Y;
+        var projectedNorth = ProjectLonLatToWebMercator(0.0, maxY).Y;
 
-        var (expectedMinX, expectedMinY) = ProjectLonLatToWebMercator(-170.0, -10.0);
-        var (expectedMaxX, expectedMaxY) = ProjectLonLatToWebMercator(170.0, 10.0);
-
-        result!.Value.MinX.Should().BeApproximately(expectedMinX, 1.0);
-        result.Value.MinY.Should().BeApproximately(expectedMinY, 1.0);
-        result.Value.MaxX.Should().BeApproximately(expectedMaxX, 1.0);
-        result.Value.MaxY.Should().BeApproximately(expectedMaxY, 1.0);
+        result!.Value.MinX.Should().BeLessThan(projectedWestEdge);
+        result.Value.MaxX.Should().BeGreaterThan(projectedEastEdge);
+        result.Value.MinX.Should().BeLessThan(result.Value.MaxX);
+        result.Value.MinY.Should().BeApproximately(projectedSouth, 1.0);
+        result.Value.MaxY.Should().BeApproximately(projectedNorth, 1.0);
     }
 
     [IntegrationTest]
@@ -184,6 +194,25 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         result.Value.MinY.Should().Be(-90);
         result.Value.MaxX.Should().Be(180);
         result.Value.MaxY.Should().Be(90);
+    }
+
+    [UnitTest]
+    public void EnumerateSampledExtentPoints_AntimeridianCrossing_StaysNearDateline()
+    {
+        var method = typeof(PostGisCoordinateTransformService).GetMethod(
+            "EnumerateSampledExtentPoints",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        method.Should().NotBeNull();
+
+        var points = ((IEnumerable<(double X, double Y)>)method!.Invoke(
+            null,
+            [170.0, -10.0, -170.0, 10.0])!).ToArray();
+
+        points.Should().NotBeEmpty();
+        points.Select(point => point.X).Should().NotContain(value => Math.Abs(value) < 1e-9);
+        points.Select(point => point.X).Should().Contain(value => value >= 179.999 && value <= 180.001);
+        points.Select(point => point.X).Should().Contain(value => value < -170.0);
     }
 
     // --- Antimeridian extent tests ---

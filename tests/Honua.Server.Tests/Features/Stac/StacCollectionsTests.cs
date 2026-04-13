@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -209,6 +210,42 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         links.Should().Contain(l => l.Rel == "items");
         links.Should().Contain(l => l.Rel == "alternate" &&
                                     l.Href!.Contains("/ogc/features/collections/"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync($"/stac/collections/{ProjectedExtentLayerCatalog.LayerId}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var bbox = json.RootElement
+                .GetProperty("extent")
+                .GetProperty("spatial")
+                .GetProperty("bbox")[0];
+
+            bbox[0].GetDouble().Should().BeNegative();
+            bbox[1].GetDouble().Should().BeGreaterThan(0d);
+            bbox[2].GetDouble().Should().BeNegative();
+            bbox[2].GetDouble().Should().BeGreaterThan(bbox[0].GetDouble());
+            bbox[3].GetDouble().Should().BeGreaterThan(bbox[1].GetDouble());
+            bbox[1].GetDouble().Should().NotBe(-90d);
+            bbox[3].GetDouble().Should().NotBe(90d);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)

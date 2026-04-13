@@ -194,11 +194,15 @@ internal sealed partial class TileOperationJobService(
         }
 
         using var renewalCts = leaseCoordinator is null ? null : new CancellationTokenSource();
+        using var processingCts = leaseCoordinator is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, leaseCoordinator.LeaseLostToken);
         var renewalTask = leaseCoordinator is null
             ? Task.CompletedTask
             : RenewLeaseAsync(leaseCoordinator, renewalCts!.Token);
+        var processingToken = processingCts?.Token ?? cancellationToken;
 
-        var cachedRequest = await TryGetActiveJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+        var cachedRequest = await TryGetActiveJobRequestAsync(jobId, processingToken).ConfigureAwait(false);
         if (cachedRequest == null)
         {
             if (renewalCts != null)
@@ -229,8 +233,11 @@ internal sealed partial class TileOperationJobService(
         }
 
         var stopwatch = Stopwatch.StartNew();
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var linkedCts = processingCts is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
         _runningTokens[jobId] = linkedCts;
+        var shouldRequeue = false;
 
         var started = progress with
         {
@@ -282,7 +289,21 @@ internal sealed partial class TileOperationJobService(
         }
         catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
         {
-            finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+            if (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
+            {
+                finalProgress = started with
+                {
+                    Status = OperationStatus.Queued,
+                    CompletedAt = null,
+                    ErrorMessage = null,
+                    CurrentPhase = "Lease lost; awaiting retry"
+                };
+                shouldRequeue = true;
+            }
+            else
+            {
+                finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+            }
         }
         catch (Exception ex)
         {
@@ -304,6 +325,7 @@ internal sealed partial class TileOperationJobService(
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
+                leaseCoordinator.Dispose();
             }
         }
 
@@ -328,6 +350,10 @@ internal sealed partial class TileOperationJobService(
         {
             RefreshJobRequestRetention(jobId);
             await PersistJobRequestAsync(jobId, request, cachedRequest.Value.SchemaName, cancellationToken).ConfigureAwait(false);
+            if (shouldRequeue)
+            {
+                await _jobQueue.Writer.WriteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
     }
 

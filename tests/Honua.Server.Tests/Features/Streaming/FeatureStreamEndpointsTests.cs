@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.WebSockets;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -13,6 +14,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -192,6 +194,61 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_WhenSessionLimitReached_ReturnsServiceUnavailable()
+    {
+        var fixture = CreateLimitedStreamingFixture(1);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.CreateAdminClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("session limit");
+            sessionManager.SessionCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task WebSocket_WhenSessionLimitReached_ReturnsServiceUnavailable()
+    {
+        var fixture = CreateLimitedStreamingFixture(1);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
+            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+
+            var wsClient = fixture.CreateWebSocketClient();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                wsClient.ConnectAsync(new Uri("ws://localhost/api/v1/streaming/features?clientLabel=ws-limit"), cts.Token));
+
+            ex.Message.Should().Contain("503");
+            sessionManager.SessionCount.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     /// <summary>
@@ -617,6 +674,18 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         Protocol = "rest",
         RequestId = "req-1"
     };
+
+    private static WebAppFixture CreateLimitedStreamingFixture(int maxConcurrentSessions)
+        => new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureStreaming:MaxConcurrentSessions"] = maxConcurrentSessions.ToString(CultureInfo.InvariantCulture)
+                });
+            });
+        });
 
     private static async Task WaitForSessionAsync(
         FeatureStreamSessionManager manager, string clientLabel, CancellationToken ct)

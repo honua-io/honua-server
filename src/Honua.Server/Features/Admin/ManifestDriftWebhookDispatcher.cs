@@ -113,6 +113,12 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
         }
     }
 
+    public override void Dispose()
+    {
+        _leaseCoordinator.Dispose();
+        base.Dispose();
+    }
+
     private async Task CheckAndDispatchDriftAsync(Uri webhookUri, CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();

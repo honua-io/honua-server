@@ -181,6 +181,16 @@ public class CommonQueryValidatorTests
     }
 
     [Fact]
+    public void ValidateBbox_WithGeographicCrsOutsideNarrowAllowlist_AllowsAntimeridian()
+    {
+        var result = _validator.ValidateBbox("170,-10,-170,10", 4230);
+
+        result.IsValid.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value!.MinX.Should().BeGreaterThan(result.Value.MaxX);
+    }
+
+    [Fact]
     public void ValidateBbox_WithProjectedCrs_DisallowsAntimeridian()
     {
         var result = _validator.ValidateBbox("170,-10,-170,10", 3857);

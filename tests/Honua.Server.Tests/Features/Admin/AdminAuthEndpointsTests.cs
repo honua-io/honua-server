@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions.Execution;
 using FluentAssertions;
@@ -30,6 +31,10 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
     private const string TestClientId = "22222222-2222-2222-2222-222222222222";
     private const string TestSigningKey = "test-key-at-least-32-characters-long-for-testing";
+    private const string TestOidcIssuer = "https://auth.example.com";
+    private const string TestOidcAudience = "generic-client-id";
+    private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
+    private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -568,6 +573,69 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
+    public async Task RequestToken_WithForgedIdToken_ReturnsServiceUnavailable()
+    {
+        using var forgedKey = RSA.Create(2048);
+        var forgedSigningKey = new RsaSecurityKey(forgedKey) { KeyId = "forged-key" };
+        var forgedCredentials = new SigningCredentials(forgedSigningKey, SecurityAlgorithms.RsaSha256);
+        var forgedToken = new JwtSecurityToken(
+            issuer: TestOidcIssuer,
+            audience: TestOidcAudience,
+            claims:
+            [
+                new Claim("sub", "attacker"),
+                new Claim("name", "Forged Admin"),
+                new Claim("roles", "admin")
+            ],
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: forgedCredentials);
+
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"),
+            idToken: new JwtSecurityTokenHandler().WriteToken(forgedToken));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var authorizeResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+            var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
+            var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
+
+            var tokenResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/token",
+                new
+                {
+                    grantType = "authorization_code",
+                    code = "code-123",
+                    state = authorizeParameters["state"].ToString()
+                });
+
+            tokenResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
+            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+            session.Should().NotBeNull();
+            session!.IsAuthenticated.Should().BeFalse();
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
     public async Task GetLogoutUrl_WithUnknownProvider_DoesNotClearAuthenticatedSession()
     {
@@ -710,7 +778,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     private sealed record StubOidcEndpoints(
         string AuthorizationEndpoint,
         string TokenEndpoint,
-        string LogoutEndpoint);
+        string LogoutEndpoint,
+        string? JwksEndpoint = null);
 
     private sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
     {
@@ -719,17 +788,20 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         private readonly StubOidcEndpoints _endpoints;
         private readonly string _accessToken;
         private readonly string? _idToken;
+        private readonly string _jwksEndpoint;
 
         public StubHttpClientFactory(
             string expectedDiscoveryUrl,
             StubOidcEndpoints endpoints,
             string? accessToken = null,
-            string? idToken = "id-token")
+            string? idToken = null)
         {
             _expectedDiscoveryUrl = expectedDiscoveryUrl;
             _endpoints = endpoints;
+            _jwksEndpoint = endpoints.JwksEndpoint
+                ?? new Uri(new Uri(expectedDiscoveryUrl), "/keys").ToString();
             _accessToken = accessToken ?? CreateAccessToken();
-            _idToken = idToken;
+            _idToken = idToken ?? CreateIdToken("Test Admin", "admin");
             _client = new HttpClient(new StubHttpMessageHandler(this))
             {
                 BaseAddress = new Uri("https://stub.local")
@@ -756,8 +828,10 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 {
                     var discoveryJson = $$"""
                         {
+                          "issuer": "{{TestOidcIssuer}}",
                           "authorization_endpoint": "{{owner._endpoints.AuthorizationEndpoint}}",
                           "token_endpoint": "{{owner._endpoints.TokenEndpoint}}",
+                          "jwks_uri": "{{owner._jwksEndpoint}}",
                           "end_session_endpoint": "{{owner._endpoints.LogoutEndpoint}}"
                         }
                         """;
@@ -765,6 +839,15 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                     return new HttpResponseMessage(HttpStatusCode.OK)
                     {
                         Content = new StringContent(discoveryJson, Encoding.UTF8, "application/json")
+                    };
+                }
+
+                if (request.Method == HttpMethod.Get &&
+                    string.Equals(request.RequestUri!.ToString(), owner._jwksEndpoint, StringComparison.Ordinal))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(CreateJwksDocument(), Encoding.UTF8, "application/json")
                     };
                 }
 
@@ -797,7 +880,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 }
 
                 using var scope = new AssertionScope();
-                request.RequestUri!.ToString().Should().BeOneOf(owner._expectedDiscoveryUrl, owner._endpoints.TokenEndpoint);
+                request.RequestUri!.ToString().Should().BeOneOf(owner._expectedDiscoveryUrl, owner._jwksEndpoint, owner._endpoints.TokenEndpoint);
                 request.Method.Should().BeOneOf(HttpMethod.Get, HttpMethod.Post);
                 return new HttpResponseMessage(HttpStatusCode.InternalServerError);
             }
@@ -826,8 +909,6 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static string CreateIdToken(string name, params string[] roles)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var claims = new List<Claim>
         {
             new("sub", "admin-user"),
@@ -837,12 +918,43 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         claims.AddRange(roles.Select(static role => new Claim("roles", role)));
 
         var token = new JwtSecurityToken(
-            issuer: "https://auth.example.com",
-            audience: "generic-client-id",
+            issuer: TestOidcIssuer,
+            audience: TestOidcAudience,
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: credentials);
+            signingCredentials: _oidcSigningCredentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static RsaSecurityKey CreateOidcSigningKey()
+    {
+        var rsa = RSA.Create(2048);
+        return new RsaSecurityKey(rsa)
+        {
+            KeyId = "test-admin-auth-jwk"
+        };
+    }
+
+    private static string CreateJwksDocument()
+    {
+        var parameters = _oidcSigningKey.Rsa!.ExportParameters(false);
+        var modulus = Base64UrlEncoder.Encode(parameters.Modulus);
+        var exponent = Base64UrlEncoder.Encode(parameters.Exponent);
+
+        return $$"""
+            {
+              "keys": [
+                {
+                  "kty": "RSA",
+                  "use": "sig",
+                  "alg": "RS256",
+                  "kid": "{{_oidcSigningKey.KeyId}}",
+                  "n": "{{modulus}}",
+                  "e": "{{exponent}}"
+                }
+              ]
+            }
+            """;
     }
 }

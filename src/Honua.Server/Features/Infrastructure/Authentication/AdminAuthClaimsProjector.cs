@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
@@ -30,14 +29,13 @@ internal static class AdminAuthClaimsProjector
         return new ClaimsPrincipal(identity);
     }
 
-    public static bool TryProjectSessionClaims(
-        string? accessToken,
-        string? idToken,
+    public static bool TryProjectValidatedClaims(
+        IEnumerable<Claim> sourceClaims,
         out IReadOnlyList<AdminAuthSessionClaim> claims)
     {
-        var projectedClaims = new List<Claim>();
-        AppendJwtClaimsIfReadable(projectedClaims, idToken);
-        AppendJwtClaimsIfReadable(projectedClaims, accessToken);
+        ArgumentNullException.ThrowIfNull(sourceClaims);
+
+        var projectedClaims = sourceClaims.ToList();
 
         if (projectedClaims.Count == 0)
         {
@@ -82,22 +80,5 @@ internal static class AdminAuthClaimsProjector
         {
             claims.Add(new Claim("auth_type", authTypeClaimValue));
         }
-    }
-
-    private static void AppendJwtClaimsIfReadable(List<Claim> target, string? token)
-    {
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return;
-        }
-
-        var handler = new JwtSecurityTokenHandler();
-        if (!handler.CanReadToken(token))
-        {
-            return;
-        }
-
-        var jwt = handler.ReadJwtToken(token);
-        target.AddRange(jwt.Claims);
     }
 }

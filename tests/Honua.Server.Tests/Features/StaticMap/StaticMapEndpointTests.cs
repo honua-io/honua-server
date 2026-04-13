@@ -100,6 +100,20 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}")]
+    public async Task Bbox_DatelineCrossing_ReturnsImage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/bbox/170,-10,-170,10/800x600.png");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"body length={content.Length}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}")]
     public async Task Bbox_InvalidBbox_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
@@ -111,11 +125,11 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}")]
-    public async Task Bbox_InvertedBbox_ReturnsBadRequest()
+    public async Task Bbox_InvertedLatitudeRange_ReturnsBadRequest()
     {
-        // xmin > xmax
+        // ymin > ymax
         var response = await _fixture.Client.GetAsync(
-            $"/static/{WebAppFixture.TestServiceId}/bbox/-122.3,37.7,-122.5,37.9/800x600.png");
+            $"/static/{WebAppFixture.TestServiceId}/bbox/-122.5,37.9,-122.3,37.7/800x600.png");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

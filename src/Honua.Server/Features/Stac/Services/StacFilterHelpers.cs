@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Validation;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -39,22 +40,15 @@ internal static class StacFilterHelpers
             .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Stac))
             .ToArray();
 
-        var layerToService = new Dictionary<int, ServiceDefinition>();
-        foreach (var service in stacServices)
-        {
-            foreach (var serviceLayer in service.Layers)
-            {
-                layerToService.TryAdd(serviceLayer.Id, service);
-            }
-        }
-
-        var protocolLayerIds = layerToService.Keys.ToHashSet();
+        var allServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+        var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(stacServices, ServiceProtocols.Stac);
         return allLayers
-            .Where(layer => protocolLayerIds.Count == 0
-                ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Stac)
-                : protocolLayerIds.Contains(layer.Id))
-            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
-                context, layer, layerToService.GetValueOrDefault(layer.Id)))
+            .Where(layer => layerToService.TryGetValue(layer.Id, out var service)
+                ? AccessPolicyHelpers.IsLayerAccessible(context, layer, service)
+                : allServices.ContainsKey(layer.Id)
+                    ? false
+                : ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Stac) &&
+                  AccessPolicyHelpers.IsLayerAccessible(context, layer))
             .ToArray();
     }
 
@@ -77,7 +71,47 @@ internal static class StacFilterHelpers
             return null;
         }
 
+        if (!TryValidateBboxCoordinates(west, south, east, north, out _))
+        {
+            return null;
+        }
+
         return CreateBboxSpatialFilter(west, south, east, north);
+    }
+
+    internal static bool TryValidateBboxCoordinates(
+        double west,
+        double south,
+        double east,
+        double north,
+        out string? error)
+    {
+        if (!double.IsFinite(west) || !double.IsFinite(south) || !double.IsFinite(east) || !double.IsFinite(north))
+        {
+            error = "bbox contains a non-finite numeric value.";
+            return false;
+        }
+
+        if (south > north)
+        {
+            error = "bbox latitude values are out of range.";
+            return false;
+        }
+
+        if (south < -90.0 || south > 90.0 || north < -90.0 || north > 90.0)
+        {
+            error = "bbox latitude values are out of range.";
+            return false;
+        }
+
+        if (west < -180.0 || west > 180.0 || east < -180.0 || east > 180.0)
+        {
+            error = "bbox longitude values are out of range.";
+            return false;
+        }
+
+        error = null;
+        return true;
     }
 
     /// <summary>

@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.OData.Models;
+using Honua.Server.Tests.Features.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -889,6 +892,50 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var message = await GetODataErrorMessageAsync(response);
         message.Should().Contain("maximum allowed size");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch with mixed access")]
+    public async Task Batch_MixedAccess_ReturnsPerItemResponses()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
+                betaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["beta-reader"])));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests =
+            [
+                new ODataBatchRequestItem
+                {
+                    Id = "read-alpha",
+                    Method = "GET",
+                    Url = $"Layers({ServiceRbacTestFixture.AlphaLayerId})"
+                },
+                new ODataBatchRequestItem
+                {
+                    Id = "read-beta",
+                    Method = "GET",
+                    Url = $"Layers({ServiceRbacTestFixture.BetaLayerId})"
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = document.RootElement.GetProperty("responses").EnumerateArray().ToArray();
+        responses.Should().HaveCount(2);
+        responses[0].GetProperty("status").GetInt32().Should().Be(200);
+        responses[1].GetProperty("status").GetInt32().Should().Be(403);
     }
 
     #endregion

@@ -22,12 +22,16 @@ using Honua.Server.Features.OgcTiles.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using NetTopologySuite;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.OgcTiles;
 
 internal static class TilesEndpoints
 {
     private const string OgcApiTilesProtocol = "OGC-API-Tiles";
+    private static readonly WKBWriter BboxWkbWriter = new();
 
     public static IEndpointRouteBuilder MapTilesEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -269,7 +273,7 @@ internal static class TilesEndpoints
         }
 
         var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
         if (!IsOgcApiTilesEnabled(layer, primaryService))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
@@ -332,7 +336,7 @@ internal static class TilesEndpoints
         }
 
         var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
         if (!IsOgcApiTilesEnabled(layer, primaryService))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
@@ -409,7 +413,7 @@ internal static class TilesEndpoints
                 }
 
                 var services = await layerCatalog.ListServicesAsync(cancellationToken);
-                var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+                var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
                 if (!IsOgcApiTilesEnabled(layer, primaryService))
                 {
                     return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
@@ -809,7 +813,33 @@ internal static class TilesEndpoints
     }
 
     private static SpatialFilter CreateBboxSpatialFilter(TileBounds bounds, int srid)
-        => SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
+    {
+        if (SpatialReference.Create(srid).IsGeographic && bounds.XMin > bounds.XMax)
+        {
+            var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
+            var westernHemisphere = geometryFactory.CreatePolygon(
+            [
+                new Coordinate(bounds.XMin, bounds.YMin),
+                new Coordinate(180.0, bounds.YMin),
+                new Coordinate(180.0, bounds.YMax),
+                new Coordinate(bounds.XMin, bounds.YMax),
+                new Coordinate(bounds.XMin, bounds.YMin)
+            ]);
+            var easternHemisphere = geometryFactory.CreatePolygon(
+            [
+                new Coordinate(-180.0, bounds.YMin),
+                new Coordinate(bounds.XMax, bounds.YMin),
+                new Coordinate(bounds.XMax, bounds.YMax),
+                new Coordinate(-180.0, bounds.YMax),
+                new Coordinate(-180.0, bounds.YMin)
+            ]);
+
+            var multiPolygon = geometryFactory.CreateMultiPolygon([westernHemisphere, easternHemisphere]);
+            return SpatialFilter.Create(BboxWkbWriter.Write(multiPolygon), SpatialRelationship.Intersects, srid);
+        }
+
+        return SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
+    }
 
     private static IEnumerable<TileSetItem> BuildDatasetTileSetItems(
         string titleBase,
@@ -1012,7 +1042,7 @@ internal static class TilesEndpoints
         CancellationToken cancellationToken)
     {
         var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol);
 
         if (string.IsNullOrWhiteSpace(collections))
         {

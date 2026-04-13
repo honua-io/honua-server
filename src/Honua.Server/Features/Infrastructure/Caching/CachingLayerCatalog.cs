@@ -107,20 +107,14 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
     {
         var listKey = await ScopeKeyAsync(LayerListKey, cancellationToken).ConfigureAwait(false);
-
-        // Use wrapper type for proper serialization
-        CachedLayerList? cached = await _cacheService.GetAsync<CachedLayerList>(listKey, cancellationToken).ConfigureAwait(false);
-        if (cached != null)
-            return cached.Layers;
-
-        // Fetch from underlying catalog
-        LayerDefinition[] layers = await _innerCatalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
-
-        // Cache the result
         var ttl = _options.GetLayerTtlWithJitter();
-        await _cacheService.SetAsync(listKey, new CachedLayerList(layers), ttl, cancellationToken).ConfigureAwait(false);
+        CachedLayerList? cached = await _cacheService.GetOrSetAsync(
+            listKey,
+            async ct => new CachedLayerList(await _innerCatalog.ListLayersAsync(ct).ConfigureAwait(false)),
+            ttl,
+            cancellationToken).ConfigureAwait(false);
 
-        return layers;
+        return cached?.Layers ?? [];
     }
 
     /// <inheritdoc />
@@ -180,20 +174,14 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
     {
         var listKey = await ScopeKeyAsync(ServiceListKey, cancellationToken).ConfigureAwait(false);
-
-        // Use wrapper type for proper serialization
-        CachedServiceList? cached = await _cacheService.GetAsync<CachedServiceList>(listKey, cancellationToken).ConfigureAwait(false);
-        if (cached != null)
-            return cached.Services;
-
-        // Fetch from underlying catalog
-        ServiceDefinition[] services = await _innerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
-
-        // Cache the result
         var ttl = _options.GetServiceTtlWithJitter();
-        await _cacheService.SetAsync(listKey, new CachedServiceList(services), ttl, cancellationToken).ConfigureAwait(false);
+        CachedServiceList? cached = await _cacheService.GetOrSetAsync(
+            listKey,
+            async ct => new CachedServiceList(await _innerCatalog.ListServicesAsync(ct).ConfigureAwait(false)),
+            ttl,
+            cancellationToken).ConfigureAwait(false);
 
-        return services;
+        return cached?.Services ?? [];
     }
 
     /// <inheritdoc />
@@ -212,27 +200,32 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
             return cachedExists.Exists;
         }
 
-        LayerDefinition? cachedLayer = await _cacheService
-            .GetAsync<LayerDefinition>(cacheKey, cancellationToken)
-            .ConfigureAwait(false);
-        if (cachedLayer != null)
+        CachedExistenceResult? exists = await _cacheService.GetOrSetAsync(
+            existsKey,
+            async ct =>
+            {
+                LayerDefinition? cachedLayer = await _cacheService
+                    .GetAsync<LayerDefinition>(cacheKey, ct)
+                    .ConfigureAwait(false);
+                if (cachedLayer != null)
+                {
+                    return new CachedExistenceResult(true);
+                }
+
+                bool found = await _innerCatalog.LayerExistsAsync(layerId, ct).ConfigureAwait(false);
+                return new CachedExistenceResult(found);
+            },
+            positiveTtl,
+            cancellationToken).ConfigureAwait(false);
+
+        if (exists is { Exists: false })
         {
             await _cacheService
-                .SetAsync(existsKey, new CachedExistenceResult(true), positiveTtl, cancellationToken)
+                .SetAsync(existsKey, exists, negativeTtl, cancellationToken)
                 .ConfigureAwait(false);
-            return true;
         }
 
-        bool exists = await _innerCatalog.LayerExistsAsync(layerId, cancellationToken).ConfigureAwait(false);
-        await _cacheService
-            .SetAsync(
-                existsKey,
-                new CachedExistenceResult(exists),
-                exists ? positiveTtl : negativeTtl,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        return exists;
+        return exists?.Exists ?? false;
     }
 
     /// <inheritdoc />
@@ -252,27 +245,32 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
             return cachedExists.Exists;
         }
 
-        ServiceDefinition? cachedService = await _cacheService
-            .GetAsync<ServiceDefinition>(cacheKey, cancellationToken)
-            .ConfigureAwait(false);
-        if (cachedService != null)
+        CachedExistenceResult? exists = await _cacheService.GetOrSetAsync(
+            existsKey,
+            async ct =>
+            {
+                ServiceDefinition? cachedService = await _cacheService
+                    .GetAsync<ServiceDefinition>(cacheKey, ct)
+                    .ConfigureAwait(false);
+                if (cachedService != null)
+                {
+                    return new CachedExistenceResult(true);
+                }
+
+                bool found = await _innerCatalog.ServiceExistsAsync(serviceName, ct).ConfigureAwait(false);
+                return new CachedExistenceResult(found);
+            },
+            positiveTtl,
+            cancellationToken).ConfigureAwait(false);
+
+        if (exists is { Exists: false })
         {
             await _cacheService
-                .SetAsync(existsKey, new CachedExistenceResult(true), positiveTtl, cancellationToken)
+                .SetAsync(existsKey, exists, negativeTtl, cancellationToken)
                 .ConfigureAwait(false);
-            return true;
         }
 
-        bool exists = await _innerCatalog.ServiceExistsAsync(serviceName, cancellationToken).ConfigureAwait(false);
-        await _cacheService
-            .SetAsync(
-                existsKey,
-                new CachedExistenceResult(exists),
-                exists ? positiveTtl : negativeTtl,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        return exists;
+        return exists?.Exists ?? false;
     }
 
     /// <inheritdoc />

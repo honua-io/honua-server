@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Configuration;
 using System.Collections.Immutable;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
@@ -13,6 +14,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 
 // Behavior reference: Replication durability (#383)
 // Uses IChangeTracker for monotonic generation counters and incremental delta extraction
@@ -42,20 +44,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
-        if (accessError != null)
-        {
-            return accessError;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
-            context,
-            service,
-            cancellationToken);
-        if (rbacError != null)
-        {
-            return rbacError;
-        }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
@@ -93,6 +81,19 @@ internal static partial class FeatureServerEndpoints
             return layerError ?? StandardErrorHelpers.CreateBadRequest(
                 context,
                 "layers parameter contains one or more invalid layer IDs for this service.");
+        }
+
+        var createLayers = service.Layers
+            .Where(layer => layerIds.Contains(layer.Id))
+            .ToArray();
+        var createRbacError = await RequireReplicaWriteAccessAsync(
+            context,
+            service,
+            createLayers,
+            cancellationToken);
+        if (createRbacError != null)
+        {
+            return createRbacError;
         }
 
         var replicaId = Guid.NewGuid().ToString("N");
@@ -150,12 +151,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
-        if (accessError != null)
-        {
-            return accessError;
-        }
-
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -193,7 +188,7 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersForExtract(context, service, replica, out var replicaLayers, out var replicaLayerError))
+        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -205,6 +200,7 @@ internal static partial class FeatureServerEndpoints
         var layerChanges = new List<LayerChanges>();
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
 
         // Special case: LastSyncGeneration == 0 means pre-migration data or first sync;
         // fall back to "all features as adds" for backward compatibility.
@@ -212,7 +208,18 @@ internal static partial class FeatureServerEndpoints
         {
             foreach (var layer in replicaLayers)
             {
-                var result = await featureReader.QueryAsync(layer.Id, new FeatureQuery(), cancellationToken);
+                var result = await featureReader.QueryAsync(
+                    layer.Id,
+                    new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 },
+                    cancellationToken);
+                if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Replica '{replicaId}' initial extract exceeds the configured per-layer record limit.",
+                        [$"Layer {layer.Id} returned more than {queryLimits.MaxRecordCount} features."]);
+                }
+
                 var addFeatures = result.Items
                     .Select(f => ConvertFeatureToGeoServices(f))
                     .ToArray();
@@ -261,6 +268,16 @@ internal static partial class FeatureServerEndpoints
                         .Where(c => c.Operation == FeatureChangeOperation.Delete)
                         .Select(c => c.ObjectId)
                         .ToArray();
+
+                    if (insertIds.Length > queryLimits.MaxRecordCount ||
+                        updateIds.Length > queryLimits.MaxRecordCount ||
+                        deleteIds.Length > queryLimits.MaxRecordCount)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            $"Replica '{replicaId}' extract exceeds the configured per-layer change limit.",
+                            [$"Layer {layer.Id} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]);
+                    }
 
                     // Query actual features for inserts and updates
                     GeoServicesFeature[]? addFeatures = null;
@@ -344,20 +361,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
-        if (accessError != null)
-        {
-            return accessError;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
-            context,
-            service,
-            cancellationToken);
-        if (rbacError != null)
-        {
-            return rbacError;
-        }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
@@ -396,11 +399,21 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersForExtract(context, service, replica, out var replicaLayers, out var replicaLayerError))
+        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var synchronizeRbacError = await RequireReplicaWriteAccessAsync(
+            context,
+            service,
+            replicaLayers,
+            cancellationToken);
+        if (synchronizeRbacError != null)
+        {
+            return synchronizeRbacError;
         }
 
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
@@ -501,20 +514,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
-        if (accessError != null)
-        {
-            return accessError;
-        }
-
-        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
-            context,
-            service,
-            cancellationToken);
-        if (rbacError != null)
-        {
-            return rbacError;
-        }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
@@ -546,6 +545,23 @@ internal static partial class FeatureServerEndpoints
         {
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        {
+            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var unregisterRbacError = await RequireReplicaWriteAccessAsync(
+            context,
+            service,
+            replicaLayers,
+            cancellationToken);
+        if (unregisterRbacError != null)
+        {
+            return unregisterRbacError;
         }
 
         var removed = await replicaStore.RemoveAsync(replicaId, cancellationToken);
@@ -644,10 +660,11 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    private static bool TryResolveReplicaLayersForExtract(
+    private static bool TryResolveReplicaLayers(
         HttpContext context,
         ServiceDefinition service,
         ReplicaState replica,
+        AccessScope scope,
         out LayerDefinition[] layers,
         out IResult? error)
     {
@@ -667,7 +684,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service, scope);
             if (accessError != null)
             {
                 error = accessError;
@@ -687,6 +704,28 @@ internal static partial class FeatureServerEndpoints
 
         layers = resolved.ToArray();
         return true;
+    }
+
+    private static async Task<IResult?> RequireReplicaWriteAccessAsync(
+        HttpContext context,
+        ServiceDefinition service,
+        IEnumerable<LayerDefinition> layers,
+        CancellationToken cancellationToken)
+    {
+        foreach (var layer in layers.DistinctBy(static layer => layer.Id))
+        {
+            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+                context,
+                layer,
+                service,
+                cancellationToken);
+            if (rbacError != null)
+            {
+                return rbacError;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

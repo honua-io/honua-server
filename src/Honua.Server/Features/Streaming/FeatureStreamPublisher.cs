@@ -49,11 +49,11 @@ internal sealed partial class FeatureStreamPublisher(
         // Enrichment data (geometry envelope + properties) is carried on the message
         // for subscription filter evaluation during broadcast — no I/O in the hot path.
         var envelope = ToEnvelope(persisted);
-        // Session manager handles both local delivery and cross-node fan-out.
+        // Broadcast() returns the local delivery count only; cross-node fan-out is handled separately.
         var delivered = _sessionManager.Broadcast(
             FeatureStreamMessage.Data(envelope, persisted.GeometryEnvelope, persisted.PropertiesJson));
 
-        FeatureStreamLog.EventBroadcast(_logger, delivered, persisted.Cursor);
+        LogLocalEventBroadcast(_logger, delivered, persisted.Cursor);
     }
 
     internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e) => new()
@@ -80,6 +80,9 @@ internal sealed partial class FeatureStreamPublisher(
     [LoggerMessage(EventId = 5102, Level = LogLevel.Warning, Message = "Failed to queue feature-change publish retry.")]
     private static partial void LogRetryQueueFailed(ILogger logger, Exception exception);
 
+    [LoggerMessage(EventId = 5103, Level = LogLevel.Debug, Message = "Feature stream event delivered locally to {Count} sessions (cursor={Cursor})")]
+    private static partial void LogLocalEventBroadcast(ILogger logger, int count, long cursor);
+
     private async Task QueueRetryAsync(FeatureChangeEventRequest request)
     {
         if (_retryQueue == null)
@@ -94,6 +97,7 @@ internal sealed partial class FeatureStreamPublisher(
         catch (Exception ex)
         {
             LogRetryQueueFailed(_logger, ex);
+            throw;
         }
     }
 }

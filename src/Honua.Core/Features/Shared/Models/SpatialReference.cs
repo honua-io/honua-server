@@ -77,21 +77,81 @@ public readonly record struct SpatialReference
     /// Whether this is a geographic (lat/lon) coordinate system.
     /// Checks WKT first (most reliable), then falls back to EPSG code heuristics.
     /// </summary>
-    public readonly bool IsGeographic => IsProjectedByWkt()
-        ? false
-        : IsGeographicByWkt() || IsGeographicByWkid(Wkid);
+    public readonly bool IsGeographic => TryClassifyWkt(out var isGeographic)
+        ? isGeographic
+        : IsGeographicByWkid(Wkid);
+
+    private readonly bool TryClassifyWkt(out bool isGeographic)
+    {
+        isGeographic = false;
+
+        if (string.IsNullOrWhiteSpace(Wkt))
+        {
+            return false;
+        }
+
+        if (IsProjectedByWkt())
+        {
+            isGeographic = false;
+            return true;
+        }
+
+        if (IsGeocentricByWkt())
+        {
+            isGeographic = false;
+            return true;
+        }
+
+        if (IsGeographicByWkt())
+        {
+            isGeographic = true;
+            return true;
+        }
+
+        return false;
+    }
 
     private readonly bool IsProjectedByWkt() =>
-        Wkt?.Contains("PROJCS", StringComparison.Ordinal) == true ||
-        Wkt?.Contains("PROJCRS", StringComparison.Ordinal) == true;
+        Wkt?.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("PROJECTEDCRS", StringComparison.OrdinalIgnoreCase) == true ||
+        (Wkt?.Contains("+proj=", StringComparison.OrdinalIgnoreCase) == true &&
+         !Wkt.Contains("+proj=longlat", StringComparison.OrdinalIgnoreCase) &&
+         !Wkt.Contains("+proj=latlong", StringComparison.OrdinalIgnoreCase) &&
+         !Wkt.Contains("+proj=latlon", StringComparison.OrdinalIgnoreCase) &&
+         !Wkt.Contains("+proj=geocent", StringComparison.OrdinalIgnoreCase));
+
+    private readonly bool IsGeocentricByWkt() =>
+        Wkt?.Contains("GEOCS", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("GEOCENTRIC", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("+proj=geocent", StringComparison.OrdinalIgnoreCase) == true ||
+        (Wkt?.Contains("GEODCRS", StringComparison.OrdinalIgnoreCase) == true &&
+         (Wkt.Contains("CS[Cartesian", StringComparison.OrdinalIgnoreCase) ||
+          Wkt.Contains("AXIS[\"X\"", StringComparison.OrdinalIgnoreCase) ||
+          Wkt.Contains("AXIS[\"Y\"", StringComparison.OrdinalIgnoreCase) ||
+          Wkt.Contains("AXIS[\"Z\"", StringComparison.OrdinalIgnoreCase)));
 
     private readonly bool IsGeographicByWkt() =>
-        Wkt?.Contains("GEOGCS", StringComparison.Ordinal) == true ||
-        Wkt?.Contains("GEOGCRS", StringComparison.Ordinal) == true ||
-        Wkt?.Contains("GEODCRS", StringComparison.Ordinal) == true;
+        Wkt?.Contains("GEOGCS", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("GEOGCRS", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("+proj=longlat", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("+proj=latlong", StringComparison.OrdinalIgnoreCase) == true ||
+        Wkt?.Contains("+proj=latlon", StringComparison.OrdinalIgnoreCase) == true ||
+        (Wkt?.Contains("GEODCRS", StringComparison.OrdinalIgnoreCase) == true &&
+         (Wkt.Contains("CS[ellipsoidal", StringComparison.OrdinalIgnoreCase) ||
+          Wkt.Contains("ELLIPSOIDAL", StringComparison.OrdinalIgnoreCase) ||
+          Wkt.Contains("AXIS[\"Longitude\"", StringComparison.OrdinalIgnoreCase) ||
+          Wkt.Contains("AXIS[\"Latitude\"", StringComparison.OrdinalIgnoreCase)));
 
     private static bool IsGeographicByWkid(int wkid)
-        => wkid is 4326 or 4269 or 4267 or 4258 or 4979;
+        => wkid switch
+        {
+            // Keep the numeric fallback deliberately narrow. The EPSG 4xxx block
+            // contains a mix of geographic, geocentric, and projected CRSes, so
+            // treating the whole range as lat/lon causes wrong axis order and scale math.
+            4230 or 4258 or 4267 or 4269 or 4277 or 4326 or 4979 => true,
+            _ => false
+        };
 
     /// <summary>
     /// Whether this is a projected coordinate system

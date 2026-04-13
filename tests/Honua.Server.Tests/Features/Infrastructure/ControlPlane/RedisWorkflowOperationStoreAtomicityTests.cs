@@ -108,7 +108,7 @@ public sealed class RedisWorkflowOperationStoreAtomicityTests
 
             redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-            database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
                 .Returns(call =>
                 {
                     var key = call.ArgAt<RedisKey>(0).ToString();
@@ -156,7 +156,7 @@ public sealed class RedisWorkflowOperationStoreAtomicityTests
 
             database.CreateTransaction().Returns(transaction);
 
-            transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
                 .Returns(Task.FromResult(true));
             transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
                 .Returns(Task.FromResult(true));
