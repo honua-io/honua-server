@@ -125,10 +125,30 @@ internal static class OperationsProgressEndpoints
 
         // List payloads need stable cross-operation keys for generic admin clients
         // while still preserving the type-specific fields from each concrete progress DTO.
-        operation.TryAdd("operationId", progress.OperationId);
-        operation.TryAdd("type", (int)progress.Type);
+        NormalizeCanonicalProperty(operation, "operationId", JsonValue.Create(progress.OperationId));
+        NormalizeCanonicalProperty(operation, "type", JsonValue.Create((int)progress.Type));
 
         return JsonSerializer.SerializeToElement(operation);
+    }
+
+    private static void NormalizeCanonicalProperty(JsonObject operation, string propertyName, JsonNode? value)
+    {
+        var duplicateKeys = new List<string>();
+
+        foreach (var property in operation)
+        {
+            if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                duplicateKeys.Add(property.Key);
+            }
+        }
+
+        foreach (var duplicateKey in duplicateKeys)
+        {
+            operation.Remove(duplicateKey);
+        }
+
+        operation[propertyName] = value;
     }
 
     /// <summary>
