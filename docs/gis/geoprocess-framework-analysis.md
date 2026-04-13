@@ -389,7 +389,7 @@ This ticket builds the canonical process contract. It must:
 - Maps GPServer REST routes over canonical process service operations (`GPServerEndpoints.cs`)
 - Translates Esri GP parameter types to/from canonical step inputs and `ArtifactKind` (`GPServerParameterTranslation.cs`)
 - Maps `ExecutionJobStatus` to Esri job status strings per the state matrix above (`GPServerStatusMapping.cs`)
-- Decomposes `AnalysisResultPackage.Artifacts` into per-parameter result endpoints via the `geoservices.output_parameter` metadata key
+- Routes per-parameter result endpoints via the `geoservices.output_parameter` metadata key (route registered; actual output retrieval pending execution-engine/result-storage support)
 - Persists route binding metadata (`gpserver.serviceId`, `gpserver.taskName`) at submit time and validates it on status/result/cancel to prevent cross-protocol job access
 - Does not add internal domain types or lifecycle states
 
