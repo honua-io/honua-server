@@ -71,6 +71,21 @@ stale heartbeats, abandoned jobs, retry exhaustion, and claim-recovery
 events. For lifecycle details and tuning, see
 [Operations — Job Orchestration](operations.md#job-orchestration).
 
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Repeated heartbeat expiry | > 2 expiry events in 10 min | `JobReconciliationService` Warning/Error |
+| Retry exhaustion spike | > 1 exhaustion event in 5 min | `JobReconciliationService` Error |
+| Claim rollback failures | Any occurrence | `RedisJobQueue` Error (`ClaimRollbackFailed`) |
+| Worker with no executors | Any occurrence at startup | `JobExecutionService` Warning |
+| Sustained claim-loop errors | > 3 errors in 5 min | `JobExecutionService` Error |
+
+Queue depth is available via `IJobQueue.GetQueueDepthAsync` but is not yet
+exposed through a public metrics endpoint. Operators requiring queue depth
+alerting can query the Redis sorted set `controlplane:jobqueue:pending`
+directly until a metrics projection is added.
+
 ---
 
 ## Workspace Lifecycle Observability

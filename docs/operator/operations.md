@@ -311,6 +311,32 @@ timeout expiry are logged at Warning/Error level. See
 for the full log level table across `JobExecutionService`,
 `JobReconciliationService`, and `RedisJobQueue`.
 
+### Policy Defaults and Tuning
+
+The substrate's timing and retry behavior is governed by built-in defaults on
+the policy models. Per-job overrides are set on the `ExecutionJobRecord` at
+submission time.
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Worker claim poll interval | 5 s | How often workers check for claimable jobs |
+| Heartbeat interval | 30 s | `JobHeartbeatPolicy.Interval` — how often the worker refreshes liveness |
+| Heartbeat timeout | 90 s | `JobHeartbeatPolicy.Timeout` — stale threshold before reconciler acts |
+| Reconciliation sweep interval | 30 s | How often the reconciler checks active jobs for expiry |
+| Stale claim threshold | 60 s | Orphaned claims in the claimed set are recovered after this window |
+| Retry max attempts | 3 | `JobRetryPolicy.MaxAttempts` — includes initial attempt (1 = no retries) |
+| Retry backoff strategy | Exponential | `JobRetryPolicy.BackoffStrategy` — Fixed, Linear, or Exponential |
+| Retry base delay | 30 s | `JobRetryPolicy.BaseDelay` — starting delay for first retry |
+| Retry max delay | 10 min | `JobRetryPolicy.MaxDelay` — upper bound on computed backoff |
+| Execution timeout | 1 h | `JobTimeoutPolicy.MaxDuration` — default ceiling |
+| Long-running timeout | 24 h | `JobTimeoutPolicy.LongRunning` preset for ETL/large workloads |
+| Execution log retention | 7 d | TTL applied to Redis log lists at job finalization |
+
+These values are compile-time defaults on the policy record types. To change
+defaults for all jobs, modify the submission path that creates
+`ExecutionJobRecord` instances. To change a single job, set the corresponding
+policy field on the record before enqueuing.
+
 ### Graceful Shutdown
 
 When a worker host shuts down, in-flight jobs are abandoned rather than
