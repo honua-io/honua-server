@@ -78,8 +78,11 @@ Adapters reshape it:
 
 - **GPServer**: decompose `Artifacts` into per-parameter result endpoints
   (`/results/{name}`), matching Esri's per-output model
-- **OGC API Processes**: return all `Artifacts` in a single
-  `/jobs/{jobId}/results` JSON response, matching OGC's envelope model
+- **OGC API Processes (v1 subset)**: return all `Artifacts` in a single
+  `/jobs/{jobId}/results` JSON response using document-mode, by-value
+  transmission. This is a Honua v1 adapter decision — the full OGC spec
+  (§7.13) also supports raw-mode responses and reference-based transmission,
+  which are deferred
 
 ### Parameter Translation Is An Adapter Concern
 
@@ -111,12 +114,16 @@ into the canonical model:
 4. **GeoServer PPIO and process groups**: GeoServer-internal concerns with no
    relevance to Honua's architecture.
 
-5. **OGC output transmission negotiation** (`value` vs `reference`): deferred.
+5. **OGC response mode negotiation** (`document` vs `raw`): deferred. V1
+   supports only document-mode responses. Raw-mode responses (direct media type,
+   multipart, `204` with `Link` headers) are out of scope.
+
+6. **OGC output transmission negotiation** (`value` vs `reference`): deferred.
    V1 returns results by value.
 
-6. **OGC callback notification**: deferred. V1 uses polling.
+7. **OGC callback notification**: deferred. V1 uses polling.
 
-7. **OGC Processes Part 2** (Deploy, Replace, Undeploy): out of scope for v1.
+8. **OGC Processes Part 2** (Deploy, Replace, Undeploy): out of scope for v1.
 
 ### Downstream Ticket Constraints
 

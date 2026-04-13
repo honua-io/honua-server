@@ -38,6 +38,7 @@
   - [OGC API Tiles](gis/specifications/ogc-api-tiles-coverage.md)
   - [OData v4](gis/specifications/odata-v4-coverage.md)
   - [Geometry Service](gis/geometry-service-matrix.md)
+  - [Geoprocess Framework Analysis](gis/geoprocess-framework-analysis.md)
 - Client Templates
   - [Setup Runbook](gis/CLIENT_TEMPLATE_RUNBOOK.md)
   - [Version Matrix](gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)

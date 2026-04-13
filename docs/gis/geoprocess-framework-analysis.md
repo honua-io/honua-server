@@ -21,7 +21,7 @@ The decision record for why Honua chose its canonical nouns lives in
 | Sync execution | `POST /{task}/execute` | WPS Execute (sync) / `POST /processes/{id}/execution` | `POST /processes/{id}/execution` (200) |
 | Async execution | `POST /{task}/submitJob` | WPS Execute (async) / `POST /processes/{id}/execution` + `Prefer: respond-async` | `POST /processes/{id}/execution` + `Prefer: respond-async` (201 + Location) |
 | Job status | `GET /{task}/jobs/{jobId}` | GetStatus / `GET /jobs/{jobId}` | `GET /jobs/{jobId}` |
-| Result retrieval | `GET /{task}/jobs/{jobId}/results/{paramName}` (per-output) | GetResult / `GET /jobs/{jobId}/results` | `GET /jobs/{jobId}/results` (single object) |
+| Result retrieval | `GET /{task}/jobs/{jobId}/results/{paramName}` (per-output) | GetResult / `GET /jobs/{jobId}/results` | `GET /jobs/{jobId}/results` (format depends on response mode) |
 | Cancellation | `POST /{task}/jobs/{jobId}/cancel` | Dismiss / `DELETE /jobs/{jobId}` | `DELETE /jobs/{jobId}` |
 | Parameter typing | Esri GP types (GPString, GPFeatureRecordSetLayer, etc.) | WPS LiteralData/ComplexData/BoundingBoxData | JSON Schema |
 
@@ -197,9 +197,21 @@ and data type. There is no single envelope for all outputs.
 
 ### OGC API Processes
 
-Results are accessed as a single JSON object: `GET /jobs/{jobId}/results`.
-All outputs are returned in one response. Output transmission can be by value
-(inline) or by reference (URI).
+`GET /jobs/{jobId}/results` retrieves outputs, but the response format depends
+on the original execute request. OGC API Processes Part 1 Core (§7.13, Table 12)
+defines behavior based on the `response` parameter (`document` or `raw`) and the
+`transmissionMode` per output (`value` or `reference`):
+
+- **Document mode** (`response=document`): returns a JSON object containing all
+  outputs keyed by output identifier. Each output may be inline (`value`) or a
+  URI (`reference`).
+- **Raw mode** (`response=raw`): for a single output, returns the output value
+  directly with the appropriate media type. For multiple outputs, may return a
+  multipart response or `204 No Content` with `Link` headers pointing to
+  individual output resources.
+
+Job status is reported on `GET /jobs/{jobId}` (§7.12), not within the results
+payload.
 
 ### GeoServer WPS
 
@@ -213,10 +225,10 @@ Honua uses `AnalysisResultPackage` as the canonical result envelope:
 | `AnalysisResultPackage` Field | GPServer Projection | OGC Projection |
 | --- | --- | --- |
 | `ResultPackageId` | — (no equivalent) | — (no equivalent) |
-| `Status` | Map from `GeoprocessingWorkflowStatus` to `jobStatus` | Map to OGC `status` |
+| `Status` | Map from `GeoprocessingWorkflowStatus` to `jobStatus` | Map to OGC `status` on `GET /jobs/{jobId}` (not part of `/results`) |
 | `Summary` (title, description) | Map to job messages | Map to result metadata |
 | `Assumptions` | — (not in GPServer) | — (not in OGC) |
-| `Artifacts` (list of `ArtifactRef`) | Project each artifact as a named result parameter | Project all artifacts as the results object |
+| `Artifacts` (list of `ArtifactRef`) | Project each artifact as a named result parameter | V1: project all artifacts as a document-mode JSON results object (see §7.13 subset below) |
 | `WorkspaceRefs` | — (not in GPServer) | — (not in OGC) |
 | `MapPackageId` | — (Honua-specific) | — (Honua-specific) |
 | `AppPackageId` | — (Honua-specific) | — (Honua-specific) |
@@ -228,8 +240,10 @@ The critical adapter difference is result access pattern:
 - **GPServer adapter** (#723): must project each `ArtifactRef` as an
   individually addressable result at `/results/{artifactLabel}`, matching
   GPServer's per-parameter result model
-- **OGC adapter** (#529): must return all artifacts in a single
-  `/jobs/{jobId}/results` response, matching OGC's envelope model
+- **OGC adapter** (#529): v1 supports document-mode, by-value results only —
+  return all artifacts in a single `/jobs/{jobId}/results` JSON response.
+  Raw-mode responses, reference-based transmission, and multipart output are
+  deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
 
 ## Cancellation Semantics
 
@@ -274,6 +288,7 @@ Adapter notes:
 
 | Behavior | Reason for Exclusion |
 | --- | --- |
+| Response mode negotiation (`document` vs `raw`) | Deferred. V1 supports only document-mode responses (single JSON object with all outputs). Raw-mode responses (direct media type, multipart, or `204` with `Link` headers) can be added when single-output streaming or large-result downloads are needed. |
 | Output transmission negotiation (`value` vs `reference`) | Deferred. V1 returns results by value. Reference-based output can be added when large-result streaming is needed. |
 | `Prefer: return=minimal` / `return=representation` | Deferred. V1 returns full job representation on creation. |
 | Nested process execution (Part 2: Deploy, Replace, Undeploy) | Out of scope. Honua does not support user-deployed process definitions in v1. |
@@ -336,7 +351,7 @@ API Processes Part 1 Core contract. Key mappings:
 | `POST /processes/{id}/execution` (sync) | `ProcessService.ExecutePlan` |
 | `POST /processes/{id}/execution` (async) | `ProcessService.SubmitPlanJob` |
 | `GET /jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
-| `GET /jobs/{jobId}/results` | `ProcessService.GetJobResults` → full `AnalysisResultPackage.Artifacts` as single JSON |
+| `GET /jobs/{jobId}/results` | `ProcessService.GetJobResults` → v1: document-mode, by-value only (full `AnalysisResultPackage.Artifacts` as single JSON) |
 | `DELETE /jobs/{jobId}` | `ProcessService.CancelJob` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
 | `jobControlOptions` | Derived from process definition capabilities |
@@ -346,7 +361,7 @@ Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Input/output schema translation to JSON Schema is the adapter's responsibility
-3. Results must be returned as a single JSON object, not per-parameter
+3. V1 results use document-mode, by-value only: return a single JSON object with all outputs, not per-parameter. Raw-mode and reference-based transmission are deferred
 4. `DELETE /jobs/{jobId}` maps to cancellation, not resource deletion — the canonical job record persists
 
 ## Backlog Guidance
@@ -377,7 +392,7 @@ This is a **protocol adapter** ticket. It must:
 - Implement OGC API Processes Part 1 Core routes that project canonical process service operations
 - Translate JSON Schema process descriptions from canonical process definitions
 - Map `ExecutionJobStatus` to OGC job status strings per the state matrix above
-- Return results as a single JSON envelope
+- V1: return results as document-mode, by-value JSON (raw-mode and reference transmission deferred)
 - Support `Prefer: respond-async` negotiation
 - Not add internal domain types or lifecycle states
 
