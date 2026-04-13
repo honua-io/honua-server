@@ -271,18 +271,25 @@ internal sealed partial class JobExecutionService(
         {
             Log.JobAbandoned(logger, current.OperationId, reason);
 
+            var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
+            var now = DateTimeOffset.UtcNow;
             var abandoned = current with
             {
                 Status = ExecutionJobStatus.Queued,
                 ClaimedBy = null,
                 ClaimedAt = null,
                 LastHeartbeatAt = null,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = $"Requeued: {reason}"
+                UpdatedAt = now,
+                CurrentPhase = $"Requeued: {reason}",
+                PercentComplete = null,
+                ErrorMessage = null,
+                ProviderOperationId = null,
+                CompletedAt = null,
+                ArtifactReferences = Array.Empty<string>(),
+                NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
             await jobQueue.RequeueAsync(
                 current.OperationId,
                 current.Priority,

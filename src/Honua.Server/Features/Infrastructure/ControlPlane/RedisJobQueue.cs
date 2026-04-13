@@ -181,7 +181,8 @@ internal sealed partial class RedisJobQueue(
                     LastHeartbeatAt = now,
                     AttemptCount = job.AttemptCount + 1,
                     UpdatedAt = now,
-                    CurrentPhase = "Claimed"
+                    CurrentPhase = "Claimed",
+                    NextRetryAt = null
                 };
 
                 try
@@ -296,8 +297,17 @@ internal sealed partial class RedisJobQueue(
                 await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
                 Log.OrphanedClaimRequeued(logger, operationId);
             }
-            // Provisioning/Running with expired heartbeat is handled by the main
-            // reconciliation sweep.
+            else if (job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
+                     && job.LastHeartbeatAt.HasValue)
+            {
+                // Healthy long-running job: refresh the claimed-set score to the
+                // last heartbeat time so future sweeps skip it until the heartbeat
+                // genuinely goes cold. Expired heartbeats are handled by the main
+                // reconciliation sweep in JobReconciliationService.
+                await _database.SortedSetAddAsync(
+                    ClaimedSetKey, operationId,
+                    (double)job.LastHeartbeatAt.Value.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+            }
         }
     }
 

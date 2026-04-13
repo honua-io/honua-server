@@ -139,6 +139,7 @@ internal sealed partial class JobReconciliationService(
         {
             Log.HeartbeatExpiredRetrying(logger, job.OperationId, job.AttemptCount, retryPolicy.MaxAttempts);
 
+            var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
             var abandoned = job with
             {
                 Status = ExecutionJobStatus.Queued,
@@ -146,11 +147,16 @@ internal sealed partial class JobReconciliationService(
                 ClaimedAt = null,
                 LastHeartbeatAt = null,
                 UpdatedAt = now,
-                CurrentPhase = $"Retrying (attempt {job.AttemptCount + 1}/{retryPolicy.MaxAttempts})"
+                CurrentPhase = $"Retrying (attempt {job.AttemptCount + 1}/{retryPolicy.MaxAttempts})",
+                PercentComplete = null,
+                ErrorMessage = null,
+                ProviderOperationId = null,
+                CompletedAt = null,
+                ArtifactReferences = Array.Empty<string>(),
+                NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
             await jobQueue.RequeueAsync(
                 job.OperationId,
                 job.Priority,
