@@ -3,7 +3,7 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -268,15 +268,15 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         }
     }
 
-    private static Honua.Core.Features.Security.SslMode MapSslMode(Npgsql.SslMode sslMode)
+    private static Honua.Core.Features.Security.Domain.SslMode MapSslMode(Npgsql.SslMode sslMode)
         => sslMode switch
         {
-            Npgsql.SslMode.Disable => Honua.Core.Features.Security.SslMode.Disable,
-            Npgsql.SslMode.Allow => Honua.Core.Features.Security.SslMode.Allow,
-            Npgsql.SslMode.Prefer => Honua.Core.Features.Security.SslMode.Prefer,
-            Npgsql.SslMode.Require => Honua.Core.Features.Security.SslMode.Require,
-            Npgsql.SslMode.VerifyCA => Honua.Core.Features.Security.SslMode.VerifyCa,
-            Npgsql.SslMode.VerifyFull => Honua.Core.Features.Security.SslMode.VerifyFull,
+            Npgsql.SslMode.Disable => Honua.Core.Features.Security.Domain.SslMode.Disable,
+            Npgsql.SslMode.Allow => Honua.Core.Features.Security.Domain.SslMode.Allow,
+            Npgsql.SslMode.Prefer => Honua.Core.Features.Security.Domain.SslMode.Prefer,
+            Npgsql.SslMode.Require => Honua.Core.Features.Security.Domain.SslMode.Require,
+            Npgsql.SslMode.VerifyCA => Honua.Core.Features.Security.Domain.SslMode.VerifyCa,
+            Npgsql.SslMode.VerifyFull => Honua.Core.Features.Security.Domain.SslMode.VerifyFull,
             _ => throw new InvalidOperationException($"Unsupported Npgsql SSL mode '{sslMode}'.")
         };
 

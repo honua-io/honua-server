@@ -3,11 +3,11 @@
 
 using System.Data.Common;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using CoreSslMode = Honua.Core.Features.Security.SslMode;
+using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Postgres.Features.Security;
 

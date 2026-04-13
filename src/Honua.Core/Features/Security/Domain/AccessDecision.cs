@@ -1,4 +1,7 @@
-namespace Honua.Core.Features.Security;
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+namespace Honua.Core.Features.Security.Domain;
 
 /// <summary>
 /// Represents the decision result of an access authorization check.

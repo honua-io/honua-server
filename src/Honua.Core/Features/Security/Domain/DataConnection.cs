@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Core.Features.Security;
+namespace Honua.Core.Features.Security.Domain;
 
 /// <summary>
 /// Represents a secure data connection configuration.
@@ -173,6 +173,46 @@ public class DataConnection
             SslRequired = sslRequired,
             SslMode = sslMode,
             IsEncrypted = true,
+            IsActive = true,
+            DatabaseType = "PostgreSQL"
+        };
+    }
+
+    /// <summary>
+    /// Creates a data connection with a secret reference.
+    /// </summary>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy,
+        bool sslRequired,
+        SslMode sslMode)
+    {
+        // Validate SSL requirements
+        if (sslRequired && (sslMode == SslMode.Allow || sslMode == SslMode.Prefer))
+        {
+            throw new InvalidOperationException("SSL mode must require encrypted transport when SslRequired is true");
+        }
+
+        return new DataConnection
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = name,
+            Host = host,
+            Port = port,
+            DatabaseName = databaseName,
+            Username = username,
+            SecretRef = secretRef,
+            SecretType = secretType,
+            CreatedBy = createdBy,
+            SslRequired = sslRequired,
+            SslMode = sslMode,
+            IsEncrypted = false, // Secret will be resolved at runtime
             IsActive = true,
             DatabaseType = "PostgreSQL"
         };
