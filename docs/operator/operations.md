@@ -204,6 +204,17 @@ logs.
 > reconciliation overhead. See
 > [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md).
 
+### Supported Job Kinds
+
+| Kind | Description |
+|------|-------------|
+| Geoprocessing | Analytical compute workloads (buffer, spatial join, etc.) |
+| ExtractTransformLoad | Data movement and transformation workloads |
+| TileCache | Tile cache generation or refresh workloads |
+
+Workers can filter which job kinds they claim. In the default configuration,
+a single worker host processes all kinds.
+
 ### Job Lifecycle
 
 | State | Meaning |
@@ -224,11 +235,27 @@ the job is considered abandoned. If retries remain, the reconciler requeues
 the job with a computed backoff delay; otherwise the job transitions to
 Failed.
 
+### Priority Queue
+
+Jobs are dequeued in priority order. Within a priority band, FIFO ordering
+applies.
+
+| Priority | Use case |
+|----------|----------|
+| Critical | Operator-initiated urgent work |
+| High | Time-sensitive processing |
+| Normal | Default for most workloads |
+| Low | Background or deferrable work |
+
 ### Retry Policy
 
 Default: 3 attempts with exponential backoff starting at 30 seconds, capped
 at 10 minutes. Per-job override is supported via `JobRetryPolicy` on the
 `ExecutionJobRecord`.
+
+Supported backoff strategies: `Fixed` (constant delay), `Linear` (delay
+grows linearly per attempt), `Exponential` (delay doubles per attempt).
+Use `JobRetryPolicy.None` to disable retries for a specific job.
 
 ### Timeout Policy
 
@@ -256,6 +283,14 @@ Active jobs surface through the existing operations endpoints:
 The reconciliation service logs sweep results at Debug level and heartbeat/
 timeout expiry at Warning/Error level. Monitor for `JobReconciliationService`
 log entries in worker hosts.
+
+### Graceful Shutdown
+
+When a worker host shuts down, in-flight jobs are abandoned rather than
+marked as terminal failures. The claim fields (`ClaimedBy`, `ClaimedAt`)
+are cleared so the reconciler can requeue the job for another worker.
+This ensures rolling deployments and scale-down events do not permanently
+fail jobs that still have retry budget.
 
 ---
 

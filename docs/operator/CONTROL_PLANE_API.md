@@ -407,6 +407,15 @@ deterministic stage and plan step counts. Cancellation is supported through the
 cancel endpoint; the server re-reads progress before writing terminal state to
 mitigate TOCTOU races with worker-owned state transitions.
 
+Jobs submitted through the durable job orchestration substrate (via
+`ProcessService.SubmitPlanJob`) surface through these same operations endpoints
+using the `Geoprocessing` operation type. The substrate tracks additional
+claim, heartbeat, and retry state internally through `IExecutionJobStore`;
+structured execution logs are stored via `IExecutionLogStore` and are not yet
+exposed through a public API endpoint. See
+[Operations — Job Orchestration](operations.md#job-orchestration) for
+lifecycle and tuning details.
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/admin/performance/database/query-cache/statistics` | GET | Query cache performance statistics |
