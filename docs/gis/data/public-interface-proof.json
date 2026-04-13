@@ -728,6 +728,36 @@
       ]
     },
     {
+      "surfaceId": "ogc-api-processes",
+      "displayName": "OGC API Processes",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Processes",
+      "canonicalIdentifier": "/ogc/processes",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/processes"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#529",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "ogc-api-tiles",
       "displayName": "OGC API Tiles",
       "surfaceKind": "http-route-family",

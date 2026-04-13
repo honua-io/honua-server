@@ -135,6 +135,13 @@ public static class Operations
     public const string QueryBufferAggregate = "QueryBufferAggregate";
     public const string QueryDensity = "QueryDensity";
 
+    // OGC API Processes Operations
+    public const string ProcessDiscovery = "ProcessDiscovery";
+    public const string ProcessExecution = "ProcessExecution";
+    public const string JobStatus = "JobStatus";
+    public const string JobResults = "JobResults";
+    public const string JobDismiss = "JobDismiss";
+
     // Streaming Operations
     public const string Streaming = "Streaming";
 

@@ -1,0 +1,305 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Diagnostics;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Ogc.Common;
+using Honua.Server.Features.OgcProcesses.Models;
+using Honua.ServiceDefaults;
+
+namespace Honua.Server.Features.OgcProcesses;
+
+/// <summary>
+/// OGC API Processes job lifecycle endpoints (status, results, dismiss, list).
+/// </summary>
+internal static class JobEndpoints
+{
+    private const string BasePath = "/ogc/processes";
+    private const string Tag = "OGC API Processes";
+
+    public static void MapOgcProcessesJobEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet($"{BasePath}/jobs", GetJobList)
+            .WithTags(Tag)
+            .WithName("OgcProcessesJobList")
+            .WithSummary("List jobs")
+            .Produces<OgcStatusInfo[]>()
+            .ExcludeFromDescription();
+
+        endpoints.MapGet($"{BasePath}/jobs/{{jobId}}", GetJobStatus)
+            .WithTags(Tag)
+            .WithName("OgcProcessesJobStatus")
+            .WithSummary("Get job status")
+            .Produces<OgcStatusInfo>()
+            .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
+            .ExcludeFromDescription();
+
+        endpoints.MapGet($"{BasePath}/jobs/{{jobId}}/results", GetJobResults)
+            .WithTags(Tag)
+            .WithName("OgcProcessesJobResults")
+            .WithSummary("Get job results")
+            .Produces<OgcResultsDocument>()
+            .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
+            .ExcludeFromDescription();
+
+        endpoints.MapDelete($"{BasePath}/jobs/{{jobId}}", DismissJob)
+            .WithTags(Tag)
+            .WithName("OgcProcessesDismissJob")
+            .WithSummary("Dismiss (cancel) a job")
+            .Produces<OgcStatusInfo>()
+            .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
+            .ExcludeFromDescription();
+    }
+
+    private static async Task<IResult> GetJobList(
+        HttpContext context,
+        ILogger<OgcProcessesEndpointsLog> logger,
+        IExecutionJobStore? jobStore = null)
+    {
+        EnrichActivity("GetJobList");
+        OgcProcessesLog.JobListRequested(logger);
+
+        if (jobStore == null)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return Results.Json(
+                Array.Empty<OgcStatusInfo>(),
+                OgcProcessesJsonContext.Default.OgcStatusInfoArray,
+                MediaTypes.Json);
+        }
+
+        var jobs = await jobStore.ListActiveAsync(
+            ExecutionJobKind.Geoprocessing,
+            context.RequestAborted).ConfigureAwait(false);
+
+        var baseUrl = GetBaseUrl(context.Request);
+        var statusInfos = jobs
+            .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(j, null, baseUrl))
+            .ToArray();
+
+        return Results.Json(statusInfos, OgcProcessesJsonContext.Default.OgcStatusInfoArray, MediaTypes.Json);
+    }
+
+    private static async Task<IResult> GetJobStatus(
+        string jobId,
+        HttpContext context,
+        ILogger<OgcProcessesEndpointsLog> logger,
+        IExecutionJobStore? jobStore = null)
+    {
+        EnrichActivity("GetJobStatus");
+        OgcProcessesLog.JobStatusRequested(logger, jobId);
+
+        if (jobStore == null)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return JobNotFoundResult(jobId);
+        }
+
+        var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+        if (job == null)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+
+        var baseUrl = GetBaseUrl(context.Request);
+        var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl);
+
+        return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json);
+    }
+
+    private static async Task<IResult> GetJobResults(
+        string jobId,
+        HttpContext context,
+        ILogger<OgcProcessesEndpointsLog> logger,
+        IExecutionJobStore? jobStore = null)
+    {
+        EnrichActivity("GetJobResults");
+        OgcProcessesLog.JobResultsRequested(logger, jobId);
+
+        if (jobStore == null)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return JobNotFoundResult(jobId);
+        }
+
+        var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+        if (job == null)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+
+        if (!OgcProcessesConversionHelpers.IsTerminal(job.Status))
+        {
+            OgcProcessesLog.JobResultsNotAvailable(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(job.Status));
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/result-not-ready",
+                    Title = "Result not ready",
+                    Status = StatusCodes.Status404NotFound,
+                    Detail = $"Job '{jobId}' has not reached a terminal state (current: {OgcProcessesConversionHelpers.ToOgcStatus(job.Status)})."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status404NotFound);
+        }
+
+        // V1: document-mode, by-value results only.
+        // Result storage will be populated when the execution engine is available.
+        // For now return an empty results document for successful jobs,
+        // or an error for failed/dismissed jobs.
+        if (job.Status == ExecutionJobStatus.Failed)
+        {
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Job failed",
+                    Status = StatusCodes.Status500InternalServerError,
+                    Detail = job.ErrorMessage ?? $"Job '{jobId}' failed."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status500InternalServerError);
+        }
+
+        if (job.Status == ExecutionJobStatus.Cancelled)
+        {
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/job-dismissed",
+                    Title = "Job dismissed",
+                    Status = StatusCodes.Status410Gone,
+                    Detail = $"Job '{jobId}' has been dismissed."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status410Gone);
+        }
+
+        // Succeeded: return empty document-mode results (execution engine not yet wired)
+        var results = new OgcResultsDocument { Outputs = new Dictionary<string, object?>() };
+        return Results.Json(results, OgcProcessesJsonContext.Default.OgcResultsDocument, MediaTypes.Json);
+    }
+
+    private static async Task<IResult> DismissJob(
+        string jobId,
+        HttpContext context,
+        ILogger<OgcProcessesEndpointsLog> logger,
+        IJobCancellationNotifier cancellationNotifier,
+        IUniversalProgressStore progressStore,
+        IExecutionJobStore? jobStore = null)
+    {
+        EnrichActivity("DismissJob");
+        OgcProcessesLog.JobDismissRequested(logger, jobId);
+
+        if (jobStore == null)
+        {
+            OgcProcessesLog.JobStoreUnavailable(logger);
+            return JobNotFoundResult(jobId);
+        }
+
+        var job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+        if (job == null)
+        {
+            OgcProcessesLog.JobNotFound(logger, jobId);
+            return JobNotFoundResult(jobId);
+        }
+
+        // Already dismissed — return current status
+        if (job.Status == ExecutionJobStatus.Cancelled)
+        {
+            var baseUrl2 = GetBaseUrl(context.Request);
+            return Results.Json(
+                OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl2),
+                OgcProcessesJsonContext.Default.OgcStatusInfo,
+                MediaTypes.Json);
+        }
+
+        // Cannot dismiss terminal jobs (succeeded/failed)
+        if (OgcProcessesConversionHelpers.IsTerminal(job.Status))
+        {
+            OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(job.Status));
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Cannot dismiss completed job",
+                    Status = StatusCodes.Status409Conflict,
+                    Detail = $"Job '{jobId}' is in terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(job.Status)}' and cannot be dismissed."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status409Conflict);
+        }
+
+        // Attempt cancellation via the canonical notifier
+        var workerOwnsTerminalState = cancellationNotifier.Cancel(jobId);
+
+        if (!workerOwnsTerminalState)
+        {
+            // No worker handling this job — transition to cancelled directly
+            var now = DateTimeOffset.UtcNow;
+            var cancelled = job with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                UpdatedAt = now,
+                CompletedAt = now,
+                CurrentPhase = "Dismissed"
+            };
+
+            await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+
+            var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                jobId, context.RequestAborted).ConfigureAwait(false);
+            if (progress != null)
+            {
+                var cancelledProgress = progress.WithCancellation(now, "Dismissed via OGC API");
+                await progressStore.SetProgressAsync(
+                    jobId, cancelledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+            }
+
+            job = cancelled;
+        }
+        else
+        {
+            // Worker will handle terminal state; re-read to get latest
+            job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false) ?? job;
+        }
+
+        var baseUrl = GetBaseUrl(context.Request);
+        return Results.Json(
+            OgcProcessesConversionHelpers.ToOgcStatusInfo(job, null, baseUrl),
+            OgcProcessesJsonContext.Default.OgcStatusInfo,
+            MediaTypes.Json);
+    }
+
+    private static IResult JobNotFoundResult(string jobId) => Results.Json(
+        new OgcProcessError
+        {
+            Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/no-such-job",
+            Title = "No such job",
+            Status = StatusCodes.Status404NotFound,
+            Detail = $"Job '{jobId}' does not exist."
+        },
+        OgcProcessesJsonContext.Default.OgcProcessError,
+        MediaTypes.Json,
+        StatusCodes.Status404NotFound);
+
+    private static void EnrichActivity(string operation)
+    {
+        var activity = Activity.Current;
+        if (activity == null) return;
+        activity.SetTag(HonuaTelemetry.Tags.Protocol, "OGC-API-Processes");
+        activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
+    }
+
+    private static string GetBaseUrl(HttpRequest request) => $"{request.Scheme}://{request.Host}";
+}

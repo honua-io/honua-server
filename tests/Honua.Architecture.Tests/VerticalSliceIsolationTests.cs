@@ -30,6 +30,7 @@ public sealed class VerticalSliceIsolationTests
         "Ogc",
         "OgcFeatures",
         "OgcMaps",
+        "OgcProcesses",
         "OgcTiles",
         "Tiles",
         "Wfs20",
