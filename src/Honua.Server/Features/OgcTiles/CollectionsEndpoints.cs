@@ -206,24 +206,24 @@ internal static class CollectionsEndpoints
             }
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-        if (layer == null)
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-        }
+            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            if (layer == null)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            }
 
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
-        if (!IsOgcApiTilesEnabled(layer, primaryService))
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-        }
+            var services = await layerCatalog.ListServicesAsync(cancellationToken);
+            var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
+            if (!IsOgcApiTilesEnabled(layer, primaryService))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
-        if (accessError != null)
-        {
-            return accessError;
-        }
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
+            if (accessError != null)
+            {
+                return accessError;
+            }
 
             var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken);
             var basePath = $"{baseUrl}/ogc/tiles/collections/{collectionId}";
