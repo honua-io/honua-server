@@ -151,9 +151,21 @@ When a worker host shuts down (e.g. rolling deployment, scale-down), in-flight
 jobs are abandoned rather than marked as terminal failures. The worker itself
 transitions the job back to Queued, clears the claim fields (`ClaimedBy`,
 `ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it with the applicable retry
-backoff delay. If the worker crashes without clean abandonment,
-`JobReconciliationService` detects the stale heartbeat and performs the same
-recovery.
+backoff delay.
+
+Both the worker and the reconciler re-read the current job record before writing
+any state transition. If the record is already terminal or the claim owner has
+changed, the writer skips its update. This bidirectional guard prevents two race
+windows:
+
+- The reconciler snapshots active jobs, then a worker finalizes before the
+  reconciler handler runs — the reconciler would otherwise overwrite the
+  terminal state.
+- The reconciler requeues or fails a job, then the worker's post-execution
+  handler runs — the worker would otherwise overwrite the reconciler's update.
+
+If a worker crashes without clean abandonment, `JobReconciliationService`
+detects the stale heartbeat and performs the same recovery.
 
 ### Integration with Canonical Process Model
 

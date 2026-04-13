@@ -53,6 +53,7 @@ background sweep.
 
 | Level | Signal |
 |-------|--------|
+| Information | Reconciliation skipped — job already terminal or claim owner changed since sweep snapshot |
 | Debug | Sweep results when at least one job was reconciled (count out of active total) |
 | Warning | Heartbeat expired — job requeued for retry |
 | Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
