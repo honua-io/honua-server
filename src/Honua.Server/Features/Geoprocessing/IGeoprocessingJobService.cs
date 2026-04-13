@@ -24,16 +24,22 @@ internal interface IGeoprocessingJobService
 
     /// <summary>
     /// Validates a plan for executability and returns the validation result.
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorized"/> to
+    /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Performs a dry run of a plan and returns cost/artifact estimates.
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorized"/> to
+    /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal);
 
     /// <summary>
     /// Submits a plan for asynchronous execution and returns the job record.
+    /// Callers must pre-authorize via <see cref="EnsureCallerAuthorized"/> to
+    /// guarantee auth-before-validation ordering at the adapter boundary.
     /// </summary>
     /// <param name="plan">The analysis plan to execute.</param>
     /// <param name="idempotencyKey">Optional idempotency key for deduplication.</param>

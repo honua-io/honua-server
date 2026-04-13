@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Geoprocessing.GPServer.Models;
@@ -221,6 +222,11 @@ internal static class GPServerEndpoints
 
         try
         {
+            jobService.EnsureCallerAuthorized(
+                context.User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
             var jobRecord = await jobService.SubmitJobAsync(
                 plan, null, context.User, protocolMetadata, ct);
 

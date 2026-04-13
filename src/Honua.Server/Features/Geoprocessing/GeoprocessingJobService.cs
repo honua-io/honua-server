@@ -56,7 +56,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
-        EnsureAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
         ValidatePlanStructure(plan);
 
         var violations = new List<GeoprocessingValidationFailure>();
@@ -105,7 +104,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
-        EnsureAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
         ValidatePlanStructure(plan);
 
         var result = new DryRunResult
@@ -127,7 +125,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
         CancellationToken cancellationToken = default)
     {
-        EnsureAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Execute);
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
         EnsureApproved(principal);

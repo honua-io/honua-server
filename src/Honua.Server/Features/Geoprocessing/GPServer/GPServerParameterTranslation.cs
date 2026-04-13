@@ -116,20 +116,22 @@ internal static class GPServerParameterTranslation
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        // Always start with query-string parameters so they are honoured
+        // regardless of HTTP method or content type.
+        foreach (var entry in context.Request.Query)
+        {
+            if (!string.IsNullOrEmpty(entry.Value.FirstOrDefault()))
+            {
+                result[entry.Key] = entry.Value.FirstOrDefault()!;
+            }
+        }
+
+        // For POST with form content, overlay form values (form takes precedence
+        // over query-string when the same key appears in both locations).
         if (context.Request.HasFormContentType)
         {
             var form = await context.Request.ReadFormAsync();
             foreach (var entry in form)
-            {
-                if (!string.IsNullOrEmpty(entry.Value.FirstOrDefault()))
-                {
-                    result[entry.Key] = entry.Value.FirstOrDefault()!;
-                }
-            }
-        }
-        else
-        {
-            foreach (var entry in context.Request.Query)
             {
                 if (!string.IsNullOrEmpty(entry.Value.FirstOrDefault()))
                 {

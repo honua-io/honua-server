@@ -294,9 +294,10 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
+- `execute`, `submitJob`, and `cancel` accept both GET and POST per Esri GP convention. All other endpoints are GET-only.
 - Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
 - Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
-- Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches.
+- Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
 - See [ADR-0029](../contributor/adr/0029-geoprocess-canonical-model-mappings.md) for adapter invariants and the [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) for the full canonical model mapping.
 
 ---

@@ -363,6 +363,25 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJobPost_WithEnvInQueryString_ReturnsBadRequest()
+    {
+        // POST with form body but env control in query string — the query-string
+        // parameter must still be read and rejected (not silently dropped).
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["input_features"] = "test-layer"
+        });
+
+        var response = await _client.PostAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob?env:outSR=4326", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJobGet_WithEnvProcessSR_ReturnsBadRequest()
     {

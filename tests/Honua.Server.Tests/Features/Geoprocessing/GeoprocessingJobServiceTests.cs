@@ -68,16 +68,17 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public void ValidatePlan_Unauthorized_ThrowsAuthorizationException()
+    public void ValidatePlan_DoesNotCheckAuth_AdapterResponsibility()
     {
+        // Auth is the adapter's responsibility (EnsureCallerAuthorized) so the
+        // service method must succeed even when the evaluator would deny access.
         _authEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(AccessDecision.Forbidden());
 
-        var act = () => _sut.ValidatePlan(CreateValidPlan(), CreatePrincipal());
+        var result = _sut.ValidatePlan(CreateValidPlan(), CreatePrincipal());
 
-        act.Should().Throw<GeoprocessingAuthorizationException>()
-            .Which.RequiresAuthentication.Should().BeFalse();
+        result.IsExecutable.Should().BeTrue();
     }
 
     // -----------------------------------------------------------------------
