@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;

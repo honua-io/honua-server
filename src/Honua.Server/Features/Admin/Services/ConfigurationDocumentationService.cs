@@ -15,7 +15,7 @@ namespace Honua.Server.Features.Admin.Services;
 /// <summary>
 /// Service for building self-documenting configuration metadata.
 /// </summary>
-internal sealed class ConfigurationDocumentationService
+public sealed class ConfigurationDocumentationService
 {
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;

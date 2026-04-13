@@ -122,6 +122,14 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
         return null;
     }
 
+    /// <summary>
+    /// Dequeues a job using default timeout (implements IRedisJobQueue interface).
+    /// </summary>
+    public Task<string?> DequeueAsync(CancellationToken cancellationToken = default)
+    {
+        return DequeueAsync(TimeSpan.FromSeconds(30), cancellationToken);
+    }
+
     public async Task<long> GetQueueLengthAsync(CancellationToken cancellationToken = default)
     {
         var fallbackLength = Volatile.Read(ref _fallbackQueueLength);
@@ -143,6 +151,30 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
         {
             Log.QueueLengthCheckFailed(Logger, ex);
             return fallbackLength;
+        }
+    }
+
+    public async Task<long> GetProcessingCountAsync(CancellationToken cancellationToken = default)
+    {
+        var fallbackInFlight = _fallbackInFlight.Count;
+
+        try
+        {
+            var redisProcessing = await ExecuteWithFallbackAsync(
+                "processing-count",
+                async (database, ct) =>
+                {
+                    return await database.ListLengthAsync(_processingQueueKey).ConfigureAwait(false);
+                },
+                fallbackOperation: ct => Task.FromResult(0L),
+                cancellationToken).ConfigureAwait(false);
+
+            return redisProcessing + fallbackInFlight;
+        }
+        catch (Exception ex)
+        {
+            Log.QueueLengthCheckFailed(Logger, ex);
+            return fallbackInFlight;
         }
     }
 
