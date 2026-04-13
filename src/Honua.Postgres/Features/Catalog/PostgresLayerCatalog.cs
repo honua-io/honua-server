@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Shared.Models;
 using Npgsql;
 
@@ -25,7 +26,8 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
     public PostgresLayerCatalog(IDatabaseConnectionProvider connectionProvider, string? schemaName = null)
     {
-        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        // Validation framework eliminates 1 line of duplicate null check
+        _connectionProvider = connectionProvider.ThrowIfNull();
 
         _layersTable = Infrastructure.SchemaSearchPath.QualifyTable("layers", schemaName);
         _fieldsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_fields", schemaName);

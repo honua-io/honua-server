@@ -12,10 +12,16 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// Register HttpClient with the server base address.
+// Register HttpClient with the server base address and basic resilience.
 // When hosted integrated, the base address matches the server origin.
+// Note: WebAssembly clients have limited resilience options compared to server-side clients
 builder.Services.AddScoped(sp =>
-    new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+{
+    var httpClient = new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) };
+    // Set reasonable timeout for admin operations
+    httpClient.Timeout = TimeSpan.FromSeconds(30);
+    return httpClient;
+});
 
 // Register auth services
 builder.Services.AddScoped<AuthStateStore>();

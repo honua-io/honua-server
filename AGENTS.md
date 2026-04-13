@@ -45,6 +45,15 @@ When porting behavior, document the source:
 - **Dependency limits**: Max 5 dependencies per endpoint, max 4 per handler
 - **Code formatting**: Always run `dotnet format Honua.sln` before creating PRs to prevent CI failures
 
+### MCP Code Search
+
+- Prefer the MCP code-search tools before broad file reads when working in `honua-server`.
+- Use `ast-grep-code-search` for structural pattern search, narrow path/glob search, and low-token code matching.
+- Use `tree-sitter-code-search` for symbol lookup, targeted file slices, dependency/symbol inspection, and AST-aware context.
+- On first use of `tree-sitter-code-search` in a worktree, register the current worktree path as a project using a unique name derived from the worktree directory.
+- Keep retrieval tight: ask for symbols, line ranges, or narrow matches first. Do not dump large files into context unless the smaller retrieval path failed.
+- For review and fix work, prefer changed files, call sites, handlers, tests, and directly related symbols before expanding to surrounding modules.
+
 ### Development Artifacts Cleanup
 
 **AI agents must clean up development artifacts before committing:**

@@ -3597,19 +3597,48 @@ internal sealed class Wfs20Handler
             {
                 Constraints =
                 [
+                    // Core query capabilities
                     CreateBooleanFesConstraint("ImplementsQuery", true),
                     CreateBooleanFesConstraint("ImplementsAdHocQuery", true),
                     CreateBooleanFesConstraint("ImplementsResourceId", true),
+
+                    // Filter encoding capabilities per OGC Filter Encoding 2.0
                     CreateBooleanFesConstraint("ImplementsMinStandardFilter", true),
                     CreateBooleanFesConstraint("ImplementsStandardFilter", true),
                     CreateBooleanFesConstraint("ImplementsMinimumXPath", true),
+                    CreateBooleanFesConstraint("ImplementsSchemaElementFunc", false),
+
+                    // Spatial filter capabilities
                     CreateBooleanFesConstraint("ImplementsMinSpatialFilter", true),
                     CreateBooleanFesConstraint("ImplementsSpatialFilter", true),
+                    CreateBooleanFesConstraint("ImplementsBBOX", true),
+                    CreateBooleanFesConstraint("ImplementsDistanceBuffer", true),
+
+                    // Temporal filter capabilities
                     CreateBooleanFesConstraint("ImplementsMinTemporalFilter", true),
                     CreateBooleanFesConstraint("ImplementsTemporalFilter", true),
+                    CreateBooleanFesConstraint("ImplementsTemporalInstant", true),
+                    CreateBooleanFesConstraint("ImplementsTemporalPeriod", true),
+
+                    // Additional capabilities
                     CreateBooleanFesConstraint("ImplementsVersionNav", false),
                     CreateBooleanFesConstraint("ImplementsSorting", true),
-                    CreateBooleanFesConstraint("ImplementsExtendedOperators", false)
+                    CreateBooleanFesConstraint("ImplementsExtendedOperators", true),
+                    CreateBooleanFesConstraint("ImplementsFunctions", true),
+                    CreateBooleanFesConstraint("ImplementsArithmeticOperators", true),
+                    CreateBooleanFesConstraint("ImplementsLogicalOperators", true),
+                    CreateBooleanFesConstraint("ImplementsComparisonOperators", true),
+
+                    // CQL2 support
+                    CreateBooleanFesConstraint("ImplementsCQL2Text", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2JSON", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2BasicCQL", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2AdvancedComparison", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2BasicSpatial", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2SpatialOperators", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2TemporalOperators", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2ArrayOperators", true),
+                    CreateBooleanFesConstraint("ImplementsCQL2Functions", true)
                 ]
             },
             IdCapabilities = new IdCapabilities
@@ -3618,7 +3647,8 @@ internal sealed class Wfs20Handler
                 [
                     new ResourceIdentifier { Name = "id" },
                     new ResourceIdentifier { Name = "objectid" },
-                    new ResourceIdentifier { Name = "fid" }
+                    new ResourceIdentifier { Name = "fid" },
+                    new ResourceIdentifier { Name = "gml:id" }
                 ]
             },
             ScalarCapabilities = new ScalarCapabilities
@@ -3628,16 +3658,27 @@ internal sealed class Wfs20Handler
                 {
                     Operators =
                     [
+                        // Basic comparison operators
                         new ComparisonOperator { Name = "PropertyIsEqualTo" },
                         new ComparisonOperator { Name = "PropertyIsNotEqualTo" },
                         new ComparisonOperator { Name = "PropertyIsLessThan" },
                         new ComparisonOperator { Name = "PropertyIsGreaterThan" },
                         new ComparisonOperator { Name = "PropertyIsLessThanOrEqualTo" },
                         new ComparisonOperator { Name = "PropertyIsGreaterThanOrEqualTo" },
+
+                        // Pattern matching operators
                         new ComparisonOperator { Name = "PropertyIsLike" },
+
+                        // Null checks
                         new ComparisonOperator { Name = "PropertyIsNil" },
                         new ComparisonOperator { Name = "PropertyIsNull" },
-                        new ComparisonOperator { Name = "PropertyIsBetween" }
+
+                        // Range operators
+                        new ComparisonOperator { Name = "PropertyIsBetween" },
+
+                        // Set membership operators
+                        new ComparisonOperator { Name = "PropertyIsIn" },
+                        new ComparisonOperator { Name = "PropertyIsNotIn" }
                     ]
                 }
             },
@@ -3647,18 +3688,30 @@ internal sealed class Wfs20Handler
                 {
                     Operands =
                     [
+                        // Basic geometry types
                         new GeometryOperand { Name = new XmlQualifiedName("Envelope", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("Point", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("LineString", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("LinearRing", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("Curve", Wfs20Utilities.GmlNamespace) },
                         new GeometryOperand { Name = new XmlQualifiedName("Polygon", Wfs20Utilities.GmlNamespace) },
-                        new GeometryOperand { Name = new XmlQualifiedName("Surface", Wfs20Utilities.GmlNamespace) }
+                        new GeometryOperand { Name = new XmlQualifiedName("Surface", Wfs20Utilities.GmlNamespace) },
+
+                        // Multi-geometry types
+                        new GeometryOperand { Name = new XmlQualifiedName("MultiPoint", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("MultiLineString", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("MultiCurve", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("MultiPolygon", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("MultiSurface", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("MultiGeometry", Wfs20Utilities.GmlNamespace) },
+                        new GeometryOperand { Name = new XmlQualifiedName("GeometryCollection", Wfs20Utilities.GmlNamespace) }
                     ]
                 },
                 SpatialOperators = new SpatialOperators
                 {
                     Operators =
                     [
+                        // Topological operators (DE-9IM based)
                         new Models.SpatialOperator { Name = "BBOX" },
                         new Models.SpatialOperator { Name = "Intersects" },
                         new Models.SpatialOperator { Name = "Contains" },
@@ -3668,8 +3721,13 @@ internal sealed class Wfs20Handler
                         new Models.SpatialOperator { Name = "Overlaps" },
                         new Models.SpatialOperator { Name = "Disjoint" },
                         new Models.SpatialOperator { Name = "Equals" },
+
+                        // Distance operators
                         new Models.SpatialOperator { Name = "DWithin" },
-                        new Models.SpatialOperator { Name = "Beyond" }
+                        new Models.SpatialOperator { Name = "Beyond" },
+
+                        // Additional spatial predicates
+                        new Models.SpatialOperator { Name = "Relate" }
                     ]
                 }
             },
@@ -3679,19 +3737,107 @@ internal sealed class Wfs20Handler
                 {
                     Operands =
                     [
+                        // Time instant types
                         new TemporalOperand { Name = new XmlQualifiedName("TimeInstant", Wfs20Utilities.GmlNamespace) },
-                        new TemporalOperand { Name = new XmlQualifiedName("TimePeriod", Wfs20Utilities.GmlNamespace) }
+                        new TemporalOperand { Name = new XmlQualifiedName("TimePosition", Wfs20Utilities.GmlNamespace) },
+
+                        // Time period types
+                        new TemporalOperand { Name = new XmlQualifiedName("TimePeriod", Wfs20Utilities.GmlNamespace) },
+                        new TemporalOperand { Name = new XmlQualifiedName("TimeInterval", Wfs20Utilities.GmlNamespace) },
+
+                        // Additional temporal types
+                        new TemporalOperand { Name = new XmlQualifiedName("TimeNode", Wfs20Utilities.GmlNamespace) },
+                        new TemporalOperand { Name = new XmlQualifiedName("TimeEdge", Wfs20Utilities.GmlNamespace) }
                     ]
                 },
                 TemporalOperators = new TemporalOperators
                 {
                     Operators =
                     [
+                        // All supported temporal operators per OGC Filter Encoding 2.0
                         new Models.TemporalOperator { Name = "After" },
                         new Models.TemporalOperator { Name = "Before" },
-                        new Models.TemporalOperator { Name = "During" }
+                        new Models.TemporalOperator { Name = "Contains" },
+                        new Models.TemporalOperator { Name = "Disjoint" },
+                        new Models.TemporalOperator { Name = "During" },
+                        new Models.TemporalOperator { Name = "Equals" },
+                        new Models.TemporalOperator { Name = "FinishedBy" },
+                        new Models.TemporalOperator { Name = "Finishes" },
+                        new Models.TemporalOperator { Name = "Intersects" },
+                        new Models.TemporalOperator { Name = "Meets" },
+                        new Models.TemporalOperator { Name = "MetBy" },
+                        new Models.TemporalOperator { Name = "OverlappedBy" },
+                        new Models.TemporalOperator { Name = "Overlaps" },
+                        new Models.TemporalOperator { Name = "StartedBy" },
+                        new Models.TemporalOperator { Name = "Starts" }
                     ]
                 }
+            },
+            Functions = new FunctionList
+            {
+                Functions =
+                [
+                    // String functions
+                    CreateFunctionDefinition("UPPER", "string", [("value", "string")]),
+                    CreateFunctionDefinition("LOWER", "string", [("value", "string")]),
+                    CreateFunctionDefinition("CONCAT", "string", [("string1", "string"), ("string2", "string")]),
+                    CreateFunctionDefinition("SUBSTRING", "string", [("value", "string"), ("start", "integer"), ("length", "integer")]),
+                    CreateFunctionDefinition("LENGTH", "integer", [("value", "string")]),
+                    CreateFunctionDefinition("TRIM", "string", [("value", "string")]),
+                    CreateFunctionDefinition("REPLACE", "string", [("value", "string"), ("search", "string"), ("replace", "string")]),
+
+                    // Math functions
+                    CreateFunctionDefinition("ABS", "number", [("value", "number")]),
+                    CreateFunctionDefinition("CEIL", "integer", [("value", "number")]),
+                    CreateFunctionDefinition("FLOOR", "integer", [("value", "number")]),
+                    CreateFunctionDefinition("ROUND", "number", [("value", "number"), ("precision", "integer")]),
+                    CreateFunctionDefinition("SQRT", "number", [("value", "number")]),
+                    CreateFunctionDefinition("SIN", "number", [("value", "number")]),
+                    CreateFunctionDefinition("COS", "number", [("value", "number")]),
+                    CreateFunctionDefinition("TAN", "number", [("value", "number")]),
+                    CreateFunctionDefinition("LOG", "number", [("value", "number")]),
+                    CreateFunctionDefinition("EXP", "number", [("value", "number")]),
+                    CreateFunctionDefinition("POWER", "number", [("base", "number"), ("exponent", "number")]),
+                    CreateFunctionDefinition("MOD", "number", [("dividend", "number"), ("divisor", "number")]),
+
+                    // Date/time functions
+                    CreateFunctionDefinition("YEAR", "integer", [("date", "date")]),
+                    CreateFunctionDefinition("MONTH", "integer", [("date", "date")]),
+                    CreateFunctionDefinition("DAY", "integer", [("date", "date")]),
+                    CreateFunctionDefinition("HOUR", "integer", [("date", "date")]),
+                    CreateFunctionDefinition("MINUTE", "integer", [("date", "date")]),
+                    CreateFunctionDefinition("SECOND", "integer", [("date", "date")]),
+                    CreateFunctionDefinition("NOW", "date", []),
+
+                    // Spatial functions
+                    CreateFunctionDefinition("ST_Area", "number", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_Length", "number", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_Perimeter", "number", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_Distance", "number", [("geometry1", "geometry"), ("geometry2", "geometry")]),
+                    CreateFunctionDefinition("ST_Centroid", "geometry", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_Buffer", "geometry", [("geometry", "geometry"), ("distance", "number")]),
+                    CreateFunctionDefinition("ST_Envelope", "geometry", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_ConvexHull", "geometry", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_Boundary", "geometry", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_NumGeometries", "integer", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_GeometryType", "string", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_SRID", "integer", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_IsValid", "boolean", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_IsSimple", "boolean", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_IsClosed", "boolean", [("geometry", "geometry")]),
+                    CreateFunctionDefinition("ST_IsEmpty", "boolean", [("geometry", "geometry")]),
+
+                    // Aggregate functions
+                    CreateFunctionDefinition("COUNT", "integer", [("value", "any")]),
+                    CreateFunctionDefinition("SUM", "number", [("value", "number")]),
+                    CreateFunctionDefinition("AVG", "number", [("value", "number")]),
+                    CreateFunctionDefinition("MIN", "any", [("value", "any")]),
+                    CreateFunctionDefinition("MAX", "any", [("value", "any")]),
+
+                    // Type conversion functions
+                    CreateFunctionDefinition("CAST", "any", [("value", "any"), ("type", "string")]),
+                    CreateFunctionDefinition("COALESCE", "any", [("value1", "any"), ("value2", "any")])
+                ]
             }
         };
     }
@@ -3703,6 +3849,25 @@ internal sealed class Wfs20Handler
             Name = name,
             AllowedValues = new AllowedValues { Values = ["TRUE", "FALSE"] },
             DefaultValue = defaultValue ? "TRUE" : "FALSE"
+        };
+    }
+
+    private static FunctionDefinition CreateFunctionDefinition(string name, string returnType, (string Name, string Type)[] arguments)
+    {
+        return new FunctionDefinition
+        {
+            Name = name,
+            Returns = new FunctionReturn { Type = returnType },
+            Arguments = arguments.Length > 0
+                ? new FunctionArguments
+                {
+                    Arguments = arguments.Select(arg => new FunctionArgument
+                    {
+                        Name = arg.Name,
+                        Type = arg.Type
+                    }).ToArray()
+                }
+                : null
         };
     }
 

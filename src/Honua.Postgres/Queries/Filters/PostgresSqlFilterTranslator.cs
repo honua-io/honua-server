@@ -451,6 +451,43 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
                 : throw new ArgumentException("MOD requires two arguments"),
             "CASEI" => $"LOWER({argString})",
             "ACCENTI" => $"UNACCENT(LOWER({argString}))",
+
+            // Spatial functions per OGC standards
+            "ST_AREA" => TranslateSpatialFunction("ST_Area", args, 1),
+            "ST_LENGTH" => TranslateSpatialFunction("ST_Length", args, 1),
+            "ST_PERIMETER" => TranslateSpatialFunction("ST_Perimeter", args, 1),
+            "ST_DISTANCE" => TranslateSpatialFunction("ST_Distance", args, 2),
+            "ST_CENTROID" => TranslateSpatialFunction("ST_Centroid", args, 1),
+            "ST_BUFFER" => TranslateSpatialFunction("ST_Buffer", args, 2),
+            "ST_ENVELOPE" => TranslateSpatialFunction("ST_Envelope", args, 1),
+            "ST_CONVEXHULL" => TranslateSpatialFunction("ST_ConvexHull", args, 1),
+            "ST_BOUNDARY" => TranslateSpatialFunction("ST_Boundary", args, 1),
+            "ST_NUMGEOMETRIES" => TranslateSpatialFunction("ST_NumGeometries", args, 1),
+            "ST_GEOMETRYTYPE" => TranslateSpatialFunction("ST_GeometryType", args, 1),
+            "ST_SRID" => TranslateSpatialFunction("ST_SRID", args, 1),
+            "ST_ISVALID" => TranslateSpatialFunction("ST_IsValid", args, 1),
+            "ST_ISSIMPLE" => TranslateSpatialFunction("ST_IsSimple", args, 1),
+            "ST_ISCLOSED" => TranslateSpatialFunction("ST_IsClosed", args, 1),
+            "ST_ISEMPTY" => TranslateSpatialFunction("ST_IsEmpty", args, 1),
+
+            // Math functions per OGC standards
+            "SQRT" => $"SQRT({argString})",
+            "SIN" => $"SIN({argString})",
+            "COS" => $"COS({argString})",
+            "TAN" => $"TAN({argString})",
+            "LOG" => $"LN({argString})",
+            "EXP" => $"EXP({argString})",
+
+            // Aggregate functions
+            "COUNT" => $"COUNT({argString})",
+            "SUM" => $"SUM({argString})",
+            "AVG" => $"AVG({argString})",
+            "MIN" => $"MIN({argString})",
+            "MAX" => $"MAX({argString})",
+
+            // Type conversion
+            "CAST" => TranslateCast(args, function.FunctionName),
+
             _ => throw new NotSupportedException($"Function {function.FunctionName}")
         };
     }
@@ -470,6 +507,42 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
         var length = CastInteger(args[2]);
         return $"SUBSTRING({args[0]}, {start}, {length})";
+    }
+
+    private static string TranslateSpatialFunction(string postgisName, string[] args, int expectedArgCount)
+    {
+        if (args.Length != expectedArgCount)
+        {
+            throw new ArgumentException($"{postgisName} requires {expectedArgCount} argument(s)");
+        }
+
+        return $"{postgisName}({string.Join(", ", args)})";
+    }
+
+    private static string TranslateCast(string[] args, string functionName)
+    {
+        if (args.Length != 2)
+        {
+            throw new ArgumentException($"{functionName} requires two arguments (value, type)");
+        }
+
+        var value = args[0];
+        var targetType = args[1].Trim('\'', '"').ToUpperInvariant();
+
+        return targetType switch
+        {
+            "INTEGER" or "INT" => $"({value})::INTEGER",
+            "NUMERIC" or "DECIMAL" => $"({value})::NUMERIC",
+            "REAL" or "FLOAT" => $"({value})::REAL",
+            "DOUBLE" or "DOUBLE PRECISION" => $"({value})::DOUBLE PRECISION",
+            "TEXT" or "STRING" or "VARCHAR" => $"({value})::TEXT",
+            "BOOLEAN" or "BOOL" => $"({value})::BOOLEAN",
+            "DATE" => $"({value})::DATE",
+            "TIMESTAMP" => $"({value})::TIMESTAMP",
+            "GEOMETRY" => $"({value})::GEOMETRY",
+            "GEOGRAPHY" => $"({value})::GEOGRAPHY",
+            _ => throw new NotSupportedException($"Unsupported cast target type: {targetType}")
+        };
     }
 
     private string TranslateGeoDistance(FunctionCall function, LayerDefinition layer)

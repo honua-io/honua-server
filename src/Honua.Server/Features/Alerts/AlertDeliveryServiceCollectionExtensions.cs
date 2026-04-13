@@ -10,6 +10,7 @@ using Azure.Messaging.EventGrid;
 using Azure.Messaging.EventHubs.Producer;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Infrastructure.Resilience;
 
 namespace Honua.Server.Features.Alerts;
 
@@ -20,14 +21,26 @@ internal static class AlertDeliveryServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddHttpClient("alerts-webhook")
-            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-        services.AddHttpClient("alerts-digest")
-            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-        services.AddHttpClient("alerts-slack")
-            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-        services.AddHttpClient("alerts-teams")
-            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddResilientHttpClient(
+            "alerts-webhook",
+            "alerts-webhook",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddResilientHttpClient(
+            "alerts-digest",
+            "alerts-digest",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddResilientHttpClient(
+            "alerts-slack",
+            "alerts-slack",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddResilientHttpClient(
+            "alerts-teams",
+            "alerts-teams",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();

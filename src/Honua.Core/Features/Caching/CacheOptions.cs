@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Configuration;
+using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Caching;
@@ -26,6 +27,11 @@ public sealed class CacheOptions
     /// Default time-to-live for cached layer metadata in seconds.
     /// Default is 1800 seconds (30 minutes).
     /// </summary>
+    [ValidTtl(
+        MinimumTtl = "00:00:01",
+        MaximumTtl = "1.00:00:00",
+        ConfigurationPath = SectionName,
+        SuggestedFix = "Use StandardTtl configuration for consistent cache timing")]
     [Range(TimeConstants.OneSecond, TimeConstants.OneDay, ErrorMessage = ErrorMessages.RangeValidation.DefaultTtlSeconds)]
     public int DefaultTtlSeconds { get; set; } = TimeConstants.ThirtyMinutes;
 
@@ -33,6 +39,11 @@ public sealed class CacheOptions
     /// Time-to-live for cached service metadata in seconds.
     /// Default is 3600 seconds (1 hour).
     /// </summary>
+    [ValidTtl(
+        MinimumTtl = "00:00:01",
+        MaximumTtl = "1.00:00:00",
+        ConfigurationPath = SectionName,
+        SuggestedFix = "Service metadata should use Medium or Long TTL category")]
     [Range(TimeConstants.OneSecond, TimeConstants.OneDay, ErrorMessage = ErrorMessages.RangeValidation.ServiceTtlSeconds)]
     public int ServiceTtlSeconds { get; set; } = TimeConstants.OneHour;
 

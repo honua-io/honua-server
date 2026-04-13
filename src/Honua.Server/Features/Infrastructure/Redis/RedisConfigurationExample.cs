@@ -1,0 +1,197 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Infrastructure.Redis;
+using Microsoft.Extensions.Caching.Distributed;
+using StackExchange.Redis;
+
+namespace Honua.Server.Features.Infrastructure.Redis;
+
+/// <summary>
+/// Example configuration for standardized Redis infrastructure.
+/// This demonstrates how to integrate the new Redis fallback patterns into Program.cs.
+/// </summary>
+public static class RedisConfigurationExample
+{
+    /// <summary>
+    /// Configures standardized Redis infrastructure in Program.cs
+    /// </summary>
+    public static IServiceCollection ConfigureStandardizedRedis(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment hostEnvironment)
+    {
+        // 1. Add core Redis infrastructure (health monitoring, etc.)
+        services.AddStandardizedRedisInfrastructure();
+
+        // 2. Configure Redis services based on environment and requirements
+        ConfigureRedisServices(services, hostEnvironment);
+
+        // 3. Add Redis health checks
+        services.AddRedisHealthCheck("redis-infrastructure", "infrastructure", "redis");
+
+        // 4. Replace existing Redis-dependent services with standardized versions
+        ReplaceExistingRedisServices(services);
+
+        return services;
+    }
+
+    private static void ConfigureRedisServices(IServiceCollection services, IHostEnvironment hostEnvironment)
+    {
+        // Leader election for background services coordination
+        services.AddRedisLeaderElection(
+            leadershipKey: "background-worker-leader",
+            leaseDuration: TimeSpan.FromMinutes(1));
+
+        // Job queues with different fallback strategies based on criticality
+        services.AddRedisJobQueues(new Dictionary<string, RedisFallbackMode>
+        {
+            // Critical operations must use distributed coordination
+            ["geoservices-import"] = RedisFallbackMode.AllowLocalInDev,
+            ["geoserver-import"] = RedisFallbackMode.AllowLocalInDev,
+            ["workflow-operations"] = RedisFallbackMode.AllowLocalInDev,
+
+            // Background tasks can fall back to in-memory processing
+            ["cache-refresh"] = RedisFallbackMode.InMemoryFallback,
+            ["tile-operations"] = RedisFallbackMode.InMemoryFallback,
+            ["export-jobs"] = RedisFallbackMode.InMemoryFallback,
+
+            // Critical coordination that must fail if Redis is unavailable
+            ["distributed-locks"] = RedisFallbackMode.FailFast,
+            ["cluster-coordination"] = RedisFallbackMode.FailFast
+        });
+    }
+
+    private static void ReplaceExistingRedisServices(IServiceCollection services)
+    {
+        // Replace existing DistributedReplicaStore with standardized version
+        // Remove the old registration first
+        var oldReplicaStore = services.FirstOrDefault(d =>
+            d.ServiceType == typeof(Features.FeatureServer.DistributedReplicaStore));
+        if (oldReplicaStore != null)
+        {
+            services.Remove(oldReplicaStore);
+        }
+
+        // Add standardized version
+        services.AddSingleton<Features.FeatureServer.StandardizedDistributedReplicaStore>(sp =>
+            new Features.FeatureServer.StandardizedDistributedReplicaStore(
+                sp.GetService<IDistributedCache>(),
+                sp.GetService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<IRedisHealthMonitor>(),
+                sp.GetRequiredService<IHostEnvironment>(),
+                sp.GetRequiredService<ILogger<Features.FeatureServer.StandardizedDistributedReplicaStore>>()));
+
+        // Replace existing RedisLeaseCoordinator with standardized leader election
+        // The webhook dispatcher should be updated to use IRedisLeaderElection instead
+        services.AddSingleton<Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>(sp =>
+        {
+            var leaderElection = sp.GetRequiredService<IRedisLeaderElection>();
+            // Update constructor to accept IRedisLeaderElection instead of RedisLeaseCoordinator
+            return new Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
+                /* ... other parameters ... */
+                leaderElection);
+        });
+
+        // Replace existing RedisImportJobManager with standardized job queue
+        services.AddSingleton<IRedisJobQueue>(sp =>
+            sp.GetRequiredService<IReadOnlyDictionary<string, IRedisJobQueue>>()["geoservices-import"]);
+    }
+}
+
+/// <summary>
+/// Extension methods for migrating existing services to use standardized Redis infrastructure.
+/// </summary>
+public static class RedisServiceMigrationExtensions
+{
+    /// <summary>
+    /// Updates the FeatureChangeWebhookDispatcher to use standardized leader election.
+    /// </summary>
+    public static IServiceCollection MigrateFeatureChangeWebhookDispatcher(this IServiceCollection services)
+    {
+        // Remove existing registration
+        var existingDispatcher = services.FirstOrDefault(d =>
+            d.ServiceType == typeof(Features.Infrastructure.Events.FeatureChangeWebhookDispatcher));
+        if (existingDispatcher != null)
+        {
+            services.Remove(existingDispatcher);
+        }
+
+        // Add with standardized leader election
+        services.AddSingleton<Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>(sp =>
+        {
+            var leaderElection = sp.GetRequiredService<IRedisLeaderElection>();
+            // Note: The dispatcher constructor would need to be updated to accept IRedisLeaderElection
+            // instead of RedisLeaseCoordinator
+            throw new NotImplementedException("FeatureChangeWebhookDispatcher needs to be updated to use IRedisLeaderElection");
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Updates import services to use standardized job queues.
+    /// </summary>
+    public static IServiceCollection MigrateImportServices(this IServiceCollection services)
+    {
+        // The existing RedisImportJobManager should be replaced with the standardized job queue
+        // and the import background services updated to use IRedisJobQueue
+
+        // Remove existing import job manager registration
+        var existingImportManager = services.FirstOrDefault(d =>
+            d.ServiceType.Name.Contains("RedisImportJobManager"));
+        if (existingImportManager != null)
+        {
+            services.Remove(existingImportManager);
+        }
+
+        // Import services would be updated to use the standardized job queue directly
+        // This is a significant refactoring that would need to be done carefully
+
+        return services;
+    }
+}
+
+/// <summary>
+/// Configuration validation for Redis services.
+/// </summary>
+public static class RedisConfigurationValidator
+{
+    /// <summary>
+    /// Validates Redis configuration and fallback strategies.
+    /// </summary>
+    public static void ValidateRedisConfiguration(IServiceProvider services, IHostEnvironment hostEnvironment)
+    {
+        var healthMonitor = services.GetRequiredService<IRedisHealthMonitor>();
+
+        if (hostEnvironment.IsProduction())
+        {
+            // In production, Redis should be configured
+            if (!healthMonitor.WasRedisEverAvailable)
+            {
+                throw new InvalidOperationException(
+                    "Redis is not configured but is required for production deployment. " +
+                    "Configure Redis connection string or update fallback strategies.");
+            }
+
+            // Validate that critical services use appropriate fallback strategies
+            var jobQueues = services.GetService<IReadOnlyDictionary<string, IRedisJobQueue>>();
+            if (jobQueues != null)
+            {
+                var criticalQueues = jobQueues.Where(kvp =>
+                    kvp.Key.Contains("import") || kvp.Key.Contains("workflow"));
+
+                foreach (var (key, queue) in criticalQueues)
+                {
+                    if (queue.FallbackMode == RedisFallbackMode.InMemoryFallback)
+                    {
+                        throw new InvalidOperationException(
+                            $"Job queue '{key}' uses InMemoryFallback in production, " +
+                            "which may cause data loss or inconsistency. " +
+                            "Use AllowLocalInDev or FailFast for critical operations.");
+                    }
+                }
+            }
+        }
+    }
+}

@@ -14,8 +14,10 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Schema;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
@@ -239,10 +241,19 @@ builder.Services.AddSingleton<IValidateOptions<ControlPlaneOptions>, ControlPlan
 builder.Services.AddOptions<ControlPlaneOptions>()
     .Bind(builder.Configuration.GetSection(ControlPlaneOptions.SectionName))
     .ValidateOnStart();
-builder.Services.AddHttpClient("import-source")
-    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Import.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddHttpClient("control-plane-telemetry");
-builder.Services.AddHttpClient("control-plane-azure");
+builder.Services.AddResilientHttpClient(
+    "import-source",
+    "import-source",
+    HttpResiliencePolicies.SlowServiceDefaults,
+    configureHandler: static () => Honua.Server.Features.Import.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
+builder.Services.AddResilientHttpClient(
+    "control-plane-telemetry",
+    "control-plane-telemetry",
+    HttpResiliencePolicies.FastApiDefaults);
+builder.Services.AddResilientHttpClient(
+    "control-plane-azure",
+    "control-plane-azure",
+    HttpResiliencePolicies.FastApiDefaults);
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
 builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
 builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
@@ -303,10 +314,16 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider,
     Honua.Server.Features.Admin.ConfigurationLicenseStatusProvider>();
 
-// Register named HTTP client for identity provider connectivity tests
-builder.Services.AddHttpClient("IdentityProviderTest");
-builder.Services.AddHttpClient("AdminAuthOidc")
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+// Register named HTTP client for identity provider connectivity tests with resilience
+builder.Services.AddResilientHttpClient(
+    "IdentityProviderTest",
+    "identity-provider-test",
+    HttpResiliencePolicies.FastApiDefaults);
+builder.Services.AddResilientHttpClient(
+    "AdminAuthOidc",
+    "admin-auth-oidc",
+    HttpResiliencePolicies.FastApiDefaults,
+    configureHandler: () => new HttpClientHandler
     {
         AllowAutoRedirect = false
     });
@@ -335,8 +352,11 @@ builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalWe
     builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions.SectionName));
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>,
     Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptionsValidator>();
-builder.Services.AddHttpClient("manifest-approval-webhook")
-    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+builder.Services.AddResilientHttpClient(
+    "manifest-approval-webhook",
+    "manifest-approval-webhook",
+    HttpResiliencePolicies.FastApiDefaults,
+    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddSingleton<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(sp =>
     new Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher(
         sp.GetRequiredService<IHttpClientFactory>(),
@@ -488,8 +508,11 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.Featur
 builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryBackgroundService>();
 builder.Services.AddScoped<Honua.Server.Features.Streaming.FeatureStreamDependencies>();
 builder.Services.AddHostedService<Honua.Server.Features.Streaming.FeatureStreamHeartbeatService>();
-builder.Services.AddHttpClient("feature-change-webhook")
-    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+builder.Services.AddResilientHttpClient(
+    "feature-change-webhook",
+    "feature-change-webhook",
+    HttpResiliencePolicies.FastApiDefaults,
+    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHostedService(sp =>
     new Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
@@ -503,8 +526,11 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>, Honua.Server.Features.Admin.ManifestDriftWebhookOptionsValidator>();
 builder.Services.AddOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>()
     .Bind(builder.Configuration.GetSection(Honua.Server.Features.Admin.ManifestDriftWebhookOptions.SectionName));
-builder.Services.AddHttpClient("manifest-drift-webhook")
-    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+builder.Services.AddResilientHttpClient(
+    "manifest-drift-webhook",
+    "manifest-drift-webhook",
+    HttpResiliencePolicies.FastApiDefaults,
+    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHostedService(sp =>
     new Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher(
         sp.GetRequiredService<IServiceScopeFactory>(),
@@ -1037,6 +1063,9 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
         throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
     }
 
+    // Add centralized configuration management and secret services
+    services.AddConfigurationManagement(configuration);
+
     // Wrap ILayerCatalog with caching decorator
     // This uses the decorator pattern to add caching behavior transparently
     var innerCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerCatalog));
@@ -1390,10 +1419,20 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
             sp.GetRequiredService<ILogger<MonitoredResponseCacheDecorator>>());
     });
 
-    // Register background cache refresh coordinator
-    services.AddSingleton<CacheRefreshCoordinator>();
-    services.AddSingleton<ICacheRefreshCoordinator>(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
-    services.AddHostedService(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
+    // Register distributed cache refresh coordinator
+    services.AddSingleton<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>(sp =>
+        new Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator(
+            sp.GetRequiredService<IOptions<CacheOptions>>(),
+            sp.GetRequiredService<IPerformanceMonitor>(),
+            sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>>(),
+            sp.GetService<IConnectionMultiplexer>()));
+
+    services.AddSingleton<ICacheRefreshCoordinator>(sp =>
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
+    services.AddSingleton<Honua.Core.Features.Caching.Abstractions.IDistributedCacheRefreshCoordinator>(sp =>
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
+    services.AddHostedService(sp =>
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
 
     // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
 }

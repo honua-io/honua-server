@@ -4,6 +4,7 @@
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
 using Honua.Core.Features.Geocoding.Providers;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -52,7 +53,9 @@ public static class ProviderIntegrationExtensions
         services.AddOptions<NominatimProviderConfiguration>()
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Nominatim"));
 
-        services.AddHttpClient<NominatimGeocodeProvider>();
+        services.AddResilientHttpClient<NominatimGeocodeProvider>(
+            "nominatim-geocoding",
+            HttpResiliencePolicies.FastApiDefaults);
 
         services.AddGeocodeProvider(
             NominatimGeocodeProvider.ProviderName,
@@ -114,7 +117,9 @@ public static class ProviderIntegrationExtensions
         services.AddOptions<AzureMapsProviderConfiguration>()
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:AzureMaps"));
 
-        services.AddHttpClient<AzureMapsGeocodeProvider>();
+        services.AddResilientHttpClient<AzureMapsGeocodeProvider>(
+            "azure-maps-geocoding",
+            HttpResiliencePolicies.FastApiDefaults);
 
         services.AddGeocodeProvider(
             AzureMapsGeocodeProvider.ProviderName,

@@ -31,7 +31,8 @@ public interface ICacheRefreshCoordinator
 
     /// <summary>
     /// Attempts to enqueue a background refresh for the given cache key.
-    /// Returns false if a refresh for this key is already pending (deduplication).
+    /// Returns false if a refresh for this key is already pending (deduplication)
+    /// or if the key is still within a temporary retry backoff after a recent failure.
     /// </summary>
     /// <param name="key">Cache key being refreshed</param>
     /// <param name="refreshCallback">Async callback that performs the actual refresh</param>

@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -55,16 +56,17 @@ internal sealed class ODataBatchDependencies
         IETagService eTagService,
         FeatureMutationEventService mutationEventService)
     {
-        LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
-        FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
-        FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
-        GeometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
-        MutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
-        CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
-        EditLimits = editLimits ?? throw new ArgumentNullException(nameof(editLimits));
-        ValidationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
-        ETagService = eTagService ?? throw new ArgumentNullException(nameof(eTagService));
-        MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
+        // Validation framework eliminates 10 lines of duplicate null checks
+        LayerCatalog = layerCatalog.ThrowIfNull();
+        FeatureReader = featureReader.ThrowIfNull();
+        FeatureWriter = featureWriter.ThrowIfNull();
+        GeometryService = geometryService.ThrowIfNull();
+        MutationValidator = mutationValidator.ThrowIfNull();
+        CrsRegistry = crsRegistry.ThrowIfNull();
+        EditLimits = editLimits.ThrowIfNull();
+        ValidationService = validationService.ThrowIfNull();
+        ETagService = eTagService.ThrowIfNull();
+        MutationEventService = mutationEventService.ThrowIfNull();
     }
 
     public ILayerCatalog LayerCatalog { get; }

@@ -17,6 +17,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
@@ -48,6 +49,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using StackExchange.Redis;
 
 namespace Honua.Postgres;
 
@@ -214,7 +216,24 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
-        services.AddHostedService<PostgresCrsWarmupService>();
+
+        // Register CRS warmup service with leader election for distributed deployments
+        services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
+        {
+            var redis = serviceProvider.GetService<StackExchange.Redis.IConnectionMultiplexer>();
+            var logger = serviceProvider.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Coordination.RedisDistributedLeaderElection>>();
+            return new Honua.Server.Features.Infrastructure.Coordination.RedisDistributedLeaderElection(
+                "honua:leader:crs-warmup", redis, logger);
+        });
+
+        services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
+            new PostgresCrsWarmupService(
+                serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresCrsWarmupService>>(),
+                serviceProvider.GetRequiredService<IDistributedLeaderElection>()));
+
+        services.AddHostedService(serviceProvider =>
+            serviceProvider.GetRequiredService<PostgresCrsWarmupService>());
 
         // Register import limits configuration
         services.AddSingleton(serviceProvider =>
@@ -279,14 +298,16 @@ internal static class ServiceCollectionExtensions
             return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger);
         });
 
-        // Register ArcGIS REST client for Geoservices service imports
-        services.AddHttpClient<ArcGisRestClient>()
-            .ConfigureHttpClient(client =>
+        // Register ArcGIS REST client for Geoservices service imports with resilience
+        services.AddResilientHttpClient<ArcGisRestClient>(
+            "arcgis-rest",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
-            })
-            .ConfigurePrimaryHttpMessageHandler(static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler());
+            },
+            configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler());
 
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
@@ -295,9 +316,11 @@ internal static class ServiceCollectionExtensions
         services.AddImportSuggestionsCore();
         services.AddAutoDocsCore();
 
-        // Register GeoServer REST client for GeoServer migration imports
-        services.AddHttpClient<GeoServerRestClient>()
-            .ConfigureHttpClient(client =>
+        // Register GeoServer REST client for GeoServer migration imports with resilience
+        services.AddResilientHttpClient<GeoServerRestClient>(
+            "geoserver-rest",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);

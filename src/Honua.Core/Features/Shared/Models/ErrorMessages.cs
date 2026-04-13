@@ -245,6 +245,18 @@ MaxConcurrentRefreshes = "MaxConcurrentRefreshes must be between 1 and 100";
         public const string         /// <inheritdoc/>
 RefreshTimeoutSeconds = "RefreshTimeoutSeconds must be between 5 and 120";
 
+        // StandardTtl options validation messages
+        public const string         /// <inheritdoc/>
+VeryShortTtlSeconds = "VeryShortTtlSeconds must be between 1 and 300 (5 minutes)";
+        public const string         /// <inheritdoc/>
+ShortTtlSeconds = "ShortTtlSeconds must be between 1 and 600 (10 minutes)";
+        public const string         /// <inheritdoc/>
+MediumTtlSeconds = "MediumTtlSeconds must be between 1 and 3600 (1 hour)";
+        public const string         /// <inheritdoc/>
+LongTtlSeconds = "LongTtlSeconds must be between 1 and 86400 (1 day)";
+        public const string         /// <inheritdoc/>
+VeryLongTtlSeconds = "VeryLongTtlSeconds must be between 1 and 86400 (1 day)";
+
         // Adaptive sampling options validation messages
         public const string         /// <inheritdoc/>
 BaseSamplingRate = "BaseSamplingRate must be between 0.001 and 1.0";
