@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -143,6 +144,7 @@ internal static class DeployControlEndpoints
                 request.DesiredRevision,
                 request.CurrentRevision,
                 request.Parameters,
+                context.User,
                 context.RequestAborted)
             .ConfigureAwait(false);
 
@@ -162,6 +164,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approvalResult = gate.EvaluateApproval(
+            context, OperatorResourceType.Deployment, OperatorOperation.Publish);
+        if (approvalResult != null) return approvalResult;
+
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -191,6 +198,7 @@ internal static class DeployControlEndpoints
                     priority,
                     request.SubmitImmediately ?? true,
                     request.Parameters,
+                    context.User,
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
@@ -264,6 +272,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approvalResult = gate.EvaluateApproval(
+            context, OperatorResourceType.Deployment, OperatorOperation.Publish);
+        if (approvalResult != null) return approvalResult;
+
         try
         {
             var operation = await deployWorkflowService.SubmitAsync(
@@ -305,6 +318,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approvalResult = gate.EvaluateApproval(
+            context, OperatorResourceType.Deployment, OperatorOperation.Execute, isDestructive: true);
+        if (approvalResult != null) return approvalResult;
+
         try
         {
             var operation = await deployWorkflowService.RequestRollbackAsync(

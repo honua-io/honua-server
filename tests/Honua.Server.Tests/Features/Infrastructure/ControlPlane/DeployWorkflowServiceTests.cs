@@ -3,8 +3,11 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -390,7 +393,9 @@ public sealed class DeployWorkflowServiceTests
         => new(
             new TestDeployTargetRegistry(),
             [store],
-            [backend]);
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance);
 
     private static DeployWorkflowReconciler CreateReconciler(
         TestWorkflowOperationStore store,
@@ -875,6 +880,12 @@ public sealed class DeployWorkflowServiceTests
                 ObservedRevision = operation.Deploy?.CurrentRevision,
                 Message = "Rollback requested"
             });
+    }
+
+    private sealed class StubApprovalEvaluator : IOperatorApprovalEvaluator
+    {
+        public ApprovalRequirement Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+            => ApprovalRequirement.NotRequired();
     }
 
     private sealed class StagedDeployBackend : IDeployBackend

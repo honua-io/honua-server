@@ -19,4 +19,9 @@ internal sealed class OperatorApprovalOptions
     /// Whether destructive actions require human approval.
     /// </summary>
     public bool DestructiveActionsRequireApproval { get; set; } = true;
+
+    /// <summary>
+    /// Whether principals with the admin role bypass operator approval gates.
+    /// </summary>
+    public bool AdminExemptFromApproval { get; set; } = true;
 }
