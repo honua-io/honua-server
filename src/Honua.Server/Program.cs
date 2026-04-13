@@ -668,7 +668,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Stac.StacJsonContext.Default,
         Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
         Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
-        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default);
+        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
+        Honua.Server.Features.OgcProcesses.OgcProcessesJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
@@ -832,6 +833,7 @@ if (serveApiDocs)
             .AddDocument("features", "OGC API Features", "/openapi.json", isDefault: true)
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
+            .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     });
 }

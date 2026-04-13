@@ -46,6 +46,109 @@ public sealed class OpenApiDriftTests
             "OGC API Tiles",
             tilesSpecEndpoints,
             tilesRegistryEndpoints);
+
+        var processesSpecEndpoints = LoadOpenApiEndpoints(ResolveOpenApiPath("ogc-processes-openapi.json"));
+        var processesRegistryEndpoints = EndpointRegistry.All
+            .Where(endpoint => endpoint.Path.StartsWith("/ogc/processes", StringComparison.OrdinalIgnoreCase))
+            .Where(endpoint => !endpoint.Path.Equals("/ogc/processes/openapi.json", StringComparison.OrdinalIgnoreCase))
+            .Select(endpoint => FormatKey(endpoint.Method, endpoint.Path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        AssertSpecMatchesRegistry(
+            "OGC API Processes",
+            processesSpecEndpoints,
+            processesRegistryEndpoints);
+    }
+
+    [ArchitectureTest]
+    public void OgcProcessesSchemas_IncludeFieldsEmittedByEndpoints()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+
+        var processSummaryProps = schemas.GetProperty("ProcessSummary")
+            .GetProperty("properties");
+        processSummaryProps.TryGetProperty("links", out _).Should()
+            .BeTrue("ProcessSummary must document the links array emitted by GetProcessList");
+
+        var statusInfoProps = schemas.GetProperty("StatusInfo")
+            .GetProperty("properties");
+        statusInfoProps.TryGetProperty("type", out _).Should()
+            .BeTrue("StatusInfo must document the type discriminator emitted by all job status responses");
+
+        // Execute schema must require inputs.plan (server enforces this at runtime).
+        var execute = schemas.GetProperty("Execute");
+        execute.TryGetProperty("required", out var executeRequired).Should()
+            .BeTrue("Execute must declare required properties");
+        executeRequired.EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("inputs", "Execute must require 'inputs'");
+
+        var executeInputs = execute.GetProperty("properties").GetProperty("inputs");
+        executeInputs.TryGetProperty("required", out var inputsRequired).Should()
+            .BeTrue("Execute.inputs must declare required properties");
+        inputsRequired.EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("plan", "Execute.inputs must require 'plan'");
+
+        // AnalysisPlan schema must describe the minimum accepted shape.
+        var plan = schemas.GetProperty("AnalysisPlan");
+        plan.TryGetProperty("required", out var planRequired).Should().BeTrue();
+        var planRequiredFields = planRequired.EnumerateArray().Select(e => e.GetString()).ToList();
+        planRequiredFields.Should().Contain("planId").And.Contain("steps");
+
+        // PlanStep must expose the optional processId field documented in API examples
+        // and aligned with the canonical AnalysisPlanStep.process_id proto field.
+        var planStepProps = schemas.GetProperty("PlanStep").GetProperty("properties");
+        planStepProps.TryGetProperty("processId", out _).Should()
+            .BeTrue("PlanStep must document the optional processId field used in request examples and the canonical proto contract");
+
+        // ProcessIoSchema must expose the fields emitted by process description endpoints.
+        var ioSchema = schemas.GetProperty("ProcessIoSchema");
+        var ioSchemaProps = ioSchema.GetProperty("properties");
+        ioSchemaProps.TryGetProperty("type", out _).Should()
+            .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
+        ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
+            .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+
+        // InputDescription and OutputDescription must reference ProcessIoSchema.
+        foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })
+        {
+            var schemaRef = schemas.GetProperty(schemaName)
+                .GetProperty("properties")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString();
+            schemaRef.Should().Be("#/components/schemas/ProcessIoSchema",
+                $"{schemaName}.schema must reference ProcessIoSchema");
+        }
+    }
+
+    [ArchitectureTest]
+    public void OgcProcessesAuthProtectedEndpoints_Document401And403Responses()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var paths = document.RootElement.GetProperty("paths");
+
+        (string Path, string Method)[] authProtectedOps =
+        [
+            ("/ogc/processes/processes/{processId}/execution", "post"),
+            ("/ogc/processes/jobs", "get"),
+            ("/ogc/processes/jobs/{jobId}", "get"),
+            ("/ogc/processes/jobs/{jobId}", "delete"),
+            ("/ogc/processes/jobs/{jobId}/results", "get")
+        ];
+
+        foreach (var (path, method) in authProtectedOps)
+        {
+            var responses = paths.GetProperty(path)
+                .GetProperty(method)
+                .GetProperty("responses");
+
+            responses.TryGetProperty("401", out _).Should()
+                .BeTrue($"{method.ToUpperInvariant()} {path} must document 401 Unauthorized");
+
+            responses.TryGetProperty("403", out _).Should()
+                .BeTrue($"{method.ToUpperInvariant()} {path} must document 403 Forbidden");
+        }
     }
 
     [ArchitectureTest]

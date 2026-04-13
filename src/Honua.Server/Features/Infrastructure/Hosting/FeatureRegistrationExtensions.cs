@@ -17,6 +17,7 @@ using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcMaps;
+using Honua.Server.Features.OgcProcesses;
 using Honua.Server.Features.OgcTiles;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.SpatialAnalytics;
@@ -46,6 +47,7 @@ internal static class FeatureRegistrationExtensions
         services.AddMapServer();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
+        services.AddOgcProcesses(configuration);
         services.AddWfs20(configuration);
         services.AddOData();
         services.AddGeometryService();
@@ -79,6 +81,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
+        endpoints.MapOgcProcessesEndpoints();
         endpoints.MapOgcTilesEndpoints();
         endpoints.MapWfs20Endpoints();
         endpoints.MapODataEndpoints();

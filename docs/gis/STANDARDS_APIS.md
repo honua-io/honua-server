@@ -15,7 +15,8 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 | **Web Maps (MapLibre/OpenLayers)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
 | **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
-| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility (job status polling and cancellation; submitJob route registered, pending process catalog; result retrieval route registered, pending execution-engine/result-storage support) |
+| **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility over the canonical runtime |
+| **Geoprocessing (OGC)** | OGC API Processes | `/ogc/processes` | Standards-based async geoprocessing |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---
@@ -184,6 +185,44 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - Server-rendered maps via open standards
 - Dynamic map image generation without Esri dependencies
 - OGC-compliant map rendering workflows
+
+---
+
+## **OGC API Processes**
+
+**Best for**: Standards-based asynchronous geoprocessing
+
+**Endpoint structure:**
+```
+/ogc/processes
+|-- /
+|-- /openapi.json
+|-- /conformance
+|-- /processes
+|-- /processes/{processId}
+|-- /processes/{processId}/execution
+|-- /jobs
+|-- /jobs/{jobId}
+|-- /jobs/{jobId}/results
+```
+
+**Output formats:** JSON (landing, metadata, status, and errors today; planned successful results remain document-mode, by-value)
+
+**Typical use cases:**
+- Standards-based geoprocessing workflows
+- Async job submission and status polling
+- OGC-compliant process discovery and execution
+- Interoperability with OGC API Processes clients
+
+**Contract notes:**
+- This is a protocol adapter over the canonical Honua geoprocessing runtime, not a separate processing framework.
+- V1 supports async execution only; synchronous execution returns `501 Not Implemented`.
+- Execution requires `Prefer: respond-async`, accepts only `response=document`, and returns `201 Created` with `Location` plus `Preference-Applied: respond-async` on success.
+- V1: result storage is not yet available; `/results` remains stubbed (`404` for non-terminal and successful jobs, `500` for failed jobs, `410 Gone` for dismissed jobs). When results are populated, the successful shape will be document-mode JSON (by-value).
+- `StatusInfo` documents intentionally omit the OGC results relation until `/results` can return a real results document.
+- Async execution and job routes require Redis-backed durable storage; execution/job list/status/results/dismiss return `503 Service Unavailable` when the store is not configured.
+- V1 exposes one canonical process (`honua-geoprocessing`); catalog formalization is follow-on work.
+- Conforms to OGC API Processes Part 1: Core conformance classes: `core`, `json`, `dismiss`, plus OGC API Common `core` and `json`. The `job-list` conformance class is implemented at MVP level but not advertised (V1 lacks required filters and pagination).
 
 ---
 
@@ -375,6 +414,7 @@ Protocol support is tracked per standard and operation. Use these docs to confir
   - [Part 2 — CRS](specifications/ogc-api-features-part2-crs.md)
   - [Part 3 — Filtering](specifications/ogc-api-features-part3-filtering.md)
 - [OGC API Tiles Coverage](specifications/ogc-api-tiles-coverage.md)
+- [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md)
 
 **OData v4:**
 - [OData v4 Coverage](specifications/odata-v4-coverage.md)
@@ -395,6 +435,7 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - WMS 1.3: 227/227 tests
 - WMTS 1.0: 118/118 tests
 - OGC API Maps: 32/32 tests
+- OGC API Processes: CITE ETS not yet available; conformance validated manually against OGC 18-062r2
 - KML 2.2: format-level validation (schema conformance)
 - GML 3.2: format-level validation (schema conformance)
 - GeoPackage 1.2: format-level validation (file structure conformance)

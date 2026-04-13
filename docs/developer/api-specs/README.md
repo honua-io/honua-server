@@ -38,6 +38,22 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 {% swagger src="ogc-api-tiles.json" %}
 {% endswagger %}
 
+### **OGC API Processes**
+**Protocol**: OGC API Processes Part 1 — Core
+**Base URL**: `/ogc/processes`
+**Runtime Spec**: `https://your-honua-server.com/ogc/processes/openapi.json`
+
+**What you can do**:
+- Discover available processes (`GET /processes`)
+- Describe a process and its JSON Schema inputs/outputs (`GET /processes/{processId}`)
+- Submit async execution with `Prefer: respond-async` (`POST /processes/{processId}/execution`)
+- List, poll, and dismiss jobs (`GET /jobs`, `GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`)
+- Retrieve results when available (`GET /jobs/{jobId}/results`)
+
+> **V1 notes**: Async-only (sync returns `501`). Single canonical process (`honua-geoprocessing`). Job lifecycle and execution routes require Redis-backed durable storage (`503` when unavailable). Results endpoint remains stubbed until execution engine result storage is wired. See the [OGC API Processes Coverage](../../gis/specifications/ogc-api-processes-coverage.md) for conformance classes, endpoint details, and V1 limitations.
+
+---
+
 ## Server Management API
 
 **Protocol**: REST API
@@ -102,6 +118,9 @@ curl https://your-honua-server.com/openapi.json
 
 # OGC API Tiles
 curl https://your-honua-server.com/ogc/tiles/openapi.json
+
+# OGC API Processes
+curl https://your-honua-server.com/ogc/processes/openapi.json
 
 # Server Management API
 curl https://your-honua-server.com/api/v1/admin/openapi.json
