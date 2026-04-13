@@ -13,9 +13,11 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 internal sealed partial class JobReconciliationService(
     IExecutionJobStore jobStore,
     IJobQueue jobQueue,
+    IQueueClaimReconciler claimReconciler,
     ILogger<JobReconciliationService> logger) : BackgroundService
 {
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan StaleClaimThreshold = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -83,6 +85,11 @@ internal sealed partial class JobReconciliationService(
         {
             Log.ReconciliationSweepCompleted(logger, reconciled, activeJobs.Count);
         }
+
+        // Reconcile orphaned claims where the queue move succeeded but the
+        // subsequent store update failed.
+        await claimReconciler.ReconcileStaleClaimsAsync(StaleClaimThreshold, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static bool ShouldExpireHeartbeat(ExecutionJobRecord job, DateTimeOffset now)

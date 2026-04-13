@@ -102,7 +102,7 @@ internal sealed partial class JobExecutionService(
         jobCts.CancelAfter(timeoutPolicy.MaxDuration);
 
         // Create execution context with heartbeat pump.
-        var context = new JobExecutionContext(
+        using var context = new JobExecutionContext(
             operationId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default);
 
         // Start heartbeat pump in background.
@@ -114,7 +114,16 @@ internal sealed partial class JobExecutionService(
             var result = await executor.ExecuteAsync(running, context, jobCts.Token).ConfigureAwait(false);
             await heartbeatCts.CancelAsync().ConfigureAwait(false);
 
-            await FinalizeJobAsync(operationId, result, stoppingToken).ConfigureAwait(false);
+            if (result.Status == ExecutionJobStatus.Succeeded)
+            {
+                await FinalizeJobAsync(operationId, result, stoppingToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // Executor returned failure — route through retry policy.
+                await AbandonJobAsync(running, result.ErrorMessage ?? "Execution failed.", stoppingToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -125,16 +134,16 @@ internal sealed partial class JobExecutionService(
         catch (OperationCanceledException)
         {
             await heartbeatCts.CancelAsync().ConfigureAwait(false);
-            // Job was cancelled or timed out.
-            var cancelResult = JobExecutionResult.Failed("Job was cancelled or timed out.");
-            await FinalizeJobAsync(operationId, cancelResult, stoppingToken).ConfigureAwait(false);
+            // Timeout or cancellation — route through retry policy.
+            await AbandonJobAsync(running, "Job was cancelled or timed out.", stoppingToken)
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             await heartbeatCts.CancelAsync().ConfigureAwait(false);
             Log.JobExecutionFailed(logger, operationId, ex);
-            var failResult = JobExecutionResult.Failed(ex.Message);
-            await FinalizeJobAsync(operationId, failResult, stoppingToken).ConfigureAwait(false);
+            // Execution exception — route through retry policy.
+            await AbandonJobAsync(running, ex.Message, stoppingToken).ConfigureAwait(false);
         }
 
         // Ensure heartbeat pump stops cleanly.
@@ -187,13 +196,15 @@ internal sealed partial class JobExecutionService(
         string reason,
         CancellationToken cancellationToken)
     {
-        var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
+        // Re-read to capture progress and artifact updates made during execution.
+        var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
+        var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
-        if (retryPolicy.ShouldRetry(job.AttemptCount))
+        if (retryPolicy.ShouldRetry(current.AttemptCount))
         {
-            Log.JobAbandoned(logger, job.OperationId, reason);
+            Log.JobAbandoned(logger, current.OperationId, reason);
 
-            var abandoned = job with
+            var abandoned = current with
             {
                 Status = ExecutionJobStatus.Queued,
                 ClaimedBy = null,
@@ -204,17 +215,17 @@ internal sealed partial class JobExecutionService(
             };
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
+            var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
             await jobQueue.RequeueAsync(
-                job.OperationId,
-                job.Priority,
+                current.OperationId,
+                current.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
         }
         else
         {
             var now = DateTimeOffset.UtcNow;
-            var failed = job with
+            var failed = current with
             {
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
@@ -223,7 +234,7 @@ internal sealed partial class JobExecutionService(
                 CurrentPhase = "Failed (abandoned)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
-            await jobQueue.RemoveAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -261,13 +272,17 @@ internal sealed partial class JobExecutionService(
 /// <summary>
 /// Execution context provided to <see cref="IJobExecutor"/> during job execution.
 /// Mediates heartbeat pumping, progress reporting, log appending, and artifact publication.
+/// Serializes read-modify-write operations on the job record to prevent concurrent
+/// heartbeat, progress, and artifact writes from clobbering each other.
 /// </summary>
 internal sealed class JobExecutionContext(
     string operationId,
     IExecutionJobStore jobStore,
     IExecutionLogStore? logStore,
-    JobHeartbeatPolicy heartbeatPolicy) : IJobExecutionContext
+    JobHeartbeatPolicy heartbeatPolicy) : IJobExecutionContext, IDisposable
 {
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     public string OperationId => operationId;
 
     public async Task ReportProgressAsync(
@@ -275,20 +290,28 @@ internal sealed class JobExecutionContext(
         string? phase,
         CancellationToken cancellationToken = default)
     {
-        var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
-        }
+            var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job == null)
+            {
+                return;
+            }
 
-        var updated = job with
+            var updated = job with
+            {
+                PercentComplete = percentComplete,
+                CurrentPhase = phase ?? job.CurrentPhase,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                LastHeartbeatAt = DateTimeOffset.UtcNow
+            };
+            await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        finally
         {
-            PercentComplete = percentComplete,
-            CurrentPhase = phase ?? job.CurrentPhase,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            LastHeartbeatAt = DateTimeOffset.UtcNow
-        };
-        await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            _writeLock.Release();
+        }
     }
 
     public async Task AppendLogAsync(
@@ -305,20 +328,28 @@ internal sealed class JobExecutionContext(
         string artifactReference,
         CancellationToken cancellationToken = default)
     {
-        var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-        if (job == null)
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
-        }
+            var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job == null)
+            {
+                return;
+            }
 
-        var refs = new List<string>(job.ArtifactReferences) { artifactReference };
-        var updated = job with
+            var refs = new List<string>(job.ArtifactReferences) { artifactReference };
+            var updated = job with
+            {
+                ArtifactReferences = refs,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                LastHeartbeatAt = DateTimeOffset.UtcNow
+            };
+            await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        finally
         {
-            ArtifactReferences = refs,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            LastHeartbeatAt = DateTimeOffset.UtcNow
-        };
-        await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            _writeLock.Release();
+        }
     }
 
     /// <summary>
@@ -339,18 +370,26 @@ internal sealed class JobExecutionContext(
 
             try
             {
-                var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                if (job == null)
+                await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    break;
-                }
+                    var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                    if (job == null)
+                    {
+                        break;
+                    }
 
-                var updated = job with
+                    var updated = job with
+                    {
+                        LastHeartbeatAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    };
+                    await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                }
+                finally
                 {
-                    LastHeartbeatAt = DateTimeOffset.UtcNow,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                };
-                await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    _writeLock.Release();
+                }
             }
             catch (OperationCanceledException)
             {
@@ -358,4 +397,6 @@ internal sealed class JobExecutionContext(
             }
         }
     }
+
+    public void Dispose() => _writeLock.Dispose();
 }

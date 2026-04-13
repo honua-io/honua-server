@@ -35,11 +35,14 @@ internal static class JobOrchestrationServiceCollectionExtensions
             return services;
         }
 
-        services.TryAddSingleton<IJobQueue>(sp =>
+        services.TryAddSingleton<RedisJobQueue>(sp =>
             new RedisJobQueue(
                 sp.GetRequiredService<IConnectionMultiplexer>(),
                 sp.GetRequiredService<IExecutionJobStore>(),
                 sp.GetRequiredService<ILogger<RedisJobQueue>>()));
+
+        services.TryAddSingleton<IJobQueue>(sp => sp.GetRequiredService<RedisJobQueue>());
+        services.TryAddSingleton<IQueueClaimReconciler>(sp => sp.GetRequiredService<RedisJobQueue>());
 
         services.TryAddSingleton<IExecutionLogStore>(sp =>
             new RedisExecutionLogStore(
