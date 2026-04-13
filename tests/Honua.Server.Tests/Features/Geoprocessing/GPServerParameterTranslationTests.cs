@@ -54,6 +54,115 @@ public sealed class GPServerParameterTranslationTests
         result["input_features"].Should().Be("test-layer");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_ExtractsUrlFromGPDataFile()
+    {
+        var input = new Dictionary<string, string>
+        {
+            ["Input_File"] = """{"url":"https://example.com/data.zip"}"""
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Input_File"].Should().Be("https://example.com/data.zip");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_ExtractsUrlFromGPRasterDataLayer()
+    {
+        var input = new Dictionary<string, string>
+        {
+            ["Raster"] = """{"url":"https://example.com/raster.tif","format":"tif"}"""
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Raster"].Should().Be("https://example.com/raster.tif");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_NormalizesGPLinearUnit()
+    {
+        var input = new Dictionary<string, string>
+        {
+            ["Buffer_Distance"] = """{"distance":100,"units":"esriMeters"}"""
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Buffer_Distance"].Should().Be("100 esriMeters");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_NormalizesGPArealUnit()
+    {
+        var input = new Dictionary<string, string>
+        {
+            ["Area_Threshold"] = """{"distance":500.5,"units":"esriSquareKilometers"}"""
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Area_Threshold"].Should().Be("500.5 esriSquareKilometers");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_PreservesGPFeatureRecordSetLayerAsJson()
+    {
+        var json = """{"features":[{"attributes":{"FID":1}}],"fields":[{"name":"FID"}]}""";
+        var input = new Dictionary<string, string>
+        {
+            ["Input_Features"] = json
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Input_Features"].Should().Be(json);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_PreservesFeatureRecordSetWithUrl()
+    {
+        // Feature record sets with both "url" and "features"/"fields" should NOT
+        // have the URL extracted — they pass through as full JSON.
+        var json = """{"url":"https://example.com/fs","features":[]}""";
+        var input = new Dictionary<string, string>
+        {
+            ["Input_Features"] = json
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Input_Features"].Should().Be(json);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void TranslateInbound_PreservesInvalidJsonAsString()
+    {
+        var input = new Dictionary<string, string>
+        {
+            ["Notes"] = "{not valid json"
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["Notes"].Should().Be("{not valid json");
+    }
+
     // -----------------------------------------------------------------------
     // Outbound type mapping
     // -----------------------------------------------------------------------

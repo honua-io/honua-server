@@ -419,6 +419,18 @@ public static class EndpointRegistry
         new("GET", "/static/{serviceId}/{center}/{dimensions}.{format}"),
         new("GET", "/static/{serviceId}/bbox/{bbox}/{dimensions}.{format}"),
 
+        // GPServer generic adapter (#723)
+        new("GET", "/rest/services/{serviceId}/GPServer"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"),
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"),
+
         // PrintingTools (Export Web Map Task)
         // Note: task metadata (service info) is served via GET /execute?f=json
         // matching ArcGIS Server behavior. A standalone base URL endpoint cannot be

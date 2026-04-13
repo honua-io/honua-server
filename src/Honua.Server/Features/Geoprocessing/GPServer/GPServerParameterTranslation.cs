@@ -21,7 +21,9 @@ internal static class GPServerParameterTranslation
 
     /// <summary>
     /// Translates incoming Esri GP parameters to canonical opaque string inputs.
-    /// Simple types pass through as string values; complex types are serialized to JSON.
+    /// Simple types pass through as string values. Complex GP types are normalized:
+    /// GPDataFile/GPRasterDataLayer URLs are extracted, GPLinearUnit/GPArealUnit
+    /// objects are normalized to "&lt;value&gt; &lt;unit&gt;" strings.
     /// </summary>
     public static Dictionary<string, string> TranslateInbound(
         IReadOnlyDictionary<string, string> gpParameters)
@@ -30,15 +32,65 @@ internal static class GPServerParameterTranslation
 
         foreach (var (key, value) in gpParameters)
         {
-            // Simple types (GPString, GPLong, GPDouble, GPBoolean) pass through.
-            // Complex types (GPFeatureRecordSetLayer, GPRecordSet) are already
-            // serialized as JSON strings by the client. Unit types (GPLinearUnit,
-            // GPArealUnit) arrive as "<value> <unit>" strings.
-            // All of these are opaque strings in the canonical model.
-            result[key] = value;
+            result[key] = NormalizeGPValue(value);
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Normalizes a single GP parameter value. JSON object payloads matching known
+    /// GP type shapes are canonicalized; all other values pass through unchanged.
+    /// </summary>
+    internal static string NormalizeGPValue(string value)
+    {
+        if (string.IsNullOrEmpty(value) || value[0] != '{')
+        {
+            return value;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(value);
+            var root = doc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return value;
+            }
+
+            // GPDataFile / GPRasterDataLayer: { "url": "..." }
+            if (root.TryGetProperty("url", out var urlProp) && urlProp.ValueKind == JsonValueKind.String)
+            {
+                // Only extract when "url" is the dominant property (data-file shape).
+                // Feature/record set payloads also have "url" but carry "features" or "fields",
+                // so we leave those as JSON passthrough.
+                if (!root.TryGetProperty("features", out _) && !root.TryGetProperty("fields", out _))
+                {
+                    return urlProp.GetString() ?? value;
+                }
+            }
+
+            // GPLinearUnit / GPArealUnit: { "distance": <number>, "units": "<string>" }
+            if (root.TryGetProperty("distance", out var distanceProp) &&
+                root.TryGetProperty("units", out var unitsProp) &&
+                distanceProp.ValueKind == JsonValueKind.Number &&
+                unitsProp.ValueKind == JsonValueKind.String)
+            {
+                var distance = distanceProp.GetDouble();
+                var units = unitsProp.GetString();
+                return FormattableString.Invariant($"{distance} {units}");
+            }
+
+            // GPFeatureRecordSetLayer / GPRecordSet / other complex types:
+            // pass through as-is (already JSON strings in canonical model).
+            return value;
+        }
+        catch (JsonException)
+        {
+            // Not valid JSON — treat as simple string value.
+            return value;
+        }
     }
 
     /// <summary>

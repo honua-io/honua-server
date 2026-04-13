@@ -904,6 +904,36 @@
       ]
     },
     {
+      "surfaceId": "gpserver-adapter",
+      "displayName": "GeoServices REST GPServer Adapter",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST GPServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/GPServer/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/rest/services/{serviceId}/GPServer"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "printing-tools",
       "displayName": "GeoServices REST PrintingTools",
       "surfaceKind": "http-route-family",
