@@ -32,6 +32,20 @@ internal static class ProcessEndpoints
     // to serve a valid process list and description while the catalog is being built.
     internal const string CanonicalProcessId = "honua-geoprocessing";
 
+    // Allowed step kinds mirror AnalysisPlanStepKind (canonical domain enum).
+    // The canonical service rejects steps with unrecognized kinds; the OGC adapter
+    // must apply the same gate to prevent creating jobs the runtime would reject.
+    private static readonly HashSet<string> AllowedStepKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "queryFeatures", "geoprocess", "aggregate", "renderMap", "export"
+    };
+
+    // Allowed artifact kinds mirror ArtifactKind (canonical domain enum).
+    private static readonly HashSet<string> AllowedArtifactKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "scalar", "featureLayer", "table", "raster", "file", "report", "map", "appBundle"
+    };
+
     private static readonly OgcProcessSummary CanonicalProcessSummary = new()
     {
         Id = CanonicalProcessId,
@@ -323,7 +337,7 @@ internal static class ProcessEndpoints
 
     /// <summary>
     /// Validates plan structure matches the canonical service invariants:
-    /// non-empty planId and at least one step.
+    /// non-empty planId, at least one step, recognized step kinds, and recognized output artifact kinds.
     /// </summary>
     /// <returns>Error message if invalid; null if valid.</returns>
     private static string? ValidatePlanStructure(
@@ -352,6 +366,43 @@ internal static class ProcessEndpoints
             || stepsProp.GetArrayLength() == 0)
         {
             return "The analysis plan must contain at least one step.";
+        }
+
+        // Validate step kinds (mirrors HonuaProcessService.ValidatePlanStructure which
+        // rejects steps with Unspecified or undefined PlanStepKind values).
+        foreach (var step in stepsProp.EnumerateArray())
+        {
+            var stepId = (step.TryGetProperty("stepId", out var sid) || step.TryGetProperty("step_id", out sid))
+                ? sid.GetString() ?? "<unknown>"
+                : "<unknown>";
+
+            if (!step.TryGetProperty("kind", out var kindProp)
+                || kindProp.ValueKind != System.Text.Json.JsonValueKind.String)
+            {
+                return $"Step '{stepId}' is missing a 'kind' property.";
+            }
+
+            var kindStr = kindProp.GetString();
+            if (string.IsNullOrWhiteSpace(kindStr) || !AllowedStepKinds.Contains(kindStr))
+            {
+                return $"Step '{stepId}' has unsupported step kind '{kindStr}'.";
+            }
+        }
+
+        // Validate output artifact kinds if present (mirrors HonuaProcessService.ValidatePlanStructure
+        // which rejects Unspecified or undefined ArtifactKind values).
+        if (plan.TryGetProperty("outputs", out var outputsProp)
+            && outputsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var output in outputsProp.EnumerateArray())
+            {
+                if (output.ValueKind != System.Text.Json.JsonValueKind.String)
+                    return "Output artifact kinds must be strings.";
+
+                var outputStr = output.GetString();
+                if (string.IsNullOrWhiteSpace(outputStr) || !AllowedArtifactKinds.Contains(outputStr))
+                    return $"Unsupported artifact kind '{outputStr}'.";
+            }
         }
 
         return null;

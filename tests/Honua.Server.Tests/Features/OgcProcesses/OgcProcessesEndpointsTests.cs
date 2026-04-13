@@ -49,6 +49,40 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
             "OGC API Common Core requires a service-desc link to the API definition");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes")]
+    public async Task LandingPage_ServiceDescPointsToProcessesOpenApi()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var serviceDescLink = json.RootElement.GetProperty("links").EnumerateArray()
+            .First(l => l.GetProperty("rel").GetString() == "service-desc");
+        serviceDescLink.GetProperty("href").GetString().Should()
+            .Contain("/ogc/processes/openapi.json",
+                "service-desc must point to the OGC Processes-specific OpenAPI document");
+    }
+
+    // -----------------------------------------------------------------------
+    // OpenAPI
+    // -----------------------------------------------------------------------
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes/openapi.json")]
+    public async Task OpenApiSpec_ReturnsValidDocument()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes/openapi.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.");
+        json.RootElement.GetProperty("info").GetProperty("title").GetString().Should()
+            .Contain("Processes");
+    }
+
     // -----------------------------------------------------------------------
     // Conformance
     // -----------------------------------------------------------------------
@@ -217,6 +251,63 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
 
         var response = await _fixture.Client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_StepMissingKind_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"test-plan","steps":[{"stepId":"s1"}]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("kind");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_StepUnsupportedKind_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"test-plan","steps":[{"stepId":"s1","kind":"invalidKind"}]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("unsupported step kind");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_UnsupportedArtifactKind_Returns400()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"test-plan","steps":[{"stepId":"s1","kind":"geoprocess"}],"outputs":["badArtifact"]}}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("artifact kind");
     }
 
     // -----------------------------------------------------------------------

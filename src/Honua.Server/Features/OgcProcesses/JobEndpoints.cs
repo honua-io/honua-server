@@ -236,9 +236,22 @@ internal static class JobEndpoints
                 StatusCodes.Status410Gone);
         }
 
-        // Succeeded: return empty document-mode results (execution engine not yet wired)
-        var results = new OgcResultsDocument { Outputs = new Dictionary<string, object?>() };
-        return Results.Json(results, OgcProcessesJsonContext.Default.OgcResultsDocument, MediaTypes.Json);
+        // V1: Result storage is not yet implemented. Mirror the canonical service behavior
+        // (HonuaProcessService.GetJobResults) which reports results as unavailable until
+        // the execution engine and result package storage are wired up.
+        OgcProcessesLog.JobResultsNotAvailable(logger, jobId, "successful");
+        return Results.Json(
+            new OgcProcessError
+            {
+                Type = "about:blank",
+                Title = "Results not available",
+                Status = StatusCodes.Status404NotFound,
+                Detail = $"Result package for job '{jobId}' is not yet available. " +
+                         "Result storage will be implemented with the execution engine."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> DismissJob(

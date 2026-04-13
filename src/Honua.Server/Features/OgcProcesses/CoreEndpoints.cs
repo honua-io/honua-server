@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.OgcProcesses;
 
@@ -14,6 +15,8 @@ internal static class CoreEndpoints
 {
     private const string BasePath = "/ogc/processes";
     private const string Tag = "OGC API Processes";
+
+    private static readonly HashSet<string> OpenApiQueryParameters = new(StringComparer.OrdinalIgnoreCase) { "f" };
 
     private static readonly ImmutableArray<string> ConformanceClasses = ImmutableArray.Create(
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core",
@@ -37,6 +40,13 @@ internal static class CoreEndpoints
             .WithSummary("OGC API Processes conformance declaration")
             .Produces<ConformanceDeclaration>()
             .ExcludeFromDescription();
+
+        endpoints.MapGet($"{BasePath}/openapi.json", GetOpenApiSpec)
+            .WithTags(Tag)
+            .WithName("OgcProcessesOpenApiSpec")
+            .WithSummary("Get OpenAPI 3.0 specification for OGC API Processes")
+            .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static IResult GetLandingPage(HttpContext context, ILogger<OgcProcessesEndpointsLog> logger)
@@ -46,7 +56,7 @@ internal static class CoreEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var links = ImmutableArray.Create(
             Link.Create($"{baseUrl}{BasePath}", RelationTypes.Self, MediaTypes.Json, "This document"),
-            Link.Create($"{baseUrl}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"),
+            Link.Create($"{baseUrl}{BasePath}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"),
             Link.Create($"{baseUrl}{BasePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"),
             Link.Create($"{baseUrl}{BasePath}/processes", "http://www.opengis.net/def/rel/ogc/1.0/processes", MediaTypes.Json, "Process list"),
             Link.Create($"{baseUrl}{BasePath}/jobs", "http://www.opengis.net/def/rel/ogc/1.0/job-list", MediaTypes.Json, "Job list"));
@@ -71,6 +81,31 @@ internal static class CoreEndpoints
         };
 
         return Results.Json(conformance, OgcProcessesJsonContext.Default.ConformanceDeclaration, MediaTypes.Json);
+    }
+
+    private static async Task<IResult> GetOpenApiSpec(
+        HttpContext context,
+        string? f,
+        [FromServices] IWebHostEnvironment environment)
+    {
+        const string fallbackSpec = """
+        {
+          "openapi": "3.0.3",
+          "info": {
+            "title": "Honua OGC API Processes",
+            "description": "OGC API Processes adapter over the Honua canonical geoprocessing runtime.",
+            "version": "1.0.0"
+          },
+          "paths": {}
+        }
+        """;
+        return await OgcCoreMetadataUtilities.GetOpenApiSpecAsync(
+            context,
+            f,
+            environment,
+            OpenApiQueryParameters,
+            "ogc-processes-openapi.json",
+            fallbackSpec);
     }
 
 }

@@ -219,7 +219,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - The `Prefer: respond-async` header is required for execution requests.
 - Results are returned as document-mode JSON (by-value); by-reference transmission is not yet supported.
 - V1 exposes one canonical process (`honua-geoprocessing`); catalog formalization is follow-on work.
-- Conforms to OGC API Processes Part 1: Core conformance classes: `core`, `json`, `job-list`, `dismiss`.
+- Conforms to OGC API Processes Part 1: Core conformance classes: `core`, `json`, `dismiss`, plus OGC API Common `core` and `json`. The `job-list` conformance class is implemented at MVP level but not advertised (V1 lacks required filters and pagination).
 
 ---
 

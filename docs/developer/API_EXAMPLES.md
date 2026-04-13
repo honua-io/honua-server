@@ -428,7 +428,7 @@ curl http://localhost:8080/ogc/processes/processes/honua-geoprocessing
 
 ### **Execute (Async)**
 
-Async execution requires the `Prefer: respond-async` header. The `plan` input must be a JSON object with a `planId` and at least one step. The response returns `201 Created` with a `Location` header pointing to the job status endpoint.
+Async execution requires the `Prefer: respond-async` header. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`). The response returns `201 Created` with a `Location` header pointing to the job status endpoint.
 
 ```bash
 curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/execution \
@@ -439,7 +439,12 @@ curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/e
       "plan": {
         "planId": "plan-1",
         "steps": [
-          {"stepId": "s1", "toolName": "buffer", "inputs": {"distance": "100"}}
+          {
+            "stepId": "s1",
+            "kind": "geoprocess",
+            "processId": "buffer",
+            "inputs": {"distance": "100"}
+          }
         ]
       }
     }
@@ -462,7 +467,7 @@ curl http://localhost:8080/ogc/processes/jobs/{jobId}
 
 ### **Retrieve Results**
 
-Results are available once the job reaches `successful` status. Returns document-mode JSON (by-value).
+Returns results once the job reaches `successful` status and result storage is available. V1 returns `404` with a message indicating result storage is pending execution engine integration.
 
 ```bash
 curl http://localhost:8080/ogc/processes/jobs/{jobId}/results
@@ -470,7 +475,7 @@ curl http://localhost:8080/ogc/processes/jobs/{jobId}/results
 
 ### **Dismiss a Job**
 
-Cancels a running job. Terminal jobs (successful, failed, dismissed) return `409 Conflict`.
+Cancels a running job. Terminal jobs (successful, failed) return `409 Conflict`; already-dismissed jobs return `200`.
 
 ```bash
 curl -X DELETE http://localhost:8080/ogc/processes/jobs/{jobId}

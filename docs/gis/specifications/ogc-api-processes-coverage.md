@@ -19,14 +19,15 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 
 | Capability | Method | Path | Status | Notes |
 |---|---|---|---|---|
-| Landing page | GET | `/ogc/processes` | Implemented | HATEOAS links to API definition (service-desc), conformance, processes, jobs |
+| Landing page | GET | `/ogc/processes` | Implemented | HATEOAS links to API definition (service-desc → `/ogc/processes/openapi.json`), conformance, processes, jobs |
+| OpenAPI spec | GET | `/ogc/processes/openapi.json` | Implemented | Dedicated OpenAPI 3.0.3 document describing OGC Processes endpoints |
 | Conformance | GET | `/ogc/processes/conformance` | Implemented | Declares conformance classes listed above |
 | Process list | GET | `/ogc/processes/processes` | Implemented | V1: single canonical process (`honua-geoprocessing`) |
 | Process description | GET | `/ogc/processes/processes/{processId}` | Implemented | JSON Schema input/output descriptions |
-| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps). Authorization and approval gates match the canonical geoprocessing service. |
-| Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; capped to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
+| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps, step kinds, output artifact kinds). Authorization and approval gates match the canonical geoprocessing service. |
+| Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; defaults to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document |
-| Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Implemented | Document-mode, by-value JSON |
+| Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Stub | Returns 404 for all terminal jobs until result storage is wired to the execution engine (mirrors canonical gRPC behavior) |
 | Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Cancels running jobs via `IJobCancellationNotifier` |
 
 ## Job Status Mapping

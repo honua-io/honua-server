@@ -393,16 +393,18 @@ This ticket builds the canonical process contract. It must:
 - Persists route binding metadata (`gpserver.serviceId`, `gpserver.taskName`) at submit time and validates it on status/result/cancel to prevent cross-protocol job access
 - Does not add internal domain types or lifecycle states
 
-### honua-server#529 — OGC API Processes Adapter
+### honua-server#529 — OGC API Processes Adapter (Implemented)
 
-This is a **protocol adapter** ticket. It must:
+This **protocol adapter** is implemented. The adapter:
 
-- Implement OGC API Processes Part 1 Core routes that project canonical process service operations
-- Translate JSON Schema process descriptions from canonical process definitions
-- Map `ExecutionJobStatus` to OGC job status strings per the state matrix above
-- V1: return results as document-mode, by-value JSON (raw-mode and reference transmission deferred)
-- Support `Prefer: respond-async` negotiation
-- Not add internal domain types or lifecycle states
+- Implements OGC API Processes Part 1 Core routes that project canonical process service operations
+- Translates JSON Schema process descriptions from canonical process definitions
+- Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above
+- V1: returns results as document-mode, by-value JSON (raw-mode and reference transmission deferred)
+- Supports `Prefer: respond-async` negotiation
+- Does not add internal domain types or lifecycle states
+
+See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for endpoint and conformance details.
 
 ### geospatial-grpc#6 — Public Execution Contract
 

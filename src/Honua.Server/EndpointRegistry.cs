@@ -377,6 +377,7 @@ public static class EndpointRegistry
         // OGC API Processes
         new("GET", "/ogc/processes"),
         new("GET", "/ogc/processes/conformance"),
+        new("GET", "/ogc/processes/openapi.json"),
         new("GET", "/ogc/processes/processes"),
         new("GET", "/ogc/processes/processes/{processId}"),
         new("POST", "/ogc/processes/processes/{processId}/execution"),

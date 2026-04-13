@@ -100,6 +100,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <Content Update="ogc-processes-openapi.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json"
              Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
