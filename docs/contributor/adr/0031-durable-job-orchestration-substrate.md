@@ -56,6 +56,33 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
   `LastHeartbeatAt` exceeds the heartbeat timeout (default: 90 seconds), the
   job is considered abandoned.
 
+### Job Kinds
+
+`ExecutionJobKind` categorises workloads so workers can filter what they claim:
+
+| Kind | Description |
+|------|-------------|
+| Geoprocessing | Analytical compute (buffer, spatial join, etc.) |
+| ExtractTransformLoad | Data movement and transformation |
+| TileCache | Tile cache generation or refresh |
+
+`IJobQueue.TryClaimAsync` accepts an optional `acceptedKinds` filter; when
+omitted the worker accepts all kinds.
+
+### Priority Queue
+
+Jobs are dequeued in priority order. Within a priority band, FIFO ordering
+applies.
+
+| Priority | Score Band | Use case |
+|----------|-----------|----------|
+| Critical | 0 | Operator-initiated urgent work |
+| High | 1 × 10¹² | Time-sensitive processing |
+| Normal | 2 × 10¹² | Default for most workloads |
+| Low | 3 × 10¹² | Background or deferrable work |
+
+Millisecond timestamps break ties within a band.
+
 ### Retry Policy
 
 - `JobRetryPolicy` specifies `MaxAttempts`, `BackoffStrategy` (Fixed, Linear,
@@ -65,6 +92,15 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
 - When a heartbeat expires and retries remain, the reconciler requeues the job
   with a computed backoff delay. `AttemptCount` on the record tracks attempts.
 - When retries are exhausted, the job transitions to Failed.
+
+### Timeout Policy
+
+- `JobTimeoutPolicy` specifies `MaxDuration`.
+- Default: 1 hour. A `LongRunning` preset provides a 24-hour ceiling.
+- Enforcement is dual-layered: `JobExecutionService` sets a
+  `CancellationTokenSource` timeout for in-process detection, while
+  `JobReconciliationService` catches workers that crash without cancelling.
+- Jobs that exceed their timeout are marked Failed and are **not** retried.
 
 ### Cancellation
 
@@ -77,9 +113,13 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
 ### Progress Reporting
 
 - Workers report progress through `IJobExecutionContext.ReportProgressAsync`,
-  which updates `PercentComplete`, `CurrentPhase`, and refreshes the heartbeat.
+  which updates `PercentComplete`, `CurrentPhase`, and refreshes the heartbeat
+  on the `ExecutionJobRecord` in `IExecutionJobStore`.
 - The existing `IUniversalProgressStore` remains the canonical progress surface
-  for API consumers and admin dashboards.
+  for API consumers and admin dashboards. A substrate-level projection from
+  `IExecutionJobStore` to `IUniversalProgressStore` is a follow-on integration
+  point; until that projection exists, execution job progress is available
+  through the execution job store directly.
 
 ### Structured Execution Logs
 
@@ -104,6 +144,16 @@ The existing `ExecutionJobStatus` enum is retained unchanged:
   Only worker or combined-mode hosts call this method.
 - `IJobExecutor` implementations are registered per `ExecutionJobKind` and
   only resolved in worker hosts.
+
+### Graceful Shutdown
+
+When a worker host shuts down (e.g. rolling deployment, scale-down), in-flight
+jobs are abandoned rather than marked as terminal failures. The worker itself
+transitions the job back to Queued, clears the claim fields (`ClaimedBy`,
+`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it with the applicable retry
+backoff delay. If the worker crashes without clean abandonment,
+`JobReconciliationService` detects the stale heartbeat and performs the same
+recovery.
 
 ### Integration with Canonical Process Model
 

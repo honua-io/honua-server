@@ -95,7 +95,6 @@ internal sealed partial class RedisJobQueue(
 
             foreach (var candidate in candidates)
             {
-                totalScanned++;
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!candidate.HasValue)
@@ -110,6 +109,7 @@ internal sealed partial class RedisJobQueue(
                 var visibleAfter = GetVisibleAfter(meta);
                 if (visibleAfter.HasValue && visibleAfter.Value > now)
                 {
+                    totalScanned++;
                     continue;
                 }
 
@@ -120,13 +120,18 @@ internal sealed partial class RedisJobQueue(
                     // Stale entry; remove from queue.
                     await _database.SortedSetRemoveAsync(QueueKey, operationId).ConfigureAwait(false);
                     removedFromSet++;
+                    totalScanned++;
                     continue;
                 }
 
+                // Kind-mismatched entries do not consume the claim scan budget
+                // so dedicated workers can reach their own jobs deeper in the queue.
                 if (acceptedKinds != null && !acceptedKinds.Contains(job.Spec.Kind))
                 {
                     continue;
                 }
+
+                totalScanned++;
 
                 // Attempt atomic claim: remove from pending and add to claimed in a
                 // single Lua evaluation to prevent the window where the job exists in

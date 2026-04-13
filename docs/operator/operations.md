@@ -272,6 +272,10 @@ phase, optional metadata) through `IExecutionLogStore`. Logs are
 append-only during execution and read-only after terminal state. Redis-backed
 with configurable retention (default: 7 days).
 
+> **Note:** Execution logs are stored internally but are not yet exposed
+> through a public REST endpoint. Retrieval is available only through
+> direct Redis access or internal diagnostics.
+
 ### Monitoring
 
 Active jobs surface through the existing operations endpoints:
@@ -280,6 +284,11 @@ Active jobs surface through the existing operations endpoints:
 - `GET /api/v1/admin/operations/{operationId}` — job progress and status
 - `GET /api/v1/admin/operations/type/Geoprocessing` — geoprocessing jobs
 
+> **Note:** The operations endpoints read from `IUniversalProgressStore`.
+> Execution job progress written through `IJobExecutionContext` is stored in
+> `IExecutionJobStore` and is not yet projected to the operations surface.
+> A substrate-level projection is a follow-on integration point.
+
 The reconciliation service logs sweep results at Debug level and heartbeat/
 timeout expiry at Warning/Error level. Monitor for `JobReconciliationService`
 log entries in worker hosts.
@@ -287,10 +296,13 @@ log entries in worker hosts.
 ### Graceful Shutdown
 
 When a worker host shuts down, in-flight jobs are abandoned rather than
-marked as terminal failures. The claim fields (`ClaimedBy`, `ClaimedAt`)
-are cleared so the reconciler can requeue the job for another worker.
-This ensures rolling deployments and scale-down events do not permanently
-fail jobs that still have retry budget.
+marked as terminal failures. The worker itself transitions the job back to
+Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
+`LastHeartbeatAt`), and re-enqueues it with the applicable retry backoff
+delay. If a worker crashes without clean abandonment, the reconciliation
+service detects the stale heartbeat and performs the same recovery. This
+ensures rolling deployments and scale-down events do not permanently fail
+jobs that still have retry budget.
 
 ---
 

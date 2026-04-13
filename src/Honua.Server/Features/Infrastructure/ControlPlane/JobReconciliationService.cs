@@ -67,16 +67,18 @@ internal sealed partial class JobReconciliationService(
                 continue; // Not yet claimed; nothing to reconcile.
             }
 
-            if (ShouldExpireHeartbeat(job, now))
+            // Timeout takes precedence: timed-out jobs must fail terminally
+            // even when the heartbeat has also expired and retries remain.
+            if (ShouldExpireTimeout(job, now))
             {
-                await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false);
+                await HandleTimeoutExpiryAsync(job, now, cancellationToken).ConfigureAwait(false);
                 reconciled++;
                 continue;
             }
 
-            if (ShouldExpireTimeout(job, now))
+            if (ShouldExpireHeartbeat(job, now))
             {
-                await HandleTimeoutExpiryAsync(job, now, cancellationToken).ConfigureAwait(false);
+                await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false);
                 reconciled++;
             }
         }

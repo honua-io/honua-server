@@ -113,10 +113,25 @@ internal sealed partial class JobExecutionService(
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
 
+        // Stops the heartbeat pump and waits for it to finish so that no
+        // in-flight heartbeat write can clobber the terminal-state update.
+        async Task StopHeartbeatPumpAsync()
+        {
+            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await heartbeatTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancellation reaches the pump.
+            }
+        }
+
         try
         {
             var result = await executor.ExecuteAsync(running, context, jobCts.Token).ConfigureAwait(false);
-            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
 
             if (result.Status == ExecutionJobStatus.Succeeded)
             {
@@ -131,13 +146,13 @@ internal sealed partial class JobExecutionService(
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
             // Worker is shutting down; abandon the job so it can be retried.
             await AbandonJobAsync(running, "Worker shutdown.", stoppingToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
-            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
             // Timeout — terminal failure, do not retry.
             await TerminateJobAsync(operationId, ExecutionJobStatus.Failed,
@@ -146,7 +161,7 @@ internal sealed partial class JobExecutionService(
         }
         catch (OperationCanceledException)
         {
-            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobCancelledByOperator(logger, operationId);
             // Operator cancellation — terminal cancelled state.
             await TerminateJobAsync(operationId, ExecutionJobStatus.Cancelled,
@@ -154,7 +169,7 @@ internal sealed partial class JobExecutionService(
         }
         catch (Exception ex)
         {
-            await heartbeatCts.CancelAsync().ConfigureAwait(false);
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobExecutionFailed(logger, operationId, ex);
             // Execution exception — route through retry policy.
             await AbandonJobAsync(running, ex.Message, stoppingToken).ConfigureAwait(false);
@@ -162,16 +177,6 @@ internal sealed partial class JobExecutionService(
         finally
         {
             cancellationTokens.Remove(operationId);
-        }
-
-        // Ensure heartbeat pump stops cleanly.
-        try
-        {
-            await heartbeatTask.ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected.
         }
     }
 
