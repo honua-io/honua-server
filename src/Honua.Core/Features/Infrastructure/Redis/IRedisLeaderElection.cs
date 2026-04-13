@@ -50,5 +50,39 @@ public interface IRedisLeaderElection : IRedisService
     /// <summary>
     /// Occurs when leadership status changes.
     /// </summary>
-    event EventHandler<EventArgs>? LeadershipChanged;
+    event EventHandler<LeadershipChangedEventArgs>? LeadershipChanged;
+}
+
+/// <summary>
+/// Event arguments for leadership change events.
+/// </summary>
+public sealed class LeadershipChangedEventArgs : EventArgs
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LeadershipChangedEventArgs"/> class.
+    /// </summary>
+    /// <param name="isLeader">Whether this node is now the leader</param>
+    /// <param name="previousLeader">The previous leader node ID</param>
+    /// <param name="currentLeader">The current leader node ID</param>
+    public LeadershipChangedEventArgs(bool isLeader, string? previousLeader, string? currentLeader)
+    {
+        IsLeader = isLeader;
+        PreviousLeader = previousLeader;
+        CurrentLeader = currentLeader;
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether this node is now the leader.
+    /// </summary>
+    public bool IsLeader { get; }
+
+    /// <summary>
+    /// Gets the previous leader node ID.
+    /// </summary>
+    public string? PreviousLeader { get; }
+
+    /// <summary>
+    /// Gets the current leader node ID.
+    /// </summary>
+    public string? CurrentLeader { get; }
 }
