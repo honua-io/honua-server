@@ -75,6 +75,45 @@ public sealed class OpenApiDriftTests
             .GetProperty("properties");
         statusInfoProps.TryGetProperty("type", out _).Should()
             .BeTrue("StatusInfo must document the type discriminator emitted by all job status responses");
+
+        // Execute schema must require inputs.plan (server enforces this at runtime).
+        var execute = schemas.GetProperty("Execute");
+        execute.TryGetProperty("required", out var executeRequired).Should()
+            .BeTrue("Execute must declare required properties");
+        executeRequired.EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("inputs", "Execute must require 'inputs'");
+
+        var executeInputs = execute.GetProperty("properties").GetProperty("inputs");
+        executeInputs.TryGetProperty("required", out var inputsRequired).Should()
+            .BeTrue("Execute.inputs must declare required properties");
+        inputsRequired.EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("plan", "Execute.inputs must require 'plan'");
+
+        // AnalysisPlan schema must describe the minimum accepted shape.
+        var plan = schemas.GetProperty("AnalysisPlan");
+        plan.TryGetProperty("required", out var planRequired).Should().BeTrue();
+        var planRequiredFields = planRequired.EnumerateArray().Select(e => e.GetString()).ToList();
+        planRequiredFields.Should().Contain("planId").And.Contain("steps");
+
+        // ProcessIoSchema must expose the fields emitted by process description endpoints.
+        var ioSchema = schemas.GetProperty("ProcessIoSchema");
+        var ioSchemaProps = ioSchema.GetProperty("properties");
+        ioSchemaProps.TryGetProperty("type", out _).Should()
+            .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
+        ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
+            .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+
+        // InputDescription and OutputDescription must reference ProcessIoSchema.
+        foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })
+        {
+            var schemaRef = schemas.GetProperty(schemaName)
+                .GetProperty("properties")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString();
+            schemaRef.Should().Be("#/components/schemas/ProcessIoSchema",
+                $"{schemaName}.schema must reference ProcessIoSchema");
+        }
     }
 
     [ArchitectureTest]

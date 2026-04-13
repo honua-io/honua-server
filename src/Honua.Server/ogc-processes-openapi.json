@@ -509,7 +509,7 @@
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
-          "schema": { "type": "object" }
+          "schema": { "$ref": "#/components/schemas/ProcessIoSchema" }
         }
       },
       "OutputDescription": {
@@ -517,14 +517,33 @@
         "properties": {
           "title": { "type": "string" },
           "description": { "type": "string" },
-          "schema": { "type": "object" }
+          "schema": { "$ref": "#/components/schemas/ProcessIoSchema" }
+        }
+      },
+      "ProcessIoSchema": {
+        "type": "object",
+        "description": "Minimal JSON Schema fragment describing a process input or output value.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "JSON Schema type (string, number, object, array, etc.)."
+          },
+          "contentMediaType": {
+            "type": "string",
+            "description": "Content media type hint for complex inputs."
+          }
         }
       },
       "Execute": {
         "type": "object",
+        "required": ["inputs"],
         "properties": {
           "inputs": {
             "type": "object",
+            "required": ["plan"],
+            "properties": {
+              "plan": { "$ref": "#/components/schemas/AnalysisPlan" }
+            },
             "additionalProperties": true
           },
           "response": {
@@ -532,6 +551,58 @@
             "enum": ["document"],
             "default": "document",
             "description": "Response mode. V1 only supports 'document'."
+          }
+        }
+      },
+      "AnalysisPlan": {
+        "type": "object",
+        "description": "Analysis plan with steps, inputs, and output expectations.",
+        "required": ["planId", "steps"],
+        "properties": {
+          "planId": {
+            "type": "string",
+            "description": "Unique identifier for the analysis plan.",
+            "minLength": 1
+          },
+          "steps": {
+            "type": "array",
+            "description": "Ordered list of processing steps.",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/PlanStep" }
+          },
+          "outputs": {
+            "type": "array",
+            "description": "Desired output artifact kinds.",
+            "items": {
+              "type": "string",
+              "enum": ["scalar", "featureLayer", "table", "raster", "file", "report", "map", "appBundle"]
+            }
+          }
+        }
+      },
+      "PlanStep": {
+        "type": "object",
+        "description": "Single processing step in an analysis plan.",
+        "required": ["kind"],
+        "properties": {
+          "stepId": {
+            "type": "string",
+            "description": "Unique identifier for this step."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Type of processing operation.",
+            "enum": ["queryFeatures", "geoprocess", "aggregate", "renderMap", "export"]
+          },
+          "inputs": {
+            "type": "object",
+            "description": "Step input parameters as key-value string pairs.",
+            "additionalProperties": { "type": "string" }
+          },
+          "dependsOn": {
+            "type": "array",
+            "description": "Step IDs this step depends on.",
+            "items": { "type": "string" }
           }
         }
       },

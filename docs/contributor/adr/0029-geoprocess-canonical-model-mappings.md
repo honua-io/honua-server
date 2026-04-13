@@ -173,7 +173,7 @@ model. Must not add domain types to `Honua.Core`.
 
 - honua-server#721: implement the canonical process contract per these constraints
 - honua-server#723: implement the GPServer adapter per the mapping tables
-- honua-server#529: implement the OGC API Processes adapter per the mapping tables
+- honua-server#529: OGC API Processes adapter — **implemented** (see [coverage](../../gis/specifications/ogc-api-processes-coverage.md))
 - geospatial-grpc#6: align the public gRPC contract with the canonical
   `process_service.proto`
 - Formalize `ProcessDefinition` as a first-class domain type when the process

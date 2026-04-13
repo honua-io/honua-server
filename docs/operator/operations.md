@@ -174,6 +174,23 @@ Honua uses a layered caching approach:
 
 ---
 
+## OGC API Processes
+
+The OGC API Processes adapter is always registered and serves routes under
+`/ogc/processes`. Job lifecycle operations (execute, list, status, results,
+dismiss) require Redis-backed durable storage; they return `503` when the
+store is not configured.
+
+### Configuration
+
+All settings live under `OgcProcesses` (env prefix `OgcProcesses__`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `DefaultJobLimit` | 100 | Maximum jobs returned per `GET /ogc/processes/jobs` request |
+
+---
+
 ## Workspace Lifecycle
 
 Geoprocessing workspaces manage temporary and durable artifacts produced by
