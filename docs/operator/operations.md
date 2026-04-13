@@ -238,6 +238,18 @@ the job is considered abandoned. When `LastHeartbeatAt` has not yet been set
 requeues the job with a computed backoff delay; otherwise the job transitions
 to Failed.
 
+### Stale Claim Recovery
+
+The queue uses a two-phase claim: an atomic Redis move from the pending
+set to the claimed set, followed by a job store update. If the store
+update fails (e.g. transient Redis error), the claim is rolled back
+immediately. If the rollback also fails, the reconciliation service
+detects the orphaned claim after 60 seconds and requeues the job
+automatically. No operator intervention is required; monitor for
+`RedisJobQueue` Warning entries (`OrphanedClaimRequeued`,
+`ClaimRolledBack`) or Error entries (`ClaimRollbackFailed`) if you
+want visibility into recovery events.
+
 ### Priority Queue
 
 Jobs are dequeued in priority order. Within a priority band, FIFO ordering
@@ -292,9 +304,12 @@ Active jobs surface through the existing operations endpoints:
 > `IExecutionJobStore` and is not yet projected to the operations surface.
 > A substrate-level projection is a follow-on integration point.
 
-The reconciliation service logs sweep results at Debug level and heartbeat/
-timeout expiry at Warning/Error level. Monitor for `JobReconciliationService`
-log entries in worker hosts.
+The reconciliation service logs sweep results at Debug level only when at
+least one job was reconciled; clean sweeps are silent. Heartbeat and
+timeout expiry are logged at Warning/Error level. See
+[Monitoring — Job Orchestration Observability](monitoring.md#job-orchestration-observability)
+for the full log level table across `JobExecutionService`,
+`JobReconciliationService`, and `RedisJobQueue`.
 
 ### Graceful Shutdown
 
@@ -302,10 +317,13 @@ When a worker host shuts down, in-flight jobs are abandoned rather than
 marked as terminal failures. The worker itself transitions the job back to
 Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
 `LastHeartbeatAt`), and re-enqueues it with the applicable retry backoff
-delay. If a worker crashes without clean abandonment, the reconciliation
-service detects the stale heartbeat and performs the same recovery. This
-ensures rolling deployments and scale-down events do not permanently fail
-jobs that still have retry budget.
+delay. If the reconciliation service has already transitioned the job to a
+terminal or requeued state, the worker's shutdown handler safely skips the
+state transition to avoid overwriting the authoritative update. If a worker
+crashes without clean abandonment, the reconciliation service detects the
+stale heartbeat and performs the same recovery. This ensures rolling
+deployments and scale-down events do not permanently fail jobs that still
+have retry budget.
 
 ---
 

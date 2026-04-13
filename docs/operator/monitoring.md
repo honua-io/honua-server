@@ -46,21 +46,58 @@ background sweep.
 | Level | Signal |
 |-------|--------|
 | Information | Worker started/stopped, job execution started, job completed, operator cancellation |
-| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup |
-| Error | Job execution exception, claim loop error, job timeout |
+| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup, job timeout, state transition skipped (reconciler intervention) |
+| Error | Job execution exception, claim loop error |
 
 **JobReconciliationService** (liveness sweep):
 
 | Level | Signal |
 |-------|--------|
-| Debug | Routine sweep results (reconciled count out of active total) |
+| Debug | Sweep results when at least one job was reconciled (count out of active total) |
 | Warning | Heartbeat expired — job requeued for retry |
 | Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
 
-Monitor for both `JobExecutionService` and `JobReconciliationService`
-entries in worker hosts to detect execution failures, stale heartbeats,
-abandoned jobs, and retry exhaustion. For lifecycle details and tuning,
-see [Operations — Job Orchestration](operations.md#job-orchestration).
+**RedisJobQueue** (queue operations and claim recovery):
+
+| Level | Signal |
+|-------|--------|
+| Information | Job enqueued, job claimed, job requeued |
+| Warning | Orphaned claim requeued (claim succeeded but store update failed), claim rolled back after store failure |
+| Error | Claim rollback failed (orphaned claim will be caught by reconciliation) |
+
+Monitor for `JobExecutionService`, `JobReconciliationService`, and
+`RedisJobQueue` entries in worker hosts to detect execution failures,
+stale heartbeats, abandoned jobs, retry exhaustion, and claim-recovery
+events. For lifecycle details and tuning, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+---
+
+## Workspace Lifecycle Observability
+
+Background cleanup and lifecycle operations emit log entries from
+`WorkspaceCleanupService` and `WorkspaceLifecycleService`.
+
+**WorkspaceCleanupService** (periodic sweep):
+
+| Level | Signal |
+|-------|--------|
+| Information | Service started/stopped, cleanup disabled, sweep results (expired/deleted/artifact counts) |
+| Debug | Sweep started |
+| Warning | Partial error during cleanup (individual workspace failure) |
+| Error | Sweep failed |
+
+**WorkspaceLifecycleService** (workspace and artifact operations):
+
+| Level | Signal |
+|-------|--------|
+| Information | Workspace created, workspace expired, workspace deleted, artifact promoted |
+| Warning | Artifact addition rejected (wrong state or expired), promotion source transition failed, cleanup skipped (orphan risk) |
+| Error | Cleanup error for individual workspace, promotion rollback failed (duplicate artifact may exist) |
+
+Monitor for these entries to detect cleanup failures, quota-related
+rejections, and promotion errors. For configuration and retention
+details, see [Operations — Workspace Lifecycle](operations.md#workspace-lifecycle).
 
 ---
 

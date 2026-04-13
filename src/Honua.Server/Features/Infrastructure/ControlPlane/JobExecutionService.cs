@@ -88,7 +88,7 @@ internal sealed partial class JobExecutionService(
         if (!_executorMap.TryGetValue(job.Spec.Kind, out var executor))
         {
             Log.NoExecutorForKind(logger, operationId, job.Spec.Kind.ToString());
-            await AbandonJobAsync(job, "No executor registered for job kind.", stoppingToken).ConfigureAwait(false);
+            await AbandonJobAsync(job, workerId, "No executor registered for job kind.", stoppingToken).ConfigureAwait(false);
             return;
         }
 
@@ -119,7 +119,7 @@ internal sealed partial class JobExecutionService(
             operationId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default);
 
         // Start heartbeat pump in background.
-        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
 
         // Stops the heartbeat pump and waits for it to finish so that no
@@ -144,12 +144,12 @@ internal sealed partial class JobExecutionService(
 
             if (result.Status == ExecutionJobStatus.Succeeded)
             {
-                await FinalizeJobAsync(operationId, result, stoppingToken).ConfigureAwait(false);
+                await FinalizeJobAsync(operationId, workerId, result, CancellationToken.None).ConfigureAwait(false);
             }
             else
             {
                 // Executor returned failure — route through retry policy.
-                await AbandonJobAsync(running, result.ErrorMessage ?? "Execution failed.", stoppingToken)
+                await AbandonJobAsync(running, workerId, result.ErrorMessage ?? "Execution failed.", CancellationToken.None)
                     .ConfigureAwait(false);
             }
         }
@@ -159,14 +159,14 @@ internal sealed partial class JobExecutionService(
             // Worker is shutting down; abandon the job so it can be retried.
             // Use CancellationToken.None so store/queue cleanup can complete
             // after the host stopping signal has fired.
-            await AbandonJobAsync(running, "Worker shutdown.", CancellationToken.None).ConfigureAwait(false);
+            await AbandonJobAsync(running, workerId, "Worker shutdown.", CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
             // Timeout — terminal failure, do not retry.
-            await TerminateJobAsync(operationId, ExecutionJobStatus.Failed,
+            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
                 $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
                 .ConfigureAwait(false);
         }
@@ -175,7 +175,7 @@ internal sealed partial class JobExecutionService(
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobCancelledByOperator(logger, operationId);
             // Operator cancellation — terminal cancelled state.
-            await TerminateJobAsync(operationId, ExecutionJobStatus.Cancelled,
+            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
                 "Cancelled by operator.", CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -183,7 +183,7 @@ internal sealed partial class JobExecutionService(
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             Log.JobExecutionFailed(logger, operationId, ex);
             // Execution exception — route through retry policy.
-            await AbandonJobAsync(running, ex.Message, stoppingToken).ConfigureAwait(false);
+            await AbandonJobAsync(running, workerId, ex.Message, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -193,12 +193,19 @@ internal sealed partial class JobExecutionService(
 
     private async Task FinalizeJobAsync(
         string operationId,
+        string workerId,
         JobExecutionResult result,
         CancellationToken cancellationToken)
     {
         var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (job == null)
         {
+            return;
+        }
+
+        if (IsTerminalOrNotOwnedBy(job, workerId))
+        {
+            Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
             return;
         }
 
@@ -227,6 +234,7 @@ internal sealed partial class JobExecutionService(
 
     private async Task TerminateJobAsync(
         string operationId,
+        string workerId,
         ExecutionJobStatus terminalStatus,
         string reason,
         CancellationToken cancellationToken)
@@ -234,6 +242,12 @@ internal sealed partial class JobExecutionService(
         var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (job == null)
         {
+            return;
+        }
+
+        if (IsTerminalOrNotOwnedBy(job, workerId))
+        {
+            Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
             return;
         }
 
@@ -260,11 +274,19 @@ internal sealed partial class JobExecutionService(
 
     private async Task AbandonJobAsync(
         ExecutionJobRecord job,
+        string workerId,
         string reason,
         CancellationToken cancellationToken)
     {
         // Re-read to capture progress and artifact updates made during execution.
         var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
+
+        if (IsTerminalOrNotOwnedBy(current, workerId))
+        {
+            Log.TerminalStateSkipped(logger, current.OperationId, current.Status.ToString());
+            return;
+        }
+
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
         if (retryPolicy.ShouldRetry(current.AttemptCount))
@@ -312,6 +334,16 @@ internal sealed partial class JobExecutionService(
         }
     }
 
+    /// <summary>
+    /// Returns <c>true</c> when the job record is no longer in an active state owned
+    /// by <paramref name="workerId"/>, indicating that the reconciler or another
+    /// worker has already transitioned the job. Callers should skip their own
+    /// state transition to avoid overwriting the authoritative update.
+    /// </summary>
+    private static bool IsTerminalOrNotOwnedBy(ExecutionJobRecord job, string workerId)
+        => job.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
+           || job.ClaimedBy != workerId;
+
     private static partial class Log
     {
         [LoggerMessage(9050, LogLevel.Information, "Job execution worker started: {WorkerId}")]
@@ -349,6 +381,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9061, LogLevel.Warning, "No job executors registered for worker {WorkerId}; claim loop will not match any jobs")]
         public static partial void NoExecutorsRegistered(ILogger logger, string workerId);
+
+        [LoggerMessage(9062, LogLevel.Warning, "Skipping state transition for job {OperationId}: current status is {Status} (reconciler or another worker intervened)")]
+        public static partial void TerminalStateSkipped(ILogger logger, string operationId, string status);
     }
 }
 
@@ -458,6 +493,14 @@ internal sealed class JobExecutionContext(
                 {
                     var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
                     if (job == null)
+                    {
+                        break;
+                    }
+
+                    // Stop pumping if the reconciler already marked this job terminal.
+                    if (job.Status is ExecutionJobStatus.Succeeded
+                        or ExecutionJobStatus.Failed
+                        or ExecutionJobStatus.Cancelled)
                     {
                         break;
                     }
