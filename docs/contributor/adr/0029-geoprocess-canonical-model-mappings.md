@@ -63,13 +63,16 @@ not extend them.
 | `Failed` | `esriJobFailed` | `failed` |
 | `Cancelled` | `esriJobCancelled` | `dismissed` |
 
-**`GeoprocessingWorkflowStatus`** (workflow-level, internal and gRPC/MCP only):
+**`GeoprocessingWorkflowStatus`** (workflow-level, internal today):
 
 The extended states (`Draft`, `AwaitingClarification`, `Validated`,
-`AwaitingApproval`, `AwaitingExecution`) are Honua-specific. They are visible
-through the gRPC `ProcessService` and MCP surfaces but hidden from GPServer and
-OGC API Processes adapters. These states predate the execution phase and have no
-equivalent in either protocol.
+`AwaitingApproval`, `AwaitingExecution`) are Honua-specific. They are internal
+to the operator workflow and tracked through progress/admin surfaces (e.g.,
+`IUniversalProgressStore`, admin operations endpoints). They are not currently
+exposed through the gRPC `ProcessService` or MCP — future exposure through a
+dedicated progress/status RPC or operator MCP workflow surface is follow-on
+contract work. These states predate the execution phase and have no equivalent
+in GPServer or OGC API Processes.
 
 ### Result Access Patterns Differ By Protocol
 
@@ -77,7 +80,10 @@ The canonical `AnalysisResultPackage` is the single source of truth for results.
 Adapters reshape it:
 
 - **GPServer**: decompose `Artifacts` into per-parameter result endpoints
-  (`/results/{name}`), matching Esri's per-output model
+  (`/results/{paramName}`), matching Esri's per-output model. The route key
+  must be a stable output identifier, not `ArtifactRef.Label` (which is
+  human-readable). Adapters should bind artifacts to process definition
+  output parameter names via `ArtifactRef.Metadata` or a follow-on field
 - **OGC API Processes (v1 subset)**: return all `Artifacts` in a single
   `/jobs/{jobId}/results` JSON response using document-mode, by-value
   transmission. This is a Honua v1 adapter decision — the full OGC spec

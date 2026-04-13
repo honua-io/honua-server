@@ -184,8 +184,11 @@ API Processes:
 
 Protocol adapters expose only the subset of states that their protocol defines.
 The extended workflow states (`Draft`, `AwaitingClarification`, `Validated`,
-`AwaitingApproval`) are visible through the gRPC `ProcessService` and MCP
-surfaces but hidden from compatibility adapters.
+`AwaitingApproval`) are internal to the operator workflow today. They are
+tracked through the progress/admin surfaces (e.g., `IUniversalProgressStore`,
+admin operations endpoints) but are not currently exposed through the gRPC
+`ProcessService` or MCP. Future gRPC or operator-MCP exposure of these states
+is follow-on contract work. Compatibility adapters never expose them.
 
 ## Result Retrieval
 
@@ -228,7 +231,7 @@ Honua uses `AnalysisResultPackage` as the canonical result envelope:
 | `Status` | Map from `GeoprocessingWorkflowStatus` to `jobStatus` | Not projected through `/results`; serve OGC `status` from `ExecutionJobRecord.Status` on `GET /jobs/{jobId}` |
 | `Summary` (title, description) | Map to job messages | Deferred / non-standard for OGC Part 1 Core results; not included in the v1 `/results` payload |
 | `Assumptions` | — (not in GPServer) | — (not in OGC) |
-| `Artifacts` (list of `ArtifactRef`) | Project each artifact as a named result parameter | V1: project all artifacts as a document-mode JSON results object (see §7.13 subset below) |
+| `Artifacts` (list of `ArtifactRef`) | Project each artifact as a result parameter keyed by a stable output identifier (see adapter note below) | V1: project all artifacts as a document-mode JSON results object keyed by output identifier (see §7.13 subset below) |
 | `WorkspaceRefs` | — (not in GPServer) | — (not in OGC) |
 | `MapPackageId` | — (Honua-specific) | — (Honua-specific) |
 | `AppPackageId` | — (Honua-specific) | — (Honua-specific) |
@@ -238,8 +241,12 @@ Honua uses `AnalysisResultPackage` as the canonical result envelope:
 The critical adapter difference is result access pattern:
 
 - **GPServer adapter** (#723): must project each `ArtifactRef` as an
-  individually addressable result at `/results/{artifactLabel}`, matching
-  GPServer's per-parameter result model
+  individually addressable result at `/results/{paramName}`, matching
+  GPServer's per-parameter result model. The route key must be a stable
+  output identifier, not `ArtifactRef.Label` (which is human-readable).
+  Adapters should establish a binding between the process definition's
+  output parameter name and the artifact, using `ArtifactRef.Metadata`
+  with a well-known key or a follow-on field addition to `ArtifactRef`
 - **OGC adapter** (#529): v1 supports document-mode, by-value results only —
   return all artifacts in a single `/jobs/{jobId}/results` JSON response.
   Raw-mode responses, reference-based transmission, and multipart output are
@@ -336,7 +343,7 @@ Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Parameter type translation is the adapter's responsibility — the canonical model does not store Esri GP types
-3. Per-output result access must decompose `AnalysisResultPackage.Artifacts` by artifact label
+3. Per-output result access must decompose `AnalysisResultPackage.Artifacts` by a stable output identifier — not `ArtifactRef.Label` (which is human-readable). The adapter must define or consume a binding between the process definition output parameter name and each artifact (e.g., via a well-known `ArtifactRef.Metadata` key)
 4. The adapter may synthesize `esriJobCancelling` as a transient state but must not persist it
 
 ### OGC API Processes Adapter (honua-server#529)
@@ -361,7 +368,7 @@ Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Input/output schema translation to JSON Schema is the adapter's responsibility
-3. V1 results use document-mode, by-value only: return a single JSON object with all outputs, not per-parameter. Raw-mode and reference-based transmission are deferred
+3. V1 results use document-mode, by-value only: return a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. Raw-mode and reference-based transmission are deferred
 4. `DELETE /jobs/{jobId}` maps to cancellation, not resource deletion — the canonical job record persists
 
 ## Backlog Guidance
