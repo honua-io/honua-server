@@ -285,12 +285,12 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Output formats:** JSON (Esri camelCase convention)
 
-**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Service and task discovery return stub metadata (empty task/parameter lists) until a formal process catalog is available. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400.
+**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Service and task discovery return stub metadata (empty task/parameter lists) until a formal process catalog is available. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
 
 **Typical use cases:**
 - ArcGIS Pro / SDK geoprocessing tool connectivity
 - Async analysis workflows with job lifecycle polling
-- Result retrieval per named output parameter (route registered; actual output retrieval pending execution-engine/result-storage support)
+- Per-parameter result retrieval from completed jobs
 
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
@@ -365,7 +365,7 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [MapServer Coverage Matrix](map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
 - [ImageServer Coverage Matrix](image-server-matrix.md) — aligned to [Esri REST Image Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/)
 - [Geometry Service Matrix](geometry-service-matrix.md) — buffer, simplify, project, intersect, union, clip, difference, plus Honua supplemental `area`/`length` routes
-- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer canonical model mapping, lifecycle state matrix, and adapter invariants (protocol adapter is downstream #723)
+- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer canonical model mapping, lifecycle state matrix, and adapter invariants
 
 **OGC API:**
 - [OGC API Features Coverage](specifications/ogc-api-features-coverage.md)
@@ -411,3 +411,4 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [MapServer Coverage Matrix](map-server-matrix.md)
 - [ImageServer Coverage Matrix](image-server-matrix.md)
 - [Geometry Service Matrix](geometry-service-matrix.md)
+- [Geoprocess Framework Analysis](geoprocess-framework-analysis.md)
