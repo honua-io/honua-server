@@ -382,6 +382,12 @@
           "inputs": {
             "type": "object",
             "additionalProperties": true
+          },
+          "response": {
+            "type": "string",
+            "enum": ["document"],
+            "default": "document",
+            "description": "Response mode. V1 only supports 'document'."
           }
         }
       },

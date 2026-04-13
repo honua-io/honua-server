@@ -27,7 +27,7 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 | Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` header. Validates plan structure (planId, steps, step kinds, output artifact kinds). Authorization and approval gates match the canonical geoprocessing service. |
 | Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; defaults to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document |
-| Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Stub | Returns 404 for all terminal jobs until result storage is wired to the execution engine (mirrors canonical gRPC behavior) |
+| Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Stub | Non-terminal jobs return `404` (result not ready). Failed jobs return `500`. Dismissed jobs return `410 Gone`. Successful jobs return `404` (result storage pending execution engine integration). |
 | Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Cancels running jobs via `IJobCancellationNotifier` |
 
 ## Job Status Mapping

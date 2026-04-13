@@ -235,6 +235,25 @@ internal static class ProcessEndpoints
                 StatusCodes.Status501NotImplemented);
         }
 
+        // V1: document-only response mode. Reject "raw" or any unsupported value.
+        if (request.Response != null
+            && !string.Equals(request.Response, "document", StringComparison.OrdinalIgnoreCase))
+        {
+            OgcProcessesLog.UnsupportedResponseMode(logger, processId, request.Response);
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Unsupported response mode",
+                    Status = StatusCodes.Status501NotImplemented,
+                    Detail = $"Response mode '{request.Response}' is not supported. " +
+                             "V1 only supports 'document' mode."
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status501NotImplemented);
+        }
+
         // Validate that the request contains the required 'plan' input.
         if (request.Inputs == null
             || !request.Inputs.TryGetValue("plan", out var planElement)
@@ -368,8 +387,10 @@ internal static class ProcessEndpoints
             return "The analysis plan must contain at least one step.";
         }
 
-        // Validate step kinds (mirrors HonuaProcessService.ValidatePlanStructure which
-        // rejects steps with Unspecified or undefined PlanStepKind values).
+        // Validate step kinds, input value types, and dependsOn shape
+        // (mirrors HonuaProcessService.ValidatePlanStructure which rejects steps with
+        // Unspecified or undefined PlanStepKind values, and the canonical proto contract
+        // which defines inputs as map<string,string> and depends_on as repeated string).
         foreach (var step in stepsProp.EnumerateArray())
         {
             var stepId = (step.TryGetProperty("stepId", out var sid) || step.TryGetProperty("step_id", out sid))
@@ -386,6 +407,33 @@ internal static class ProcessEndpoints
             if (string.IsNullOrWhiteSpace(kindStr) || !AllowedStepKinds.Contains(kindStr))
             {
                 return $"Step '{stepId}' has unsupported step kind '{kindStr}'.";
+            }
+
+            // Validate step inputs are map<string,string> per canonical proto contract.
+            if (step.TryGetProperty("inputs", out var inputsProp))
+            {
+                if (inputsProp.ValueKind != System.Text.Json.JsonValueKind.Object)
+                    return $"Step '{stepId}' inputs must be a JSON object.";
+
+                foreach (var input in inputsProp.EnumerateObject())
+                {
+                    if (input.Value.ValueKind != System.Text.Json.JsonValueKind.String)
+                        return $"Step '{stepId}' input '{input.Name}' must be a string value.";
+                }
+            }
+
+            // Validate dependsOn is an array of strings per canonical proto contract.
+            if ((step.TryGetProperty("dependsOn", out var depsProp) || step.TryGetProperty("depends_on", out depsProp))
+                && depsProp.ValueKind != System.Text.Json.JsonValueKind.Null)
+            {
+                if (depsProp.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    return $"Step '{stepId}' dependsOn must be an array.";
+
+                foreach (var dep in depsProp.EnumerateArray())
+                {
+                    if (dep.ValueKind != System.Text.Json.JsonValueKind.String)
+                        return $"Step '{stepId}' dependsOn values must be strings.";
+                }
             }
         }
 

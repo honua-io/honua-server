@@ -467,7 +467,7 @@ curl http://localhost:8080/ogc/processes/jobs/{jobId}
 
 ### **Retrieve Results**
 
-Returns results once the job reaches `successful` status and result storage is available. V1 returns `404` with a message indicating result storage is pending execution engine integration.
+Returns results once the job reaches `successful` status and result storage is available. V1 does not yet populate result storage, so terminal jobs return errors: `404` for successful (results pending), `500` for failed, `410 Gone` for dismissed. Non-terminal jobs return `404` (result not ready).
 
 ```bash
 curl http://localhost:8080/ogc/processes/jobs/{jobId}/results
