@@ -1819,57 +1819,99 @@
     {
       "id": "gp-server",
       "displayName": "GPServer",
-      "parity": "not_implemented",
+      "parity": "partial",
       "drillDownDoc": "docs/gis/geoprocess-framework-analysis.md",
-      "implementedSurface": [],
+      "implementedSurface": [
+        "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
+        "PrintingTools Get Layout Templates Info Task (sync execute)"
+      ],
       "knownGaps": [
-        "task discovery",
-        "execute (synchronous)",
-        "submitJob (asynchronous)",
-        "job status polling",
-        "per-parameter result access",
-        "cancel job"
+        "generic task discovery across arbitrary GP services",
+        "cancel job",
+        "multi-parameter result access (PrintingTools only exposes Output_File)"
       ],
       "evidence": {
         "canonicalModel": [
           "docs/gis/geoprocess-framework-analysis.md",
           "docs/contributor/adr/0029-geoprocess-canonical-model-mappings.md"
         ],
-        "code": [],
-        "tests": []
+        "code": [
+          "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
+          "src/Honua.Server/EndpointRegistry.cs"
+        ],
+        "tests": [
+          "tests/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs"
+        ]
       },
       "operations": {
-        "implemented": [],
+        "implemented": [
+          {
+            "name": "Task Metadata",
+            "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task",
+            "methods": ["GET"],
+            "notes": "Returns task name, display name, parameters, and choice lists. Served via PrintingTools endpoints."
+          },
+          {
+            "name": "Execute Task (sync)",
+            "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute",
+            "methods": ["GET", "POST"],
+            "notes": "Synchronous map export returning image bytes. PrintingTools-specific implementation."
+          },
+          {
+            "name": "Submit Job (async)",
+            "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob",
+            "methods": ["GET", "POST"],
+            "notes": "Asynchronous map export job submission. PrintingTools-specific implementation."
+          },
+          {
+            "name": "Job Status",
+            "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}",
+            "methods": ["GET"],
+            "notes": "Job status polling with result parameter URL. PrintingTools-specific implementation."
+          },
+          {
+            "name": "Job Results",
+            "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File",
+            "methods": ["GET"],
+            "notes": "Single-parameter result access (Output_File only). PrintingTools-specific implementation."
+          },
+          {
+            "name": "Template Listing (sync)",
+            "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute",
+            "methods": ["GET"],
+            "notes": "Returns available layout templates. PrintingTools-specific implementation."
+          }
+        ],
         "not_implemented": [
           {
-            "name": "GP Task List",
+            "name": "GP Task List (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer",
             "methods": ["GET"],
             "notes": "Deferred to #723. Canonical model maps task list to CatalogService process definitions."
           },
           {
-            "name": "Execute Task (sync)",
+            "name": "Execute Task (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
             "methods": ["POST"],
-            "notes": "Deferred to #723. Maps to ProcessService.ExecutePlan."
+            "notes": "Deferred to #723. Maps to ProcessService.ExecutePlan. PrintingTools subset already implemented above."
           },
           {
-            "name": "Submit Job (async)",
+            "name": "Submit Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
             "methods": ["POST"],
-            "notes": "Deferred to #723. Maps to ProcessService.SubmitPlanJob."
+            "notes": "Deferred to #723. Maps to ProcessService.SubmitPlanJob. PrintingTools subset already implemented above."
           },
           {
-            "name": "Job Status",
+            "name": "Job Status (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}",
             "methods": ["GET"],
-            "notes": "Deferred to #723. Maps to ProcessService.GetJob → ExecutionJobRecord."
+            "notes": "Deferred to #723. Maps to ProcessService.GetJob → ExecutionJobRecord. PrintingTools subset already implemented above."
           },
           {
-            "name": "Job Results",
+            "name": "Job Results (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}",
             "methods": ["GET"],
-            "notes": "Deferred to #723. Maps to ProcessService.GetJobResults → individual ArtifactRef from AnalysisResultPackage.Artifacts."
+            "notes": "Deferred to #723. Maps to ProcessService.GetJobResults → individual ArtifactRef from AnalysisResultPackage.Artifacts. PrintingTools subset already implemented above."
           },
           {
             "name": "Cancel Job",
@@ -1880,7 +1922,8 @@
         ]
       },
       "knownLimitations": [
-        "No GPServer REST surface is implemented. Canonical model and lifecycle state mappings are established in #360; protocol adapter is downstream work in #723."
+        "Only the PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented. The canonical GP adapter for arbitrary GP services is downstream work in #723.",
+        "Canonical model and lifecycle state mappings are established in #360."
       ]
     }
   ]
