@@ -149,9 +149,11 @@ internal static class GPServerEndpoints
         // exists under {serviceId}. Reject instead of fabricating metadata for
         // unknown tasks (see review finding: correctness/unpublished-tasks).
         GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-        return Task.FromResult(StandardErrorHelpers.CreateNotImplemented(context,
-            $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
-            "GP task metadata requires a formal process catalog (not yet available)."));
+        return Task.FromResult(SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateNotImplemented(context,
+                $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
+                "GP task metadata requires a formal process catalog (not yet available)."),
+            "Task resolution unavailable"));
     }
 
     private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct)
@@ -172,11 +174,22 @@ internal static class GPServerEndpoints
                 OperatorResourceType.Process,
                 OperatorOperation.Execute);
 
+            // Read parameters and reject unsupported GP environment controls with 400
+            // before returning the 501 — matches documented contract behavior for execute.
+            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context);
+            var envError = RejectUnsupportedEnvControls(context, logger, parameters);
+            if (envError != null)
+            {
+                return envError;
+            }
+
             // Synchronous execute is not yet available (#721 ExecutePlan).
             // Return 501 with structured error per design.
-            return StandardErrorHelpers.CreateNotImplemented(context,
-                "Synchronous GP task execution is not yet available. " +
-                "Use submitJob for asynchronous execution.");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateNotImplemented(context,
+                    "Synchronous GP task execution is not yet available. " +
+                    "Use submitJob for asynchronous execution."),
+                "Synchronous execute not yet available");
         }
         catch (Exception ex)
         {
@@ -217,9 +230,11 @@ internal static class GPServerEndpoints
             // Reject to prevent creating durable jobs for unresolved processes
             // (see review finding: correctness/unpublished-tasks).
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
-            return StandardErrorHelpers.CreateNotImplemented(context,
-                $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
-                "GP job submission requires process catalog validation (not yet available).");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateNotImplemented(context,
+                    $"Task '{taskName}' on service '{serviceId}' cannot be resolved. " +
+                    "GP job submission requires process catalog validation (not yet available)."),
+                "Task resolution unavailable");
         }
         catch (Exception ex)
         {
@@ -237,7 +252,9 @@ internal static class GPServerEndpoints
 
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Missing jobId.");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Missing jobId."),
+                "Missing jobId");
         }
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
@@ -320,12 +337,16 @@ internal static class GPServerEndpoints
 
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Missing jobId.");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Missing jobId."),
+                "Missing jobId");
         }
 
         if (string.IsNullOrWhiteSpace(paramName))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Missing paramName.");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Missing paramName."),
+                "Missing paramName");
         }
 
         GPServerLog.JobResultRequested(logger, jobId, paramName);
@@ -355,8 +376,10 @@ internal static class GPServerEndpoints
 
             if (artifact == null)
             {
-                return StandardErrorHelpers.CreateNotFound(context,
-                    $"Output parameter '{paramName}' not found in job results.");
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateNotFound(context,
+                        $"Output parameter '{paramName}' not found in job results."),
+                    $"Output parameter '{paramName}' not found");
             }
 
             var response = new GPResultResponse
@@ -385,7 +408,9 @@ internal static class GPServerEndpoints
 
         if (string.IsNullOrWhiteSpace(jobId))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Missing jobId.");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Missing jobId."),
+                "Missing jobId");
         }
 
         GPServerLog.JobCancelRequested(logger, jobId);
@@ -466,8 +491,10 @@ internal static class GPServerEndpoints
         if (storedService == null && storedTask == null)
         {
             GPServerLog.JobBindingMismatch(logger, job.OperationId, serviceId, taskName);
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'.");
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateNotFound(context,
+                    $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'."),
+                "Job binding mismatch");
         }
 
         if (string.Equals(storedService, serviceId, StringComparison.OrdinalIgnoreCase) &&
@@ -477,8 +504,10 @@ internal static class GPServerEndpoints
         }
 
         GPServerLog.JobBindingMismatch(logger, job.OperationId, serviceId, taskName);
-        return StandardErrorHelpers.CreateNotFound(context,
-            $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'.");
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateNotFound(context,
+                $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'."),
+            "Job binding mismatch");
     }
 
     /// <summary>
@@ -507,9 +536,11 @@ internal static class GPServerEndpoints
 
         var names = string.Join(", ", unsupported);
         GPServerLog.UnsupportedEnvControlsRejected(logger, names);
-        return StandardErrorHelpers.CreateBadRequest(context,
-            $"GP environment controls are not yet supported: {names}. " +
-            "Remove these parameters or wait for engine support.");
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(context,
+                $"GP environment controls are not yet supported: {names}. " +
+                "Remove these parameters or wait for engine support."),
+            $"Unsupported GP env controls: {names}");
     }
 
     private static IResult MapExceptionToResult(
@@ -557,6 +588,23 @@ internal static class GPServerEndpoints
     private static IResult LogAndReturn(ILogger logger, string operation, string error, IResult result)
     {
         GPServerLog.RequestFailed(logger, operation, error);
+        return result;
+    }
+
+    /// <summary>
+    /// Tags the current <see cref="Activity"/> as errored and returns the result unchanged.
+    /// Used for non-exception error paths (400/404/501) so that spans carry
+    /// <c>error=true</c> and <c>ActivityStatusCode.Error</c> alongside the protocol/operation tags.
+    /// </summary>
+    private static IResult SetSpanErrorAndReturn(IResult result, string? message = null)
+    {
+        var activity = Activity.Current;
+        if (activity != null)
+        {
+            activity.SetStatus(ActivityStatusCode.Error, message);
+            activity.SetTag(HonuaTelemetry.Tags.Error, true);
+        }
+
         return result;
     }
 

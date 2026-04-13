@@ -411,6 +411,46 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecuteGet_WithEnvOutSR_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/execute?f=json&env:outSR=4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecutePost_WithEnvOutSR_ReturnsBadRequest()
+    {
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["input_features"] = "test-layer",
+            ["env:outSR"] = "4326"
+        });
+
+        var response = await _client.PostAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/execute", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecuteGet_WithContextParam_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync(
+            "/rest/services/TestService/GPServer/BufferAnalysis/execute?f=json&context=%7B%22extent%22%3A%7B%7D%7D");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // -----------------------------------------------------------------------
     // Missing parameters
     // -----------------------------------------------------------------------
