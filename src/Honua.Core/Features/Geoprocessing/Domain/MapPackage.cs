@@ -37,9 +37,9 @@ public sealed record MapPackage
     public IReadOnlyList<SourceBinding> SourceBindings { get; init; } = [];
 
     /// <summary>
-    /// Style resource identifiers applied to the map.
+    /// Style references applied to the map.
     /// </summary>
-    public IReadOnlyList<string> StyleRefs { get; init; } = [];
+    public IReadOnlyList<StyleRef> StyleRefs { get; init; } = [];
 
     /// <summary>
     /// Optional reference to a Theme metadata resource.
@@ -98,7 +98,7 @@ public sealed record MapPackage
         string mapPackageId,
         string format,
         IReadOnlyList<SourceBinding> sourceBindings,
-        IReadOnlyList<string> styleRefs,
+        IReadOnlyList<StyleRef> styleRefs,
         string? templateId = null,
         string? themeId = null)
         => new()

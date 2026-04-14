@@ -34,13 +34,13 @@ public sealed class PackageDomainTests
             "map-pkg-1",
             "honua_map_package.v1",
             bindings,
-            ["style-1"]);
+            [new StyleRef { StyleId = "style-1" }]);
 
         pkg.MapPackageId.Should().Be("map-pkg-1");
         pkg.Format.Should().Be("honua_map_package.v1");
         pkg.Status.Should().Be(PackageStatus.Draft);
         pkg.SourceBindings.Should().HaveCount(1);
-        pkg.StyleRefs.Should().ContainSingle().Which.Should().Be("style-1");
+        pkg.StyleRefs.Should().ContainSingle().Which.StyleId.Should().Be("style-1");
         pkg.TemplateId.Should().BeNull();
         pkg.ThemeId.Should().BeNull();
         pkg.Legend.Should().BeEmpty();
@@ -58,8 +58,8 @@ public sealed class PackageDomainTests
         var pkg = MapPackage.CreateDraft(
             "map-pkg-2",
             "honua_map_package.v1",
-            [],
-            [],
+            Array.Empty<SourceBinding>(),
+            Array.Empty<StyleRef>(),
             templateId: "tmpl-1",
             themeId: "theme-1");
 
@@ -134,7 +134,11 @@ public sealed class PackageDomainTests
                     Metadata = new Dictionary<string, string> { ["origin"] = "census" }
                 }
             ],
-            StyleRefs = ["style-a", "style-b"],
+            StyleRefs =
+            [
+                new StyleRef { StyleId = "style-a", Label = "Style A" },
+                new StyleRef { StyleId = "style-b", PresetId = "preset-1" }
+            ],
             ThemeId = "theme-dark",
             InitialView = new MapInitialView
             {
@@ -180,7 +184,11 @@ public sealed class PackageDomainTests
         deserialized.SourceBindings[0].Locator.ServiceId.Should().Be("svc-1");
         deserialized.SourceBindings[0].Locator.LayerId.Should().Be("layer-0");
         deserialized.SourceBindings[0].Filter.Should().Be("population > 1000");
-        deserialized.StyleRefs.Should().BeEquivalentTo(["style-a", "style-b"]);
+        deserialized.StyleRefs.Should().HaveCount(2);
+        deserialized.StyleRefs[0].StyleId.Should().Be("style-a");
+        deserialized.StyleRefs[0].Label.Should().Be("Style A");
+        deserialized.StyleRefs[1].StyleId.Should().Be("style-b");
+        deserialized.StyleRefs[1].PresetId.Should().Be("preset-1");
         deserialized.ThemeId.Should().Be("theme-dark");
         deserialized.InitialView.Should().NotBeNull();
         deserialized.InitialView!.Bbox.Should().BeEquivalentTo(new[] { -122.5, 37.5, -122.0, 38.0 });
@@ -314,7 +322,7 @@ public sealed class PackageDomainTests
     [Operation(Operations.Query)]
     public void PackageStatus_JsonRoundTrip_SerializesAsString()
     {
-        var pkg = MapPackage.CreateDraft("status-test", "honua_map_package.v1", [], []);
+        var pkg = MapPackage.CreateDraft("status-test", "honua_map_package.v1", Array.Empty<SourceBinding>(), Array.Empty<StyleRef>());
         var json = JsonSerializer.Serialize(pkg, PackagingJsonContext.Default.MapPackage);
 
         json.Should().Contain("\"status\":\"Draft\"");
@@ -332,6 +340,6 @@ public sealed class PackageDomainTests
         };
 
         var json = JsonSerializer.Serialize(binding, PackagingJsonContext.Default.SourceBinding);
-        json.Should().Contain("\"protocol\":\"OgcFeatures\"");
+        json.Should().Contain("\"protocol\":\"ogc_features\"");
     }
 }
