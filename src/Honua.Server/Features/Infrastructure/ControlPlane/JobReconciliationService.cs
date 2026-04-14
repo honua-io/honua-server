@@ -213,6 +213,17 @@ internal sealed partial class JobReconciliationService(
             return;
         }
 
+        // Re-validate timeout expiry against the fresh record. A requeued-and-
+        // reclaimed job (possibly by the same worker) will have a fresh ClaimedAt
+        // that resets the timeout window — skip the transition to avoid failing
+        // a new attempt that has not actually timed out.
+        var freshNow = DateTimeOffset.UtcNow;
+        if (!ShouldExpireTimeout(current!, freshNow))
+        {
+            Log.ReconciliationSkippedTimeoutRefreshed(logger, snapshot.OperationId);
+            return;
+        }
+
         Log.TimeoutExpired(logger, current!.OperationId);
 
         var failed = current with
@@ -267,5 +278,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9048, LogLevel.Information, "Reconciliation skipped for job {OperationId}: heartbeat refreshed since sweep snapshot")]
         public static partial void ReconciliationSkippedHeartbeatRefreshed(ILogger logger, string operationId);
+
+        [LoggerMessage(9049, LogLevel.Information, "Reconciliation skipped for job {OperationId}: timeout no longer expired since sweep snapshot")]
+        public static partial void ReconciliationSkippedTimeoutRefreshed(ILogger logger, string operationId);
     }
 }

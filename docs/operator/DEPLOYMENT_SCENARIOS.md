@@ -90,11 +90,12 @@ separates API-side and worker-side concerns at the service-registration level:
 - `AddJobWorker()` additionally registers the execution host and
   reconciliation sweep. Intended for worker or combined-mode hosts.
 
-**Current release:** All deployments run a **combined host** that calls both
-methods. Separate API-only and worker-only images are a planned topology for
-Scenario 3 (enterprise scale-out) but are not yet wired as distinct host
-entrypoints. Follow-on work will add build targets or configuration switches
-for independent API and worker images.
+**Current release:** The geoprocessing feature registration calls
+`AddJobOrchestration()` to wire the shared queue and log store. `AddJobWorker()`
+(execution host + reconciliation sweep) is not yet invoked from a host
+entrypoint; it will be wired when the first concrete executor is integrated in
+follow-on tickets. Separate API-only and worker-only images are a planned
+topology for Scenario 3 (enterprise scale-out).
 
 In Scenarios 1–2, the combined host is the expected deployment mode. The
 registration split exists so that future enterprise deployments can scale API

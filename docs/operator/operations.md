@@ -174,21 +174,6 @@ Honua uses a layered caching approach:
 
 ---
 
-## OGC API Processes
-
-The OGC API Processes adapter is always registered and serves routes under
-`/ogc/processes`. Job lifecycle operations (execute, list, status, results,
-dismiss) require Redis-backed durable storage; they return `503` when the
-store is not configured.
-
-### Configuration
-
-All settings live under `OgcProcesses` (env prefix `OgcProcesses__`):
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `DefaultJobLimit` | 100 | Maximum jobs returned per `GET /ogc/processes/jobs` request |
-
 ## Job Orchestration
 
 The durable job orchestration substrate provides queuing, claim/heartbeat
@@ -231,14 +216,21 @@ a single worker host processes all kinds.
 ### Heartbeat and Liveness
 
 Workers poll for claimable jobs every 5 seconds. Once a job is claimed,
-the worker pumps heartbeats at the configured interval (default: 30 seconds).
-The reconciliation service sweeps active jobs every 30 seconds. If a
-worker's last heartbeat exceeds the heartbeat timeout (default: 90 seconds),
-the job is considered abandoned. When `LastHeartbeatAt` has not yet been set
-(the window between claim and first heartbeat pump), the reconciler uses
-`ClaimedAt` as the reference timestamp. If retries remain, the reconciler
-requeues the job with a computed backoff delay; otherwise the job transitions
-to Failed.
+the worker registers its cancellation token and re-reads the job record
+before promoting to Running. If the job was cancelled or reclaimed by
+another worker during the claim-to-Running window, the worker skips
+execution and cleans up the stale queue entry. This prevents operator
+cancellations arriving between claim and Running from being silently
+overwritten.
+
+Once the Running transition succeeds, the worker pumps heartbeats at the
+configured interval (default: 30 seconds). The reconciliation service
+sweeps active jobs every 30 seconds. If a worker's last heartbeat exceeds
+the heartbeat timeout (default: 90 seconds), the job is considered
+abandoned. When `LastHeartbeatAt` has not yet been set (the window between
+claim and first heartbeat pump), the reconciler uses `ClaimedAt` as the
+reference timestamp. If retries remain, the reconciler requeues the job
+with a computed backoff delay; otherwise the job transitions to Failed.
 
 ### Stale Claim Recovery
 
@@ -255,7 +247,10 @@ want visibility into recovery events.
 ### Priority Queue
 
 Jobs are dequeued in priority order. Within a priority band, FIFO ordering
-applies.
+applies. Delayed entries (jobs requeued with a visibility delay for retry
+backoff) and kind-mismatched entries do not consume the claim scan budget,
+so a backlog of delayed retries or jobs for other worker kinds cannot
+starve ready work in lower-priority bands.
 
 | Priority | Use case |
 |----------|----------|
@@ -347,8 +342,13 @@ Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
 `LastHeartbeatAt`), and re-enqueues it with the applicable retry backoff
 delay. Both the worker and the reconciler re-read the current job record
 before writing any state transition. If the record is already terminal or
-the claim owner has changed, the writer skips its update. This
-bidirectional guard prevents two specific race windows:
+the claim owner has changed, the writer skips its update. Additionally,
+the reconciler re-validates the expiry predicate (heartbeat or timeout)
+against the fresh record — a heartbeat that landed between the sweep
+snapshot and the handler invocation means the worker is still alive, and a
+job reclaimed with a fresh claim time has not actually timed out. In both
+cases the transition is skipped. This bidirectional guard prevents four
+specific race windows:
 
 - **Worker completes after reconciler snapshot**: the reconciler snapshots
   active jobs, then a worker finalizes the job before the reconciler
@@ -358,6 +358,15 @@ bidirectional guard prevents two specific race windows:
   requeues or fails the job, then the worker's post-execution handler
   runs. Without the guard the worker would overwrite the reconciler's
   update.
+- **Heartbeat arrives between sweep and handler**: a heartbeat lands
+  after the reconciler's sweep snapshot but before the handler runs.
+  Without the guard the reconciler would requeue or fail a healthy
+  running job.
+- **Timeout snapshot outdated by reclaim**: the reconciler snapshots a
+  timed-out job, but the job is requeued and reclaimed (possibly by the
+  same worker) with a fresh claim time before the handler runs. Without
+  the guard the reconciler would fail a new attempt that has not yet
+  timed out.
 
 If a worker crashes without clean abandonment, the reconciliation service
 detects the stale heartbeat and performs the same recovery. This ensures

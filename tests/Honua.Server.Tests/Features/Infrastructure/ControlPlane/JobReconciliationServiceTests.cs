@@ -318,6 +318,61 @@ public sealed class JobReconciliationServiceTests
     }
 
     /// <summary>
+    /// Regression: a job that timed out in the sweep snapshot but was requeued
+    /// and reclaimed by the same worker with a fresh ClaimedAt must not be
+    /// failed — the new attempt has not timed out.
+    /// </summary>
+    [UnitTest]
+    public async Task TimeoutExpiry_SkipsTransition_WhenReclaimedBySameWorkerWithFreshClaimTime()
+    {
+        var timeoutPolicy = new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) };
+
+        // Snapshot: old ClaimedAt triggers timeout in the sweep.
+        var snapshot = CreateRunningJob(
+            claimedBy: "worker-1",
+            timeoutPolicy: timeoutPolicy,
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(30),
+                Timeout = TimeSpan.FromHours(24)
+            });
+        snapshot = snapshot with { ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
+
+        // Fresh record: same worker reclaimed with a recent ClaimedAt —
+        // the new attempt has not timed out.
+        var reclaimed = snapshot with
+        {
+            ClaimedAt = DateTimeOffset.UtcNow,
+            AttemptCount = snapshot.AttemptCount + 1,
+            LastHeartbeatAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler,
+            NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        // The reconciler must NOT fail the job.
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the reconciler's sweep logic once without running the full
     /// BackgroundService loop. Uses reflection to call the private method
     /// since the service is internal and sealed.

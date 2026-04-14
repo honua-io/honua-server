@@ -159,10 +159,11 @@ backoff delay.
 Both the worker and the reconciler re-read the current job record before writing
 any state transition. If the record is already terminal or the claim owner has
 changed, the writer skips its update. Additionally, the reconciler re-validates
-the heartbeat expiry predicate against the fresh record — a heartbeat that
-landed between the sweep snapshot and the handler invocation means the worker is
-still alive and the transition is skipped. This bidirectional guard prevents
-three race windows:
+the expiry predicate (heartbeat or timeout) against the fresh record — a
+heartbeat that landed between the sweep snapshot and the handler invocation
+means the worker is still alive, and a job reclaimed with a fresh claim time has
+not actually timed out. In both cases the transition is skipped. This
+bidirectional guard prevents four race windows:
 
 - The reconciler snapshots active jobs, then a worker finalizes before the
   reconciler handler runs — the reconciler would otherwise overwrite the
@@ -171,6 +172,10 @@ three race windows:
   handler runs — the worker would otherwise overwrite the reconciler's update.
 - A heartbeat arrives between the sweep snapshot and the reconciler handler —
   the reconciler would otherwise requeue or fail a healthy running job.
+- The reconciler snapshots a timed-out job, but the job is requeued and
+  reclaimed (possibly by the same worker) with a fresh claim time before the
+  handler runs — the reconciler would otherwise fail a new attempt that has
+  not yet timed out.
 
 If a worker crashes without clean abandonment, `JobReconciliationService`
 detects the stale heartbeat and performs the same recovery.

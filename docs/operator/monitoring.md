@@ -46,14 +46,14 @@ background sweep.
 | Level | Signal |
 |-------|--------|
 | Information | Worker started/stopped, job execution started, job completed, operator cancellation |
-| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup, job timeout, state transition skipped (reconciler intervention) |
+| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup, job timeout, state transition skipped (job cancelled or reclaimed between claim and Running, or reconciler intervention) |
 | Error | Job execution exception, claim loop error |
 
 **JobReconciliationService** (liveness sweep):
 
 | Level | Signal |
 |-------|--------|
-| Information | Reconciliation skipped — job already terminal or claim owner changed since sweep snapshot |
+| Information | Reconciliation skipped — job already terminal or claim owner changed since sweep snapshot; heartbeat refreshed since sweep snapshot (worker still alive); timeout no longer expired since sweep snapshot (job reclaimed with fresh claim time) |
 | Debug | Sweep results when at least one job was reconciled (count out of active total) |
 | Warning | Heartbeat expired — job requeued for retry |
 | Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
