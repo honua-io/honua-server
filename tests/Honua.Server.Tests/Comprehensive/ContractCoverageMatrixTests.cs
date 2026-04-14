@@ -31,11 +31,11 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>GET  /api/v1/admin/observability/telemetry</term><description>happy, disabled, 401</description></item>
 /// <item><term>GET  /api/v1/admin/observability/migrations</term><description>happy (running), plan-fail, 401</description></item>
 /// <item><term>GET  /api/v1/admin/deploy/preflight</term><description>ready, blocked, 401</description></item>
-/// <item><term>POST /api/v1/admin/deploy/plan</term><description>happy, bad-target, 401</description></item>
-/// <item><term>POST /api/v1/admin/deploy/operations</term><description>happy, submit-immediately, 401</description></item>
+/// <item><term>POST /api/v1/admin/deploy/plan</term><description>happy, bad-target, approval-gated, 401</description></item>
+/// <item><term>POST /api/v1/admin/deploy/operations</term><description>happy, submit-immediately, approval-gated, 401</description></item>
 /// <item><term>GET  /api/v1/admin/deploy/operations/{id}</term><description>happy, 404, reconcile, 401</description></item>
 /// <item><term>POST /api/v1/admin/deploy/operations/{id}/submit</term><description>happy, double-submit</description></item>
-/// <item><term>POST /api/v1/admin/deploy/operations/{id}/rollback</term><description>happy, 404</description></item>
+/// <item><term>POST /api/v1/admin/deploy/operations/{id}/rollback</term><description>happy, 404, approval-denied</description></item>
 /// <item><term>GET  /api/v1/admin/connections</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/connections</term><description>happy (encrypted, secret-ref), 400, duplicate, 401</description></item>
 /// <item><term>GET  /api/v1/admin/connections/{id}</term><description>happy, 404</description></item>
@@ -46,7 +46,7 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>POST /api/v1/admin/connections/encryption/validate</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/connections/encryption/rotate-key</term><description>bad-request, 401</description></item>
 /// <item><term>GET  /api/v1/admin/connections/{id}/layers</term><description>happy, 404, 401</description></item>
-/// <item><term>POST /api/v1/admin/connections/{id}/layers</term><description>happy, 400 (missing/pk), duplicate, 401</description></item>
+/// <item><term>POST /api/v1/admin/connections/{id}/layers</term><description>happy, 400 (missing/pk), duplicate, approval-denied, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/connections/{id}/layers/{lid}/enabled</term><description>happy, 404</description></item>
 /// <item><term>PUT  /api/v1/admin/connections/{id}/layers/enabled</term><description>happy (bulk)</description></item>
 /// <item><term>GET  /api/v1/admin/metadata/layers/{lid}/style</term><description>happy, 401</description></item>

@@ -375,6 +375,26 @@ public sealed class GrpcProcessServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
+    public async Task CancelJob_ApprovalRequired_ThrowsFailedPrecondition()
+    {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("destructive-policy", "destructive-action"));
+
+        var request = new Proto.CancelJobRequest { JobId = "job-123" };
+
+        var act = async () => await _sut.CancelJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public async Task ValidatePlan_WithUnspecifiedStepKind_ThrowsInvalidArgument()

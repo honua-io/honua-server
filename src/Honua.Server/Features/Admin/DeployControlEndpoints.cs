@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -59,7 +60,8 @@ internal static class DeployControlEndpoints
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
             .WithDisplayName("Rollback Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<DeployOperationResponse>();
+            .Produces<DeployOperationResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden);
     }
 
     private static async Task<IResult> HandleGetDeployPreflight(
@@ -143,6 +145,7 @@ internal static class DeployControlEndpoints
                 request.DesiredRevision,
                 request.CurrentRevision,
                 request.Parameters,
+                context.User,
                 context.RequestAborted)
             .ConfigureAwait(false);
 
@@ -162,6 +165,10 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        // Approval gating is handled by DeployWorkflowService.CreateAsync which bridges
+        // the canonical evaluator and persists AwaitingApproval status when required.
+        // Do not gate creation here — the workflow must be allowed to persist the operation.
+
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -191,6 +198,7 @@ internal static class DeployControlEndpoints
                     priority,
                     request.SubmitImmediately ?? true,
                     request.Parameters,
+                    context.User,
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
@@ -264,6 +272,10 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        // Submit is the manual approval action — an operator explicitly advancing an
+        // AwaitingApproval operation. Re-gating here would make approval-gated deploys
+        // permanently unsubmittable. Rollback retains its own destructive-action gate.
+
         try
         {
             var operation = await deployWorkflowService.SubmitAsync(
@@ -305,6 +317,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approvalResult = gate.EvaluateApproval(
+            context, OperatorResourceType.Deployment, OperatorOperation.Execute, isDestructive: true);
+        if (approvalResult != null) return approvalResult;
+
         try
         {
             var operation = await deployWorkflowService.RequestRollbackAsync(

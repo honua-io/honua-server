@@ -250,12 +250,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
     {
-        EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Execute);
-
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");
         }
+
+        EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Execute);
 
         var jobStore = RequireJobStore();
         var job = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -275,6 +275,25 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, job.Status.ToString());
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
+        }
+
+        // Cancelling a running job is a destructive action — require approval.
+        // Evaluated after state checks so idempotent and terminal paths remain reachable.
+        var approval = _approvalEvaluator.Evaluate(
+            principal,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute,
+                IsDestructive = true
+            });
+
+        if (approval.IsRequired)
+        {
+            GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
+            throw new GeoprocessingApprovalRequiredException(
+                approval.PolicyRef ?? "unknown",
+                "Job cancellation requires approval.");
         }
 
         var workerOwnsTerminalState = _cancellationNotifier.Cancel(jobId);

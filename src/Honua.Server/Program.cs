@@ -588,6 +588,7 @@ builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IOp
     Honua.Server.Features.Infrastructure.Authentication.DefaultOperatorApprovalEvaluator>();
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions.SectionName));
+builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalGate>();
 
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();

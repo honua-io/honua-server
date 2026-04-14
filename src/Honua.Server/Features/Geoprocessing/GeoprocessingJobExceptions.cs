@@ -32,9 +32,9 @@ internal sealed class GeoprocessingApprovalRequiredException : Exception
     /// </summary>
     public string PolicyRef { get; }
 
-    public GeoprocessingApprovalRequiredException(string policyRef)
+    public GeoprocessingApprovalRequiredException(string policyRef, string? detail = null)
         : base($"This operation requires approval (policy: {policyRef}). " +
-               "Use ValidatePlan to check approval requirements before submission.")
+               (detail ?? "Use ValidatePlan to check approval requirements before submission."))
     {
         PolicyRef = policyRef;
     }

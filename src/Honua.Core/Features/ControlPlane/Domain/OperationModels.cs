@@ -234,6 +234,16 @@ public sealed record OperationAuditInfo
     /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
     /// </summary>
     public string? RequestFingerprint { get; init; }
+
+    /// <summary>
+    /// Reference to the approval policy that was evaluated, if any.
+    /// </summary>
+    public string? ApprovalPolicyRef { get; init; }
+
+    /// <summary>
+    /// Machine-readable reason codes from the approval evaluation.
+    /// </summary>
+    public IReadOnlyList<string> ApprovalReasonCodes { get; init; } = [];
 }
 
 /// <summary>

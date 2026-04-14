@@ -3,12 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
@@ -63,17 +63,23 @@ internal static class JobEndpoints
     private static async Task<IResult> GetJobList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IOperatorAuthorizationEvaluator authEvaluator,
         IOptions<OgcProcessesOptions> options,
         [FromQuery] int? limit = null,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobList");
 
-        var authResult = ProcessEndpoints.EvaluateAuthorization(
-            authEvaluator, context, logger,
-            OperatorResourceType.Job, OperatorOperation.Read);
-        if (authResult != null) return authResult;
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Read
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
 
         OgcProcessesLog.JobListRequested(logger);
 
@@ -125,15 +131,21 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IOperatorAuthorizationEvaluator authEvaluator,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobStatus");
 
-        var authResult = ProcessEndpoints.EvaluateAuthorization(
-            authEvaluator, context, logger,
-            OperatorResourceType.Job, OperatorOperation.Read);
-        if (authResult != null) return authResult;
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Read
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
 
         OgcProcessesLog.JobStatusRequested(logger, jobId);
 
@@ -161,15 +173,21 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IOperatorAuthorizationEvaluator authEvaluator,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("GetJobResults");
 
-        var authResult = ProcessEndpoints.EvaluateAuthorization(
-            authEvaluator, context, logger,
-            OperatorResourceType.Job, OperatorOperation.Read);
-        if (authResult != null) return authResult;
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Read
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
 
         OgcProcessesLog.JobResultsRequested(logger, jobId);
 
@@ -258,17 +276,24 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IOperatorAuthorizationEvaluator authEvaluator,
         IJobCancellationNotifier cancellationNotifier,
         IUniversalProgressStore progressStore,
         [FromServices] IExecutionJobStore? jobStore = null)
     {
         EnrichActivity("DismissJob");
 
-        var authResult = ProcessEndpoints.EvaluateAuthorization(
-            authEvaluator, context, logger,
-            OperatorResourceType.Job, OperatorOperation.Execute);
-        if (authResult != null) return authResult;
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+
+        var authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Execute.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
 
         OgcProcessesLog.JobDismissRequested(logger, jobId);
 
@@ -311,6 +336,21 @@ internal static class JobEndpoints
                 OgcProcessesJsonContext.Default.OgcProcessError,
                 MediaTypes.Json,
                 StatusCodes.Status409Conflict);
+        }
+
+        // Dismissing a running job is a destructive action — require approval.
+        // Evaluated after state checks so not-found, idempotent, and terminal paths
+        // remain reachable regardless of approval policy, matching CancelJobAsync.
+        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        });
+        if (approval.IsRequired)
+        {
+            OgcProcessesLog.DismissRejectedApprovalRequired(logger, jobId, approval.PolicyRef ?? "unknown");
+            return ProcessEndpoints.FormatOgcApprovalError(approval);
         }
 
         // Attempt cancellation via the canonical notifier

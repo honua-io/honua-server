@@ -100,4 +100,32 @@ internal static partial class OperatorAuthorizationLog
         Message = "Operator authorization denied: principal {PrincipalId} attempted {Operation} on read-only public workspace")]
     public static partial void PublicWorkspaceMutationDenied(
         ILogger logger, string? principalId, OperatorOperation operation);
+
+    [LoggerMessage(
+        EventId = 4714,
+        Level = LogLevel.Debug,
+        Message = "Approval gate evaluated: principal {PrincipalId} for {ResourceType}.{Operation} — outcome {Outcome}")]
+    public static partial void ApprovalGateEvaluated(
+        ILogger logger, string? principalId, OperatorResourceType resourceType, OperatorOperation operation, string outcome);
+
+    [LoggerMessage(
+        EventId = 4715,
+        Level = LogLevel.Information,
+        Message = "Approval gate denied: principal {PrincipalId} for {ResourceType}.{Operation} — policy {PolicyRef}")]
+    public static partial void ApprovalGateDenied(
+        ILogger logger, string? principalId, OperatorResourceType resourceType, OperatorOperation operation, string? policyRef);
+
+    [LoggerMessage(
+        EventId = 4716,
+        Level = LogLevel.Information,
+        Message = "Deploy approval bridged: static={StaticRequiresApproval}, canonical={CanonicalRequiresApproval}, combined={CombinedRequiresApproval}")]
+    public static partial void DeployApprovalBridged(
+        ILogger logger, bool staticRequiresApproval, bool canonicalRequiresApproval, bool combinedRequiresApproval);
+
+    [LoggerMessage(
+        EventId = 4717,
+        Level = LogLevel.Information,
+        Message = "Destructive action gated: principal {PrincipalId} for {ResourceType}.{Operation} — policy {PolicyRef}")]
+    public static partial void DestructiveActionGated(
+        ILogger logger, string? principalId, OperatorResourceType resourceType, OperatorOperation operation, string? policyRef);
 }

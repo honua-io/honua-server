@@ -339,6 +339,43 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task RollbackDeployOperation_WhenApprovalRequired_ReturnsForbidden()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IDeployTargetRegistry>();
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IOperationReconciler>();
+                services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
+                services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
+                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
+                services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
+                    new AlwaysRequiresApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            var response = await client.PostAsJsonAsync(
+                "/api/v1/admin/deploy/operations/deploy-any-id/rollback",
+                new { reason = "Test approval gating on rollback" });
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/deploy/operations")]
     public async Task CreateDeployOperation_WithSubmitImmediately_ReturnsSubmittedStatus()
     {
@@ -355,6 +392,105 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var status = document.RootElement.GetProperty("status").GetString();
         status.Should().BeOneOf("Submitted", "Planned");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations")]
+    public async Task CreateDeployOperation_WhenApprovalRequired_ReturnsAwaitingApprovalStatus()
+    {
+        // Use a separate fixture with a stub approval evaluator that always requires approval.
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IDeployTargetRegistry>();
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IOperationReconciler>();
+                services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
+                services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
+                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
+                services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
+                    new AlwaysRequiresApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            var createResponse = await client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+            {
+                targetId = "prod-api",
+                desiredRevision = "sha256:approval-test",
+                reason = "Test approval gating",
+                submitImmediately = true
+            });
+
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            using var document = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/plan")]
+    public async Task PlanDeployOperation_WhenApprovalRequired_ReturnsRequiresApproval()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IDeployTargetRegistry>();
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IOperationReconciler>();
+                services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
+                services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
+                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
+                services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
+                    new AlwaysRequiresApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            var response = await client.PostAsJsonAsync("/api/v1/admin/deploy/plan", new
+            {
+                targetId = "prod-api",
+                desiredRevision = "sha256:approval-plan-test"
+            });
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+            root.GetProperty("readyToSubmit").GetBoolean().Should().BeFalse();
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    private sealed class AlwaysRequiresApprovalEvaluator : Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator
+    {
+        public Core.Features.Authorization.Domain.ApprovalRequirement Evaluate(
+            System.Security.Claims.ClaimsPrincipal principal,
+            Core.Features.Authorization.Domain.OperatorAuthorizationRequest request)
+            => Core.Features.Authorization.Domain.ApprovalRequirement.Required(
+                "operator.test-policy", "test-approval-required");
     }
 
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner
