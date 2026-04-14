@@ -93,7 +93,8 @@ public sealed class JobExecutionServiceTests
 
     /// <summary>
     /// Regression: if another worker reclaimed the job before this worker
-    /// transitions to Running, this worker must bail out.
+    /// transitions to Running, this worker must bail out without deleting
+    /// the queue entry that now belongs to the new owner.
     /// </summary>
     [UnitTest]
     public async Task ProcessJob_SkipsExecution_WhenClaimOwnerChangedBeforeRunningTransition()
@@ -130,6 +131,156 @@ public sealed class JobExecutionServiceTests
         await executor.DidNotReceive().ExecuteAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<IJobExecutionContext>(),
+            Arg.Any<CancellationToken>());
+
+        // The queue entry belongs to the new owner — must not be removed.
+        await jobQueue.DidNotReceive().RemoveAsync(
+            provisioning.OperationId, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a requeued job (status=Queued, ClaimedBy=null) must not have
+    /// its queue entry deleted by the stale worker that lost ownership.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_DoesNotRemoveQueue_WhenJobRequeuedBeforeRunningTransition()
+    {
+        var provisioning = CreateProvisioningJob(claimedBy: "worker-test");
+        var requeued = provisioning with
+        {
+            Status = ExecutionJobStatus.Queued,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            CurrentPhase = "Requeued: Worker shutdown."
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning, requeued);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, "worker-test");
+
+        // Execution must be skipped.
+        await executor.DidNotReceive().ExecuteAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<IJobExecutionContext>(),
+            Arg.Any<CancellationToken>());
+
+        // The queue entry is the pending retry — must not be removed.
+        await jobQueue.DidNotReceive().RemoveAsync(
+            provisioning.OperationId, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a stale worker's heartbeat pump must stop when
+    /// the job has been reclaimed by another worker.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatPump_Stops_WhenOwnershipChanges()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var running = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var reclaimed = running with
+        {
+            ClaimedBy = "worker-new",
+            ClaimedAt = now
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-stale", jobStore, null,
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) });
+
+        // The pump should detect the ownership change and exit without writing.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await context.RunHeartbeatPumpAsync(cts.Token);
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a stale worker's progress report must be silently
+    /// dropped when ownership has moved to another worker.
+    /// </summary>
+    [UnitTest]
+    public async Task ReportProgress_Skips_WhenOwnershipLost()
+    {
+        var running = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var reclaimed = running with
+        {
+            ClaimedBy = "worker-new",
+            ClaimedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-stale", jobStore, null,
+            JobHeartbeatPolicy.Default);
+
+        await context.ReportProgressAsync(50, "Processing", CancellationToken.None);
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a stale worker's artifact publication must be silently
+    /// dropped when ownership has moved to another worker.
+    /// </summary>
+    [UnitTest]
+    public async Task PublishArtifact_Skips_WhenOwnershipLost()
+    {
+        var running = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var reclaimed = running with
+        {
+            ClaimedBy = "worker-new",
+            ClaimedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-stale", jobStore, null,
+            JobHeartbeatPolicy.Default);
+
+        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
 

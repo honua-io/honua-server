@@ -217,14 +217,20 @@ a single worker host processes all kinds.
 
 Workers poll for claimable jobs every 5 seconds. Once a job is claimed,
 the worker registers its cancellation token and re-reads the job record
-before promoting to Running. If the job was cancelled or reclaimed by
-another worker during the claim-to-Running window, the worker skips
-execution and cleans up the stale queue entry. This prevents operator
-cancellations arriving between claim and Running from being silently
-overwritten.
+before promoting to Running. If the job was cancelled or reached another
+terminal state during the claim-to-Running window, the worker skips
+execution and removes the queue entry. If the job was requeued or
+reclaimed by another worker, the worker skips execution but preserves
+the queue entry since it belongs to the new attempt. This prevents
+operator cancellations arriving between claim and Running from being
+silently overwritten, while also protecting pending retries from
+accidental deletion.
 
 Once the Running transition succeeds, the worker pumps heartbeats at the
-configured interval (default: 30 seconds). The reconciliation service
+configured interval (default: 30 seconds). The heartbeat pump, progress
+reports, and artifact publications all verify ownership before writing —
+if the reconciler requeues the job or another worker reclaims it, the
+stale worker's writes are silently dropped. The reconciliation service
 sweeps active jobs every 30 seconds. If a worker's last heartbeat exceeds
 the heartbeat timeout (default: 90 seconds), the job is considered
 abandoned. When `LastHeartbeatAt` has not yet been set (the window between

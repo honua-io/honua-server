@@ -104,15 +104,25 @@ internal sealed partial class JobExecutionService(
         // Re-read before promoting to Running to catch cancellations that arrived
         // after the claim but before the worker registered its CTS.
         job = await jobStore.GetAsync(operationId, stoppingToken).ConfigureAwait(false);
-        if (job == null || IsTerminalOrNotOwnedBy(job, workerId))
+        if (job == null)
         {
-            if (job != null)
-            {
-                Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
-            }
-
             cancellationTokens.Remove(operationId);
             await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (IsTerminalOrNotOwnedBy(job, workerId))
+        {
+            Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
+            cancellationTokens.Remove(operationId);
+
+            // Only remove the queue entry for terminal jobs. Requeued or reclaimed
+            // jobs have a queue entry that belongs to the new attempt.
+            if (IsTerminal(job.Status))
+            {
+                await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -131,7 +141,7 @@ internal sealed partial class JobExecutionService(
 
         // Create execution context with heartbeat pump.
         using var context = new JobExecutionContext(
-            operationId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default);
+            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -359,6 +369,11 @@ internal sealed partial class JobExecutionService(
         => job.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
            || job.ClaimedBy != workerId;
 
+    private static bool IsTerminal(ExecutionJobStatus status)
+        => status is ExecutionJobStatus.Succeeded
+            or ExecutionJobStatus.Failed
+            or ExecutionJobStatus.Cancelled;
+
     private static partial class Log
     {
         [LoggerMessage(9050, LogLevel.Information, "Job execution worker started: {WorkerId}")]
@@ -410,6 +425,7 @@ internal sealed partial class JobExecutionService(
 /// </summary>
 internal sealed class JobExecutionContext(
     string operationId,
+    string workerId,
     IExecutionJobStore jobStore,
     IExecutionLogStore? logStore,
     JobHeartbeatPolicy heartbeatPolicy) : IJobExecutionContext, IDisposable
@@ -427,7 +443,7 @@ internal sealed class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null)
+            if (job == null || !IsOwnedBy(job))
             {
                 return;
             }
@@ -465,7 +481,7 @@ internal sealed class JobExecutionContext(
         try
         {
             var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job == null)
+            if (job == null || !IsOwnedBy(job))
             {
                 return;
             }
@@ -512,10 +528,9 @@ internal sealed class JobExecutionContext(
                         break;
                     }
 
-                    // Stop pumping if the reconciler already marked this job terminal.
-                    if (job.Status is ExecutionJobStatus.Succeeded
-                        or ExecutionJobStatus.Failed
-                        or ExecutionJobStatus.Cancelled)
+                    // Stop pumping if the reconciler already marked this job terminal
+                    // or ownership has moved to another worker.
+                    if (!IsOwnedBy(job))
                     {
                         break;
                     }
@@ -538,6 +553,10 @@ internal sealed class JobExecutionContext(
             }
         }
     }
+
+    private bool IsOwnedBy(ExecutionJobRecord job)
+        => job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
+           && job.ClaimedBy == workerId;
 
     public void Dispose() => _writeLock.Dispose();
 }
