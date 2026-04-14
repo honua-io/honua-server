@@ -1,167 +1,219 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
 
 /// <summary>
-/// Admin API endpoints for configuration discovery and management.
+/// Admin endpoints for configuration discovery and management.
 /// </summary>
-[ApiController]
-[Route("admin/configuration")]
-[Authorize(Policy = "AdminOnly")]
-public sealed class ConfigurationDiscoveryEndpoints : ControllerBase
+internal static class ConfigurationDiscoveryEndpoints
 {
-    private readonly ConfigurationDiscoveryService _discoveryService;
-    private readonly ILogger<ConfigurationDiscoveryEndpoints> _logger;
+    /// <summary>
+    /// Maps configuration discovery endpoints.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder.</param>
+    public static void MapConfigurationDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/admin/configuration")
+            .WithTags("Admin", "Configuration")
+            .RequireAdminAuthorization();
 
-    public ConfigurationDiscoveryEndpoints(
+        _ = group.MapGet("/discover", HandleDiscoverConfigurationAsync)
+            .WithName("DiscoverConfiguration")
+            .WithSummary("Discover all configuration types and metadata");
+
+        _ = group.MapGet("/metadata", HandleGetConfigurationMetadataAsync)
+            .WithName("GetConfigurationMetadata")
+            .WithSummary("Get configuration metadata summary");
+
+        _ = group.MapGet("/auto-documentation", HandleGetAutoDocumentationAsync)
+            .WithName("GetConfigurationAutoDocumentation")
+            .WithSummary("Get auto-generated configuration documentation");
+
+        _ = group.MapGet("/secrets/validate", HandleValidateSecretsAsync)
+            .WithName("ValidateConfigurationSecrets")
+            .WithSummary("Validate secret references in configuration");
+
+        _ = group.MapGet("/audit", HandleGetAuditInfoAsync)
+            .WithName("GetConfigurationAuditInfo")
+            .WithSummary("Get configuration audit information");
+
+        _ = group.MapGet("/summary", HandleGetConfigurationSummaryAsync)
+            .WithName("GetConfigurationSummary")
+            .WithSummary("Get high-level configuration summary");
+    }
+
+    private static async Task<IResult> HandleDiscoverConfigurationAsync(
+        HttpContext context,
         ConfigurationDiscoveryService discoveryService,
-        ILogger<ConfigurationDiscoveryEndpoints> logger)
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
-        _discoveryService = discoveryService;
-        _logger = logger;
-    }
+        var logger = loggerFactory.CreateLogger("Admin.ConfigurationDiscovery");
 
-    /// <summary>
-    /// Discovers all configuration types and their metadata.
-    /// </summary>
-    /// <returns>Configuration discovery results</returns>
-    [HttpGet("discover")]
-    public async Task<ActionResult<ConfigurationDiscoveryResult>> DiscoverConfigurationAsync(CancellationToken cancellationToken = default)
-    {
         try
         {
-            var result = await _discoveryService.DiscoverConfigurationAsync(cancellationToken);
-            return Ok(result);
+            var result = await discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            return Results.Json(result, ConfigurationDiscoveryJsonContext.Default.ConfigurationDiscoveryResult);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to discover configuration");
-            return StatusCode(500, new { error = "Configuration discovery failed", details = ex.Message });
+            ConfigurationDiscoveryLog.EndpointFailed(logger, "discover", ex.Message, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Configuration discovery failed");
         }
     }
 
-    /// <summary>
-    /// Gets metadata for all discovered configuration types.
-    /// </summary>
-    /// <returns>Configuration metadata summary</returns>
-    [HttpGet("metadata")]
-    public async Task<ActionResult<List<ConfigurationMetadata>>> GetConfigurationMetadataAsync(CancellationToken cancellationToken = default)
+    private static async Task<IResult> HandleGetConfigurationMetadataAsync(
+        HttpContext context,
+        ConfigurationDiscoveryService discoveryService,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
+        var logger = loggerFactory.CreateLogger("Admin.ConfigurationDiscovery");
+
         try
         {
-            var result = await _discoveryService.DiscoverConfigurationAsync(cancellationToken);
-            return Ok(result.ExtractedMetadata);
+            var result = await discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            return Results.Json(result.ExtractedMetadata, ConfigurationDiscoveryJsonContext.Default.ListConfigurationMetadata);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get configuration metadata");
-            return StatusCode(500, new { error = "Failed to retrieve configuration metadata", details = ex.Message });
+            ConfigurationDiscoveryLog.EndpointFailed(logger, "metadata", ex.Message, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Failed to retrieve configuration metadata");
         }
     }
 
-    /// <summary>
-    /// Gets auto-generated documentation for configuration types.
-    /// </summary>
-    /// <returns>Auto-generated documentation</returns>
-    [HttpGet("auto-documentation")]
-    public async Task<ActionResult<List<AutoGeneratedDocumentationSection>>> GetAutoDocumentationAsync(CancellationToken cancellationToken = default)
+    private static async Task<IResult> HandleGetAutoDocumentationAsync(
+        HttpContext context,
+        ConfigurationDiscoveryService discoveryService,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
+        var logger = loggerFactory.CreateLogger("Admin.ConfigurationDiscovery");
+
         try
         {
-            var result = await _discoveryService.DiscoverConfigurationAsync(cancellationToken);
-            return Ok(result.AutoGeneratedDocumentation);
+            var result = await discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            return Results.Json(
+                result.AutoGeneratedDocumentation,
+                ConfigurationDiscoveryJsonContext.Default.ListAutoGeneratedDocumentationSection);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate auto-documentation");
-            return StatusCode(500, new { error = "Auto-documentation generation failed", details = ex.Message });
+            ConfigurationDiscoveryLog.EndpointFailed(logger, "auto-documentation", ex.Message, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Auto-documentation generation failed");
         }
     }
 
-    /// <summary>
-    /// Validates all secret references in the configuration.
-    /// </summary>
-    /// <returns>Secret validation results</returns>
-    [HttpGet("secrets/validate")]
-    public async Task<ActionResult<SecretValidationResult>> ValidateSecretsAsync(CancellationToken cancellationToken = default)
+    private static async Task<IResult> HandleValidateSecretsAsync(
+        HttpContext context,
+        ConfigurationDiscoveryService discoveryService,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
+        var logger = loggerFactory.CreateLogger("Admin.ConfigurationDiscovery");
+
         try
         {
-            var result = await _discoveryService.DiscoverConfigurationAsync(cancellationToken);
-            return Ok(result.SecretValidation);
+            var result = await discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            return Results.Json(result.SecretValidation, ConfigurationDiscoveryJsonContext.Default.SecretValidationResult);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to validate secrets");
-            return StatusCode(500, new { error = "Secret validation failed", details = ex.Message });
+            ConfigurationDiscoveryLog.EndpointFailed(logger, "secrets/validate", ex.Message, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Secret validation failed");
         }
     }
 
-    /// <summary>
-    /// Gets configuration audit information.
-    /// </summary>
-    /// <returns>Configuration audit details</returns>
-    [HttpGet("audit")]
-    public async Task<ActionResult<ConfigurationAuditInfo>> GetAuditInfoAsync(CancellationToken cancellationToken = default)
+    private static async Task<IResult> HandleGetAuditInfoAsync(
+        HttpContext context,
+        ConfigurationDiscoveryService discoveryService,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
+        var logger = loggerFactory.CreateLogger("Admin.ConfigurationDiscovery");
+
         try
         {
-            var result = await _discoveryService.DiscoverConfigurationAsync(cancellationToken);
-            return Ok(result.AuditInformation);
+            var result = await discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            return Results.Json(result.AuditInformation, ConfigurationDiscoveryJsonContext.Default.ConfigurationAuditInfo);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get audit information");
-            return StatusCode(500, new { error = "Audit information retrieval failed", details = ex.Message });
+            ConfigurationDiscoveryLog.EndpointFailed(logger, "audit", ex.Message, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Audit information retrieval failed");
         }
     }
 
-    /// <summary>
-    /// Gets configuration summary with key statistics.
-    /// </summary>
-    /// <returns>Configuration summary</returns>
-    [HttpGet("summary")]
-    public async Task<ActionResult<ConfigurationSummary>> GetConfigurationSummaryAsync(CancellationToken cancellationToken = default)
+    private static async Task<IResult> HandleGetConfigurationSummaryAsync(
+        HttpContext context,
+        ConfigurationDiscoveryService discoveryService,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
+        var logger = loggerFactory.CreateLogger("Admin.ConfigurationDiscovery");
+
         try
         {
-            var result = await _discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            var result = await discoveryService.DiscoverConfigurationAsync(cancellationToken);
+            var summary = CreateSummary(result);
 
-            var summary = new ConfigurationSummary
-            {
-                TotalTypes = result.DiscoveredTypes.Count,
-                RegisteredTypes = result.DiscoveredTypes.Count(t => t.IsRegisteredInDi),
-                TotalProperties = result.DiscoveredTypes.Sum(t => t.Properties.Count),
-                SecretProperties = result.DiscoveredTypes.Sum(t => t.Properties.Count(p => p.IsSecret)),
-                RequiredProperties = result.DiscoveredTypes.Sum(t => t.Properties.Count(p => p.IsRequired)),
-                TypesWithValidation = result.DiscoveredTypes.Count(t => t.Properties.Any(p => p.ValidationRules.Count > 0)),
-                TotalSecrets = result.SecretValidation.TotalSecrets,
-                ValidSecrets = result.SecretValidation.ValidSecrets,
-                InvalidSecrets = result.SecretValidation.InvalidSecrets,
-                Environment = result.AuditInformation.Environment,
-                DiscoveryDurationMs = result.DiscoveryDurationMs,
-                LastDiscovery = result.Timestamp
-            };
-
-            return Ok(summary);
+            return Results.Json(summary, ConfigurationDiscoveryJsonContext.Default.ConfigurationSummary);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get configuration summary");
-            return StatusCode(500, new { error = "Configuration summary failed", details = ex.Message });
+            ConfigurationDiscoveryLog.EndpointFailed(logger, "summary", ex.Message, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Configuration summary failed");
         }
+    }
+
+    private static ConfigurationSummary CreateSummary(ConfigurationDiscoveryResult result)
+    {
+        return new ConfigurationSummary
+        {
+            TotalTypes = result.DiscoveredTypes.Count,
+            RegisteredTypes = result.DiscoveredTypes.Count(t => t.IsRegisteredInDi),
+            TotalProperties = result.DiscoveredTypes.Sum(t => t.Properties.Count),
+            SecretProperties = result.DiscoveredTypes.Sum(t => t.Properties.Count(p => p.IsSecret)),
+            RequiredProperties = result.DiscoveredTypes.Sum(t => t.Properties.Count(p => p.IsRequired)),
+            TypesWithValidation = result.DiscoveredTypes.Count(t => t.Properties.Any(p => p.ValidationRules.Count > 0)),
+            TotalSecrets = result.SecretValidation.TotalSecrets,
+            ValidSecrets = result.SecretValidation.ValidSecrets,
+            InvalidSecrets = result.SecretValidation.InvalidSecrets,
+            Environment = result.AuditInformation.Environment,
+            DiscoveryDurationMs = result.DiscoveryDurationMs,
+            LastDiscovery = result.Timestamp
+        };
     }
 }
 
 /// <summary>
 /// Configuration summary for dashboard display.
 /// </summary>
-public sealed class ConfigurationSummary
+internal sealed class ConfigurationSummary
 {
     /// <summary>
     /// Total number of configuration types discovered.
@@ -222,4 +274,13 @@ public sealed class ConfigurationSummary
     /// When the discovery was last performed.
     /// </summary>
     public DateTimeOffset LastDiscovery { get; set; }
+}
+
+internal static partial class ConfigurationDiscoveryLog
+{
+    [LoggerMessage(
+        EventId = 20006,
+        Level = LogLevel.Error,
+        Message = "Configuration discovery endpoint '{Endpoint}' failed: {Error}")]
+    public static partial void EndpointFailed(ILogger logger, string endpoint, string error, Exception exception);
 }

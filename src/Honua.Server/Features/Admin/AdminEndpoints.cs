@@ -45,6 +45,8 @@ internal static class AdminEndpoints
             .WithDisplayName("Get Admin OpenAPI Specification")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        endpoints.MapConfigurationDiscoveryEndpoints();
+
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
         _ = adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")

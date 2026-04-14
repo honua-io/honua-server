@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Redis;
 using Honua.Server.Features.Infrastructure.Redis;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.FileProviders;
@@ -16,6 +17,7 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Infrastructure.Redis;
 
 [Collection("Redis")]
+[Protocol(Protocols.Infrastructure)]
 public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
 {
     private readonly RedisFixture _redisFixture;
@@ -26,6 +28,8 @@ public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /infra/redis/queue/dequeue-complete")]
     public async Task JobQueue_WithLiveRedis_DequeuesAndCompletesJobs()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redisFixture.ConnectionString);
@@ -52,6 +56,8 @@ public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /health/redis")]
     public async Task HealthCheck_WithConfiguredRedis_ReportsHealthy()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redisFixture.ConnectionString);
@@ -77,6 +83,8 @@ public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /infra/redis/fallback/development")]
     public async Task WithoutRedis_InDevelopment_UsesLocalLeadershipAndInMemoryQueue()
     {
         var environment = new TestHostEnvironment { EnvironmentName = "Development" };
@@ -105,6 +113,8 @@ public sealed class RedisFailureScenarioTests : IClassFixture<RedisFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /infra/redis/fallback/fail-fast")]
     public async Task WithoutRedis_WithFailFastQueue_ThrowsUnavailableException()
     {
         var environment = new TestHostEnvironment { EnvironmentName = "Production" };
