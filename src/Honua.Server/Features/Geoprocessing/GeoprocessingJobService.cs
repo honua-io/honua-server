@@ -250,6 +250,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            throw new GeoprocessingValidationException("Job identifier is required.");
+        }
+
         EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Execute);
 
         // Cancelling a running job is a destructive action — require approval.
@@ -265,12 +270,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (approval.IsRequired)
         {
             GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
-            throw new GeoprocessingApprovalRequiredException(approval.PolicyRef ?? "unknown");
-        }
-
-        if (string.IsNullOrWhiteSpace(jobId))
-        {
-            throw new GeoprocessingValidationException("Job identifier is required.");
+            throw new GeoprocessingApprovalRequiredException(
+                approval.PolicyRef ?? "unknown",
+                "Job cancellation requires approval.");
         }
 
         var jobStore = RequireJobStore();
