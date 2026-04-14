@@ -293,21 +293,21 @@ internal sealed partial class RedisJobQueue(
             if (job.Status == ExecutionJobStatus.Queued)
             {
                 // Orphaned claim: removed from pending but store was never advanced.
-                await _database.SortedSetRemoveAsync(ClaimedSetKey, operationId).ConfigureAwait(false);
-                await _database.KeyDeleteAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
-
+                // Use atomic Lua script to prevent a window where the job exists in
+                // neither set if the move is interrupted mid-operation.
                 var hasDelayedRetry = job.NextRetryAt.HasValue && job.NextRetryAt.Value > DateTimeOffset.UtcNow;
                 var enqueueTime = hasDelayedRetry ? job.NextRetryAt!.Value : DateTimeOffset.UtcNow;
                 var score = ComputeScore(job.Priority, enqueueTime);
-                await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
 
-                if (hasDelayedRetry)
-                {
-                    await _database.HashSetAsync(GetClaimMetaKey(operationId),
-                    [
-                        new HashEntry("visibleAfter", job.NextRetryAt!.Value.ToUnixTimeMilliseconds().ToString())
-                    ]).ConfigureAwait(false);
-                }
+                RedisValue visibleAfterArg = hasDelayedRetry
+                    ? job.NextRetryAt!.Value.ToUnixTimeMilliseconds().ToString()
+                    : RedisValue.EmptyString;
+
+                await _database.ScriptEvaluateAsync(
+                    AtomicRequeueScript,
+                    [(RedisKey)ClaimedSetKey, (RedisKey)QueueKey, (RedisKey)GetClaimMetaKey(operationId)],
+                    [(RedisValue)operationId, score, visibleAfterArg])
+                    .ConfigureAwait(false);
 
                 Log.OrphanedClaimRequeued(logger, operationId);
             }
@@ -333,16 +333,20 @@ internal sealed partial class RedisJobQueue(
 
     /// <summary>
     /// Best-effort rollback after a successful Lua claim when the subsequent
-    /// job store update fails.
+    /// job store update fails. Uses the same atomic Lua script as
+    /// <see cref="RequeueAsync"/> to prevent a window where the job exists
+    /// in neither set.
     /// </summary>
     private async Task RollBackClaimAsync(string operationId, OperationPriority priority)
     {
         try
         {
-            await _database.SortedSetRemoveAsync(ClaimedSetKey, operationId).ConfigureAwait(false);
-            await _database.KeyDeleteAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
             var score = ComputeScore(priority, DateTimeOffset.UtcNow);
-            await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
+            await _database.ScriptEvaluateAsync(
+                AtomicRequeueScript,
+                [(RedisKey)ClaimedSetKey, (RedisKey)QueueKey, (RedisKey)GetClaimMetaKey(operationId)],
+                [(RedisValue)operationId, score, RedisValue.EmptyString])
+                .ConfigureAwait(false);
             Log.ClaimRolledBack(logger, operationId);
         }
         catch (Exception ex)

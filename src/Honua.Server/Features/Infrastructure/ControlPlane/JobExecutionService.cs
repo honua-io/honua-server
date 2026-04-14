@@ -51,19 +51,46 @@ internal sealed partial class JobExecutionService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            string? claimedId = null;
+
             try
             {
-                var claimedId = await jobQueue.TryClaimAsync(
+                claimedId = await jobQueue.TryClaimAsync(
                     workerId, _acceptedKinds, stoppingToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {
                     await ProcessJobAsync(claimedId, workerId, stoppingToken).ConfigureAwait(false);
-                    continue; // Try to claim the next job immediately.
+                    continue;
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                // If shutdown arrived during the pre-execution phase of
+                // ProcessJobAsync, the job is still claimed but was never
+                // handed to the executor try/catch that handles shutdown
+                // requeue. Force-requeue here so the job returns to the
+                // pending queue immediately instead of waiting for heartbeat
+                // expiry.
+                if (claimedId != null)
+                {
+                    try
+                    {
+                        var job = await jobStore.GetAsync(claimedId, CancellationToken.None).ConfigureAwait(false);
+                        if (job != null && !IsTerminalOrNotOwnedBy(job, workerId))
+                        {
+                            await AbandonJobAsync(job, workerId, "Worker shutdown.",
+                                CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.PreExecShutdownCleanupFailed(logger, claimedId, ex);
+                    }
+
+                    cancellationTokens.Remove(claimedId, workerId);
+                }
+
                 break;
             }
             catch (Exception ex)
@@ -504,6 +531,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9065, LogLevel.Warning, "Failed to persist per-attempt warnings for job {OperationId}; requeue/terminal transition will proceed")]
         public static partial void WarningLogAppendFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9066, LogLevel.Error, "Failed to requeue job {OperationId} during pre-execution shutdown; stale-claim reconciliation will recover")]
+        public static partial void PreExecShutdownCleanupFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 

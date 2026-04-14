@@ -922,6 +922,78 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: when the host stops after TryClaimAsync succeeds but before
+    /// the executor try/catch is reached, the claimed job must be immediately
+    /// requeued by the ExecuteAsync shutdown handler instead of being left in
+    /// Provisioning until heartbeat expiry.
+    /// </summary>
+    [UnitTest]
+    public async Task ExecuteAsync_RequeuesClaimedJob_WhenShutdownDuringPreExecution()
+    {
+        var provisioning = CreateProvisioningJob();
+
+        string? capturedWorkerId = null;
+        var stoppingCts = new CancellationTokenSource();
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedWorkerId = callInfo.ArgAt<string>(0);
+                stoppingCts.Cancel();
+                return (string?)provisioning.OperationId;
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return (ExecutionJobRecord?)(provisioning with { ClaimedBy = capturedWorkerId });
+            });
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await service.StartAsync(stoppingCts.Token);
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        await service.StopAsync(CancellationToken.None);
+
+        // The job must be requeued, not left to heartbeat expiry.
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Queued &&
+                j.ClaimedBy == null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.Received().RequeueAsync(
+            provisioning.OperationId,
+            Arg.Any<OperationPriority>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Executor must NOT have been invoked.
+        await executor.DidNotReceive().ExecuteAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<IJobExecutionContext>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>
