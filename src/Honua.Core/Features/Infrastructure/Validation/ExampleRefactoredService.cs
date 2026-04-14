@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Infrastructure.Validation;
 /// Example service demonstrating the validation framework usage patterns.
 /// This file shows before/after examples of constructor validation consolidation.
 /// </summary>
-internal sealed class ExampleRefactoredService
+internal sealed partial class ExampleRefactoredService
 {
     // BEFORE: Traditional approach with duplicate null checks (OLD PATTERN)
     /*
@@ -77,7 +77,7 @@ internal sealed class ExampleRefactoredService
     // Example method showing the service in use
     public async Task<string> DoSomethingAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Example method called with timeout: {Timeout}", _options.TimeoutSeconds);
+        LogExampleMethodCalled(_logger, _options.TimeoutSeconds);
 
         using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken);
 
@@ -86,6 +86,9 @@ internal sealed class ExampleRefactoredService
 
         return result2;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Example method called with timeout: {Timeout}")]
+    private static partial void LogExampleMethodCalled(ILogger logger, int timeout);
 
     // Example options class
     public sealed class SomeOptions

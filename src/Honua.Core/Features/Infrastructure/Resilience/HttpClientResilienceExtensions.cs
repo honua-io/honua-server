@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Infrastructure.Resilience;
 /// <summary>
 /// Extension methods for adding HTTP client resilience policies to service registration.
 /// </summary>
-public static class HttpClientResilienceExtensions
+public static partial class HttpClientResilienceExtensions
 {
     /// <summary>
     /// Adds a typed HTTP client with standardized resilience policies.
@@ -104,9 +104,10 @@ public static class HttpClientResilienceExtensions
                 onRetry: (result, delay, attempt) =>
                 {
                     var errorMessage = GetFailureMessage(result);
-                    logger?.LogWarning(
-                        "HTTP request to {RequestUri} failed (attempt {Attempt}), retrying in {DelayMs}ms. Service: {ServiceType}, Error: {ErrorMessage}",
-                        request.RequestUri, attempt, delay.TotalMilliseconds, serviceType, errorMessage);
+                    if (logger is not null)
+                    {
+                        LogRetry(logger, request.RequestUri, attempt, delay.TotalMilliseconds, serviceType, errorMessage);
+                    }
 
                     // Record retry metrics
                     RecordRetryMetrics(meter, serviceType, attempt, delay);
@@ -117,19 +118,25 @@ public static class HttpClientResilienceExtensions
                     switch (state)
                     {
                         case CircuitState.Open:
-                            logger?.LogError(
-                                "Circuit breaker opened for service {ServiceType} for {DurationMs}ms. Last error: {ErrorMessage}",
-                                serviceType, duration.TotalMilliseconds, errorMessage);
+                            if (logger is not null)
+                            {
+                                LogCircuitOpened(logger, serviceType, duration.TotalMilliseconds, errorMessage);
+                            }
+
                             break;
                         case CircuitState.HalfOpen:
-                            logger?.LogInformation(
-                                "Circuit breaker for service {ServiceType} is half-open, allowing test request",
-                                serviceType);
+                            if (logger is not null)
+                            {
+                                LogCircuitHalfOpen(logger, serviceType);
+                            }
+
                             break;
                         case CircuitState.Closed:
-                            logger?.LogInformation(
-                                "Circuit breaker for service {ServiceType} closed successfully",
-                                serviceType);
+                            if (logger is not null)
+                            {
+                                LogCircuitClosed(logger, serviceType);
+                            }
+
                             break;
                     }
 
@@ -140,6 +147,40 @@ public static class HttpClientResilienceExtensions
             return policy;
         });
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "HTTP request to {RequestUri} failed (attempt {Attempt}), retrying in {DelayMs}ms. Service: {ServiceType}, Error: {ErrorMessage}")]
+    private static partial void LogRetry(
+        ILogger logger,
+        Uri? requestUri,
+        int attempt,
+        double delayMs,
+        string serviceType,
+        string errorMessage);
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Circuit breaker opened for service {ServiceType} for {DurationMs}ms. Last error: {ErrorMessage}")]
+    private static partial void LogCircuitOpened(
+        ILogger logger,
+        string serviceType,
+        double durationMs,
+        string errorMessage);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Circuit breaker for service {ServiceType} is half-open, allowing test request")]
+    private static partial void LogCircuitHalfOpen(
+        ILogger logger,
+        string serviceType);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Circuit breaker for service {ServiceType} closed successfully")]
+    private static partial void LogCircuitClosed(
+        ILogger logger,
+        string serviceType);
 
     private static string GetFailureMessage(DelegateResult<HttpResponseMessage> result)
     {
