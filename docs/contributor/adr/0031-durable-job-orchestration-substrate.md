@@ -109,7 +109,7 @@ Millisecond timestamps break ties within a band.
   before the `Provisioning → Running` transition so that operator cancellation
   arriving during that window is delivered through the token rather than as a
   direct store write. If no worker token is registered, the API marks the job
-  as Cancelled directly.
+  as Cancelled directly and removes it from the queue.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
 - When the reconciler requeues or terminally fails a job (heartbeat or timeout
@@ -161,9 +161,11 @@ Millisecond timestamps break ties within a band.
 When a worker host shuts down (e.g. rolling deployment, scale-down), in-flight
 jobs are abandoned rather than marked as terminal failures. The worker itself
 transitions the job back to Queued, clears the claim fields (`ClaimedBy`,
-`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it immediately. Shutdown
-requeue always succeeds regardless of the job's retry budget because a host
-shutdown is an infrastructure event, not an execution failure.
+`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it immediately. This applies
+both during active execution and during the pre-execution window between claim
+and Running. Shutdown requeue always succeeds regardless of the job's retry
+budget because a host shutdown is an infrastructure event, not an execution
+failure.
 
 Both the worker and the reconciler re-read the current job record before writing
 any state transition. If the record is already terminal or the claim owner has

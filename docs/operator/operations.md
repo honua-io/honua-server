@@ -367,9 +367,12 @@ policy field on the record before enqueuing.
 When a worker host shuts down, in-flight jobs are abandoned rather than
 marked as terminal failures. The worker itself transitions the job back to
 Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
-`LastHeartbeatAt`), and re-enqueues it immediately. Shutdown requeue
-always succeeds regardless of the job's retry budget because a host
-shutdown is an infrastructure event, not an execution failure.
+`LastHeartbeatAt`), and re-enqueues it immediately. This applies both
+during active execution and during the pre-execution window between
+claim and Running — if shutdown arrives before the executor is entered,
+the claim loop performs the same force-requeue. Shutdown requeue always
+succeeds regardless of the job's retry budget because a host shutdown is
+an infrastructure event, not an execution failure.
 
 Both the worker and the reconciler re-read the current job record
 before writing any state transition. If the record is already terminal or
