@@ -440,14 +440,21 @@ internal sealed partial class JobExecutionService(
     /// the 48-character budget.
     /// </summary>
     internal static string GenerateWorkerId()
+        => GenerateWorkerId(Environment.MachineName, Guid.NewGuid());
+
+    internal static string GenerateWorkerId(string machineName, Guid workerGuid)
     {
-        var guid = Guid.NewGuid().ToString("N");
-        var prefix = $"worker-{Environment.MachineName}";
+        var guid = workerGuid.ToString("N");
+        var safeMachineName = string.IsNullOrWhiteSpace(machineName) ? "unknown" : machineName;
+        var prefix = $"worker-{safeMachineName}";
         const int maxLength = 48;
         const int separatorLength = 1;
         var maxPrefixLength = maxLength - guid.Length - separatorLength;
         if (prefix.Length > maxPrefixLength)
+        {
             prefix = prefix[..maxPrefixLength];
+        }
+
         return $"{prefix}-{guid}";
     }
 

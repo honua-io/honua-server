@@ -278,7 +278,8 @@ internal static class JobEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         IJobCancellationNotifier cancellationNotifier,
         IUniversalProgressStore progressStore,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null,
+        [FromServices] IJobQueue? jobQueue = null)
     {
         EnrichActivity("DismissJob");
 
@@ -379,6 +380,11 @@ internal static class JobEndpoints
                 };
 
                 await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+
+                if (jobQueue != null)
+                {
+                    await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                }
 
                 var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
                     jobId, context.RequestAborted).ConfigureAwait(false);

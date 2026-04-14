@@ -24,6 +24,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
 
     private readonly IExecutionJobStore? _jobStore;
+    private readonly IJobQueue? _jobQueue;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IJobCancellationNotifier _cancellationNotifier;
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
@@ -36,7 +37,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<GeoprocessingJobService> logger,
-        IExecutionJobStore? jobStore = null)
+        IExecutionJobStore? jobStore = null,
+        IJobQueue? jobQueue = null)
     {
         _progressStore = progressStore;
         _cancellationNotifier = cancellationNotifier;
@@ -44,6 +46,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _approvalEvaluator = approvalEvaluator;
         _logger = logger;
         _jobStore = jobStore;
+        _jobQueue = jobQueue;
     }
 
     public void EnsureCallerAuthorized(
@@ -320,6 +323,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         };
 
         await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (_jobQueue != null)
+        {
+            await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+        }
 
         var progress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
             jobId, cancellationToken).ConfigureAwait(false);

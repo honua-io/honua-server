@@ -26,6 +26,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 public sealed class GeoprocessingJobServiceTests
 {
     private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>();
+    private readonly IJobQueue _jobQueue = Substitute.For<IJobQueue>();
     private readonly IUniversalProgressStore _progressStore = Substitute.For<IUniversalProgressStore>();
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
@@ -46,7 +47,7 @@ public sealed class GeoprocessingJobServiceTests
             _progressStore, _cancellationNotifier,
             _authEvaluator, _approvalEvaluator,
             NullLogger<GeoprocessingJobService>.Instance,
-            _jobStore);
+            _jobStore, _jobQueue);
     }
 
     // -----------------------------------------------------------------------
@@ -251,6 +252,34 @@ public sealed class GeoprocessingJobServiceTests
         var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_NoActiveWorker_RemovesFromQueue()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_WorkerOwnsTerminalState_DoesNotCallRemove()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // -----------------------------------------------------------------------

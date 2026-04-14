@@ -870,6 +870,23 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: even when the machine hostname exceeds the available prefix
+    /// budget, the generated worker ID must keep the full GUID claim token and
+    /// only truncate the hostname portion.
+    /// </summary>
+    [UnitTest]
+    public void GenerateWorkerId_TruncatesHostnamePrefix_ButPreservesFullGuidSuffix()
+    {
+        const string machineName = "averyverylonghostnamethatexceedstheworkerbudget";
+        var workerGuid = Guid.ParseExact("0123456789abcdef0123456789abcdef", "N");
+
+        var workerId = JobExecutionService.GenerateWorkerId(machineName, workerGuid);
+
+        Assert.Equal("worker-averyver-0123456789abcdef0123456789abcdef", workerId);
+        Assert.Equal(48, workerId.Length);
+    }
+
+    /// <summary>
     /// When a worker has no executors registered, it must not enter the claim
     /// loop. Without this guard, the worker performs O(n) Redis scans every
     /// poll interval for no benefit.

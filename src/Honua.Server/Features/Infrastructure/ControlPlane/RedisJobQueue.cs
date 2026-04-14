@@ -96,7 +96,7 @@ internal sealed partial class RedisJobQueue(
         var totalScanned = 0;
         var totalVisited = 0;
 
-        while (totalScanned < MaxScanEntries)
+        while (totalScanned < MaxScanEntries && totalVisited < MaxVisitEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
