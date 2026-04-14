@@ -153,8 +153,9 @@ Millisecond timestamps break ties within a band.
 When a worker host shuts down (e.g. rolling deployment, scale-down), in-flight
 jobs are abandoned rather than marked as terminal failures. The worker itself
 transitions the job back to Queued, clears the claim fields (`ClaimedBy`,
-`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it with the applicable retry
-backoff delay.
+`ClaimedAt`, `LastHeartbeatAt`), and re-enqueues it immediately. Shutdown
+requeue always succeeds regardless of the job's retry budget because a host
+shutdown is an infrastructure event, not an execution failure.
 
 Both the worker and the reconciler re-read the current job record before writing
 any state transition. If the record is already terminal or the claim owner has

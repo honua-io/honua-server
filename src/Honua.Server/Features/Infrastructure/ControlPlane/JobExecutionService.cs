@@ -183,10 +183,12 @@ internal sealed partial class JobExecutionService(
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
-            // Worker is shutting down; abandon the job so it can be retried.
+            // Worker is shutting down; always requeue regardless of retry budget
+            // because this is an infrastructure event, not an execution failure.
             // Use CancellationToken.None so store/queue cleanup can complete
             // after the host stopping signal has fired.
-            await AbandonJobAsync(running, workerId, "Worker shutdown.", CancellationToken.None).ConfigureAwait(false);
+            await AbandonJobAsync(running, workerId, "Worker shutdown.",
+                CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
@@ -304,7 +306,8 @@ internal sealed partial class JobExecutionService(
         string workerId,
         string reason,
         CancellationToken cancellationToken,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null,
+        bool forceRequeue = false)
     {
         // Re-read to capture progress and artifact updates made during execution.
         var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
@@ -317,7 +320,7 @@ internal sealed partial class JobExecutionService(
 
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
-        if (retryPolicy.ShouldRetry(current.AttemptCount))
+        if (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount))
         {
             Log.JobAbandoned(logger, current.OperationId, reason);
 
@@ -337,7 +340,7 @@ internal sealed partial class JobExecutionService(
                 }
             }
 
-            var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
+            var delay = forceRequeue ? TimeSpan.Zero : retryPolicy.ComputeDelay(current.AttemptCount + 1);
             var now = DateTimeOffset.UtcNow;
             var abandoned = current with
             {
@@ -488,9 +491,25 @@ internal sealed class JobExecutionContext(
         ExecutionLogEntry entry,
         CancellationToken cancellationToken = default)
     {
-        if (logStore != null)
+        if (logStore == null)
         {
+            return;
+        }
+
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job == null || !IsOwnedBy(job))
+            {
+                return;
+            }
+
             await logStore.AppendAsync(operationId, entry, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
         }
     }
 

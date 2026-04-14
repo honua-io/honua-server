@@ -392,19 +392,127 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: a graceful host shutdown must always requeue the job, even
+    /// when the retry budget is exhausted (<see cref="JobRetryPolicy.None"/>).
+    /// Infrastructure shutdown is not an execution failure and must not
+    /// permanently fail jobs that have no retry budget.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_RequeuesJob_WhenShutdownWithNoRetryPolicy()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var stoppingCts = new CancellationTokenSource();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                // Simulate host shutdown during execution.
+                await stoppingCts.CancelAsync().ConfigureAwait(false);
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return JobExecutionResult.Succeeded(); // Unreachable.
+            });
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId,
+            provisioning.ClaimedBy!, stoppingCts.Token);
+
+        // The job must be requeued (Queued), not permanently failed.
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Queued &&
+                j.ClaimedBy == null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.Received().RequeueAsync(
+            provisioning.OperationId,
+            Arg.Any<OperationPriority>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Must NOT have been terminally failed.
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a stale worker's log append must be silently dropped
+    /// when ownership has moved to another worker, preventing log pollution
+    /// into the next attempt's or terminal state's log stream.
+    /// </summary>
+    [UnitTest]
+    public async Task AppendLog_Skips_WhenOwnershipLost()
+    {
+        var running = CreateProvisioningJob(claimedBy: "worker-stale") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var reclaimed = running with
+        {
+            ClaimedBy = "worker-new",
+            ClaimedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(reclaimed);
+
+        var logStore = Substitute.For<IExecutionLogStore>();
+
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-stale", jobStore, logStore,
+            JobHeartbeatPolicy.Default);
+
+        await context.AppendLogAsync(new ExecutionLogEntry
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Level = ExecutionLogLevel.Info,
+            Message = "Stale log entry that should be dropped"
+        }, CancellationToken.None);
+
+        // The log store must NOT have been written to.
+        await logStore.DidNotReceive().AppendAsync(
+            Arg.Any<string>(),
+            Arg.Any<ExecutionLogEntry>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>
     private static async Task InvokeProcessJobAsync(
         JobExecutionService service,
         string operationId,
-        string workerId)
+        string workerId,
+        CancellationToken stoppingToken = default)
     {
         var method = typeof(JobExecutionService).GetMethod(
             "ProcessJobAsync",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
-        var task = (Task)method!.Invoke(service, [operationId, workerId, CancellationToken.None])!;
+        var task = (Task)method!.Invoke(service, [operationId, workerId, stoppingToken])!;
         await task.ConfigureAwait(false);
     }
 }
