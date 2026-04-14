@@ -330,17 +330,26 @@ internal sealed partial class JobExecutionService(
 
             // Persist per-attempt warnings to structured execution logs before
             // clearing them from the requeued record, so they remain observable.
+            // Best-effort: a transient log-store failure must not block the
+            // durable requeue/terminal transition.
             if (warnings is { Count: > 0 } && logStore != null)
             {
-                foreach (var warning in warnings)
+                try
                 {
-                    await logStore.AppendAsync(current.OperationId, new ExecutionLogEntry
+                    foreach (var warning in warnings)
                     {
-                        Timestamp = DateTimeOffset.UtcNow,
-                        Level = ExecutionLogLevel.Warning,
-                        Message = warning,
-                        Phase = $"Attempt {current.AttemptCount} (requeuing)"
-                    }, cancellationToken).ConfigureAwait(false);
+                        await logStore.AppendAsync(current.OperationId, new ExecutionLogEntry
+                        {
+                            Timestamp = DateTimeOffset.UtcNow,
+                            Level = ExecutionLogLevel.Warning,
+                            Message = warning,
+                            Phase = $"Attempt {current.AttemptCount} (requeuing)"
+                        }, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.WarningLogAppendFailed(logger, current.OperationId, ex);
                 }
             }
 
@@ -459,6 +468,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9063, LogLevel.Warning, "Heartbeat pump faulted for job {OperationId}; finalization will proceed from executor outcome")]
         public static partial void HeartbeatPumpFaulted(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9065, LogLevel.Warning, "Failed to persist per-attempt warnings for job {OperationId}; requeue/terminal transition will proceed")]
+        public static partial void WarningLogAppendFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 

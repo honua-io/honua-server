@@ -445,6 +445,66 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: a transient log-store failure during per-attempt warning
+    /// persistence must not block the durable requeue transition. The job
+    /// must still be requeued with cleared warnings.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_RequeuesJob_WhenWarningLogAppendThrows()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transient failure", ["Warning A", "Warning B"]));
+
+        var logStore = Substitute.For<IExecutionLogStore>();
+        logStore.AppendAsync(Arg.Any<string>(), Arg.Any<ExecutionLogEntry>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated log-store outage"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, logStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        // The job must still be requeued despite the log-store failure.
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Queued &&
+                j.Warnings.Count == 0),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.Received().RequeueAsync(
+            provisioning.OperationId,
+            Arg.Any<OperationPriority>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: a graceful host shutdown must always requeue the job, even
     /// when the retry budget is exhausted (<see cref="JobRetryPolicy.None"/>).
     /// Infrastructure shutdown is not an execution failure and must not
