@@ -290,6 +290,11 @@ phase, optional metadata) through `IExecutionLogStore`. Logs are
 append-only during execution and read-only after terminal state. Redis-backed
 with 7-day retention applied when the owning worker finalizes the job.
 
+When a job is abandoned and requeued for retry, any warnings reported by the
+executor are persisted to the structured log before clearing them from the
+requeued record. On terminal failure (retries exhausted), warnings are
+retained on the job record for post-mortem inspection.
+
 > **Note:** Execution logs are stored internally but are not yet exposed
 > through a public REST endpoint. Retrieval is available only through
 > direct Redis access or internal diagnostics.
@@ -374,6 +379,11 @@ specific race windows:
   same worker) with a fresh claim time before the handler runs. Without
   the guard the reconciler would fail a new attempt that has not yet
   timed out.
+
+When the reconciler requeues or terminally fails a job, it also revokes the
+stale worker's cancellation token source. This ensures that a subsequent
+API-side `Cancel()` call does not return a false positive for a token that
+no longer corresponds to an active execution.
 
 If a worker crashes without clean abandonment, the reconciliation service
 detects the stale heartbeat and performs the same recovery. This ensures

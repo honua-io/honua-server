@@ -15,6 +15,7 @@ internal sealed partial class JobReconciliationService(
     IJobQueue jobQueue,
     IQueueClaimReconciler claimReconciler,
     ExecutionJobCancellationTokens cancellationTokens,
+    IExecutionLogStore? logStore,
     ILogger<JobReconciliationService> logger) : BackgroundService
 {
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
@@ -203,6 +204,11 @@ internal sealed partial class JobReconciliationService(
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
 
+            if (logStore != null)
+            {
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+
             cancellationTokens.Revoke(current.OperationId);
         }
     }
@@ -244,6 +250,11 @@ internal sealed partial class JobReconciliationService(
         };
         await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
         await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+        if (logStore != null)
+        {
+            await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+        }
 
         // Signal and remove any stale CTS so the hung worker stops work.
         cancellationTokens.Revoke(current.OperationId);

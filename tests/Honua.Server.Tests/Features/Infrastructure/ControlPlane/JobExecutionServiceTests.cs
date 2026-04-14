@@ -340,6 +340,56 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: when retries are exhausted and the job transitions to terminal
+    /// Failed, the execution log retention must be set so structured logs remain
+    /// accessible for post-mortem inspection.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_SetsLogRetention_WhenRetriesExhausted()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transform failed"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        var logStore = Substitute.For<IExecutionLogStore>();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, logStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await logStore.Received(1).SetRetentionAsync(
+            provisioning.OperationId,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: when executor returns failure with warnings and retries
     /// remain, warnings must be cleared from the requeued record to prevent
     /// stale per-attempt warnings from leaking to the next attempt.

@@ -112,6 +112,10 @@ Millisecond timestamps break ties within a band.
   as Cancelled directly.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
+- When the reconciler requeues or terminally fails a job (heartbeat or timeout
+  expiry), it revokes the stale worker's cancellation token source. This
+  prevents a subsequent `Cancel()` call from returning a false positive for a
+  token that no longer corresponds to an active execution.
 
 ### Progress Reporting
 
@@ -131,6 +135,10 @@ Millisecond timestamps break ties within a band.
 - `IExecutionLogStore` provides append-only writes during execution and read
   access for diagnostics. Redis list-backed implementation with configurable
   retention.
+- When a job is abandoned and requeued for retry, the substrate persists any
+  executor-reported warnings to the structured log before clearing them from
+  the requeued record. On terminal failure (retries exhausted), warnings are
+  retained on the `ExecutionJobRecord` for post-mortem inspection.
 
 ### Artifact References
 

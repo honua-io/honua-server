@@ -380,6 +380,11 @@ internal sealed partial class JobExecutionService(
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+            if (logStore != null)
+            {
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 

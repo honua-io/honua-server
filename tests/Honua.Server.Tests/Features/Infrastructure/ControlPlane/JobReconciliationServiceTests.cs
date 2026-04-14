@@ -84,7 +84,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -126,7 +126,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -168,7 +168,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -201,7 +201,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -248,7 +248,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -299,7 +299,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -358,7 +358,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -415,7 +415,7 @@ public sealed class JobReconciliationServiceTests
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, cancellationTokens,
-            NullLogger<JobReconciliationService>.Instance);
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
@@ -465,15 +465,23 @@ public sealed class JobReconciliationServiceTests
         using var staleCts = cancellationTokens.CreateLinkedTokenSource(
             snapshot.OperationId, CancellationToken.None);
 
+        var logStore = Substitute.For<IExecutionLogStore>();
+
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, cancellationTokens,
-            NullLogger<JobReconciliationService>.Instance);
+            logStore, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
         Assert.True(staleCts.IsCancellationRequested);
         Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
+
+        // Terminal failure must set log retention for post-mortem access.
+        await logStore.Received(1).SetRetentionAsync(
+            snapshot.OperationId,
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>

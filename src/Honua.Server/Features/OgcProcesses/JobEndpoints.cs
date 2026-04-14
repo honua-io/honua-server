@@ -358,28 +358,39 @@ internal static class JobEndpoints
 
         if (!workerOwnsTerminalState)
         {
-            // No worker handling this job — transition to cancelled directly
-            var now = DateTimeOffset.UtcNow;
-            var cancelled = job with
+            // Re-read to catch concurrent terminal transitions (e.g. reconciler
+            // revoked the stale CTS after requeue or terminal failure).
+            var latest = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            if (latest != null && OgcProcessesConversionHelpers.IsTerminal(latest.Status))
             {
-                Status = ExecutionJobStatus.Cancelled,
-                UpdatedAt = now,
-                CompletedAt = now,
-                CurrentPhase = "Dismissed"
-            };
-
-            await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
-
-            var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
-                jobId, context.RequestAborted).ConfigureAwait(false);
-            if (progress != null)
-            {
-                var cancelledProgress = progress.WithCancellation(now, "Dismissed via OGC API");
-                await progressStore.SetProgressAsync(
-                    jobId, cancelledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                // Job already reached a terminal state; return current status.
+                job = latest;
             }
+            else
+            {
+                // No active worker — transition to cancelled directly.
+                var now = DateTimeOffset.UtcNow;
+                var cancelled = (latest ?? job) with
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    UpdatedAt = now,
+                    CompletedAt = now,
+                    CurrentPhase = "Dismissed"
+                };
 
-            job = cancelled;
+                await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+
+                var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                    jobId, context.RequestAborted).ConfigureAwait(false);
+                if (progress != null)
+                {
+                    var cancelledProgress = progress.WithCancellation(now, "Dismissed via OGC API");
+                    await progressStore.SetProgressAsync(
+                        jobId, cancelledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                }
+
+                job = cancelled;
+            }
         }
         else
         {
