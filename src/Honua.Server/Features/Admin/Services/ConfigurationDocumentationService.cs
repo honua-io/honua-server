@@ -275,7 +275,7 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Query:MaxOffset", "Limits__Query__MaxOffset", "integer",
                     "Maximum pagination offset", 100000, opts.MaxOffset, "Range: 1000-1000000"),
                 BuildPropertyWithCurrent("Limits:Query:MaxBboxAreaSqKm", "Limits__Query__MaxBboxAreaSqKm", "number",
-                    "Maximum bounding box area in square km", 1000.0, opts.MaxBboxAreaSqKm),
+                    "Maximum bounding box area in square km", 100000.0, opts.MaxBboxAreaSqKm),
                 BuildPropertyWithCurrent("Limits:Query:QueryTimeout", "Limits__Query__QueryTimeout", "timespan",
                     "Query timeout (HH:MM:SS format)", TimeSpan.FromSeconds(30), opts.QueryTimeout, "Range: 00:00:05-00:02:00")
             ]

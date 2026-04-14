@@ -7,6 +7,7 @@ using System.Text;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -21,6 +22,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -33,6 +35,9 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public class OidcAuthenticationTests : IAsyncLifetime
 {
+    private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
+    private const string TestPostgresConnectionString = "Host=localhost;Database=test;Username=test;Password=test";
+    private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
     private readonly WebAppFixture _fixture = new();
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
@@ -74,13 +79,18 @@ public class OidcAuthenticationTests : IAsyncLifetime
                     }
                 }
 
-                builder.UseEnvironment("Test");
+                if (string.IsNullOrWhiteSpace(builder.GetSetting(WebHostDefaults.EnvironmentKey)))
+                {
+                    builder.UseEnvironment("Test");
+                }
 
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
                     var settings = new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test"
+                        ["ConnectionStrings:DefaultConnection"] = TestPostgresConnectionString,
+                        ["ConnectionStrings:honua"] = TestPostgresConnectionString,
+                        ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey
                     };
 
                     if (oidcSettings != null)
@@ -91,14 +101,42 @@ public class OidcAuthenticationTests : IAsyncLifetime
                         }
                     }
 
+                    var configuredAdminPassword = builder.GetSetting("HONUA_ADMIN_PASSWORD");
+                    if (!string.IsNullOrWhiteSpace(configuredAdminPassword))
+                    {
+                        settings["HONUA_ADMIN_PASSWORD"] = configuredAdminPassword;
+                    }
+
+                    var devAuth = builder.GetSetting("HONUA_DEV_AUTH");
+                    if (!string.IsNullOrWhiteSpace(devAuth))
+                    {
+                        settings["HONUA_DEV_AUTH"] = devAuth;
+                    }
+
+                    var basicCompat = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT");
+                    if (!string.IsNullOrWhiteSpace(basicCompat))
+                    {
+                        settings["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = basicCompat;
+                    }
+
+                    var requireHttps = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH");
+                    if (!string.IsNullOrWhiteSpace(requireHttps))
+                    {
+                        settings["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = requireHttps;
+                    }
+
                     configBuilder.AddInMemoryCollection(settings);
                 });
 
                 builder.ConfigureTestServices(services =>
                 {
+                    services.RemoveAll<IDatabaseCompatibilityChecker>();
+                    services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
+
                     // Remove the real PostgreSQL services
                     services.RemoveAll<Npgsql.NpgsqlDataSource>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
+                    services.AddSingleton(_ => NpgsqlDataSource.Create(TestPostgresConnectionString));
 
                     // Add mock implementations
                     services.AddScoped<ILayerCatalog>(provider => new TestLayerCatalog());
@@ -112,6 +150,18 @@ public class OidcAuthenticationTests : IAsyncLifetime
             });
     }
 
+    private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
+    {
+        public Task<DatabaseCompatibilityResult> CheckCompatibilityAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(DatabaseCompatibilityResult.Compatible(
+                "PostgreSQL test",
+                "3.6.2",
+                "3.6.2",
+                ["postgis", "postgis_raster"]));
+    }
+
     private static Dictionary<string, string?> CreateEnabledOidcSettings(Dictionary<string, string?>? additionalSettings = null)
     {
         var settings = new Dictionary<string, string?>
@@ -123,7 +173,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
             ["Oidc:ClaimsMapping:RoleClaimType"] = ClaimTypes.Role,
             ["Oidc:TokenValidation:SymmetricSigningKey"] = TestSigningKey,
             ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false",
-            ["HONUA_ADMIN_PASSWORD"] = "test-password"
+            ["HONUA_ADMIN_PASSWORD"] = TestAdminPassword
         };
 
         if (additionalSettings != null)
@@ -461,7 +511,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_OidcDisabled_ApiKeyStillWorks()
     {
         // Arrange - OIDC disabled, API key enabled
-        const string adminPassword = "test-admin-password";
+        const string adminPassword = TestAdminPassword;
         var settings = new Dictionary<string, string?>
         {
             ["Oidc:Enabled"] = "false",
@@ -501,7 +551,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
             configure: builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
             },
             oidcSettings: settings);
         using var client = factory.CreateClient();
@@ -697,7 +747,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
 
         // Act - valid API key is present, but invalid bearer should still fail due bearer precedence
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
-        request.Headers.Add("X-API-Key", "test-password");
+        request.Headers.Add("X-API-Key", TestAdminPassword);
         request.Headers.Add("Authorization", $"Bearer {invalidBearer}");
         var response = await client.SendAsync(request);
 
@@ -746,7 +796,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
 
         // Act
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
-        request.Headers.Add("X-API-Key", "test-password");
+        request.Headers.Add("X-API-Key", TestAdminPassword);
         request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await client.SendAsync(request);
 
@@ -1248,7 +1298,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
             configure: builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
             },
             oidcSettings: settings);
         using var client = factory.CreateClient();
@@ -1277,7 +1327,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
             configure: builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
             },
             oidcSettings: settings);
         using var client = factory.CreateClient();

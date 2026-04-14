@@ -82,11 +82,23 @@ public sealed class QueryParameters
     public string? InSr { get; init; }
 
     /// <summary>
+    /// Indicates whether the request explicitly provided the <c>inSR</c> query parameter.
+    /// </summary>
+    [JsonIgnore]
+    public bool InSrSpecified { get; init; }
+
+    /// <summary>
     /// Output spatial reference for response geometry (WKID or WKT)
     /// </summary>
     [JsonPropertyName("outSR")]
     [JsonConverter(typeof(RawJsonStringConverter))]
     public string? OutSr { get; init; }
+
+    /// <summary>
+    /// Indicates whether the request explicitly provided the <c>outSR</c> query parameter.
+    /// </summary>
+    [JsonIgnore]
+    public bool OutSrSpecified { get; init; }
 
     /// <summary>
     /// Type of filter geometry (esriGeometryPoint, esriGeometryPolygon, esriGeometryEnvelope)

@@ -11,6 +11,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Import;
@@ -730,10 +731,12 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private volatile bool _isUsingFallback;
     private bool AllowsLocalFallback => _cache == null;
-    private bool CanUseRedisDirectly =>
+    private bool CanUseRedisBackplane =>
         _redis != null &&
-        _cache != null &&
-        !_isUsingFallback &&
+        _cache is RedisCache &&
+        !_isUsingFallback;
+    private bool CanUseRedisDirectly =>
+        CanUseRedisBackplane &&
         _cache is not MemoryDistributedCache;
 
     public RedisProgressStore(
@@ -759,6 +762,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     {
         var key = $"{_keyPrefix}{jobId}";
         var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
+        var cachedWriteCompleted = false;
 
         if (AllowsLocalFallback)
         {
@@ -792,13 +796,26 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             await _cache.SetStringAsync(key, json,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
                 cancellationToken);
+            cachedWriteCompleted = true;
             if (_redis != null)
             {
-                await _redis.GetDatabase().SetAddAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+                await _redis!.GetDatabase().SetAddAsync(_activeIdsKey, jobId).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
         {
+            if (cachedWriteCompleted && _cache != null)
+            {
+                try
+                {
+                    await _cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Preserve the original distributed-state failure.
+                }
+            }
+
             HandleRedisFailure(ex, "set progress");
             throw CreateDistributedStateUnavailableException("set progress", ex);
         }
@@ -880,11 +897,12 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
                 }
                 else
                 {
-                    await _cache.RemoveAsync(key, cancellationToken);
                     if (_redis != null)
                     {
-                        await _redis.GetDatabase().SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
+                        await _redis!.GetDatabase().SetRemoveAsync(_activeIdsKey, jobId).ConfigureAwait(false);
                     }
+
+                    await _cache.RemoveAsync(key, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -1025,7 +1043,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (CanUseRedisDirectly)
+        if (!_isUsingFallback && _redis != null)
         {
             try
             {

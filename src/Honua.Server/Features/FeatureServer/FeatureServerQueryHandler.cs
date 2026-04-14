@@ -241,11 +241,11 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             var inputSrid = await _queryServices.ResolveSridAsync(validatedParams.InSr, parsedGeometry?.SpatialReference, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(validatedParams.InSr) && !inputSrid.HasValue)
+            if (validatedParams.InSrSpecified && !inputSrid.HasValue)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid input spatial reference",
-                    [$"Unsupported inSR value: {validatedParams.InSr}"]);
+                    [CreateSpatialReferenceErrorMessage("inSR", validatedParams.InSr)]);
             }
 
             if (parsedGeometry != null && !inputSrid.HasValue)
@@ -253,24 +253,36 @@ internal sealed class FeatureServerQueryHandler(
                 inputSrid = layer.SpatialReference.ToSrid();
             }
 
-            if (parsedGeometry != null && inputSrid.HasValue && queryLimits.MaxBboxAreaSqKm > 0)
+            if (parsedGeometry != null && inputSrid.HasValue)
             {
-                var areaLimitSpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
-                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, areaLimitSpatialReference, queryLimits.MaxBboxAreaSqKm);
-                if (!areaLimitResult.IsValid)
+                var queryGeometrySpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
+
+                var geometryValidationResult = ValidateGeometryCoordinates(parsedGeometry, queryGeometrySpatialReference);
+                if (!geometryValidationResult.IsValid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
-                        "Query parameters exceed configured limits",
-                        [areaLimitResult.ErrorMessage!]);
+                        ErrorMessages.Validation.InvalidGeometryParameter,
+                        [geometryValidationResult.ErrorMessage!]);
+                }
+
+                if (queryLimits.MaxBboxAreaSqKm > 0)
+                {
+                    var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, queryGeometrySpatialReference, queryLimits.MaxBboxAreaSqKm);
+                    if (!areaLimitResult.IsValid)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context,
+                            "Query parameters exceed configured limits",
+                            [areaLimitResult.ErrorMessage!]);
+                    }
                 }
             }
 
             var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
+            if (validatedParams.OutSrSpecified && !outputSrid.HasValue)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid output spatial reference",
-                    [$"Unsupported outSR value: {validatedParams.OutSr}"]);
+                    [CreateSpatialReferenceErrorMessage("outSR", validatedParams.OutSr)]);
             }
 
             var wgs84Srid = SpatialReference.WGS84.Wkid;
@@ -914,6 +926,14 @@ internal sealed class FeatureServerQueryHandler(
             return ValidationResult.Success();
         }
 
+        // Dateline-crossing envelopes intentionally bypass the bbox-area limit.
+        // Their wrapped width is protocol-valid, but a naive area clamp would
+        // reject legitimate Pacific queries and browser `.within(bounds)` calls.
+        if (spatialReference.IsGeographic && minX > maxX)
+        {
+            return ValidationResult.Success();
+        }
+
         if (!TryCalculateBoundingBoxAreaSqKm(minX, minY, maxX, maxY, spatialReference, out var bboxAreaSqKm, out var areaError))
         {
             return ValidationResult.Failure(areaError!);
@@ -926,6 +946,52 @@ internal sealed class FeatureServerQueryHandler(
 
         return ValidationResult.Failure(
             $"Geometry bounding box area ({bboxAreaSqKm.ToString("F2", CultureInfo.InvariantCulture)} sq km) exceeds maximum allowed area ({maxBboxAreaSqKm.ToString("F2", CultureInfo.InvariantCulture)} sq km).");
+    }
+
+    private static ValidationResult ValidateGeometryCoordinates(
+        GeoServicesGeometry geometry,
+        SpatialReference spatialReference)
+    {
+        var isGeographic = spatialReference.IsGeographic;
+
+        if (!TryValidateCoordinatePair(geometry.X, geometry.Y, isGeographic, out var errorMessage))
+        {
+            return ValidationResult.Failure(errorMessage!);
+        }
+
+        var hasEnvelopeCoordinates = geometry.Xmin.HasValue || geometry.Ymin.HasValue || geometry.Xmax.HasValue || geometry.Ymax.HasValue;
+        if (hasEnvelopeCoordinates)
+        {
+            if (!geometry.Xmin.HasValue || !geometry.Ymin.HasValue || !geometry.Xmax.HasValue || !geometry.Ymax.HasValue)
+            {
+                return ValidationResult.Failure("Envelope geometry must include xmin, ymin, xmax, and ymax values.");
+            }
+
+            if (!TryValidateCoordinatePair(geometry.Xmin, geometry.Ymin, isGeographic, out errorMessage) ||
+                !TryValidateCoordinatePair(geometry.Xmax, geometry.Ymax, isGeographic, out errorMessage))
+            {
+                return ValidationResult.Failure(errorMessage!);
+            }
+
+            if (geometry.Ymin.Value > geometry.Ymax.Value)
+            {
+                return ValidationResult.Failure("Envelope latitude range is invalid.");
+            }
+
+            if (!isGeographic && geometry.Xmin.Value > geometry.Xmax.Value)
+            {
+                return ValidationResult.Failure("Envelope x range is invalid.");
+            }
+        }
+
+        if (!TryValidateCoordinateCollection(geometry.Points, isGeographic, out errorMessage) ||
+            !TryValidateCoordinatePathCollection(geometry.Paths, isGeographic, out errorMessage) ||
+            !TryValidateCoordinatePathCollection(geometry.Rings, isGeographic, out errorMessage))
+        {
+            return ValidationResult.Failure(errorMessage!);
+        }
+
+        return ValidationResult.Success();
     }
 
     private static bool TryGetGeometryEnvelope(
@@ -1039,6 +1105,108 @@ internal sealed class FeatureServerQueryHandler(
         maxY = Math.Max(maxY, y.Value);
         return true;
     }
+
+    private static bool TryValidateCoordinateCollection(
+        double[][]? coordinates,
+        bool isGeographic,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+
+        if (coordinates == null)
+        {
+            return true;
+        }
+
+        foreach (var coordinate in coordinates)
+        {
+            if (coordinate is not { Length: >= 2 })
+            {
+                errorMessage = "Geometry coordinate pairs must include both x and y values.";
+                return false;
+            }
+
+            if (!TryValidateCoordinatePair(coordinate[0], coordinate[1], isGeographic, out errorMessage))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateCoordinatePathCollection(
+        double[][][]? paths,
+        bool isGeographic,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+
+        if (paths == null)
+        {
+            return true;
+        }
+
+        foreach (var path in paths)
+        {
+            if (!TryValidateCoordinateCollection(path, isGeographic, out errorMessage))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateCoordinatePair(
+        double? x,
+        double? y,
+        bool isGeographic,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+
+        if (!x.HasValue && !y.HasValue)
+        {
+            return true;
+        }
+
+        if (!x.HasValue || !y.HasValue)
+        {
+            errorMessage = "Geometry coordinate pairs must include both x and y values.";
+            return false;
+        }
+
+        if (!double.IsFinite(x.Value) || !double.IsFinite(y.Value))
+        {
+            errorMessage = "Geometry contains non-finite coordinate values.";
+            return false;
+        }
+
+        if (!isGeographic)
+        {
+            return true;
+        }
+
+        if (x.Value < -180.0 || x.Value > 180.0)
+        {
+            errorMessage = "Geographic longitude values must be between -180 and 180 degrees.";
+            return false;
+        }
+
+        if (y.Value < -90.0 || y.Value > 90.0)
+        {
+            errorMessage = "Geographic latitude values must be between -90 and 90 degrees.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string CreateSpatialReferenceErrorMessage(string parameterName, string? rawValue)
+        => string.IsNullOrWhiteSpace(rawValue)
+            ? $"{parameterName} must not be empty."
+            : $"Unsupported {parameterName} value: {rawValue}";
 
     private static SpatialReference ResolveAreaLimitSpatialReference(
         LayerDefinition layer,

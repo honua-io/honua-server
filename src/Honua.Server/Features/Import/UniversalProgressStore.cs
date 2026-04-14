@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Import;
@@ -40,6 +41,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private volatile bool _isUsingFallback;
     private bool AllowsLocalFallback => _cache == null;
+    private bool CanUseRedisBackplane =>
+        _redis != null &&
+        _cache is RedisCache &&
+        !_isUsingFallback;
 
     public UniversalProgressStore(
         IDistributedCache? cache,
@@ -92,7 +97,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
                 cancellationToken);
 
-            if (_redis != null)
+            if (CanUseRedisBackplane)
             {
                 await AddToRedisIndexAsync(operationId, progress.Type).ConfigureAwait(false);
             }
@@ -182,7 +187,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                 var storedType = await TryGetStoredOperationTypeAsync(operationId, cancellationToken).ConfigureAwait(false);
                 await _cache.RemoveAsync(key, cancellationToken);
                 await _cache.RemoveAsync(typeKey, cancellationToken);
-                if (_redis != null)
+                if (CanUseRedisBackplane)
                 {
                     await RemoveFromRedisIndexAsync(operationId, storedType).ConfigureAwait(false);
                 }
@@ -414,7 +419,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (!_isUsingFallback && _redis != null)
+        if (CanUseRedisBackplane)
         {
             try
             {

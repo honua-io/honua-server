@@ -147,8 +147,8 @@ public class QueryLimits
     /// <summary>
     /// Maximum area for bounding box queries in square kilometers.
     /// </summary>
-    [Range(0.1, 10000)]
-    public double MaxBboxAreaSqKm { get; set; } = 1000;
+    [Range(0.1, 100000000)]
+    public double MaxBboxAreaSqKm { get; set; } = 100000;
 
     /// <summary>
     /// Maximum H3 cells returned by H3 aggregation queries.
@@ -254,19 +254,19 @@ public class ConnectionLimits
     /// Maximum concurrent queries.
     /// </summary>
     [Range(1, 1000)]
-    public int MaxConcurrentQueries { get; set; } = 50;
+    public int MaxConcurrentQueries { get; set; } = 200;
 
     /// <summary>
     /// Maximum connection pool size.
     /// </summary>
     [Range(1, 1000)]
-    public int MaxConnectionPoolSize { get; set; } = 50;
+    public int MaxConnectionPoolSize { get; set; } = 200;
 
     /// <summary>
     /// Minimum connection pool size.
     /// </summary>
     [Range(0, 100)]
-    public int MinConnectionPoolSize { get; set; } = 1;
+    public int MinConnectionPoolSize { get; set; } = 20;
 
     /// <summary>
     /// Connection idle lifetime in seconds.
@@ -290,7 +290,7 @@ public class ConnectionLimits
     /// Buffer size in bytes.
     /// </summary>
     [Range(1024, 1048576)]
-    public int BufferSizeBytes { get; set; } = 8192;
+    public int BufferSizeBytes { get; set; } = 32768;
 
     /// <summary>
     /// Request timeout duration.
@@ -300,13 +300,13 @@ public class ConnectionLimits
     /// <summary>
     /// Connection multiplexing mode.
     /// </summary>
-    public string Multiplexing { get; set; } = "auto";
+    public string Multiplexing { get; set; } = "false";
 
     /// <summary>
     /// Connection acquisition timeout in seconds.
     /// </summary>
     [Range(1, 300)]
-    public int ConnectionAcquisitionTimeoutSeconds { get; set; } = 30;
+    public int ConnectionAcquisitionTimeoutSeconds { get; set; } = 5;
 
     /// <summary>
     /// Lock timeout.

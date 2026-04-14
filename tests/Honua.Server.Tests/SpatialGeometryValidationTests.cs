@@ -30,7 +30,7 @@ public class SpatialGeometryValidationTests
     [InlineData("179.9,-5,-179.9,5", true, "Near-antimeridian crossing")]
     [InlineData("170,-20,-160,20", true, "Wide Pacific region crossing antimeridian")]
     [InlineData("179.999,-1,-179.999,1", true, "Narrow antimeridian crossing")]
-    [InlineData("178,-15,-178,15", false, "Invalid: minX == maxX at antimeridian")]
+    [InlineData("178,-15,-178,15", true, "Narrow Pacific region crossing antimeridian")]
     [InlineData("179,-10,179,10", false, "Invalid: same longitude (no crossing)")]
     public void ValidateAntimeridianBbox_LegitimateOceanRegions_AcceptedAsValid(
         string bbox, bool expectedValid, string description)
@@ -53,8 +53,9 @@ public class SpatialGeometryValidationTests
             // For antimeridian crossing, minX > maxX is expected and valid
             if (minX > maxX)
             {
-                minX.Should().BeGreaterThan(170, "Antimeridian crossing should start near 180°");
-                maxX.Should().BeLessThan(-170, "Antimeridian crossing should end near -180°");
+                minX.Should().BeGreaterThan(maxX, "Antimeridian crossing should preserve wrapped longitudes");
+                minX.Should().BeInRange(170, 180, "Antimeridian crossing should start in the eastern Pacific");
+                maxX.Should().BeInRange(-180, -160, "Antimeridian crossing should end in the western Pacific");
             }
         }
     }
