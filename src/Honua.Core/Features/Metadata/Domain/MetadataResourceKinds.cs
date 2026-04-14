@@ -34,6 +34,16 @@ public static class MetadataResourceKinds
     public const string Connection = "Connection";
 
     /// <summary>
+    /// Map template resource kind.
+    /// </summary>
+    public const string MapTemplate = "MapTemplate";
+
+    /// <summary>
+    /// Theme resource kind.
+    /// </summary>
+    public const string Theme = "Theme";
+
+    /// <summary>
     /// All supported resource kinds.
     /// </summary>
     public static readonly IReadOnlyList<string> All =
@@ -42,6 +52,8 @@ public static class MetadataResourceKinds
         Layer,
         Relationship,
         Style,
-        Connection
+        Connection,
+        MapTemplate,
+        Theme
     ];
 }
