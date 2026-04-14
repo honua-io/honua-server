@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-04-03 (ticket #463)
+> Last updated: 2026-04-14 (ticket #463)
 
 ## Tier Definitions
 
@@ -22,6 +22,8 @@
 3. **Release and deploy workflows remain strict** but do not burden everyday feature merges.
 
 4. **New checks default to nightly** unless explicitly justified as PR-blocking. Justification requires: deterministic behavior, sub-5-minute runtime, and author-actionable failure messages.
+
+5. **AOT verification is post-merge/manual until trim debt is retired.** The `AOT Build Verification` job in `ci.yml` runs on `push` to `trunk` and `workflow_dispatch`, not on PRs, because its current failures are not consistently fast or author-actionable within the PR lane.
 
 ## PR Lane (Required Checks)
 
