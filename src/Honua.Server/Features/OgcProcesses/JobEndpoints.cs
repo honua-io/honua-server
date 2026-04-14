@@ -295,18 +295,6 @@ internal static class JobEndpoints
             return ProcessEndpoints.FormatOgcAuthError(authDecision);
         }
 
-        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Job,
-            Operation = OperatorOperation.Execute,
-            IsDestructive = true
-        });
-        if (approval.IsRequired)
-        {
-            OgcProcessesLog.DismissRejectedApprovalRequired(logger, jobId, approval.PolicyRef ?? "unknown");
-            return ProcessEndpoints.FormatOgcApprovalError(approval);
-        }
-
         OgcProcessesLog.JobDismissRequested(logger, jobId);
 
         if (jobStore == null)
@@ -348,6 +336,21 @@ internal static class JobEndpoints
                 OgcProcessesJsonContext.Default.OgcProcessError,
                 MediaTypes.Json,
                 StatusCodes.Status409Conflict);
+        }
+
+        // Dismissing a running job is a destructive action — require approval.
+        // Evaluated after state checks so not-found, idempotent, and terminal paths
+        // remain reachable regardless of approval policy, matching CancelJobAsync.
+        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        });
+        if (approval.IsRequired)
+        {
+            OgcProcessesLog.DismissRejectedApprovalRequired(logger, jobId, approval.PolicyRef ?? "unknown");
+            return ProcessEndpoints.FormatOgcApprovalError(approval);
         }
 
         // Attempt cancellation via the canonical notifier

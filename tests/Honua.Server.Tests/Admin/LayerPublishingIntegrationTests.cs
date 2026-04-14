@@ -15,6 +15,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
@@ -622,6 +623,59 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             JsonContent.Create(toggleRequest, options: _jsonOptions));
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WhenApprovalRequired_ReturnsForbidden()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
+                services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
+                    new AlwaysRequiresApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            var publishRequest = new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = _tableName,
+                LayerName = $"Layer approval test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = new[] { "id", "name", "population" },
+                ServiceName = _serviceName,
+                Enabled = true
+            };
+
+            var response = await client.PostAsync(
+                $"/api/v1/admin/connections/{_connectionId}/layers",
+                JsonContent.Create(publishRequest, options: _jsonOptions));
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    private sealed class AlwaysRequiresApprovalEvaluator : Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator
+    {
+        public Core.Features.Authorization.Domain.ApprovalRequirement Evaluate(
+            System.Security.Claims.ClaimsPrincipal principal,
+            Core.Features.Authorization.Domain.OperatorAuthorizationRequest request)
+            => Core.Features.Authorization.Domain.ApprovalRequirement.Required(
+                "operator.test-policy", "test-approval-required");
     }
 
     private async Task ResetPublishedMetadataAsync()

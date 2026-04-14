@@ -46,7 +46,7 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>POST /api/v1/admin/connections/encryption/validate</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/connections/encryption/rotate-key</term><description>bad-request, 401</description></item>
 /// <item><term>GET  /api/v1/admin/connections/{id}/layers</term><description>happy, 404, 401</description></item>
-/// <item><term>POST /api/v1/admin/connections/{id}/layers</term><description>happy, 400 (missing/pk), duplicate, 401</description></item>
+/// <item><term>POST /api/v1/admin/connections/{id}/layers</term><description>happy, 400 (missing/pk), duplicate, approval-denied, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/connections/{id}/layers/{lid}/enabled</term><description>happy, 404</description></item>
 /// <item><term>PUT  /api/v1/admin/connections/{id}/layers/enabled</term><description>happy (bulk)</description></item>
 /// <item><term>GET  /api/v1/admin/metadata/layers/{lid}/style</term><description>happy, 401</description></item>
