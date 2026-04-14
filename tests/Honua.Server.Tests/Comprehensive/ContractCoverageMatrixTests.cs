@@ -31,8 +31,8 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>GET  /api/v1/admin/observability/telemetry</term><description>happy, disabled, 401</description></item>
 /// <item><term>GET  /api/v1/admin/observability/migrations</term><description>happy (running), plan-fail, 401</description></item>
 /// <item><term>GET  /api/v1/admin/deploy/preflight</term><description>ready, blocked, 401</description></item>
-/// <item><term>POST /api/v1/admin/deploy/plan</term><description>happy, bad-target, 401</description></item>
-/// <item><term>POST /api/v1/admin/deploy/operations</term><description>happy, submit-immediately, 401</description></item>
+/// <item><term>POST /api/v1/admin/deploy/plan</term><description>happy, bad-target, approval-gated, 401</description></item>
+/// <item><term>POST /api/v1/admin/deploy/operations</term><description>happy, submit-immediately, approval-gated, 401</description></item>
 /// <item><term>GET  /api/v1/admin/deploy/operations/{id}</term><description>happy, 404, reconcile, 401</description></item>
 /// <item><term>POST /api/v1/admin/deploy/operations/{id}/submit</term><description>happy, double-submit</description></item>
 /// <item><term>POST /api/v1/admin/deploy/operations/{id}/rollback</term><description>happy, 404</description></item>

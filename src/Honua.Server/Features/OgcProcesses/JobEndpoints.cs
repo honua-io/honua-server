@@ -295,6 +295,18 @@ internal static class JobEndpoints
             return ProcessEndpoints.FormatOgcAuthError(authDecision);
         }
 
+        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        });
+        if (approval.IsRequired)
+        {
+            OgcProcessesLog.DismissRejectedApprovalRequired(logger, jobId, approval.PolicyRef ?? "unknown");
+            return ProcessEndpoints.FormatOgcApprovalError(approval);
+        }
+
         OgcProcessesLog.JobDismissRequested(logger, jobId);
 
         if (jobStore == null)
