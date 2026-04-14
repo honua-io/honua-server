@@ -34,6 +34,7 @@ internal sealed partial class RedisJobQueue(
     private const string QueueKey = "controlplane:jobqueue:pending";
     private const string ClaimedSetKey = "controlplane:jobqueue:claimed";
     private const int MaxScanEntries = 100;
+    private const int MaxVisitEntries = 1000;
 
     /// <summary>
     /// Lua script that atomically removes a job from the pending set and adds it
@@ -89,14 +90,13 @@ internal sealed partial class RedisJobQueue(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Paginate through the sorted set to find a claimable job. Tracks removed
-        // entries so offset adjustments stay correct across batches.
         const int batchSize = 10;
         var now = DateTimeOffset.UtcNow;
         long offset = 0;
         var totalScanned = 0;
+        var totalVisited = 0;
 
-        while (totalScanned < MaxScanEntries)
+        while (totalScanned < MaxScanEntries && totalVisited < MaxVisitEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -121,10 +121,8 @@ internal sealed partial class RedisJobQueue(
 
                 var operationId = candidate.ToString();
 
-                // Filter delayed jobs (requeue with visibility delay).
-                // Invisible entries do not consume the scan budget so that
-                // a backlog of delayed retries cannot starve ready work in
-                // lower-priority bands.
+                totalVisited++;
+
                 var meta = await _database.HashGetAllAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
                 var visibleAfter = GetVisibleAfter(meta);
                 if (visibleAfter.HasValue && visibleAfter.Value > now)
@@ -143,8 +141,6 @@ internal sealed partial class RedisJobQueue(
                     continue;
                 }
 
-                // Kind-mismatched entries do not consume the claim scan budget
-                // so dedicated workers can reach their own jobs deeper in the queue.
                 if (acceptedKinds != null && !acceptedKinds.Contains(job.Spec.Kind))
                 {
                     continue;
@@ -201,8 +197,12 @@ internal sealed partial class RedisJobQueue(
                 return operationId;
             }
 
-            // Advance past entries that were not removed from the set.
             offset += candidates.Length - removedFromSet;
+        }
+
+        if (totalVisited >= MaxVisitEntries)
+        {
+            Log.ClaimScanVisitBudgetExhausted(logger, totalVisited, totalScanned);
         }
 
         return null;
@@ -401,5 +401,8 @@ internal sealed partial class RedisJobQueue(
 
         [LoggerMessage(9026, LogLevel.Error, "Claim rollback failed: {OperationId}")]
         public static partial void ClaimRollbackFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9027, LogLevel.Warning, "Claim scan visit budget exhausted: visited {Visited} entries, scanned {Scanned} claimable candidates")]
+        public static partial void ClaimScanVisitBudgetExhausted(ILogger logger, int visited, int scanned);
     }
 }

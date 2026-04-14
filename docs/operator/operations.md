@@ -256,7 +256,10 @@ Jobs are dequeued in priority order. Within a priority band, FIFO ordering
 applies. Delayed entries (jobs requeued with a visibility delay for retry
 backoff) and kind-mismatched entries do not consume the claim scan budget,
 so a backlog of delayed retries or jobs for other worker kinds cannot
-starve ready work in lower-priority bands.
+starve ready work in lower-priority bands. A hard visit ceiling (1000
+entries) prevents unbounded iteration when the queue front is dominated by
+delayed or mismatched entries; exhaustion of this ceiling is logged at
+Warning level.
 
 | Priority | Use case |
 |----------|----------|
@@ -333,7 +336,7 @@ submission time.
 | Reconciliation sweep interval | 30 s | How often the reconciler checks active jobs for expiry |
 | Stale claim threshold | 60 s | Orphaned claims in the claimed set are recovered after this window |
 | Retry max attempts | 3 | `JobRetryPolicy.MaxAttempts` — includes initial attempt (1 = no retries) |
-| Retry backoff strategy | Exponential | `JobRetryPolicy.BackoffStrategy` — Fixed, Linear, or Exponential |
+| Retry backoff strategy | Exponential | `JobRetryPolicy.Strategy` — Fixed, Linear, or Exponential |
 | Retry base delay | 30 s | `JobRetryPolicy.BaseDelay` — starting delay for first retry |
 | Retry max delay | 10 min | `JobRetryPolicy.MaxDelay` — upper bound on computed backoff |
 | Execution timeout | 1 h | `JobTimeoutPolicy.MaxDuration` — default ceiling |
