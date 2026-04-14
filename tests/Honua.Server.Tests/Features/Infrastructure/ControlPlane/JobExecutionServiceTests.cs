@@ -206,7 +206,8 @@ public sealed class JobExecutionServiceTests
 
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, null,
-            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) });
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
+            NullLogger.Instance);
 
         // The pump should detect the ownership change and exit without writing.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -241,7 +242,8 @@ public sealed class JobExecutionServiceTests
 
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, null,
-            JobHeartbeatPolicy.Default);
+            JobHeartbeatPolicy.Default,
+            NullLogger.Instance);
 
         await context.ReportProgressAsync(50, "Processing", CancellationToken.None);
 
@@ -274,7 +276,8 @@ public sealed class JobExecutionServiceTests
 
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, null,
-            JobHeartbeatPolicy.Default);
+            JobHeartbeatPolicy.Default,
+            NullLogger.Instance);
 
         await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
 
@@ -532,7 +535,8 @@ public sealed class JobExecutionServiceTests
 
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, logStore,
-            JobHeartbeatPolicy.Default);
+            JobHeartbeatPolicy.Default,
+            NullLogger.Instance);
 
         await context.AppendLogAsync(new ExecutionLogEntry
         {
@@ -645,6 +649,91 @@ public sealed class JobExecutionServiceTests
 
         // After shutdown requeue, Cancel must return false.
         Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
+    /// <summary>
+    /// Regression: when a new worker reclaims a job, the old worker's CTS must be
+    /// cancelled during registration so the stale worker observes cancellation even
+    /// if Revoke has not yet run.
+    /// </summary>
+    [UnitTest]
+    public void CreateLinkedTokenSource_CancelsOldCts_WhenJobReclaimedByNewWorker()
+    {
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        using var ctsA = cancellationTokens.CreateLinkedTokenSource(
+            "job-1", "worker-A", CancellationToken.None);
+
+        // Worker B claims and registers — must cancel Worker A's stale CTS.
+        using var ctsB = cancellationTokens.CreateLinkedTokenSource(
+            "job-1", "worker-B", CancellationToken.None);
+
+        Assert.True(ctsA.IsCancellationRequested);
+        Assert.False(ctsB.IsCancellationRequested);
+    }
+
+    /// <summary>
+    /// Regression: heartbeat pump store failures must not fault the task.
+    /// If the pump task faults and StopHeartbeatPumpAsync only catches
+    /// OperationCanceledException, the store exception propagates up and
+    /// skips finalization. The pump must catch non-cancellation exceptions
+    /// and continue pumping on the next interval.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatPump_DoesNotFaultTask_WhenStoreThrowsPersistently()
+    {
+        var running = CreateProvisioningJob() with { Status = ExecutionJobStatus.Running };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns<ExecutionJobRecord?>(_ => throw new InvalidOperationException("Simulated store failure"));
+
+        using var context = new JobExecutionContext(
+            running.OperationId, running.ClaimedBy!, jobStore, null,
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
+            NullLogger.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(80));
+
+        // Must complete without throwing despite persistent store failures.
+        await context.RunHeartbeatPumpAsync(cts.Token);
+    }
+
+    /// <summary>
+    /// Regression: a single transient store failure must not kill the heartbeat
+    /// pump. The pump must catch the exception, log it, and continue pumping
+    /// on the next interval so that the reconciler does not declare the worker
+    /// dead due to a brief Redis blip.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatPump_ContinuesAfterTransientStoreFailure()
+    {
+        var running = CreateProvisioningJob() with { Status = ExecutionJobStatus.Running };
+
+        var callCount = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var count = Interlocked.Increment(ref callCount);
+                if (count == 1)
+                    throw new InvalidOperationException("Transient failure");
+                return running;
+            });
+
+        using var context = new JobExecutionContext(
+            running.OperationId, running.ClaimedBy!, jobStore, null,
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
+            NullLogger.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await context.RunHeartbeatPumpAsync(cts.Token);
+
+        // The pump continued past the transient failure and wrote at least one heartbeat.
+        await jobStore.Received().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>

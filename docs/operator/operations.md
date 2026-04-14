@@ -230,7 +230,14 @@ Once the Running transition succeeds, the worker pumps heartbeats at the
 configured interval (default: 30 seconds). The heartbeat pump, progress
 reports, and artifact publications all verify ownership before writing —
 if the reconciler requeues the job or another worker reclaims it, the
-stale worker's writes are silently dropped. The reconciliation service
+stale worker's writes are silently dropped. When a new worker registers
+its cancellation token for a reclaimed job, the previous worker's token
+source is cancelled automatically so the stale executor observes
+cancellation promptly even if the reconciler's Revoke has not yet run.
+Transient store failures during heartbeat persistence are caught and
+logged; the pump continues on the next interval rather than faulting.
+If the pump task does fault for any reason, finalization still proceeds
+from the executor outcome. The reconciliation service
 sweeps active jobs every 30 seconds. If a worker's last heartbeat exceeds
 the heartbeat timeout (default: 90 seconds), the job is considered
 abandoned. When `LastHeartbeatAt` has not yet been set (the window between

@@ -141,7 +141,7 @@ internal sealed partial class JobExecutionService(
 
         // Create execution context with heartbeat pump.
         using var context = new JobExecutionContext(
-            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default);
+            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, logger);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -159,6 +159,10 @@ internal sealed partial class JobExecutionService(
             catch (OperationCanceledException)
             {
                 // Expected when cancellation reaches the pump.
+            }
+            catch (Exception ex)
+            {
+                Log.HeartbeatPumpFaulted(logger, operationId, ex);
             }
         }
 
@@ -452,6 +456,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9062, LogLevel.Warning, "Skipping state transition for job {OperationId}: current status is {Status} (reconciler or another worker intervened)")]
         public static partial void TerminalStateSkipped(ILogger logger, string operationId, string status);
+
+        [LoggerMessage(9063, LogLevel.Warning, "Heartbeat pump faulted for job {OperationId}; finalization will proceed from executor outcome")]
+        public static partial void HeartbeatPumpFaulted(ILogger logger, string operationId, Exception exception);
     }
 }
 
@@ -461,12 +468,13 @@ internal sealed partial class JobExecutionService(
 /// Serializes read-modify-write operations on the job record to prevent concurrent
 /// heartbeat, progress, and artifact writes from clobbering each other.
 /// </summary>
-internal sealed class JobExecutionContext(
+internal sealed partial class JobExecutionContext(
     string operationId,
     string workerId,
     IExecutionJobStore jobStore,
     IExecutionLogStore? logStore,
-    JobHeartbeatPolicy heartbeatPolicy) : IJobExecutionContext, IDisposable
+    JobHeartbeatPolicy heartbeatPolicy,
+    ILogger logger) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
@@ -605,12 +613,22 @@ internal sealed class JobExecutionContext(
             {
                 break;
             }
+            catch (Exception ex)
+            {
+                Log.HeartbeatWriteFailed(logger, operationId, ex);
+            }
         }
     }
 
     private bool IsOwnedBy(ExecutionJobRecord job)
         => job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
            && job.ClaimedBy == workerId;
+
+    private static partial class Log
+    {
+        [LoggerMessage(9064, LogLevel.Warning, "Heartbeat write failed for job {OperationId}; pump will retry on next interval")]
+        public static partial void HeartbeatWriteFailed(ILogger logger, string operationId, Exception exception);
+    }
 
     public void Dispose() => _writeLock.Dispose();
 }

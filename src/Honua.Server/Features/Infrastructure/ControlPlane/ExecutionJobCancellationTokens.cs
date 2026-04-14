@@ -32,7 +32,13 @@ internal sealed class ExecutionJobCancellationTokens : IJobCancellationNotifier
     public CancellationTokenSource CreateLinkedTokenSource(string jobId, string claimHandle, params CancellationToken[] linkedTokens)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
-        _tokens[jobId] = new CancellationEntry(cts, claimHandle);
+        var newEntry = new CancellationEntry(cts, claimHandle);
+        _tokens.AddOrUpdate(jobId, newEntry, (_, existing) =>
+        {
+            try { existing.Cts.Cancel(); }
+            catch (ObjectDisposedException) { }
+            return newEntry;
+        });
         return cts;
     }
 
