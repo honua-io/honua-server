@@ -32,7 +32,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         Query = new QueryLimits
         {
             MaxRecordCount = 100,      // Lower than default for testing
-            DefaultRecordCount = 50,   // Lower than default for testing
+            DefaultRecordCount = 100,  // Lower than app default while remaining valid
             MaxOffset = 1000,          // Lower than default for testing
             QueryTimeout = TimeSpan.FromSeconds(30)
         },
@@ -214,7 +214,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
             content, FeatureServerJsonContext.Default.QueryResponse);
 
         queryResponse.Should().NotBeNull();
-        // The query should have used the DefaultRecordCount (50) internally
+        // The query should have used the configured DefaultRecordCount internally
         // This is verified by the system not erroring and returning results
     }
 

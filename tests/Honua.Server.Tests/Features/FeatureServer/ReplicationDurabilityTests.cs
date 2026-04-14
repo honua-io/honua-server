@@ -253,8 +253,8 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Limits:Query:MaxRecordCount"] = "10",
-                    ["Limits:Query:DefaultRecordCount"] = "10"
+                    ["Limits:Query:MaxRecordCount"] = "100",
+                    ["Limits:Query:DefaultRecordCount"] = "100"
                 });
             });
         });
