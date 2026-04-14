@@ -212,7 +212,10 @@ public static class ConfigurationServiceExtensions
 
         // Register standard configuration types
         services.ConfigureWithValidation<StandardTtlOptions>(configuration, StandardTtlOptions.SectionName);
-        services.ConfigureWithValidation<SecretProviderOptions>(configuration, SecretProviderOptions.SectionName);
+        services.ConfigureWithValidation<SecretProviderOptions>(
+            configuration,
+            SecretProviderOptions.SectionName,
+            enableSecretResolution: false);
         services.ConfigureWithValidation<SecureConfigurationOptions>(configuration, SecureConfigurationOptions.SectionName);
 
         // Register cache options with enhanced validation

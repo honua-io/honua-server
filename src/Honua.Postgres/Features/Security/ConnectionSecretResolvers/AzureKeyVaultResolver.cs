@@ -112,6 +112,12 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))
             return connectionStringTemplate;
 
+        if (connectionStringTemplate.StartsWith(KeyVaultPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
+        }
+
         // Simple pattern matching for Azure Key Vault secret references like ${azure:keyvault:...} or {azure:keyvault:...}
         var result = connectionStringTemplate;
         var patterns = new[] { "${", "{" };

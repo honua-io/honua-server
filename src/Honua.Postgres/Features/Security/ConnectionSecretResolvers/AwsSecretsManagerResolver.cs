@@ -153,6 +153,12 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))
             return connectionStringTemplate;
 
+        if (connectionStringTemplate.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
+        }
+
         // Simple pattern matching for AWS secret references like ${aws:secretsmanager:...} or {aws:secretsmanager:...}
         var result = connectionStringTemplate;
         var patterns = new[] { "${", "{" };

@@ -157,6 +157,12 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))
             return connectionStringTemplate;
 
+        if (TryGetRegisteredProvider(connectionStringTemplate, out _))
+        {
+            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
+        }
+
         // Find all secret references in the connection string and resolve them
         var result = connectionStringTemplate;
 
@@ -232,6 +238,26 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
 
         return (provider, path);
+    }
+
+    private bool TryGetRegisteredProvider(string secretRef, out string provider)
+    {
+        provider = string.Empty;
+
+        var colonIndex = secretRef.IndexOf(':', StringComparison.Ordinal);
+        if (colonIndex <= 0 || colonIndex == secretRef.Length - 1)
+        {
+            return false;
+        }
+
+        var candidate = secretRef[..colonIndex];
+        if (!_resolvers.ContainsKey(candidate))
+        {
+            return false;
+        }
+
+        provider = candidate;
+        return true;
     }
 }
 

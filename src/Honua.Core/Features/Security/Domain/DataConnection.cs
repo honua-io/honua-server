@@ -104,7 +104,7 @@ public class DataConnection
     /// </summary>
     public byte[]? ConnectionStringEncrypted
     {
-        get => EncryptedConnectionString;
+        get => EncryptedConnectionString.Length == 0 ? null : EncryptedConnectionString;
         set => EncryptedConnectionString = value ?? Array.Empty<byte>();
     }
 
