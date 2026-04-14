@@ -16,6 +16,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using Proto = Geospatial.V1;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 

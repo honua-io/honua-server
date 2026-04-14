@@ -11,6 +11,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Services;
 using Honua.Server.Features.OgcFeatures;
 using Microsoft.Extensions.DependencyInjection;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
 

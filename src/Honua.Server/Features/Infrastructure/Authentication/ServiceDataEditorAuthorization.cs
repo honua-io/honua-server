@@ -9,6 +9,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 

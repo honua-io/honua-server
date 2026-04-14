@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Domain;
+using DomainAccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Core.Features.Security.Abstractions;
 
@@ -19,7 +20,7 @@ public interface IAccessPolicyEvaluator
     /// <param name="resource">The resource being accessed</param>
     /// <param name="action">The action being performed</param>
     /// <returns>The access decision</returns>
-    Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action);
+    Task<DomainAccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action);
 
     /// <summary>
     /// Evaluates access synchronously for a given principal and resource.
@@ -28,7 +29,7 @@ public interface IAccessPolicyEvaluator
     /// <param name="resource">The resource being accessed</param>
     /// <param name="action">The action being performed</param>
     /// <returns>The access decision</returns>
-    AccessDecision Evaluate(ClaimsPrincipal principal, string resource, string action);
+    DomainAccessDecision Evaluate(ClaimsPrincipal principal, string resource, string action);
 
     /// <summary>
     /// Evaluates access for a layer and service policy combination.
@@ -38,7 +39,7 @@ public interface IAccessPolicyEvaluator
     /// <param name="servicePolicy">The optional service policy.</param>
     /// <param name="scope">The requested scope object.</param>
     /// <returns>The access decision.</returns>
-    Task<AccessDecision> EvaluateAsync(
+    Task<DomainAccessDecision> EvaluateAsync(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,
         AccessPolicy? servicePolicy,
@@ -52,7 +53,7 @@ public interface IAccessPolicyEvaluator
     /// <param name="servicePolicy">The optional service policy.</param>
     /// <param name="scope">The requested scope object.</param>
     /// <returns>The access decision.</returns>
-    AccessDecision Evaluate(
+    DomainAccessDecision Evaluate(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,
         AccessPolicy? servicePolicy,
