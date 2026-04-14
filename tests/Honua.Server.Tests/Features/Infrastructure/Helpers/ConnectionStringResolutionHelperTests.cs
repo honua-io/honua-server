@@ -44,12 +44,15 @@ public sealed class ConnectionStringResolutionHelperTests
 
     private sealed class StubConnectionSecretResolver(string secretRef, string resolvedConnectionString) : IConnectionSecretResolver
     {
+        public string ProviderName => "aws";
+
+        public Task<string?> ResolveSecretAsync(string candidate, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(candidate == secretRef ? resolvedConnectionString : null);
+
+        public bool CanResolve(string candidate)
+            => candidate == secretRef;
+
         public Task<string> ResolveConnectionStringAsync(string candidate, CancellationToken cancellationToken = default)
             => Task.FromResult(candidate == secretRef ? resolvedConnectionString : candidate);
-
-        public Task<bool> CanResolveSecretAsync(string candidate, CancellationToken cancellationToken = default)
-            => Task.FromResult(candidate == secretRef);
-
-        public string[] GetSupportedProviders() => ["aws"];
     }
 }

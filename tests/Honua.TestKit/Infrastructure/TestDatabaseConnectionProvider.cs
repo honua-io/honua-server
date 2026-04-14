@@ -22,6 +22,8 @@ internal sealed class TestDatabaseConnectionProvider : IDatabaseConnectionProvid
         _schemaProvider = schemaProvider ?? (() => null);
     }
 
+    public string GetConnectionString() => _dataSource.ConnectionString;
+
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = await _dataSource.OpenConnectionAsync(cancellationToken);

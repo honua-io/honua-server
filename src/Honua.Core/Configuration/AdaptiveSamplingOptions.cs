@@ -1,219 +1,246 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
-
 using System.ComponentModel.DataAnnotations;
-using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Configuration;
 
 /// <summary>
-/// Adaptive sampling configuration for distributed tracing that automatically
-/// adjusts sampling rates based on system load, error rates, and operation importance.
-/// Provides intelligent tracing with minimal performance impact for self-hosted installations.
+/// Configuration options for adaptive sampling behavior.
 /// </summary>
-public sealed class AdaptiveSamplingOptions
+public class AdaptiveSamplingOptions
 {
-    /// <summary>
-    /// Configuration section name for binding from environment variables.
-    /// Maps to HONUA__ADAPTIVESAMPLING__* environment variables.
-    /// </summary>
     public const string SectionName = "AdaptiveSampling";
 
     /// <summary>
-    /// Enable adaptive sampling. When disabled, falls back to static sampling ratio.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__ENABLED
+    /// Default sampling rate for operations (0.0 to 1.0).
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    [Range(0.0, 1.0)]
+    public double DefaultSamplingRate { get; set; } = 0.01;
 
     /// <summary>
-    /// Base sampling rate used as a starting point for adaptive adjustments.
-    /// Range: 0.001-1.0 (0.1% to 100%). Default: 10%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__BASESAMPLRATE
+    /// Minimum sampling rate that can be applied.
     /// </summary>
-    [Range(0.001, 1.0, ErrorMessage = ErrorMessages.RangeValidation.BaseSamplingRate)]
-    public double BaseSamplingRate { get; init; } = 0.1;
+    [Range(0.0, 1.0)]
+    public double MinSamplingRate { get; set; } = 0.001;
 
     /// <summary>
-    /// Minimum sampling rate, even under high load conditions.
-    /// Ensures critical operations are always traced.
-    /// Range: 0.001-0.5 (0.1% to 50%). Default: 1%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__MINSAMPLRATE
+    /// Maximum sampling rate that can be applied.
     /// </summary>
-    [Range(0.001, 0.5, ErrorMessage = ErrorMessages.RangeValidation.MinSamplingRate)]
-    public double MinSamplingRate { get; init; } = 0.01;
+    [Range(0.0, 1.0)]
+    public double MaxSamplingRate { get; set; } = 1.0;
 
     /// <summary>
-    /// Maximum sampling rate during low load or error conditions.
-    /// Range: 0.1-1.0 (10% to 100%). Default: 50%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE
+    /// Whether to enable adaptive sampling based on system load.
     /// </summary>
-    [Range(0.1, 1.0, ErrorMessage = ErrorMessages.RangeValidation.MaxSamplingRate)]
-    public double MaxSamplingRate { get; init; } = 0.5;
+    public bool EnableLoadBasedSampling { get; set; } = true;
 
     /// <summary>
-    /// Time window for collecting metrics to adjust sampling rates.
-    /// Range: 30 seconds to 10 minutes. Default: 2 minutes.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__EVALUATIONWINDOWSECONDS
+    /// Whether to enable importance-based sampling.
     /// </summary>
-    public TimeSpan EvaluationWindow { get; init; } = TimeSpan.FromMinutes(2);
+    public bool EnableImportanceBasedSampling { get; set; } = true;
 
     /// <summary>
-    /// System load thresholds that trigger sampling rate adjustments.
+    /// Sample size for calculating adaptive rates.
     /// </summary>
-    public LoadThresholds Load { get; init; } = new();
+    [Range(10, 10000)]
+    public int SampleSize { get; set; } = 1000;
 
     /// <summary>
-    /// Error rate thresholds that increase sampling for debugging.
+    /// Time window for sampling calculations.
     /// </summary>
-    public ErrorThresholds Error { get; init; } = new();
+    public TimeSpan TimeWindow { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Per-operation sampling rates for different operation types.
+    /// Whether adaptive sampling is enabled.
     /// </summary>
-    public OperationSampling Operations { get; init; } = new();
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Base sampling rate when not adaptive.
+    /// </summary>
+    [Range(0.0, 1.0)]
+    public double BaseSamplingRate { get; set; } = 0.01;
+
+    /// <summary>
+    /// Evaluation window for adaptive adjustments.
+    /// </summary>
+    public TimeSpan EvaluationWindow { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Load-based sampling configuration.
+    /// </summary>
+    public LoadSamplingOptions Load { get; set; } = new();
+
+    /// <summary>
+    /// Operation-specific sampling configuration.
+    /// </summary>
+    public OperationSamplingOptions Operations { get; set; } = new();
+
+    /// <summary>
+    /// Error handling sampling configuration.
+    /// </summary>
+    public ErrorSamplingOptions Error { get; set; } = new();
 }
 
 /// <summary>
-/// System load thresholds for adaptive sampling adjustments.
-/// Higher load reduces sampling to preserve performance.
+/// Sampling configuration for different operation types.
 /// </summary>
-public sealed class LoadThresholds
+public class OperationSamplingOptions
 {
     /// <summary>
-    /// CPU usage percentage threshold for reducing sampling.
-    /// Range: 30-95%. Default: 70%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__CPUTHRESHOLD
+    /// Whether operation-based sampling is enabled.
     /// </summary>
-    [Range(30, 95, ErrorMessage = ErrorMessages.RangeValidation.CpuThreshold)]
-    public double CpuThreshold { get; init; } = 70.0;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Memory usage percentage threshold for reducing sampling.
-    /// Range: 30-95%. Default: 80%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__MEMORYTHRESHOLD
+    /// Sampling rate for critical operations.
     /// </summary>
-    [Range(30, 95, ErrorMessage = ErrorMessages.RangeValidation.MemoryThreshold)]
-    public double MemoryThreshold { get; init; } = 80.0;
+    [Range(0.0, 1.0)]
+    public double CriticalRate { get; set; } = 1.0;
 
     /// <summary>
-    /// Active request count threshold for reducing sampling.
-    /// Range: 10-1000. Default: 50.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__ACTIVEREQUESTTHRESHOLD
+    /// Sampling rate for important operations.
     /// </summary>
-    [Range(10, 1000, ErrorMessage = ErrorMessages.RangeValidation.ActiveRequestThreshold)]
-    public int ActiveRequestThreshold { get; init; } = 50;
+    [Range(0.0, 1.0)]
+    public double ImportantRate { get; set; } = 0.5;
 
     /// <summary>
-    /// Average response time in milliseconds that triggers load-based reduction.
-    /// Range: 100-10000ms. Default: 1000ms (1 second).
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__LOAD__RESPONSETIMETHRESHOLDMS
+    /// Sampling rate for normal operations.
     /// </summary>
-    [Range(100, 10000, ErrorMessage = ErrorMessages.RangeValidation.ResponseTimeThresholdMs)]
-    public int ResponseTimeThresholdMs { get; init; } = 1000;
+    [Range(0.0, 1.0)]
+    public double NormalRate { get; set; } = 0.1;
+
+    /// <summary>
+    /// Sampling rate for background operations.
+    /// </summary>
+    [Range(0.0, 1.0)]
+    public double BackgroundRate { get; set; } = 0.01;
 }
 
 /// <summary>
-/// Error rate thresholds that trigger increased sampling for debugging.
-/// Higher error rates increase sampling to capture more diagnostic information.
+/// Error sampling configuration.
 /// </summary>
-public sealed class ErrorThresholds
+public class ErrorSamplingOptions
 {
     /// <summary>
-    /// Error rate percentage that triggers increased sampling.
-    /// Range: 0.1-50%. Default: 5%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__ERROR__ERRORRATETHRESHOLD
+    /// Whether error-based sampling is enabled.
     /// </summary>
-    [Range(0.1, 50.0, ErrorMessage = ErrorMessages.RangeValidation.ErrorRateThreshold)]
-    public double ErrorRateThreshold { get; init; } = 5.0;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Multiplier applied to sampling rate when error threshold is exceeded.
-    /// Range: 1.5-10.0. Default: 3.0 (triple the sampling rate).
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER
+    /// Sampling rate for error conditions.
     /// </summary>
-    [Range(1.5, 10.0, ErrorMessage = ErrorMessages.RangeValidation.ErrorMultiplier)]
-    public double ErrorMultiplier { get; init; } = 3.0;
+    [Range(0.0, 1.0)]
+    public double ErrorRate { get; set; } = 1.0;
 
     /// <summary>
-    /// Time window for calculating error rates.
-    /// Range: 1-30 minutes. Default: 5 minutes.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__ERROR__ERRORWINDOWMINUTES
+    /// Window in minutes for error tracking.
     /// </summary>
-    [Range(1, 30, ErrorMessage = ErrorMessages.RangeValidation.ErrorWindowMinutes)]
-    public int ErrorWindowMinutes { get; init; } = 5;
+    [Range(1, 60)]
+    public int ErrorWindowMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Error rate threshold for increasing sampling.
+    /// </summary>
+    [Range(0.0, 1.0)]
+    public double ErrorRateThreshold { get; set; } = 0.05;
+
+    /// <summary>
+    /// Multiplier for sampling rate when errors exceed threshold.
+    /// </summary>
+    [Range(1.0, 10.0)]
+    public double ErrorMultiplier { get; set; } = 2.0;
 }
 
 /// <summary>
-/// Per-operation sampling configuration for different types of operations.
-/// Allows fine-tuning sampling rates based on operation importance.
+/// Load-based sampling configuration.
 /// </summary>
-public sealed class OperationSampling
+public class LoadSamplingOptions
 {
     /// <summary>
-    /// Sampling rate for critical operations (auth, data writes).
-    /// Range: 0.1-1.0. Default: 100% (always sample).
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE
+    /// Whether load-based sampling is enabled.
     /// </summary>
-    [Range(0.1, 1.0, ErrorMessage = ErrorMessages.RangeValidation.CriticalRate)]
-    public double CriticalRate { get; init; } = 1.0;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Sampling rate for important operations (complex spatial queries).
-    /// Range: 0.05-1.0. Default: 50%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__IMPORTANTRATE
+    /// CPU load threshold for low load sampling.
     /// </summary>
-    [Range(0.05, 1.0, ErrorMessage = ErrorMessages.RangeValidation.ImportantRate)]
-    public double ImportantRate { get; init; } = 0.5;
+    [Range(0.0, 1.0)]
+    public double LowLoadThreshold { get; set; } = 0.3;
 
     /// <summary>
-    /// Sampling rate for normal operations (standard queries).
-    /// Range: 0.01-1.0. Default: 10%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE
+    /// CPU load threshold for normal load sampling.
     /// </summary>
-    [Range(0.01, 1.0, ErrorMessage = ErrorMessages.RangeValidation.NormalRate)]
-    public double NormalRate { get; init; } = 0.1;
+    [Range(0.0, 1.0)]
+    public double NormalLoadThreshold { get; set; } = 0.6;
 
     /// <summary>
-    /// Sampling rate for background operations (health checks, metrics).
-    /// Range: 0.001-0.1. Default: 1%.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__BACKGROUNDRATE
+    /// CPU load threshold for high load sampling.
     /// </summary>
-    [Range(0.001, 0.1, ErrorMessage = ErrorMessages.RangeValidation.BackgroundRate)]
-    public double BackgroundRate { get; init; } = 0.01;
+    [Range(0.0, 1.0)]
+    public double HighLoadThreshold { get; set; } = 0.8;
 
     /// <summary>
-    /// Enable operation-specific sampling rates. When disabled, uses base rate for all.
-    /// Environment variable: HONUA__ADAPTIVESAMPLING__OPERATIONS__ENABLED
+    /// CPU load threshold for critical load sampling.
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    [Range(0.0, 1.0)]
+    public double CriticalLoadThreshold { get; set; } = 0.95;
+
+    /// <summary>
+    /// General CPU threshold for load-based decisions.
+    /// </summary>
+    [Range(0.0, 1.0)]
+    public double CpuThreshold { get; set; } = 0.7;
+
+    /// <summary>
+    /// Memory usage threshold for load-based decisions.
+    /// </summary>
+    [Range(0.0, 1.0)]
+    public double MemoryThreshold { get; set; } = 0.8;
+
+    /// <summary>
+    /// Active request count threshold for load-based decisions.
+    /// </summary>
+    [Range(1, 10000)]
+    public int ActiveRequestThreshold { get; set; } = 100;
+
+    /// <summary>
+    /// Response time threshold in milliseconds for load-based decisions.
+    /// </summary>
+    [Range(1, 60000)]
+    public int ResponseTimeThresholdMs { get; set; } = 1000;
 }
 
 /// <summary>
-/// Operation importance classification for sampling decisions.
+/// Importance level for operations, used in adaptive sampling.
 /// </summary>
 public enum OperationImportance
 {
     /// <summary>
-    /// Background operations like health checks and metrics collection.
-    /// Lowest sampling priority.
+    /// Background operations that can be sampled lightly.
     /// </summary>
     Background = 0,
 
     /// <summary>
-    /// Standard read operations and basic queries.
-    /// Normal sampling priority.
+    /// Low importance operations that can be heavily sampled.
     /// </summary>
-    Normal = 1,
+    Low = 1,
 
     /// <summary>
-    /// Complex operations like spatial queries and bulk processing.
-    /// Higher sampling priority.
+    /// Normal importance operations with standard sampling.
     /// </summary>
-    Important = 2,
+    Normal = 2,
 
     /// <summary>
-    /// Critical operations like authentication, data writes, and error handling.
-    /// Highest sampling priority, typically always sampled.
+    /// Important operations that should be sampled more than normal.
     /// </summary>
-    Critical = 3
+    Important = 3,
+
+    /// <summary>
+    /// High importance operations that should be sampled more frequently.
+    /// </summary>
+    High = 4,
+
+    /// <summary>
+    /// Critical operations that should always be sampled.
+    /// </summary>
+    Critical = 5
 }

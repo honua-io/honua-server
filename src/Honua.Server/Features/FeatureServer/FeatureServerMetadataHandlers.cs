@@ -77,6 +77,11 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+        if (RequiresDefaultMetadataAuthentication(context, service.Metadata?.AccessPolicy is not null, service.Layers.Any(layer => layer.Metadata?.AccessPolicy is not null)))
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+        }
+
         var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
         if (accessError != null)
         {
@@ -184,6 +189,14 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var layer = validationResult.Layer!;
+        if (RequiresDefaultMetadataAuthentication(
+                context,
+                service.Metadata?.AccessPolicy is not null,
+                layer.Metadata?.AccessPolicy is not null))
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
+        }
+
         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
         if (accessError != null)
         {
@@ -245,5 +258,24 @@ internal static partial class FeatureServerEndpoints
                 context,
                 "Layer metadata retrieval failed");
         }
+    }
+
+    private static bool RequiresDefaultMetadataAuthentication(
+        HttpContext context,
+        bool hasServicePolicy,
+        bool hasLayerPolicy)
+    {
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            return false;
+        }
+
+        var environment = context.RequestServices.GetRequiredService<IHostEnvironment>();
+        if (!environment.IsProduction())
+        {
+            return false;
+        }
+
+        return !hasServicePolicy && !hasLayerPolicy;
     }
 }

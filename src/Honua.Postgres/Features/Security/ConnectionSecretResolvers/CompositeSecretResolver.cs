@@ -25,6 +25,9 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
     private readonly Dictionary<string, IConnectionSecretResolver> _resolvers;
     private readonly ILogger<CompositeSecretResolver> _logger;
 
+    /// <inheritdoc />
+    public string ProviderName => "composite";
+
     // Logger message delegates for performance
     private static readonly Action<ILogger, string, Exception?> _logDuplicateResolver =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(1, nameof(_logDuplicateResolver)),
@@ -69,17 +72,15 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
 
         foreach (var resolver in resolvers ?? Enumerable.Empty<IConnectionSecretResolver>())
         {
-            foreach (var provider in resolver.GetSupportedProviders())
+            var provider = resolver.ProviderName;
+            if (_resolvers.ContainsKey(provider))
             {
-                if (_resolvers.ContainsKey(provider))
-                {
-                    _logDuplicateResolver(_logger, provider, null);
-                    continue;
-                }
-
-                _resolvers[provider] = resolver;
-                _logResolverRegistered(_logger, provider, resolver.GetType().Name, null);
+                _logDuplicateResolver(_logger, provider, null);
+                continue;
             }
+
+            _resolvers[provider] = resolver;
+            _logResolverRegistered(_logger, provider, resolver.GetType().Name, null);
         }
 
         if (_resolvers.Count == 0)
@@ -92,12 +93,13 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
     }
 
-    public async Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(secretRef))
-            throw new ArgumentException("Secret reference cannot be null or empty", nameof(secretRef));
+        if (string.IsNullOrWhiteSpace(secretKey))
+            throw new ArgumentException("Secret key cannot be null or empty", nameof(secretKey));
 
-        var (provider, path) = ParseSecretReference(secretRef);
+        var (provider, path) = ParseSecretReference(secretKey);
 
         if (!_resolvers.TryGetValue(provider, out var resolver))
         {
@@ -110,42 +112,98 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         try
         {
             _logResolvingSecret(_logger, provider, null);
-            var connectionString = await resolver.ResolveConnectionStringAsync(secretRef, cancellationToken);
+            var result = await resolver.ResolveSecretAsync(secretKey, cancellationToken);
 
-            if (string.IsNullOrWhiteSpace(connectionString))
+            if (string.IsNullOrWhiteSpace(result))
             {
-                throw new InvalidOperationException($"Secret reference '{secretRef}' resolved to null or empty value");
+                throw new InvalidOperationException($"Secret key '{secretKey}' resolved to null or empty value");
             }
 
             _logSecretResolved(_logger, provider, null);
-            return connectionString;
+            return result;
         }
         catch (Exception ex) when (!(ex is OperationCanceledException))
         {
-            _logResolveFailure(_logger, secretRef, provider, ex);
+            _logResolveFailure(_logger, secretKey, provider, ex);
             throw;
         }
     }
 
-    public async Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public bool CanResolve(string secretKey)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(secretRef))
+            if (string.IsNullOrWhiteSpace(secretKey))
                 return false;
 
-            var (provider, _) = ParseSecretReference(secretRef);
+            var (provider, _) = ParseSecretReference(secretKey);
 
             if (!_resolvers.TryGetValue(provider, out var resolver))
                 return false;
 
-            return await resolver.CanResolveSecretAsync(secretRef, cancellationToken);
+            return resolver.CanResolve(secretKey);
         }
-        catch (Exception ex) when (!(ex is OperationCanceledException))
+        catch (Exception ex)
         {
-            _logCanResolveError(_logger, secretRef, ex);
+            _logCanResolveError(_logger, secretKey, ex);
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
+            return connectionStringTemplate;
+
+        if (TryGetRegisteredProvider(connectionStringTemplate, out _))
+        {
+            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
+        }
+
+        // Find all secret references in the connection string and resolve them
+        var result = connectionStringTemplate;
+
+        // Simple pattern matching for secret references like ${provider:path} or {provider:path}
+        var patterns = new[] { "${", "{" };
+
+        foreach (var pattern in patterns)
+        {
+            var startIndex = 0;
+            while (true)
+            {
+                var start = result.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
+                if (start == -1) break;
+
+                var end = result.IndexOf('}', start + pattern.Length);
+                if (end == -1) break;
+
+                var secretRef = result.Substring(start + pattern.Length, end - start - pattern.Length);
+
+                if (!string.IsNullOrWhiteSpace(secretRef) && CanResolve(secretRef))
+                {
+                    var resolvedValue = await ResolveSecretAsync(secretRef, cancellationToken);
+                    if (!string.IsNullOrEmpty(resolvedValue))
+                    {
+                        var fullReference = result.Substring(start, end - start + 1);
+                        result = result.Replace(fullReference, resolvedValue);
+                        startIndex = start + resolvedValue.Length;
+                    }
+                    else
+                    {
+                        startIndex = end + 1;
+                    }
+                }
+                else
+                {
+                    startIndex = end + 1;
+                }
+            }
+        }
+
+        return result;
     }
 
     public string[] GetSupportedProviders()
@@ -180,6 +238,26 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
 
         return (provider, path);
+    }
+
+    private bool TryGetRegisteredProvider(string secretRef, out string provider)
+    {
+        provider = string.Empty;
+
+        var colonIndex = secretRef.IndexOf(':', StringComparison.Ordinal);
+        if (colonIndex <= 0 || colonIndex == secretRef.Length - 1)
+        {
+            return false;
+        }
+
+        var candidate = secretRef[..colonIndex];
+        if (!_resolvers.ContainsKey(candidate))
+        {
+            return false;
+        }
+
+        provider = candidate;
+        return true;
     }
 }
 

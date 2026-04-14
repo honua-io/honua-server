@@ -44,7 +44,7 @@ public class FileUploadSecurityOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxSecurityScanSizeBytes") && f.Contains("must be positive"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxSecurityScanSizeBytes") && f.Contains("must be between"));
     }
 
     [UnitTest]
@@ -61,7 +61,7 @@ public class FileUploadSecurityOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxSecurityScanSizeBytes") && f.Contains("must be positive"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxSecurityScanSizeBytes") && f.Contains("must be between"));
     }
 
     [UnitTest]

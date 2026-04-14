@@ -5,12 +5,37 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Tests.Features.Security;
 
 public sealed class AccessPolicyEvaluatorTests
 {
     private readonly AccessPolicyEvaluator _evaluator = new();
+
+    [Fact]
+    public void Evaluate_WithNoPolicies_AnonymousPrincipal_RequiresAuth()
+    {
+        var decision = _evaluator.Evaluate(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            layerPolicy: null,
+            servicePolicy: null);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_WithRestrictedLayerPolicy_AnonymousPrincipal_RequiresAuth()
+    {
+        var decision = _evaluator.Evaluate(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            new AccessPolicy { AllowAnonymous = false },
+            servicePolicy: null);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeTrue();
+    }
 
     [Fact]
     public void Evaluate_WithPermissiveLayerAndRestrictedService_DeniesAnonymousRead()

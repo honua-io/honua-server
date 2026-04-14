@@ -72,6 +72,12 @@ internal class SpatialReferenceResolver
 
         var trimmed = srValue.Trim();
 
+        var parsedSrid = SpatialReferenceHelpers.TryParseSrid(trimmed);
+        if (parsedSrid.HasValue)
+        {
+            return parsedSrid.Value;
+        }
+
         if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
         {
             return srid;

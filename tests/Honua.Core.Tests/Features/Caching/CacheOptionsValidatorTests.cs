@@ -76,7 +76,7 @@ public class CacheOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("LayerTtlSeconds") && f.Contains("must not exceed ServiceTtlSeconds"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("LayerTtlSeconds", StringComparison.Ordinal) && f.Contains("less than or equal to ServiceTtlSeconds", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -241,7 +241,7 @@ public class CacheOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("KeyPrefix") && f.Contains("should not exceed 50 characters"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("KeyPrefix", StringComparison.Ordinal) && f.Contains("between 0 and 50 characters", StringComparison.Ordinal));
     }
 
     [UnitTest]

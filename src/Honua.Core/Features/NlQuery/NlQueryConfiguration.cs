@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 namespace Honua.Core.Features.NlQuery;
 
@@ -56,24 +57,24 @@ public sealed class NlQueryConfiguration
 /// <summary>
 /// Validates <see cref="NlQueryConfiguration"/> at startup.
 /// </summary>
-public sealed class NlQueryConfigurationValidator : OptionsValidator<NlQueryConfiguration>
+public sealed class NlQueryConfigurationValidator : ConfigurationValidator<NlQueryConfiguration>
 {
     /// <inheritdoc />
-    protected override void ValidateOptions(NlQueryConfiguration options, List<string> failures)
+    protected override void PerformFeatureSpecificValidation(NlQueryConfiguration options, List<string> errors)
     {
-        ValidateRequiredString(options.Provider, "NlQuery:Provider", failures);
+        ValidateRequiredString(options.Provider, "NlQuery:Provider", errors);
 
         if (string.IsNullOrWhiteSpace(options.Endpoint))
         {
-            failures.Add("NlQuery:Endpoint cannot be empty");
+            errors.Add("NlQuery:Endpoint cannot be empty");
         }
         else
         {
-            ValidateUrl(options.Endpoint, "NlQuery:Endpoint", failures, requireHttps: true);
+            ValidateUrl(options.Endpoint, "NlQuery:Endpoint", errors, requireHttps: true);
         }
 
-        ValidateRequiredString(options.Model, "NlQuery:Model", failures);
-        ValidateRange(options.TimeoutSeconds, 5, 120, "NlQuery:TimeoutSeconds", failures);
-        ValidateRange(options.MaxTokens, 128, 8192, "NlQuery:MaxTokens", failures);
+        ValidateRequiredString(options.Model, "NlQuery:Model", errors);
+        ValidateRange(options.TimeoutSeconds, 5, 120, "NlQuery:TimeoutSeconds", errors);
+        ValidateRange(options.MaxTokens, 128, 8192, "NlQuery:MaxTokens", errors);
     }
 }

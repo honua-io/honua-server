@@ -1,577 +1,325 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
-
 using System.ComponentModel.DataAnnotations;
-using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Configuration;
 
 /// <summary>
-/// Centralized limits configuration enforced consistently across all protocols.
-/// Controls resource usage to prevent system overload and ensure predictable behavior.
+/// Configuration options for system limits and quotas.
 /// </summary>
-public sealed class LimitsOptions
+public class LimitsOptions
 {
-    /// <summary>
-    /// Configuration section name for binding from environment variables.
-    /// Maps to HONUA__LIMITS__* environment variables per ADR-0008.
-    /// </summary>
     public const string SectionName = "Limits";
 
     /// <summary>
-    /// Query operation limits applied to all protocols (GeoServices REST, OGC API Features, OData).
+    /// Maximum number of features that can be returned in a single query.
     /// </summary>
-    public QueryLimits Query { get; init; } = new();
+    [Range(1, 1000000)]
+    public int MaxFeatures { get; set; } = 10000;
 
     /// <summary>
-    /// Geometry processing limits for input validation and output control.
+    /// Maximum query timeout in seconds.
     /// </summary>
-    public GeometryLimits Geometry { get; init; } = new();
+    [Range(1, 600)]
+    public int MaxQueryTimeoutSeconds { get; set; } = 60;
 
     /// <summary>
-    /// Edit operation limits for applyEdits and CRUD operations.
+    /// Maximum concurrent requests per client.
     /// </summary>
-    public EditLimits Edits { get; init; } = new();
+    [Range(1, 1000)]
+    public int MaxConcurrentRequests { get; set; } = 100;
 
     /// <summary>
-    /// Attachment handling limits for file uploads and storage.
+    /// Maximum file size for uploads in bytes.
     /// </summary>
-    public AttachmentLimits Attachments { get; init; } = new();
+    [Range(1, long.MaxValue)]
+    public long MaxUploadSizeBytes { get; set; } = 100 * 1024 * 1024; // 100MB
 
     /// <summary>
-    /// Map tile generation and caching limits.
+    /// Default page size for paginated responses.
     /// </summary>
-    public TileLimits Tiles { get; init; } = new();
+    [Range(1, 10000)]
+    public int DefaultPageSize { get; set; } = 100;
 
     /// <summary>
-    /// Database connection and concurrency limits.
+    /// Maximum page size for paginated responses.
     /// </summary>
-    public ConnectionLimits Connections { get; init; } = new();
+    [Range(1, 10000)]
+    public int MaxPageSize { get; set; } = 1000;
 
     /// <summary>
-    /// File import operation limits.
+    /// Query limits for different types of operations.
     /// </summary>
-    public ImportLimits Imports { get; init; } = new();
+    public QueryLimits Query { get; set; } = new();
 
     /// <summary>
-    /// Geometry validation options for security and data quality enforcement.
+    /// Geometry limits for spatial operations.
     /// </summary>
-    public GeometryValidationOptions Validation { get; init; } = new();
+    public GeometryLimits Geometry { get; set; } = new();
 
     /// <summary>
-    /// Spatial analytics limits for clustering, joins, buffer aggregate and density.
+    /// Geometry validation behavior and safety limits.
     /// </summary>
-    public AnalyticsLimits Analytics { get; init; } = new();
+    public GeometryValidationOptions Validation { get; set; } = new();
+
+    /// <summary>
+    /// Edit operation limits.
+    /// </summary>
+    public EditLimits Edits { get; set; } = new();
+
+    /// <summary>
+    /// Attachment operation limits.
+    /// </summary>
+    public AttachmentLimits Attachments { get; set; } = new();
+
+    /// <summary>
+    /// Tile operation limits.
+    /// </summary>
+    public TileLimits Tiles { get; set; } = new();
+
+    /// <summary>
+    /// Database connection limits.
+    /// </summary>
+    public ConnectionLimits Connections { get; set; } = new();
+
+    /// <summary>
+    /// File import limits.
+    /// </summary>
+    public ImportLimits Imports { get; set; } = new();
+
+    /// <summary>
+    /// Spatial analytics limits.
+    /// </summary>
+    public AnalyticsLimits Analytics { get; set; } = new();
 }
 
 /// <summary>
-/// Query operation limits applied consistently across all protocols.
-/// Prevents resource exhaustion from unbounded requests.
+/// Limits specific to query operations.
 /// </summary>
-public sealed class QueryLimits
+public class QueryLimits
 {
     /// <summary>
-    /// Maximum number of features returned in a single query response.
-    /// Applied before pagination. Range: 100-10,000.
+    /// Maximum complexity score for queries.
     /// </summary>
-    [Range(100, 10000, ErrorMessage = ErrorMessages.RangeValidation.MaxRecordCount)]
-    public int MaxRecordCount { get; init; } = 2000;
+    [Range(1, 10000)]
+    public int MaxComplexity { get; set; } = 1000;
 
     /// <summary>
-    /// Default number of features when not specified by client.
-    /// Must be less than or equal to MaxRecordCount. Range: 100-MaxRecordCount.
+    /// Maximum number of spatial operations per query.
     /// </summary>
-    [Range(100, int.MaxValue, ErrorMessage = ErrorMessages.RangeValidation.DefaultRecordCount)]
-    public int DefaultRecordCount { get; init; } = 1000;
+    [Range(1, 100)]
+    public int MaxSpatialOperations { get; set; } = 10;
 
     /// <summary>
-    /// Maximum pagination offset to prevent deep pagination issues.
-    /// Range: 1,000-1,000,000.
+    /// Maximum number of joins per query.
     /// </summary>
-    [Range(1000, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxOffset)]
-    public int MaxOffset { get; init; } = 1000000;
+    [Range(1, 20)]
+    public int MaxJoins { get; set; } = 5;
 
     /// <summary>
-    /// Maximum bounding box area in square kilometers.
-    /// Prevents full-table scans on large datasets. Null disables limit.
+    /// Maximum nesting depth for filters.
     /// </summary>
-    [Range(0.1, double.MaxValue, ErrorMessage = "MaxBboxAreaSqKm must be greater than 0.1")]
-    public double? MaxBboxAreaSqKm { get; init; } = 100000000d;
+    [Range(1, 50)]
+    public int MaxFilterDepth { get; set; } = 10;
 
     /// <summary>
-    /// Maximum number of H3 cells returned by an H3 aggregation query.
-    /// Prevents unbounded result sets at high resolutions. Range: 100-1,000,000.
+    /// Maximum number of filter conditions.
     /// </summary>
-    [Range(100, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxH3CellsPerQuery)]
-    public int MaxH3CellsPerQuery { get; init; } = 10000;
+    [Range(1, 1000)]
+    public int MaxFilterConditions { get; set; } = 100;
 
     /// <summary>
-    /// Maximum time allowed for a single query operation.
-    /// Range: 5 seconds to 2 minutes.
+    /// Maximum offset for pagination.
     /// </summary>
-    public TimeSpan QueryTimeout { get; init; } = TimeConstants.ThirtySecondsTimeSpan;
+    [Range(0, 1000000)]
+    public int MaxOffset { get; set; } = 1000000;
+
+    /// <summary>
+    /// Maximum record count per query.
+    /// </summary>
+    [Range(100, 10000)]
+    public int MaxRecordCount { get; set; } = 10000;
+
+    /// <summary>
+    /// Default record count for queries when not specified.
+    /// </summary>
+    [Range(100, 10000)]
+    public int DefaultRecordCount { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum area for bounding box queries in square kilometers.
+    /// </summary>
+    [Range(0.1, 100000000)]
+    public double MaxBboxAreaSqKm { get; set; } = 100000;
+
+    /// <summary>
+    /// Maximum H3 cells returned by H3 aggregation queries.
+    /// </summary>
+    [Range(100, 1000000)]
+    public int MaxH3CellsPerQuery { get; set; } = 100000;
+
+    /// <summary>
+    /// Query timeout duration.
+    /// </summary>
+    public TimeSpan QueryTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>
-/// Geometry processing and validation limits.
-/// Applied to both input geometries and output formatting.
+/// Limits specific to geometry operations.
 /// </summary>
-public sealed class GeometryLimits
+public class GeometryLimits
 {
     /// <summary>
-    /// Maximum number of vertices allowed in a single input geometry.
-    /// Prevents memory exhaustion from complex geometries. Range: 1,000-1,000,000.
+    /// Maximum vertices per geometry.
     /// </summary>
-    [Range(1000, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxVerticesPerGeometry)]
-    public int MaxVerticesPerGeometry { get; init; } = 100000;
+    [Range(1, 100000)]
+    public int MaxVerticesPerGeometry { get; set; } = 50000;
 
     /// <summary>
-    /// Maximum size of serialized geometry in bytes (e.g., GeoJSON, WKT).
-    /// Range: 1MB to 100MB.
+    /// Maximum geometry size in bytes.
     /// </summary>
-    [Range(FileSizeConstants.OneMB, FileSizeConstants.OneHundredMB, ErrorMessage = ErrorMessages.RangeValidation.MaxGeometrySize)]
-    public long MaxGeometrySize { get; init; } = FileSizeConstants.TenMB;
+    [Range(1, long.MaxValue)]
+    public long MaxGeometrySize { get; set; } = 5242880; // 5MB
 
     /// <summary>
-    /// Maximum number of decimal places for coordinate precision in output.
-    /// Controls output size and precision. Range: 1-15 decimal places.
+    /// Maximum coordinate precision.
     /// </summary>
-    [Range(1, 15, ErrorMessage = ErrorMessages.RangeValidation.MaxCoordinatePrecision)]
-    public int MaxCoordinatePrecision { get; init; } = 8;
+    [Range(1, 15)]
+    public int MaxCoordinatePrecision { get; set; } = 8;
 
     /// <summary>
-    /// Auto-simplification tolerance for large geometries in meters.
-    /// Null disables auto-simplification. Range: 0-1000 meters.
+    /// Simplification tolerance.
     /// </summary>
-    [Range(0.0, 1000.0, ErrorMessage = ErrorMessages.RangeValidation.SimplifyTolerance)]
-    public double? SimplifyTolerance { get; init; } = null;
+    public double? SimplifyTolerance { get; set; }
 }
 
 /// <summary>
-/// Edit operation limits for CRUD operations and batch processing.
-/// Applied to applyEdits, OGC Transactions, and OData modifications.
+/// Limits specific to edit operations.
 /// </summary>
-public sealed class EditLimits
+public class EditLimits
 {
     /// <summary>
-    /// Maximum number of features in a single edit operation (insert/update/delete).
-    /// Range: 1-10,000.
+    /// Maximum features per edit operation.
     /// </summary>
-    [Range(1, 10000, ErrorMessage = ErrorMessages.RangeValidation.MaxFeaturesPerEdit)]
-    public int MaxFeaturesPerEdit { get; init; } = 1000;
+    [Range(1, 10000)]
+    public int MaxFeaturesPerEdit { get; set; } = 500;
 
     /// <summary>
-    /// Maximum total number of edit operations in a single transaction.
-    /// Range: 100-50,000.
+    /// Maximum edits per transaction.
     /// </summary>
-    [Range(100, 50000, ErrorMessage = ErrorMessages.RangeValidation.MaxEditsPerTransaction)]
-    public int MaxEditsPerTransaction { get; init; } = 5000;
+    [Range(1, 10000)]
+    public int MaxEditsPerTransaction { get; set; } = 2500;
 
     /// <summary>
-    /// Maximum HTTP request body size for edit operations in bytes.
-    /// Range: 1MB to 500MB.
+    /// Maximum payload size for edit operations in bytes.
     /// </summary>
-    [Range(FileSizeConstants.OneMB, FileSizeConstants.FiveHundredMB, ErrorMessage = ErrorMessages.RangeValidation.MaxPayloadSize)]
-    public long MaxPayloadSize { get; init; } = FileSizeConstants.FiftyMB;
+    [Range(1, long.MaxValue)]
+    public long MaxPayloadSize { get; set; } = 26214400; // 25MB
 }
 
 /// <summary>
-/// File attachment limits for feature attachments and uploads.
-/// Applied to all attachment operations across protocols.
+/// Limits specific to attachment operations.
 /// </summary>
-public sealed class AttachmentLimits
+public class AttachmentLimits
 {
     /// <summary>
-    /// Maximum size of a single attachment file in bytes.
-    /// Range: 1MB to 100MB.
+    /// Maximum attachment size in bytes.
     /// </summary>
-    [Range(FileSizeConstants.OneMB, FileSizeConstants.OneHundredMB, ErrorMessage = ErrorMessages.RangeValidation.MaxAttachmentSize)]
-    public long MaxAttachmentSize { get; init; } = FileSizeConstants.TenMB;
+    [Range(1, long.MaxValue)]
+    public long MaxAttachmentSize { get; set; } = 5242880; // 5MB
 
     /// <summary>
-    /// Maximum number of attachments allowed per feature.
-    /// Range: 1-100.
+    /// Maximum attachments per feature.
     /// </summary>
-    [Range(1, 100, ErrorMessage = ErrorMessages.RangeValidation.MaxAttachmentsPerFeature)]
-    public int MaxAttachmentsPerFeature { get; init; } = 10;
+    [Range(1, 100)]
+    public int MaxAttachmentsPerFeature { get; set; } = 5;
 
     /// <summary>
-    /// Maximum total size of all attachments for a single feature in bytes.
-    /// Range: 10MB to 1GB.
+    /// Maximum total attachment size per feature in bytes.
     /// </summary>
-    [Range(FileSizeConstants.TenMB, FileSizeConstants.OneGB, ErrorMessage = ErrorMessages.RangeValidation.MaxTotalAttachmentSize)]
-    public long MaxTotalAttachmentSize { get; init; } = FileSizeConstants.OneHundredMB;
+    [Range(1, long.MaxValue)]
+    public long MaxTotalAttachmentSize { get; set; } = 52428800; // 50MB
 
     /// <summary>
-    /// Allowed MIME types for attachments as a comma-separated string.
-    /// Default allows images and PDF files.
+    /// Allowed MIME types for attachments.
     /// </summary>
-    public string AllowedMimeTypes { get; init; } = "image/*,application/pdf,text/plain";
+    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf";
 }
 
-/// <summary>
-/// Map tile generation and serving limits.
-/// Applied to MVT (Mapbox Vector Tiles) and raster tile endpoints.
-/// </summary>
-public sealed class TileLimits
-{
-    /// <summary>
-    /// Maximum zoom level for tile generation.
-    /// Range: 1-24.
-    /// </summary>
-    [Range(1, 24, ErrorMessage = ErrorMessages.RangeValidation.MaxTileZoom)]
-    public int MaxTileZoom { get; init; } = 22;
-
-    /// <summary>
-    /// Minimum zoom level for tile generation.
-    /// Range: 0-10.
-    /// </summary>
-    [Range(0, 10, ErrorMessage = ErrorMessages.RangeValidation.MinTileZoom)]
-    public int MinTileZoom { get; init; } = 0;
-
-    /// <summary>
-    /// Maximum number of features per tile before auto-simplification.
-    /// Range: 1,000-1,000,000.
-    /// </summary>
-    [Range(1000, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxFeaturesPerTile)]
-    public int MaxFeaturesPerTile { get; init; } = 10000;
-
-    /// <summary>
-    /// Maximum time allowed for tile generation.
-    /// Range: 1 second to 1 minute.
-    /// </summary>
-    public TimeSpan TileTimeout { get; init; } = TimeConstants.TenSecondsTimeSpan;
-
-    /// <summary>
-    /// Maximum compressed tile size in bytes.
-    /// Range: 100KB to 5MB.
-    /// </summary>
-    [Range(FileSizeConstants.OneHundredKB, FileSizeConstants.FiveMB, ErrorMessage = ErrorMessages.RangeValidation.MaxTileSize)]
-    public long MaxTileSize { get; init; } = FileSizeConstants.FiveHundredKB;
-}
 
 /// <summary>
-/// Database connection and concurrency limits.
-/// Applied system-wide to prevent resource exhaustion.
+/// Limits specific to database connections.
 /// </summary>
-public sealed class ConnectionLimits
+public class ConnectionLimits
 {
     /// <summary>
-    /// Maximum number of concurrent query operations per instance.
-    /// Range: 10-1,000.
+    /// Maximum concurrent queries.
     /// </summary>
-    [Range(10, 1000, ErrorMessage = ErrorMessages.RangeValidation.MaxConcurrentQueries)]
-    public int MaxConcurrentQueries { get; init; } = 100;
+    [Range(1, 1000)]
+    public int MaxConcurrentQueries { get; set; } = 200;
 
     /// <summary>
-    /// Maximum size of the database connection pool.
-    /// Range: 10-500.
+    /// Maximum connection pool size.
     /// </summary>
-    [Range(10, 500, ErrorMessage = ErrorMessages.RangeValidation.MaxConnectionPoolSize)]
-    public int MaxConnectionPoolSize { get; init; } = 200;
+    [Range(1, 1000)]
+    public int MaxConnectionPoolSize { get; set; } = 200;
 
     /// <summary>
-    /// Minimum size of the database connection pool.
-    /// Clamped to not exceed <see cref="MaxConnectionPoolSize"/>.
+    /// Minimum connection pool size.
     /// </summary>
     [Range(0, 100)]
-    public int MinConnectionPoolSize { get; init; } = 20;
+    public int MinConnectionPoolSize { get; set; } = 20;
 
     /// <summary>
-    /// Overall timeout for HTTP requests including database operations.
-    /// Range: 10 seconds to 10 minutes.
+    /// Connection idle lifetime in seconds.
     /// </summary>
-    public TimeSpan RequestTimeout { get; init; } = TimeConstants.TwoMinutesTimeSpan;
+    [Range(1, 3600)]
+    public int ConnectionIdleLifetimeSeconds { get; set; } = 600;
 
     /// <summary>
-    /// Default command timeout for database operations in seconds.
+    /// Connection pruning interval in seconds.
     /// </summary>
-    [Range(5, 600)]
-    public int CommandTimeoutSeconds { get; init; } = 30;
+    [Range(1, 3600)]
+    public int ConnectionPruningIntervalSeconds { get; set; } = 10;
 
     /// <summary>
-    /// PostgreSQL lock_timeout session parameter. Prevents indefinite blocking on row/table locks.
-    /// </summary>
-    public TimeSpan LockTimeout { get; init; } = TimeConstants.ThirtySecondsTimeSpan;
-
-    /// <summary>
-    /// PostgreSQL statement_timeout session parameter. Aborts statements that exceed this duration.
-    /// </summary>
-    public TimeSpan StatementTimeout { get; init; } = TimeConstants.TwoMinutesTimeSpan;
-
-    /// <summary>
-    /// PostgreSQL idle_in_transaction_session_timeout parameter. Terminates sessions idle inside a transaction.
-    /// </summary>
-    public TimeSpan IdleInTransactionTimeout { get; init; } = TimeConstants.OneMinuteTimeSpan;
-
-    /// <summary>
-    /// Connection idle lifetime in seconds before pruning from the pool.
-    /// </summary>
-    [Range(30, 3600)]
-    public int ConnectionIdleLifetimeSeconds { get; init; } = 300;
-
-    /// <summary>
-    /// Interval in seconds between connection pruning sweeps.
+    /// Command timeout in seconds.
     /// </summary>
     [Range(1, 300)]
-    public int ConnectionPruningIntervalSeconds { get; init; } = 10;
+    public int CommandTimeoutSeconds { get; set; } = 30;
 
     /// <summary>
-    /// Read and write buffer size in bytes for database connections.
+    /// Buffer size in bytes.
     /// </summary>
-    [Range(4096, 65536)]
-    public int BufferSizeBytes { get; init; } = 32768;
+    [Range(1024, 1048576)]
+    public int BufferSizeBytes { get; set; } = 32768;
 
     /// <summary>
-    /// Controls Npgsql connection multiplexing. Accepted values:
-    /// <list type="bullet">
-    ///   <item><c>"auto"</c> — multiplexing is enabled unless schema headers are active.</item>
-    ///   <item><c>"true"</c> — force multiplexing on (ignored when schema headers are active).</item>
-    ///   <item><c>"false"</c> (default) — multiplexing off, using traditional connection pooling.</item>
-    /// </list>
-    /// Disabling multiplexing at high concurrency avoids write-lock contention on shared
-    /// physical connections that causes p95 latency spikes.
+    /// Request timeout duration.
     /// </summary>
-    public string Multiplexing { get; init; } = "false";
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// Maximum time in seconds to wait for a connection from the semaphore gate
-    /// when all <see cref="MaxConcurrentQueries"/> slots are occupied.
-    /// Requests that exceed this timeout receive an HTTP 503.
+    /// Connection multiplexing mode.
     /// </summary>
-    [Range(1, 60)]
-    public int ConnectionAcquisitionTimeoutSeconds { get; init; } = 5;
-}
-
-/// <summary>
-/// File import operation limits.
-/// Applied to geospatial file import endpoints.
-/// </summary>
-public sealed class ImportLimits
-{
-    /// <summary>
-    /// Maximum file size for preview operations in bytes.
-    /// Range: 1MB to 50MB.
-    /// </summary>
-    [Range(FileSizeConstants.OneMB, FileSizeConstants.FiftyMB, ErrorMessage = ErrorMessages.RangeValidation.MaxPreviewSize)]
-    public long MaxPreviewSize { get; init; } = FileSizeConstants.TenMB;
+    public string Multiplexing { get; set; } = "false";
 
     /// <summary>
-    /// Maximum file size for synchronous import operations in bytes.
-    /// Files larger than this trigger background job processing.
-    /// Range: 10MB to 500MB.
+    /// Connection acquisition timeout in seconds.
     /// </summary>
-    [Range(FileSizeConstants.TenMB, FileSizeConstants.FiveHundredMB, ErrorMessage = ErrorMessages.RangeValidation.MaxSyncImportSize)]
-    public long MaxSyncImportSize { get; init; } = FileSizeConstants.FiftyMB;
+    [Range(1, 300)]
+    public int ConnectionAcquisitionTimeoutSeconds { get; set; } = 5;
 
     /// <summary>
-    /// Maximum file size for any import operation in bytes.
-    /// Range: 50MB to 5GB.
+    /// Lock timeout.
     /// </summary>
-    [Range(FileSizeConstants.FiftyMB, FileSizeConstants.FiveGB, ErrorMessage = ErrorMessages.RangeValidation.MaxImportSize)]
-    public long MaxImportSize { get; init; } = FileSizeConstants.FiveHundredMB;
+    public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Maximum number of features to return in a preview.
-    /// Range: 10-1,000.
+    /// Statement timeout.
     /// </summary>
-    [Range(10, 1000, ErrorMessage = ErrorMessages.RangeValidation.MaxPreviewFeatures)]
-    public int MaxPreviewFeatures { get; init; } = 100;
+    public TimeSpan StatementTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Maximum number of features to scan while deriving a preview count for
-    /// streaming formats without a declared total (for example FlatGeobuf files
-    /// whose header reports an unknown feature count).
-    /// Range: 10-1,000,000.
+    /// Idle in transaction timeout.
     /// </summary>
-    [Range(10, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxPreviewCountScan)]
-    public int MaxPreviewCountScan { get; init; } = 100000;
-
-    /// <summary>
-    /// Batch size for feature insertion during import.
-    /// Range: 100-10,000.
-    /// </summary>
-    [Range(100, 10000, ErrorMessage = ErrorMessages.RangeValidation.BatchSize)]
-    public int BatchSize { get; init; } = 1000;
-}
-
-/// <summary>
-/// Geometry validation options for security and data quality enforcement.
-/// Controls three-layer validation: input format, WKB structure, and topology.
-/// </summary>
-public sealed class GeometryValidationOptions
-{
-    /// <summary>
-    /// Validation strictness level for geometry processing.
-    /// </summary>
-    public ValidationMode Mode { get; init; } = ValidationMode.Repair;
-
-    /// <summary>
-    /// Maximum number of vertices allowed in a single geometry.
-    /// Prevents DoS attacks from complex geometries. Range: 1,000-100,000.
-    /// </summary>
-    [Range(1000, 100000, ErrorMessage = ErrorMessages.RangeValidation.MaxVertices)]
-    public int MaxVertices { get; init; } = 10000;
-
-    /// <summary>
-    /// Maximum number of rings allowed in a polygon geometry.
-    /// Range: 10-1,000.
-    /// </summary>
-    [Range(10, 1000, ErrorMessage = ErrorMessages.RangeValidation.MaxRings)]
-    public int MaxRings { get; init; } = 100;
-
-    /// <summary>
-    /// Maximum decimal places for coordinate precision.
-    /// Controls output precision and storage efficiency. Range: 1-15.
-    /// </summary>
-    [Range(1, 15, ErrorMessage = ErrorMessages.RangeValidation.CoordinatePrecision)]
-    public int CoordinatePrecision { get; init; } = 6;
-
-    /// <summary>
-    /// Tolerance used to treat polygon rings as closed (units depend on CRS).
-    /// </summary>
-    [Range(1e-12, 1, ErrorMessage = "Ring closure tolerance must be between 1e-12 and 1.")]
-    public double RingClosureTolerance { get; init; } = 1e-6;
-
-    /// <summary>
-    /// Maximum WKB size in bytes.
-    /// Prevents memory exhaustion from large geometries. Range: 100KB-10MB.
-    /// </summary>
-    [Range(FileSizeConstants.OneHundredKB, FileSizeConstants.TenMB, ErrorMessage = ErrorMessages.RangeValidation.MaxWkbSize)]
-    public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
-
-    /// <summary>
-    /// Timeout for geometry validation operations.
-    /// Range: 1-30 seconds.
-    /// </summary>
-    public TimeSpan ValidationTimeout { get; init; } = TimeConstants.FiveSecondsTimeSpan;
-
-    /// <summary>
-    /// Whether to allow null geometries in features.
-    /// When true, features can have null geometry (attribute-only features).
-    /// </summary>
-    public bool AllowNullGeometry { get; init; } = true;
-
-    /// <summary>
-    /// Whether to allow null attribute values.
-    /// When true, attribute values can be null.
-    /// </summary>
-    public bool AllowNullAttributes { get; init; } = true;
-
-    /// <summary>
-    /// Maximum length of string attribute values.
-    /// Prevents memory issues from very long strings. Range: 1,000-1,000,000.
-    /// </summary>
-    [Range(1000, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxAttributeLength)]
-    public int MaxAttributeLength { get; init; } = 100000;
-
-    /// <summary>
-    /// Whether to enable PostGIS topology validation using ST_IsValid().
-    /// </summary>
-    public bool EnableTopologyValidation { get; init; } = true;
-
-    /// <summary>
-    /// Whether to automatically repair invalid geometries using ST_MakeValid().
-    /// Only applies when Mode is Repair.
-    /// </summary>
-    public bool EnableAutoRepair { get; init; } = true;
-}
-
-/// <summary>
-/// Spatial analytics safety limits applied to the Pro-tier analytics endpoints
-/// (clustering, spatial join, buffer aggregate, density binning). Caps both the
-/// input subset size and the number of result groups so a single request cannot
-/// exhaust database resources.
-/// </summary>
-public sealed class AnalyticsLimits
-{
-    /// <summary>
-    /// Maximum number of input features any analytics operation will process.
-    /// Enforced via <c>LIMIT n+1</c> overflow detection in the generated SQL so
-    /// the database stops scanning as soon as the cap is exceeded. Range: 1,000-1,000,000.
-    /// </summary>
-    [Range(1000, 1000000, ErrorMessage = "MaxInputFeatures must be between 1,000 and 1,000,000.")]
-    public int MaxInputFeatures { get; init; } = 100000;
-
-    /// <summary>
-    /// Maximum number of clusters returned by a clustering query in hull-per-cluster
-    /// mode. Per-feature output is bounded by <see cref="MaxInputFeatures"/> instead.
-    /// Range: 10-100,000.
-    /// </summary>
-    [Range(10, 100000, ErrorMessage = "MaxClusters must be between 10 and 100,000.")]
-    public int MaxClusters { get; init; } = 5000;
-
-    /// <summary>
-    /// Maximum number of cells returned by a density binning query. Range: 100-1,000,000.
-    /// </summary>
-    [Range(100, 1000000, ErrorMessage = "MaxDensityCells must be between 100 and 1,000,000.")]
-    public int MaxDensityCells { get; init; } = 50000;
-
-    /// <summary>
-    /// Maximum buffer distance in meters accepted by the buffer-aggregate endpoint.
-    /// Range: 1-1,000,000 meters.
-    /// </summary>
-    [Range(1, 1000000, ErrorMessage = "MaxBufferDistanceMeters must be between 1 and 1,000,000.")]
-    public double MaxBufferDistanceMeters { get; init; } = 100000d;
-
-    /// <summary>
-    /// Maximum DWithin distance in meters accepted by the spatial join endpoint
-    /// when the predicate is <c>DWithin</c>. Range: 1-1,000,000 meters.
-    /// </summary>
-    [Range(1, 1000000, ErrorMessage = "MaxDWithinDistanceMeters must be between 1 and 1,000,000.")]
-    public double MaxDWithinDistanceMeters { get; init; } = 100000d;
-
-    /// <summary>
-    /// Minimum allowed density cell size in meters. Smaller values would generate
-    /// extremely large grids. Range: 1-1,000 meters.
-    /// </summary>
-    [Range(1, 1000, ErrorMessage = "MinDensityCellSizeMeters must be between 1 and 1,000.")]
-    public double MinDensityCellSizeMeters { get; init; } = 10d;
-
-    /// <summary>
-    /// Maximum allowed density cell size in meters. Larger values are rejected to
-    /// keep the grid generator from running unboundedly across world extents.
-    /// Range: 100-1,000,000 meters.
-    /// </summary>
-    [Range(100, 1000000, ErrorMessage = "MaxDensityCellSizeMeters must be between 100 and 1,000,000.")]
-    public double MaxDensityCellSizeMeters { get; init; } = 100000d;
-
-    /// <summary>
-    /// Maximum K parameter accepted by K-Means clustering. Larger values cost more
-    /// CPU and rarely produce useful visualisations. Range: 2-10,000.
-    /// </summary>
-    [Range(2, 10000, ErrorMessage = "MaxKMeansK must be between 2 and 10,000.")]
-    public int MaxKMeansK { get; init; } = 1000;
-
-    /// <summary>
-    /// Maximum DBSCAN <c>eps</c> distance in meters. Range: 1-1,000,000 meters.
-    /// </summary>
-    [Range(1, 1000000, ErrorMessage = "MaxDbscanEpsMeters must be between 1 and 1,000,000.")]
-    public double MaxDbscanEpsMeters { get; init; } = 100000d;
-}
-
-/// <summary>
-/// Validation strictness mode for geometry processing.
-/// </summary>
-public enum ValidationMode
-{
-    /// <summary>
-    /// Reject any invalid geometry with an error response.
-    /// Most strict mode - no corrections applied.
-    /// </summary>
-    Strict,
-
-    /// <summary>
-    /// Attempt to repair invalid geometries automatically.
-    /// Uses ST_MakeValid() for topology issues.
-    /// Default mode balancing quality and usability.
-    /// </summary>
-    Repair,
-
-    /// <summary>
-    /// Accept geometries with minimal validation.
-    /// Only basic structural validation is performed.
-    /// Least strict mode for maximum compatibility.
-    /// </summary>
-    Accept
+    public TimeSpan IdleInTransactionTimeout { get; set; } = TimeSpan.FromSeconds(60);
 }

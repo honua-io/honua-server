@@ -16,11 +16,17 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// <remarks>
 /// Uses a channel-backed processing loop to decouple refresh requests from the request path.
 /// Each unique cache key can only have one pending refresh at a time. Concurrent requests
-/// for the same near-expiry key produce a single background refresh.
+/// for the same near-expiry key produce a single background refresh. Keys that recently
+/// failed are temporarily backed off to avoid immediate retry storms on hot keys.
+///
+/// NOTE: This implementation uses local state only. For distributed coordination across
+/// multiple instances, use DistributedCacheRefreshCoordinator instead.
 /// </remarks>
+[Obsolete("Use DistributedCacheRefreshCoordinator for production deployments to support horizontal scaling")]
 internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICacheRefreshCoordinator
 {
     private const string MetricsCacheType = "background-refresh";
+    private static readonly TimeSpan FailureBackoff = TimeSpan.FromSeconds(1);
     private readonly Channel<CacheRefreshItem> _channel;
     // Value semantics: 0 = pending, 1 = invalidated, 2 = write-claimed.
     // Embedding the state flag in _pendingKeys (instead of a separate dictionary)
@@ -28,6 +34,7 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
     // across two dictionaries. TryUpdate is atomic, so NotifyInvalidation either sees
     // the key and marks it, or the key was already claimed/cleaned up — no stale flag can leak.
     private readonly ConcurrentDictionary<string, byte> _pendingKeys = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _retryAfterUtcTicks = new(StringComparer.Ordinal);
     private readonly CacheOptions _options;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<CacheRefreshCoordinator> _logger;
@@ -70,6 +77,8 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
     /// <inheritdoc />
     public void NotifyInvalidation(string key)
     {
+        _retryAfterUtcTicks.TryRemove(key, out _);
+
         // Atomically mark the key as invalidated regardless of current state.
         // 0 → 1: marks a pending refresh as invalidated (before write-back claimed it).
         // 2 → 1: marks a write-claimed refresh as invalidated (invalidation arrived
@@ -97,9 +106,23 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
     /// <inheritdoc />
     public bool TryEnqueueRefresh(string key, Func<CancellationToken, Task> refreshCallback)
     {
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        if (IsWithinRetryBackoff(key, nowTicks))
+        {
+            return false;
+        }
+
         // Per-key deduplication: only enqueue if this key isn't already pending
         if (!_pendingKeys.TryAdd(key, 0))
         {
+            return false;
+        }
+
+        // Re-check after the pending claim to close the race with a recently failed
+        // refresh that may have published its retry backoff concurrently.
+        if (IsWithinRetryBackoff(key, DateTimeOffset.UtcNow.UtcTicks))
+        {
+            _pendingKeys.TryRemove(key, out _);
             return false;
         }
 
@@ -170,12 +193,14 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         catch (OperationCanceledException)
         {
             // Refresh timeout — count as failure
+            SetRetryBackoff(item.Key);
             Interlocked.Increment(ref _failureCount);
             _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_timeout");
             Log.BackgroundRefreshTimeout(_logger, item.Key);
         }
         catch (Exception ex)
         {
+            SetRetryBackoff(item.Key);
             Interlocked.Increment(ref _failureCount);
             _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_failure");
             Log.BackgroundRefreshFailed(_logger, item.Key, ex);
@@ -193,6 +218,27 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
                 // Semaphore disposed during shutdown while this fire-and-forget task was in-flight.
             }
         }
+    }
+
+    private bool IsWithinRetryBackoff(string key, long nowTicks)
+    {
+        if (!_retryAfterUtcTicks.TryGetValue(key, out var retryAfterTicks))
+        {
+            return false;
+        }
+
+        if (retryAfterTicks > nowTicks)
+        {
+            return true;
+        }
+
+        _retryAfterUtcTicks.TryRemove(key, out _);
+        return false;
+    }
+
+    private void SetRetryBackoff(string key)
+    {
+        _retryAfterUtcTicks[key] = DateTimeOffset.UtcNow.Add(FailureBackoff).UtcTicks;
     }
 
     private sealed record CacheRefreshItem(string Key, Func<CancellationToken, Task> RefreshCallback);

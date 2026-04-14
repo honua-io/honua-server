@@ -30,6 +30,12 @@ internal sealed class DuckDBConnectionProvider : IDatabaseConnectionProvider
     }
 
     /// <inheritdoc />
+    public string GetConnectionString()
+    {
+        return _connectionString;
+    }
+
+    /// <inheritdoc />
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new DuckDBConnection(_connectionString);

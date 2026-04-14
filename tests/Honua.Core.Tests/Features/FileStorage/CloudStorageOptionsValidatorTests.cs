@@ -86,7 +86,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("DefaultTimeToLive") && f.Contains("must be positive"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("DefaultTimeToLive", StringComparison.Ordinal) && f.Contains("between 60 seconds", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -108,7 +108,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("DefaultTimeToLive") && f.Contains("must be between 1 minutes and 365 days"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("DefaultTimeToLive", StringComparison.Ordinal) && f.Contains("between 60 seconds", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -130,7 +130,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxFileSizeBytes") && f.Contains("must be between 1MB and 10GB"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxFileSizeBytes", StringComparison.Ordinal) && f.Contains("between 1.0MB and 10.0GB", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -152,7 +152,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxFileSizeBytes") && f.Contains("must be between 1MB and 10GB"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxFileSizeBytes", StringComparison.Ordinal) && f.Contains("between 1.0MB and 10.0GB", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -194,7 +194,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("BasePath") && f.Contains("cannot contain '..'"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("LocalStorage.BasePath", StringComparison.Ordinal) && f.Contains("path traversal", StringComparison.OrdinalIgnoreCase));
     }
 
     [UnitTest]
@@ -215,7 +215,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("BasePath") && f.Contains("should be an absolute path"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("LocalStorage.BasePath", StringComparison.Ordinal) && f.Contains("absolute path", StringComparison.OrdinalIgnoreCase));
     }
 
     [UnitTest]
@@ -259,7 +259,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("AwsS3.BucketName") && f.Contains("must be at least 3 characters"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("AwsS3.BucketName", StringComparison.Ordinal) && f.Contains("between 3 and 63 characters", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -350,7 +350,7 @@ public class CloudStorageOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("CleanupInterval") && f.Contains("must be between 15 minutes and 1 days"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("CleanupInterval", StringComparison.Ordinal) && f.Contains("between 900 seconds", StringComparison.Ordinal));
     }
 
     [UnitTest]

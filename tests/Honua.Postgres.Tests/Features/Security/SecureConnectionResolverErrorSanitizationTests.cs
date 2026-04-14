@@ -46,31 +46,43 @@ public sealed class SecureConnectionResolverErrorSanitizationTests
         private readonly DataConnection _connection = connection;
 
         public Task<DataConnection> CreateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
-            => Task.FromException<DataConnection>(new NotSupportedException());
+            => Task.FromResult(connection);
+
+        public Task RegisterConnectionAsync(DataConnection connection)
+            => Task.CompletedTask;
+
+        public Task<DataConnection?> GetConnectionAsync(string connectionId)
+            => Task.FromResult(string.Equals(connectionId, _connection.ConnectionId.ToString(), StringComparison.Ordinal) ? _connection : null);
+
+        public Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
+            => Task.FromResult(string.Equals(connectionId, _connection.ConnectionId.ToString(), StringComparison.Ordinal) ? _connection : null);
 
         public Task<DataConnection?> GetConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
             => Task.FromResult(connectionId == _connection.ConnectionId ? _connection : null);
 
-        public Task<DataConnection?> GetConnectionByNameAsync(string name, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(name, _connection.Name, StringComparison.Ordinal) ? _connection : null);
+        public Task<DataConnection?> GetConnectionByNameAsync(string connectionName, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(connectionName, _connection.Name, StringComparison.Ordinal) ? _connection : null);
 
-        public Task<IReadOnlyList<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<DataConnection>>([_connection]);
+        public Task<IEnumerable<DataConnection>> GetAllConnectionsAsync()
+            => Task.FromResult<IEnumerable<DataConnection>>([_connection]);
+
+        public Task<IEnumerable<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IEnumerable<DataConnection>>([_connection]);
 
         public Task<DataConnection> UpdateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default)
-            => Task.FromException<DataConnection>(new NotSupportedException());
+            => Task.FromResult(connection);
+
+        public Task<bool> RemoveConnectionAsync(string connectionId)
+            => Task.FromResult(false);
 
         public Task<bool> DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
 
-        public Task<bool> TestConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
+        public Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync()
+            => Task.FromResult(new Dictionary<string, ConnectionHealthStatus>());
 
-        public Task<bool> UpdateHealthStatusAsync(
-            Guid connectionId,
-            ConnectionHealthStatus healthStatus,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
+        public Task UpdateHealthStatusAsync(string connectionId, bool isHealthy, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private sealed class StubEncryptionService : IConnectionEncryptionService
@@ -93,12 +105,15 @@ public sealed class SecureConnectionResolverErrorSanitizationTests
     {
         private readonly Exception _exceptionToThrow = exceptionToThrow;
 
+        public string ProviderName => "azure";
+
+        public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
+            => Task.FromException<string?>(_exceptionToThrow);
+
+        public bool CanResolve(string secretKey)
+            => true;
+
         public Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
             => Task.FromException<string>(_exceptionToThrow);
-
-        public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
-
-        public string[] GetSupportedProviders() => ["azure"];
     }
 }

@@ -519,15 +519,8 @@ internal static class Wfs20DispatcherEndpoint
     private static WfsValidationError? ValidateCapabilitiesRequestParameters(WfsRequestParameters parameters)
     {
         var service = parameters.Get(Wfs20Utilities.ParameterNames.Service);
-        if (string.IsNullOrWhiteSpace(service))
-        {
-            return new WfsValidationError(
-                "MissingParameterValue",
-                "service",
-                "Missing required 'service' parameter.");
-        }
-
-        if (!string.Equals(service, Wfs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(service) &&
+            !string.Equals(service, Wfs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
         {
             return new WfsValidationError(
                 "InvalidParameterValue",

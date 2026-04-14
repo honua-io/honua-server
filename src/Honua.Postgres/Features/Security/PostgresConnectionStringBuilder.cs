@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
@@ -9,6 +10,7 @@ namespace Honua.Postgres.Features.Security;
 
 internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStringBuilder
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Method is part of interface contract")]
     public string BuildConnectionString(
         string host,
         int port,
@@ -47,6 +49,51 @@ internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStrin
         return builder.ConnectionString;
     }
 
+    /// <inheritdoc />
+    public Task<string> BuildConnectionStringAsync(DataConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+
+        // For DataConnection, we assume the connection string is already provided
+        // or we build it from the individual components
+        if (!string.IsNullOrEmpty(connection.ConnectionString))
+        {
+            return Task.FromResult(connection.ConnectionString);
+        }
+
+        // Build from individual components
+        var connectionString = BuildConnectionString(
+            connection.Host,
+            connection.Port,
+            connection.DatabaseName,
+            connection.Username,
+            "", // Password would come from decryption or secrets
+            connection.SslMode);
+
+        return Task.FromResult(connectionString);
+    }
+
+    /// <inheritdoc />
+    public bool ValidateConnectionString(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return false;
+
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+
+            // Basic validation - ensure we have minimum required components
+            return !string.IsNullOrWhiteSpace(builder.Host) &&
+                   !string.IsNullOrWhiteSpace(builder.Database) &&
+                   !string.IsNullOrWhiteSpace(builder.Username);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static Npgsql.SslMode MapSslMode(CoreSslMode sslMode) =>
         sslMode switch
         {
@@ -54,7 +101,7 @@ internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStrin
             CoreSslMode.Allow => Npgsql.SslMode.Allow,
             CoreSslMode.Prefer => Npgsql.SslMode.Prefer,
             CoreSslMode.Require => Npgsql.SslMode.Require,
-            CoreSslMode.VerifyCA => Npgsql.SslMode.VerifyCA,
+            CoreSslMode.VerifyCa => Npgsql.SslMode.VerifyCA,
             CoreSslMode.VerifyFull => Npgsql.SslMode.VerifyFull,
             _ => throw new ArgumentOutOfRangeException(nameof(sslMode), sslMode, "Unsupported SSL mode.")
         };

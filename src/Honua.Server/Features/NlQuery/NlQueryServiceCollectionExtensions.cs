@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.NlQuery;
@@ -48,7 +49,10 @@ internal static class NlQueryServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<NlQueryConfiguration>, NlQueryConfigurationValidator>();
 
-        services.AddHttpClient("nl-query");
+        services.AddResilientHttpClient(
+            "nl-query",
+            "nl-query",
+            HttpResiliencePolicies.FastApiDefaults);
         services.AddScoped<INlQueryPlanProvider, OpenAiNlQueryPlanProvider>();
         services.AddScoped<INlQueryOrchestrator, NlQueryOrchestrator>();
         return services;

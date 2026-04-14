@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,6 +17,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -28,6 +30,13 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public class ApiKeyAuthenticationTests : IAsyncLifetime
 {
+    private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
+    private const string TestPostgresConnectionString = "Host=localhost;Database=test;Username=test;Password=test";
+    private const string TestAdminPassword = "TestAdminPassword123!";
+    private const string CorrectAdminPassword = "CorrectAdminPassword123!";
+    private const string TestBasicPassword = "TestBasicPassword123!";
+    private const string TestBasicPriorityPassword = "TestBasicPriority123!";
+    private const string CaseSensitiveAdminPassword = "TestPassword123!";
     private readonly ITestOutputHelper _output;
     private readonly WebAppFixture _fixture = new();
 
@@ -57,18 +66,47 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 // Apply additional test-specific configuration first
                 configure?.Invoke(builder);
 
-                // Override with test environment to bypass Aspire configuration (must be last)
-                builder.UseEnvironment("Test");
+                // Default to the test environment unless the caller explicitly requested one.
+                if (string.IsNullOrWhiteSpace(builder.GetSetting(WebHostDefaults.EnvironmentKey)))
+                {
+                    builder.UseEnvironment("Test");
+                }
 
                 // Configure test connection string to avoid connection string errors (must be last)
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test"
+                        ["ConnectionStrings:DefaultConnection"] = TestPostgresConnectionString,
+                        ["ConnectionStrings:honua"] = TestPostgresConnectionString,
+                        ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
+                        ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
+                        ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
+                        ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
+                        ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH")
                     });
                 });
+
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IDatabaseCompatibilityChecker>();
+                    services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
+                    services.RemoveAll<NpgsqlDataSource>();
+                    services.AddSingleton(_ => NpgsqlDataSource.Create(TestPostgresConnectionString));
+                });
             });
+    }
+
+    private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
+    {
+        public Task<DatabaseCompatibilityResult> CheckCompatibilityAsync(
+            string connectionString,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(DatabaseCompatibilityResult.Compatible(
+                "PostgreSQL test",
+                "3.6.2",
+                "3.6.2",
+                ["postgis", "postgis_raster"]));
     }
 
     #region Development Bypass Tests
@@ -104,7 +142,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
         });
         using var client = factory.CreateClient();
 
@@ -125,7 +163,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_ValidApiKey_AllowsAccess()
     {
         // Arrange
-        const string adminPassword = "test-admin-password-123";
+        const string adminPassword = TestAdminPassword;
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
@@ -151,7 +189,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "correct-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", CorrectAdminPassword);
         });
         using var client = factory.CreateClient();
 
@@ -176,7 +214,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
         });
         using var client = factory.CreateClient();
 
@@ -197,7 +235,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
         });
         using var client = factory.CreateClient();
 
@@ -217,10 +255,10 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_NoAdminPassword_DeniesAccess()
     {
-        // Arrange - Production environment with no admin password configured
+        // Arrange - Test environment with no admin password configured
         using var factory = CreateTestFactory(builder =>
         {
-            builder.UseEnvironment("Production");
+            builder.UseEnvironment("Test");
             // Don't set HONUA_ADMIN_PASSWORD
         });
         using var client = factory.CreateClient();
@@ -242,7 +280,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityDisabled_DeniesAccess()
     {
         // Arrange
-        const string adminPassword = "test-basic-password";
+        const string adminPassword = TestBasicPassword;
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
@@ -268,7 +306,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_InsecureTransport_DeniesAccess()
     {
         // Arrange
-        const string adminPassword = "test-basic-password";
+        const string adminPassword = TestBasicPassword;
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
@@ -298,7 +336,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_ForwardedProtoSpoof_DeniesAccess()
     {
         // Arrange
-        const string adminPassword = "test-basic-password";
+        const string adminPassword = TestBasicPassword;
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
@@ -326,10 +364,10 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAndApiKeyHeaders_ApiKeyHeaderTakesPrecedence()
     {
         // Arrange
-        const string adminPassword = "test-basic-priority";
+        const string adminPassword = TestBasicPriorityPassword;
         using var factory = CreateTestFactory(builder =>
         {
-            builder.UseEnvironment("Production");
+            builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
             builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
             builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "false");
@@ -352,10 +390,10 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_RequireHttpsDisabled_AllowsAccess()
     {
         // Arrange
-        const string adminPassword = "test-basic-password";
+        const string adminPassword = TestBasicPassword;
         using var factory = CreateTestFactory(builder =>
         {
-            builder.UseEnvironment("Production");
+            builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
             builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
             builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "false");
@@ -384,7 +422,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
         });
         using var client = factory.CreateClient();
 
@@ -404,7 +442,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
 
             builder.ConfigureTestServices(services =>
             {
@@ -440,7 +478,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-password");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
 
             builder.ConfigureTestServices(services =>
             {
@@ -481,7 +519,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "TestPassword");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", CaseSensitiveAdminPassword);
         });
         using var client = factory.CreateClient();
 

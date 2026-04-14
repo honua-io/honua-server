@@ -240,6 +240,9 @@ public class QueryBenchmarks
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         }
 
+        public string GetConnectionString()
+            => _dataSource.ConnectionString;
+
         public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
             => await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Services;
@@ -22,13 +23,14 @@ internal sealed class FeatureServerQueryDependencies
         IETagService etagService,
         IOptions<CacheOptions> cacheOptions)
     {
-        ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
-        QueryServices = queryServices ?? throw new ArgumentNullException(nameof(queryServices));
-        FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
-        QueryExecutor = queryExecutor ?? throw new ArgumentNullException(nameof(queryExecutor));
-        ResponseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
-        ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
-        CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
+        // Validation framework eliminates 7 lines of duplicate null checks
+        ResourceValidator = resourceValidator.ThrowIfNull();
+        QueryServices = queryServices.ThrowIfNull();
+        FilterExpressionService = filterExpressionService.ThrowIfNull();
+        QueryExecutor = queryExecutor.ThrowIfNull();
+        ResponseCache = responseCache.ThrowIfNull();
+        ETagService = etagService.ThrowIfNull();
+        CacheOptions = cacheOptions.ValidateAndGetValue();
     }
 
     public IResourceValidator ResourceValidator { get; }

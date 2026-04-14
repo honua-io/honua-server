@@ -49,6 +49,12 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
 
+    /// <inheritdoc />
+    public string GetConnectionString()
+    {
+        return _dataSource.ConnectionString;
+    }
+
     public CachingDatabaseConnectionProvider(
         NpgsqlDataSource dataSource,
         ILogger<CachingDatabaseConnectionProvider> logger,

@@ -9,6 +9,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
@@ -37,10 +38,17 @@ internal sealed class PostgresDatabaseConnectionProvider(
     // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
 
-    private readonly NpgsqlDataSource _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-    private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    // Validation framework eliminates 2 lines of duplicate null checks
+    private readonly NpgsqlDataSource _dataSource = dataSource.ThrowIfNull();
+    private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger.ThrowIfNull();
     private readonly ISchemaContext? _schemaContext = schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
+
+    /// <inheritdoc />
+    public string GetConnectionString()
+    {
+        return _dataSource.ConnectionString;
+    }
 
     /// <summary>
     /// Opens a PostgreSQL connection with automatic retry for transient failures

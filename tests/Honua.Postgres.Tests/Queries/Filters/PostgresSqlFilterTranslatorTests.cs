@@ -31,6 +31,7 @@ public class PostgresSqlFilterTranslatorTests
                 new FieldDefinition("field", FieldType.String),
                 new FieldDefinition("status", FieldType.String),
                 new FieldDefinition("timestamp", FieldType.DateTime),
+                new FieldDefinition("event_time", FieldType.Time),
                 new FieldDefinition("tags", FieldType.Json)
             ]
         );
@@ -353,6 +354,24 @@ public class PostgresSqlFilterTranslatorTests
         // Assert
         result.Sql.Should().Be("NOT (\"timestamp\" < @p0 OR \"timestamp\" > @p1)");
         result.Parameters.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Translate_TemporalPredicateOnTimeOnlyField_ThrowsArgumentException()
+    {
+        var interval = new IntervalLiteral(
+            new Literal(new DateTimeOffset(2024, 01, 01, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime),
+            new Literal(new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero), LiteralType.DateTime));
+
+        var predicate = new TemporalPredicate(
+            TemporalOperator.During,
+            new PropertyReference("event_time"),
+            interval);
+
+        var action = () => _translator.Translate(predicate, _layer);
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*event_time*time-only field*");
     }
 
     [Fact]

@@ -308,7 +308,7 @@ public class ConfigurationExtensionsTests
             .Build();
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => config.IsFeatureEnabled(null!));
+        Assert.Throws<ArgumentNullException>(() => config.IsFeatureEnabled(null!));
     }
 
     [Fact]
@@ -332,6 +332,6 @@ public class ConfigurationExtensionsTests
             .Build();
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => config.GetRequiredValue(null!));
+        Assert.Throws<ArgumentNullException>(() => config.GetRequiredValue(null!));
     }
 }

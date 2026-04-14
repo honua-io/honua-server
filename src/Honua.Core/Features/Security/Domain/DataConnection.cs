@@ -1,194 +1,170 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
-
 namespace Honua.Core.Features.Security.Domain;
 
 /// <summary>
-/// Represents a secure database connection configuration with encrypted credentials.
+/// Represents a secure data connection configuration.
 /// </summary>
-public sealed class DataConnection
+public class DataConnection
 {
     /// <summary>
-    /// Unique identifier for the connection configuration.
+    /// Unique identifier for the connection.
     /// </summary>
-    public Guid ConnectionId { get; init; } = Guid.NewGuid();
+    public string Id { get; set; } = string.Empty;
 
     /// <summary>
-    /// Human-readable name for the connection (must be unique).
+    /// Display name for the connection.
     /// </summary>
-    [Required]
-    [StringLength(64, MinimumLength = 1)]
-    public required string Name { get; init; }
+    public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Optional description of the connection.
+    /// Connection string for the data source.
     /// </summary>
-    [StringLength(1000)]
-    public string? Description { get; init; }
+    public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>
-    /// Database server hostname or IP address.
+    /// Type of database or data source.
     /// </summary>
-    [Required]
-    [StringLength(255, MinimumLength = 1)]
-    public required string Host { get; init; }
+    public string DatabaseType { get; set; } = string.Empty;
 
     /// <summary>
-    /// Database server port number.
+    /// Whether the connection is encrypted.
     /// </summary>
-    [Range(1, 65535)]
-    public int Port { get; init; } = 5432;
+    public bool IsEncrypted { get; set; } = true;
 
     /// <summary>
-    /// Database name to connect to.
+    /// Whether the connection is currently active.
     /// </summary>
-    [Required]
-    [StringLength(64, MinimumLength = 1)]
-    public required string DatabaseName { get; init; }
+    public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// Database username.
+    /// Additional configuration properties.
     /// </summary>
-    [Required]
-    [StringLength(64, MinimumLength = 1)]
-    public required string Username { get; init; }
+    public Dictionary<string, object> Properties { get; set; } = new();
 
     /// <summary>
-    /// Whether SSL/TLS is required for this connection.
+    /// Database host.
     /// </summary>
-    public bool SslRequired { get; init; } = true;
+    public string Host { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Database port.
+    /// </summary>
+    public int Port { get; set; }
+
+    /// <summary>
+    /// Database name.
+    /// </summary>
+    public string DatabaseName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Username for authentication.
+    /// </summary>
+    public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Encrypted connection string bytes.
+    /// </summary>
+    public byte[] EncryptedConnectionString { get; set; } = Array.Empty<byte>();
+
+    /// <summary>
+    /// Encryption key version.
+    /// </summary>
+    public int EncryptionKeyVersion { get; set; }
+
+    /// <summary>
+    /// Who created this connection.
+    /// </summary>
+    public string CreatedBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether SSL is required.
+    /// </summary>
+    public bool SslRequired { get; set; }
 
     /// <summary>
     /// SSL mode for the connection.
     /// </summary>
-    public SslMode SslMode { get; init; } = SslMode.Require;
+    public SslMode SslMode { get; set; }
+
+    // Additional properties needed by PostgresSecureConnectionRegistry
+    /// <summary>
+    /// Unique connection identifier.
+    /// </summary>
+    public Guid ConnectionId { get; set; } = Guid.NewGuid();
 
     /// <summary>
-    /// Encrypted connection string data (AES-GCM encrypted).
+    /// Connection description.
     /// </summary>
-    /// <remarks>
-    /// This field is mutually exclusive with <see cref="SecretRef"/>.
-    /// When using encrypted storage, this contains the encrypted connection string.
-    /// </remarks>
-    public byte[]? ConnectionStringEncrypted { get; init; }
+    public string? Description { get; set; }
 
     /// <summary>
-    /// Version of the encryption key used to encrypt the connection string.
+    /// Encrypted connection string bytes (alias for EncryptedConnectionString).
     /// </summary>
-    [Range(1, int.MaxValue)]
-    public int EncryptionKeyVersion { get; init; } = 1;
-
-    /// <summary>
-    /// External secret manager reference (alternative to encrypted storage).
-    /// </summary>
-    /// <remarks>
-    /// This field is mutually exclusive with <see cref="ConnectionStringEncrypted"/>.
-    /// Format: {provider}:{path} (e.g., "aws:secretsmanager:prod-db-creds")
-    /// </remarks>
-    [StringLength(255)]
-    public string? SecretRef { get; init; }
-
-    /// <summary>
-    /// Type of secret management system (when using SecretRef).
-    /// </summary>
-    [StringLength(32)]
-    public string? SecretType { get; init; }
-
-    /// <summary>
-    /// When this connection configuration was created.
-    /// </summary>
-    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
-
-    /// <summary>
-    /// When this connection configuration was last updated.
-    /// </summary>
-    public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
-
-    /// <summary>
-    /// Who created this connection configuration.
-    /// </summary>
-    [Required]
-    [StringLength(64, MinimumLength = 1)]
-    public required string CreatedBy { get; init; }
-
-    /// <summary>
-    /// Whether this connection is currently active and available for use.
-    /// </summary>
-    public bool IsActive { get; init; } = true;
-
-    /// <summary>
-    /// Last time a health check was performed on this connection.
-    /// </summary>
-    public DateTimeOffset? LastHealthCheck { get; init; }
-
-    /// <summary>
-    /// Current health status of the connection.
-    /// </summary>
-    public ConnectionHealthStatus HealthStatus { get; init; } = ConnectionHealthStatus.Unknown;
-
-    /// <summary>
-    /// Validates that the connection configuration is valid.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when configuration is invalid</exception>
-    public void Validate()
+    public byte[]? ConnectionStringEncrypted
     {
-        // Ensure either encrypted storage OR secret reference is provided, but not both
-        var hasEncrypted = ConnectionStringEncrypted?.Length > 0;
-        var hasSecretRef = !string.IsNullOrWhiteSpace(SecretRef);
-
-        if (hasEncrypted && hasSecretRef)
-        {
-            throw new InvalidOperationException("Connection cannot have both encrypted connection string and secret reference");
-        }
-
-        if (!hasEncrypted && !hasSecretRef)
-        {
-            throw new InvalidOperationException("Connection must have either encrypted connection string or secret reference");
-        }
-
-        // If using secret reference, secret type must be specified
-        if (hasSecretRef && string.IsNullOrWhiteSpace(SecretType))
-        {
-            throw new InvalidOperationException("SecretType must be specified when using SecretRef");
-        }
-
-        // Validate SSL mode is compatible with SSL requirement
-        if (!IsSslModeCompatibleWithRequirement(SslRequired, SslMode))
-        {
-            throw new InvalidOperationException("SSL mode must require encrypted transport when SslRequired is true");
-        }
+        get => EncryptedConnectionString.Length == 0 ? null : EncryptedConnectionString;
+        set => EncryptedConnectionString = value ?? Array.Empty<byte>();
     }
 
     /// <summary>
-    /// Determines whether the configured SSL mode enforces encrypted transport when required.
+    /// Secret reference for external secret stores.
     /// </summary>
-    public static bool IsSslModeCompatibleWithRequirement(bool sslRequired, SslMode sslMode)
-    {
-        if (!sslRequired)
-        {
-            return true;
-        }
-
-        return sslMode is SslMode.Require or SslMode.VerifyCA or SslMode.VerifyFull;
-    }
+    public string? SecretRef { get; set; }
 
     /// <summary>
-    /// Creates a new connection configuration with encrypted credentials.
+    /// Type of secret store.
     /// </summary>
-    /// <param name="name">Connection name</param>
-    /// <param name="host">Database host</param>
-    /// <param name="port">Database port</param>
-    /// <param name="databaseName">Database name</param>
-    /// <param name="username">Username</param>
-    /// <param name="encryptedConnectionString">Encrypted connection string data</param>
-    /// <param name="encryptionKeyVersion">Encryption key version</param>
-    /// <param name="createdBy">Creator identity</param>
-    /// <param name="description">Optional description</param>
-    /// <param name="sslRequired">Whether SSL is required</param>
-    /// <param name="sslMode">SSL mode</param>
-    /// <returns>New DataConnection instance</returns>
+    public string? SecretType { get; set; }
+
+    /// <summary>
+    /// When the connection was created.
+    /// </summary>
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// When the connection was last updated.
+    /// </summary>
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Last health check timestamp.
+    /// </summary>
+    public DateTime? LastHealthCheck { get; set; }
+
+    /// <summary>
+    /// Connection health status.
+    /// </summary>
+    public ConnectionHealthStatus HealthStatus { get; set; } = ConnectionHealthStatus.Unknown;
+
+    /// <summary>
+    /// Creates a data connection with encrypted credentials.
+    /// </summary>
+    public static DataConnection CreateWithEncryptedCredentials(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        byte[] encryptedConnectionString,
+        int encryptionKeyVersion,
+        string createdBy)
+        => CreateWithEncryptedCredentials(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            encryptedConnectionString,
+            encryptionKeyVersion,
+            createdBy,
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+    /// <summary>
+    /// Creates a data connection with encrypted credentials.
+    /// </summary>
     public static DataConnection CreateWithEncryptedCredentials(
         string name,
         string host,
@@ -198,44 +174,117 @@ public sealed class DataConnection
         byte[] encryptedConnectionString,
         int encryptionKeyVersion,
         string createdBy,
-        string? description = null,
-        bool sslRequired = true,
-        SslMode sslMode = SslMode.Require)
+        SslMode sslMode)
+        => CreateWithEncryptedCredentials(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            encryptedConnectionString,
+            encryptionKeyVersion,
+            createdBy,
+            sslRequired: true,
+            sslMode: sslMode);
+
+    /// <summary>
+    /// Creates a data connection with encrypted credentials.
+    /// </summary>
+    public static DataConnection CreateWithEncryptedCredentials(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        byte[] encryptedConnectionString,
+        int encryptionKeyVersion,
+        string createdBy,
+        bool sslRequired,
+        SslMode sslMode)
     {
-        var connection = new DataConnection
+        // Validate SSL requirements
+        if (sslRequired && (sslMode == SslMode.Allow || sslMode == SslMode.Prefer))
         {
+            throw new InvalidOperationException("SSL mode must require encrypted transport when SslRequired is true");
+        }
+
+        return new DataConnection
+        {
+            Id = Guid.NewGuid().ToString(),
             Name = name,
             Host = host,
             Port = port,
             DatabaseName = databaseName,
             Username = username,
-            ConnectionStringEncrypted = encryptedConnectionString,
+            EncryptedConnectionString = encryptedConnectionString,
             EncryptionKeyVersion = encryptionKeyVersion,
             CreatedBy = createdBy,
-            Description = description,
             SslRequired = sslRequired,
-            SslMode = sslMode
+            SslMode = sslMode,
+            IsEncrypted = true,
+            IsActive = true,
+            DatabaseType = "PostgreSQL"
         };
+    }
 
-        connection.Validate();
+    /// <summary>
+    /// Creates a data connection with encrypted credentials and description metadata.
+    /// </summary>
+    public static DataConnection CreateWithEncryptedCredentials(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        byte[] encryptedConnectionString,
+        int encryptionKeyVersion,
+        string createdBy,
+        string? description,
+        bool sslRequired,
+        SslMode sslMode)
+    {
+        var connection = CreateWithEncryptedCredentials(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            encryptedConnectionString,
+            encryptionKeyVersion,
+            createdBy,
+            sslRequired,
+            sslMode);
+        connection.Description = description;
         return connection;
     }
 
     /// <summary>
-    /// Creates a new connection configuration with secret manager reference.
+    /// Creates a data connection with a secret reference.
     /// </summary>
-    /// <param name="name">Connection name</param>
-    /// <param name="host">Database host</param>
-    /// <param name="port">Database port</param>
-    /// <param name="databaseName">Database name</param>
-    /// <param name="username">Username</param>
-    /// <param name="secretRef">Secret manager reference</param>
-    /// <param name="secretType">Secret manager type</param>
-    /// <param name="createdBy">Creator identity</param>
-    /// <param name="description">Optional description</param>
-    /// <param name="sslRequired">Whether SSL is required</param>
-    /// <param name="sslMode">SSL mode</param>
-    /// <returns>New DataConnection instance</returns>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy)
+        => CreateWithSecretReference(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            secretRef,
+            secretType,
+            createdBy,
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+    /// <summary>
+    /// Creates a data connection with a secret reference.
+    /// </summary>
     public static DataConnection CreateWithSecretReference(
         string name,
         string host,
@@ -245,12 +294,43 @@ public sealed class DataConnection
         string secretRef,
         string secretType,
         string createdBy,
-        string? description = null,
-        bool sslRequired = true,
-        SslMode sslMode = SslMode.Require)
+        SslMode sslMode)
+        => CreateWithSecretReference(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            secretRef,
+            secretType,
+            createdBy,
+            sslRequired: true,
+            sslMode: sslMode);
+
+    /// <summary>
+    /// Creates a data connection with a secret reference.
+    /// </summary>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy,
+        bool sslRequired,
+        SslMode sslMode)
     {
-        var connection = new DataConnection
+        // Validate SSL requirements
+        if (sslRequired && (sslMode == SslMode.Allow || sslMode == SslMode.Prefer))
         {
+            throw new InvalidOperationException("SSL mode must require encrypted transport when SslRequired is true");
+        }
+
+        return new DataConnection
+        {
+            Id = Guid.NewGuid().ToString(),
             Name = name,
             Host = host,
             Port = port,
@@ -259,69 +339,130 @@ public sealed class DataConnection
             SecretRef = secretRef,
             SecretType = secretType,
             CreatedBy = createdBy,
-            Description = description,
             SslRequired = sslRequired,
-            SslMode = sslMode
+            SslMode = sslMode,
+            IsEncrypted = false, // Secret will be resolved at runtime
+            IsActive = true,
+            DatabaseType = "PostgreSQL"
         };
+    }
 
-        connection.Validate();
+    /// <summary>
+    /// Creates a data connection with a secret reference and description metadata.
+    /// </summary>
+    public static DataConnection CreateWithSecretReference(
+        string name,
+        string host,
+        int port,
+        string databaseName,
+        string username,
+        string secretRef,
+        string secretType,
+        string createdBy,
+        string? description,
+        bool sslRequired,
+        SslMode sslMode)
+    {
+        var connection = CreateWithSecretReference(
+            name,
+            host,
+            port,
+            databaseName,
+            username,
+            secretRef,
+            secretType,
+            createdBy,
+            sslRequired,
+            sslMode);
+        connection.Description = description;
         return connection;
     }
+
+    /// <summary>
+    /// Validates the connection configuration.
+    /// </summary>
+    /// <returns>True if the connection configuration is valid</returns>
+    public bool Validate()
+    {
+        // Basic validation checks
+        if (string.IsNullOrWhiteSpace(Name))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(Host))
+            return false;
+
+        if (Port <= 0 || Port > 65535)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(DatabaseName))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(Username))
+            return false;
+
+        // SSL validation
+        if (SslRequired && (SslMode == SslMode.Allow || SslMode == SslMode.Prefer))
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Checks if SSL mode is compatible with SSL requirements.
+    /// </summary>
+    /// <param name="mode">The SSL mode to check</param>
+    /// <param name="requirement">The SSL requirement to check against</param>
+    /// <returns>True if SSL mode is compatible with the requirement</returns>
+    public static bool IsSslModeCompatibleWithRequirement(SslMode mode, bool requirement)
+    {
+        if (!requirement)
+            return true; // No requirement, any mode is fine
+
+        // SSL is required - check if mode enforces encryption
+        return mode switch
+        {
+            SslMode.Disable => false,
+            SslMode.Allow => false,
+            SslMode.Prefer => false,
+            SslMode.Require => true,
+            SslMode.VerifyCa => true,
+            SslMode.VerifyFull => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Checks if an SSL requirement is compatible with the selected SSL mode.
+    /// </summary>
+    /// <param name="requirement">Whether SSL is required.</param>
+    /// <param name="mode">The SSL mode to check.</param>
+    /// <returns>True if SSL mode is compatible with the requirement.</returns>
+    public static bool IsSslModeCompatibleWithRequirement(bool requirement, SslMode mode)
+        => IsSslModeCompatibleWithRequirement(mode, requirement);
 }
 
 /// <summary>
-/// SSL/TLS connection modes for database connections.
-/// </summary>
-public enum SslMode
-{
-    /// <summary>
-    /// SSL is disabled.
-    /// </summary>
-    Disable,
-
-    /// <summary>
-    /// SSL is optional (allow plaintext if SSL unavailable).
-    /// </summary>
-    Allow,
-
-    /// <summary>
-    /// Prefer SSL but allow fallback to plaintext.
-    /// </summary>
-    Prefer,
-
-    /// <summary>
-    /// Require SSL (no plaintext allowed).
-    /// </summary>
-    Require,
-
-    /// <summary>
-    /// Require SSL and verify certificate authority.
-    /// </summary>
-    VerifyCA,
-
-    /// <summary>
-    /// Require SSL and verify full certificate chain.
-    /// </summary>
-    VerifyFull
-}
-
-/// <summary>
-/// Health status of a database connection.
+/// Represents the health status of a connection.
 /// </summary>
 public enum ConnectionHealthStatus
 {
     /// <summary>
-    /// Health status is unknown (not yet checked).
-    /// </summary>
-    Unknown,
-
-    /// <summary>
-    /// Connection is healthy and responding.
+    /// Connection is healthy and functioning normally.
     /// </summary>
     Healthy,
 
     /// <summary>
-    /// Connection is unhealthy or unreachable.
+    /// Connection is experiencing some issues but still functional.
     /// </summary>
-    Unhealthy
+    Warning,
+
+    /// <summary>
+    /// Connection is not functional.
+    /// </summary>
+    Unhealthy,
+
+    /// <summary>
+    /// Connection status cannot be determined.
+    /// </summary>
+    Unknown
 }

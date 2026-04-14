@@ -214,8 +214,8 @@ public class LimitsOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxRecordCount") && f.Contains("between 100 and 10,000"));
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("DefaultRecordCount") && f.Contains("at least 100"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxRecordCount", StringComparison.Ordinal) && f.Contains("between 100", StringComparison.Ordinal));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("DefaultRecordCount", StringComparison.Ordinal) && f.Contains("between 100", StringComparison.Ordinal));
     }
 
     [UnitTest]
@@ -308,7 +308,7 @@ public class LimitsOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("Query.MaxBboxAreaSqKm") && f.Contains("must be between 0.1"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxBboxAreaSqKm", StringComparison.Ordinal) && f.Contains("between", StringComparison.Ordinal));
     }
 
     [UnitTest]

@@ -1,133 +1,109 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Security.Abstractions;
 
 /// <summary>
-/// Repository interface for secure database connection configurations.
+/// Registry for managing secure database connections.
 /// </summary>
-/// <remarks>
-/// Provides CRUD operations for encrypted database connection configurations.
-/// </remarks>
 public interface ISecureConnectionRegistry
 {
     /// <summary>
-    /// Creates a new secure database connection configuration.
+    /// Creates a new data connection.
     /// </summary>
-    /// <param name="connection">Connection configuration to create</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The created connection configuration</returns>
-    /// <exception cref="ArgumentNullException">Thrown when connection is null</exception>
-    /// <exception cref="InvalidOperationException">Thrown when connection name already exists or validation fails</exception>
+    /// <param name="connection">The connection to create.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created connection.</returns>
     Task<DataConnection> CreateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retrieves a connection configuration by ID.
+    /// Registers a new data connection.
     /// </summary>
-    /// <param name="connectionId">Connection ID to retrieve</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Connection configuration if found, null otherwise</returns>
+    /// <param name="connection">The connection to register</param>
+    /// <returns>Task representing the async operation</returns>
+    Task RegisterConnectionAsync(DataConnection connection);
+
+    /// <summary>
+    /// Gets a connection by ID.
+    /// </summary>
+    /// <param name="connectionId">The connection ID</param>
+    /// <returns>The data connection if found</returns>
+    Task<DataConnection?> GetConnectionAsync(string connectionId);
+
+    /// <summary>
+    /// Gets a connection by GUID identifier.
+    /// </summary>
+    /// <param name="connectionId">The connection ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The data connection if found.</returns>
     Task<DataConnection?> GetConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retrieves a connection configuration by name.
+    /// Gets all registered connections.
     /// </summary>
-    /// <param name="name">Connection name to retrieve</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Connection configuration if found, null otherwise</returns>
-    Task<DataConnection?> GetConnectionByNameAsync(string name, CancellationToken cancellationToken = default);
+    /// <returns>List of all connections</returns>
+    Task<IEnumerable<DataConnection>> GetAllConnectionsAsync();
 
     /// <summary>
-    /// Retrieves all active connection configurations.
+    /// Removes a connection by ID.
     /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of active connection configurations</returns>
-    Task<IReadOnlyList<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default);
+    /// <param name="connectionId">The connection ID to remove</param>
+    /// <returns>True if removed, false if not found</returns>
+    Task<bool> RemoveConnectionAsync(string connectionId);
 
     /// <summary>
-    /// Updates an existing connection configuration.
+    /// Deletes a connection by GUID identifier.
     /// </summary>
-    /// <param name="connection">Updated connection configuration</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The updated connection configuration</returns>
-    /// <exception cref="ArgumentNullException">Thrown when connection is null</exception>
-    /// <exception cref="InvalidOperationException">Thrown when connection not found or validation fails</exception>
-    Task<DataConnection> UpdateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Deletes a connection configuration.
-    /// </summary>
-    /// <param name="connectionId">Connection ID to delete</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if deleted, false if not found</returns>
+    /// <param name="connectionId">The connection ID to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if deleted; otherwise false.</returns>
     Task<bool> DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Tests connectivity for a connection configuration.
+    /// Tests the health of all connections.
     /// </summary>
-    /// <param name="connectionId">Connection ID to test</param>
+    /// <returns>Dictionary of connection IDs to health status</returns>
+    Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync();
+
+    /// <summary>
+    /// Gets a connection by name.
+    /// </summary>
+    /// <param name="connectionName">The connection name</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if connection is successful, false otherwise</returns>
-    Task<bool> TestConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default);
+    /// <returns>The data connection if found</returns>
+    Task<DataConnection?> GetConnectionByNameAsync(string connectionName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a connection by ID with cancellation support.
+    /// </summary>
+    /// <param name="connectionId">The connection ID</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The data connection if found</returns>
+    Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Updates the health status of a connection.
     /// </summary>
-    /// <param name="connectionId">Connection ID to update</param>
-    /// <param name="healthStatus">New health status</param>
+    /// <param name="connectionId">The connection ID</param>
+    /// <param name="isHealthy">Whether the connection is healthy</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if updated, false if connection not found</returns>
-    Task<bool> UpdateHealthStatusAsync(Guid connectionId, ConnectionHealthStatus healthStatus, CancellationToken cancellationToken = default);
-
-}
-
-/// <summary>
-/// Service interface for resolving actual database connections from the secure registry.
-/// </summary>
-/// <remarks>
-/// This service combines the secure registry with encryption/secret resolution
-/// to provide actual database connection strings for use by the application.
-/// </remarks>
-public interface ISecureConnectionResolver
-{
-    /// <summary>
-    /// Resolves a database connection string from the secure registry.
-    /// </summary>
-    /// <param name="connectionName">Name of the connection to resolve</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Resolved plaintext connection string</returns>
-    /// <exception cref="ArgumentException">Thrown when connectionName is null or empty</exception>
-    /// <exception cref="ResourceNotFoundException">Thrown when the connection is not found</exception>
-    /// <exception cref="InvalidOperationException">Thrown when the connection is inactive or invalid</exception>
-    /// <exception cref="UnauthorizedAccessException">Thrown when connection access is denied</exception>
-    Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default);
+    /// <returns>Task representing the async operation</returns>
+    Task UpdateHealthStatusAsync(string connectionId, bool isHealthy, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Resolves a database connection string by connection ID.
+    /// Gets all active connections.
     /// </summary>
-    /// <param name="connectionId">ID of the connection to resolve</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Resolved plaintext connection string</returns>
-    /// <exception cref="ResourceNotFoundException">Thrown when the connection is not found</exception>
-    /// <exception cref="InvalidOperationException">Thrown when the connection is inactive or invalid</exception>
-    /// <exception cref="UnauthorizedAccessException">Thrown when connection access is denied</exception>
-    Task<string> ResolveConnectionStringAsync(Guid connectionId, CancellationToken cancellationToken = default);
+    /// <returns>List of active connections</returns>
+    Task<IEnumerable<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Tests whether a connection can be resolved and is healthy.
+    /// Updates an existing data connection.
     /// </summary>
-    /// <param name="connectionName">Name of the connection to test</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if connection can be resolved and is reachable</returns>
-    Task<bool> TestConnectionHealthAsync(string connectionName, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets a list of available connection names for discovery.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of available connection names</returns>
-    Task<IReadOnlyList<string>> GetAvailableConnectionsAsync(CancellationToken cancellationToken = default);
+    /// <param name="connection">The updated connection.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated connection.</returns>
+    Task<DataConnection> UpdateConnectionAsync(DataConnection connection, CancellationToken cancellationToken = default);
 }

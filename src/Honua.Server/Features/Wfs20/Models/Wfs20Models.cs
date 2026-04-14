@@ -368,6 +368,9 @@ public sealed class FilterCapabilities
 
     [XmlElement("Temporal_Capabilities", Namespace = Wfs20Utilities.FesNamespace)]
     public TemporalCapabilities? TemporalCapabilities { get; set; }
+
+    [XmlElement("Functions", Namespace = Wfs20Utilities.FesNamespace)]
+    public FunctionList? Functions { get; set; }
 }
 
 /// <summary>
@@ -542,6 +545,60 @@ public sealed class TemporalOperator
 {
     [XmlAttribute("name")]
     public required string Name { get; set; }
+}
+
+/// <summary>
+/// Function list for filter capabilities
+/// </summary>
+public sealed class FunctionList
+{
+    [XmlElement("Function", Namespace = Wfs20Utilities.FesNamespace)]
+    public required FunctionDefinition[] Functions { get; set; }
+}
+
+/// <summary>
+/// Function definition
+/// </summary>
+public sealed class FunctionDefinition
+{
+    [XmlAttribute("name")]
+    public required string Name { get; set; }
+
+    [XmlElement("Returns", Namespace = Wfs20Utilities.FesNamespace)]
+    public FunctionReturn? Returns { get; set; }
+
+    [XmlElement("Arguments", Namespace = Wfs20Utilities.FesNamespace)]
+    public FunctionArguments? Arguments { get; set; }
+}
+
+/// <summary>
+/// Function return type
+/// </summary>
+public sealed class FunctionReturn
+{
+    [XmlText]
+    public required string Type { get; set; }
+}
+
+/// <summary>
+/// Function arguments
+/// </summary>
+public sealed class FunctionArguments
+{
+    [XmlElement("Argument", Namespace = Wfs20Utilities.FesNamespace)]
+    public FunctionArgument[]? Arguments { get; set; }
+}
+
+/// <summary>
+/// Function argument definition
+/// </summary>
+public sealed class FunctionArgument
+{
+    [XmlAttribute("name")]
+    public required string Name { get; set; }
+
+    [XmlAttribute("type")]
+    public required string Type { get; set; }
 }
 
 /// <summary>

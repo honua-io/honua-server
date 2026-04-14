@@ -46,6 +46,9 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
     {
         private readonly Exception _exceptionToThrow = exceptionToThrow;
 
+        public string GetConnectionString()
+            => "Host=localhost;Database=test;";
+
         public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
             => Task.FromException<DbConnection>(_exceptionToThrow);
 

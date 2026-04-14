@@ -6,6 +6,7 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -45,9 +46,10 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
         IOptions<CacheOptions> options,
         ISchemaContext? schemaContext = null)
     {
-        _innerCatalog = innerCatalog ?? throw new ArgumentNullException(nameof(innerCatalog));
-        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        // Validation framework eliminates 3 lines of duplicate null checks
+        _innerCatalog = innerCatalog.ThrowIfNull();
+        _cacheService = cacheService.ThrowIfNull();
+        _options = options.ValidateAndGetValue();
         _schemaContext = schemaContext;
     }
 

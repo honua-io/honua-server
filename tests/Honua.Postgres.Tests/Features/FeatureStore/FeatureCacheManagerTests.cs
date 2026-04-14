@@ -130,6 +130,9 @@ public sealed class FeatureCacheManagerTests
 
     private sealed class StubDatabaseConnectionProvider : IDatabaseConnectionProvider
     {
+        public string GetConnectionString()
+            => "Host=localhost;Database=test;";
+
         public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 

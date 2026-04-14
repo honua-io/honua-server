@@ -132,6 +132,22 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithOffsetBeyondResults_ReturnsEmptyFeatureCollection()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?offset=999999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        features.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCqlFilter_ReturnsFilteredFeatures()
     {
         // Act - Use a basic CQL2-Text filter
@@ -194,6 +210,24 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
         content.Should().NotContain("BytePositionInLine");
         content.Should().NotContain("LineNumber");
         content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithSemanticCqlError_DoesNotReportSyntaxFailure()
+    {
+        var filter = "ST_Area(missing_geometry) > 1000";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?filter={Uri.EscapeDataString(filter)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var detail = JsonDocument.Parse(content).RootElement.GetProperty("detail").GetString();
+
+        detail.Should().NotBeNull();
+        detail!.ToLowerInvariant().Should().NotContain("syntax error");
+        detail.ToLowerInvariant().Should().NotContain("parse error");
     }
 
     [IntegrationTest]

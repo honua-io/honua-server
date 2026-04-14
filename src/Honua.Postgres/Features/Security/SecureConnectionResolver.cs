@@ -104,7 +104,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
 
     public async Task<string> ResolveConnectionStringAsync(Guid connectionId, CancellationToken cancellationToken = default)
     {
-        var connection = await _registry.GetConnectionAsync(connectionId, cancellationToken);
+        var connection = await _registry.GetConnectionAsync(connectionId.ToString(), cancellationToken);
         if (connection == null)
         {
             _logConnectionNotFoundById(_logger, connectionId, null);
@@ -138,7 +138,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             {
                 _logConnectionStringResolveFailed(_logger, connectionName, ex);
 
-                await _registry.UpdateHealthStatusAsync(connection.ConnectionId, ConnectionHealthStatus.Unhealthy, cancellationToken);
+                await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), false, cancellationToken);
                 return false;
             }
         }
@@ -220,7 +220,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
                 // Verify SSL requirements are met
-                if (!DataConnection.IsSslModeCompatibleWithRequirement(connection.SslRequired, MapSslMode(builder.SslMode)))
+                if (!DataConnection.IsSslModeCompatibleWithRequirement(MapSslMode(builder.SslMode), connection.SslRequired))
                 {
                     throw new InvalidOperationException(
                         $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
@@ -275,7 +275,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             Npgsql.SslMode.Allow => Honua.Core.Features.Security.Domain.SslMode.Allow,
             Npgsql.SslMode.Prefer => Honua.Core.Features.Security.Domain.SslMode.Prefer,
             Npgsql.SslMode.Require => Honua.Core.Features.Security.Domain.SslMode.Require,
-            Npgsql.SslMode.VerifyCA => Honua.Core.Features.Security.Domain.SslMode.VerifyCA,
+            Npgsql.SslMode.VerifyCA => Honua.Core.Features.Security.Domain.SslMode.VerifyCa,
             Npgsql.SslMode.VerifyFull => Honua.Core.Features.Security.Domain.SslMode.VerifyFull,
             _ => throw new InvalidOperationException($"Unsupported Npgsql SSL mode '{sslMode}'.")
         };
@@ -309,13 +309,13 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             if (isHealthy)
             {
                 _logHealthCheckSuccess(_logger, connection.Name, null);
-                await _registry.UpdateHealthStatusAsync(connection.ConnectionId, ConnectionHealthStatus.Healthy, cancellationToken);
+                await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), true, cancellationToken);
             }
             else
             {
                 _logHealthCheckUnexpectedResult(_logger, connection.Name, result, null);
 
-                await _registry.UpdateHealthStatusAsync(connection.ConnectionId, ConnectionHealthStatus.Unhealthy, cancellationToken);
+                await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), false, cancellationToken);
             }
 
             return isHealthy;
@@ -324,7 +324,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         {
             _logHealthCheckFailed(_logger, connection.Name, ex.GetType().Name, ex);
 
-            await _registry.UpdateHealthStatusAsync(connection.ConnectionId, ConnectionHealthStatus.Unhealthy, cancellationToken);
+            await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), false, cancellationToken);
 
             return false;
         }

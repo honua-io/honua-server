@@ -130,6 +130,36 @@ public sealed class CacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task ExecuteAsync_FailedRefresh_TemporarilyBacksOffRetry()
+    {
+        var refreshAttempted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ =>
+        {
+            refreshAttempted.SetResult(true);
+            throw new InvalidOperationException("simulated failure");
+        });
+
+        _ = _coordinator.StartAsync(_cts.Token);
+
+        var attempted = await Task.WhenAny(refreshAttempted.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        attempted.Should().Be(refreshAttempted.Task, "the initial refresh should have run");
+
+        for (int i = 0; i < 100 && (_coordinator.FailureCount < 1 || _coordinator.QueueDepth > 0); i++)
+            await Task.Delay(10);
+
+        _coordinator.FailureCount.Should().Be(1);
+        _coordinator.QueueDepth.Should().Be(0);
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask).Should().BeFalse("recent failures should back off immediate retries");
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1200));
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask).Should().BeTrue("the retry backoff should eventually expire");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task ExecuteAsync_AfterRefreshCompletes_KeyCanBeReenqueued()
     {
         var callCount = 0;

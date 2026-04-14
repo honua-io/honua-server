@@ -5,9 +5,11 @@ using System.Security.Claims;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
@@ -93,7 +95,7 @@ internal static class ServiceDataEditorAuthorization
             service.Metadata?.AccessPolicy);
         if (policyDecision is not null)
         {
-            return Task.FromResult(policyDecision);
+            return Task.FromResult(policyDecision.Value);
         }
 
         return EvaluateServiceAccessAsync(context, service.Name, cancellationToken);
@@ -151,7 +153,7 @@ internal static class ServiceDataEditorAuthorization
             service?.Metadata?.AccessPolicy);
         if (policyDecision is not null)
         {
-            return Task.FromResult(policyDecision);
+            return Task.FromResult(policyDecision.Value);
         }
 
         return service != null

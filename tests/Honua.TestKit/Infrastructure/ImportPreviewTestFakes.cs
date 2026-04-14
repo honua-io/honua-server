@@ -36,6 +36,9 @@ public static class PreviewImportServiceFactory
 /// </summary>
 public sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
 {
+    public string GetConnectionString()
+        => throw new NotSupportedException("Database access is not expected in preview tests.");
+
     public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Database access is not expected in preview tests.");
 

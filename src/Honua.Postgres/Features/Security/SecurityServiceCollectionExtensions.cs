@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
@@ -190,6 +191,9 @@ internal static class SecurityServiceCollectionExtensions
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
+        public string GetConnectionString()
+            => _inner.GetConnectionString();
+
         public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
             => _inner.OpenConnectionAsync(cancellationToken);
 
@@ -223,20 +227,28 @@ internal static class SecurityServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddHttpClient("AwsSecretsManager", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
+        services.AddResilientHttpClient(
+            "AwsSecretsManager",
+            "aws-secrets-manager",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureClient: client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+            });
 
-        services.AddHttpClient("AwsMetadata", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(2);
-        })
-        .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            UseProxy = false
-        });
+        services.AddResilientHttpClient(
+            "AwsMetadata",
+            "aws-metadata",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureClient: client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(2);
+            },
+            configureHandler: static () => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false
+            });
 
         services.TryAddSingleton<AwsSecretsManagerResolver>();
         return services;
@@ -256,20 +268,28 @@ internal static class SecurityServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddHttpClient("AzureKeyVault", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
+        services.AddResilientHttpClient(
+            "AzureKeyVault",
+            "azure-key-vault",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureClient: client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+            });
 
-        services.AddHttpClient("AzureManagedIdentityMetadata", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(2);
-        })
-        .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            UseProxy = false
-        });
+        services.AddResilientHttpClient(
+            "AzureManagedIdentityMetadata",
+            "azure-managed-identity",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureClient: client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(2);
+            },
+            configureHandler: static () => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false
+            });
 
         services.TryAddSingleton<AzureKeyVaultResolver>();
         return services;

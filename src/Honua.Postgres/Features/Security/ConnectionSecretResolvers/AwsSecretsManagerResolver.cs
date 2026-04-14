@@ -43,6 +43,9 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
     private AwsCredentials? _cachedCredentials;
 
+    /// <inheritdoc />
+    public string ProviderName => ProviderType;
+
     public AwsSecretsManagerResolver(IHttpClientFactory httpClientFactory, ILogger<AwsSecretsManagerResolver> logger)
     {
         _secretsClient = httpClientFactory.CreateClient(SecretsClientName);
@@ -50,24 +53,25 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<string> ResolveConnectionStringAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(secretRef);
+        ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
 
-        if (!secretRef.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!secretKey.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException($"Invalid AWS secret reference. Expected '{SecretsManagerPrefix}<secret-id>'.", nameof(secretRef));
+            throw new ArgumentException($"Invalid AWS secret reference. Expected '{SecretsManagerPrefix}<secret-id>'.", nameof(secretKey));
         }
 
-        if (TryGetCached(secretRef, out var cachedValue))
+        if (TryGetCached(secretKey, out var cachedValue))
         {
             return cachedValue;
         }
 
-        var secretIdWithOptions = secretRef[SecretsManagerPrefix.Length..];
+        var secretIdWithOptions = secretKey[SecretsManagerPrefix.Length..];
         if (string.IsNullOrWhiteSpace(secretIdWithOptions))
         {
-            throw new ArgumentException("AWS secret reference must include a secret identifier.", nameof(secretRef));
+            throw new ArgumentException("AWS secret reference must include a secret identifier.", nameof(secretKey));
         }
 
         var (secretId, versionStage, versionId) = ParseSecretOptions(secretIdWithOptions);
@@ -95,26 +99,27 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var secretValue = ExtractSecretValue(responseContent);
-        CacheValue(secretRef, secretValue);
+        CacheValue(secretKey, secretValue);
         return secretValue;
     }
 
-    public Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public bool CanResolve(string secretKey)
     {
-        if (string.IsNullOrWhiteSpace(secretRef))
+        if (string.IsNullOrWhiteSpace(secretKey))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        if (!secretRef.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!secretKey.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        var secretIdWithOptions = secretRef[SecretsManagerPrefix.Length..];
+        var secretIdWithOptions = secretKey[SecretsManagerPrefix.Length..];
         if (string.IsNullOrWhiteSpace(secretIdWithOptions))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         string secretId;
@@ -124,19 +129,76 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         }
         catch (ArgumentException)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         var region = TryResolveRegion(secretId);
         if (string.IsNullOrWhiteSpace(region))
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 
-    public string[] GetSupportedProviders() => new[] { ProviderType };
+    /// <summary>
+    /// Compatibility shim for callers still invoking the older async capability probe directly on this concrete type.
+    /// </summary>
+    public Task<bool> CanResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(CanResolve(secretKey));
+
+    /// <inheritdoc />
+    public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(connectionStringTemplate))
+            return connectionStringTemplate;
+
+        if (connectionStringTemplate.StartsWith(SecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var resolvedValue = await ResolveSecretAsync(connectionStringTemplate, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrEmpty(resolvedValue) ? connectionStringTemplate : resolvedValue;
+        }
+
+        // Simple pattern matching for AWS secret references like ${aws:secretsmanager:...} or {aws:secretsmanager:...}
+        var result = connectionStringTemplate;
+        var patterns = new[] { "${", "{" };
+
+        foreach (var pattern in patterns)
+        {
+            var startIndex = 0;
+            while (true)
+            {
+                var start = result.IndexOf(pattern, startIndex, StringComparison.OrdinalIgnoreCase);
+                if (start == -1) break;
+
+                var end = result.IndexOf('}', start + pattern.Length);
+                if (end == -1) break;
+
+                var secretRef = result.Substring(start + pattern.Length, end - start - pattern.Length);
+
+                if (!string.IsNullOrWhiteSpace(secretRef) && CanResolve(secretRef))
+                {
+                    var resolvedValue = await ResolveSecretAsync(secretRef, cancellationToken);
+                    if (!string.IsNullOrEmpty(resolvedValue))
+                    {
+                        var fullReference = result.Substring(start, end - start + 1);
+                        result = result.Replace(fullReference, resolvedValue);
+                        startIndex = start + resolvedValue.Length;
+                    }
+                    else
+                    {
+                        startIndex = end + 1;
+                    }
+                }
+                else
+                {
+                    startIndex = end + 1;
+                }
+            }
+        }
+
+        return result;
+    }
 
     private static byte[] BuildPayload(string secretId, string? versionStage, string? versionId)
     {
@@ -702,9 +764,9 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         return new AwsCredentials(accessKey, secretKey, sessionToken, expiresAt);
     }
 
-    private bool TryGetCached(string secretRef, out string value)
+    private bool TryGetCached(string secretKey, out string value)
     {
-        if (_cache.TryGetValue(secretRef, out var entry) &&
+        if (_cache.TryGetValue(secretKey, out var entry) &&
             entry.ExpiresAt > DateTimeOffset.UtcNow)
         {
             value = entry.Value;
@@ -715,10 +777,10 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         return false;
     }
 
-    private void CacheValue(string secretRef, string value)
+    private void CacheValue(string secretKey, string value)
     {
         var expiresAt = DateTimeOffset.UtcNow.Add(_cacheTtl);
-        _cache[secretRef] = new CacheEntry(value, expiresAt);
+        _cache[secretKey] = new CacheEntry(value, expiresAt);
     }
 
     private sealed record CacheEntry(string Value, DateTimeOffset ExpiresAt);

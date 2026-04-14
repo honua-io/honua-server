@@ -38,6 +38,12 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
     private readonly ILogger<SecureConnectionAwareDatabaseProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
+
+    /// <inheritdoc />
+    public string GetConnectionString()
+    {
+        return _defaultProvider.GetConnectionString();
+    }
     private readonly QueryConcurrencyGate? _concurrencyGate;
     private readonly string? _namedConnectionToUse;
     private int _acquiredSlots;

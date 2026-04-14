@@ -3,86 +3,59 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Domain;
+using DomainAccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Core.Features.Security.Abstractions;
 
 /// <summary>
-/// Evaluates catalog access policies against the current principal.
+/// Interface for evaluating access policies.
 /// </summary>
 public interface IAccessPolicyEvaluator
 {
     /// <summary>
-    /// Evaluates layer/service access policies and returns a composed access decision.
+    /// Evaluates access for a given principal and resource.
     /// </summary>
-    /// <param name="principal">The current user principal.</param>
-    /// <param name="layerPolicy">Layer-specific policy (highest precedence).</param>
-    /// <param name="servicePolicy">Service-level policy (fallback).</param>
-    /// <param name="scope">The access scope being evaluated.</param>
-    /// <returns>Access decision for the request.</returns>
-    AccessDecision Evaluate(
+    /// <param name="principal">The claims principal</param>
+    /// <param name="resource">The resource being accessed</param>
+    /// <param name="action">The action being performed</param>
+    /// <returns>The access decision</returns>
+    Task<DomainAccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action);
+
+    /// <summary>
+    /// Evaluates access synchronously for a given principal and resource.
+    /// </summary>
+    /// <param name="principal">The claims principal</param>
+    /// <param name="resource">The resource being accessed</param>
+    /// <param name="action">The action being performed</param>
+    /// <returns>The access decision</returns>
+    DomainAccessDecision Evaluate(ClaimsPrincipal principal, string resource, string action);
+
+    /// <summary>
+    /// Evaluates access for a layer and service policy combination.
+    /// </summary>
+    /// <param name="principal">The claims principal.</param>
+    /// <param name="layerPolicy">The optional layer policy.</param>
+    /// <param name="servicePolicy">The optional service policy.</param>
+    /// <param name="scope">The requested scope object.</param>
+    /// <returns>The access decision.</returns>
+    Task<DomainAccessDecision> EvaluateAsync(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,
         AccessPolicy? servicePolicy,
-        AccessScope scope = AccessScope.Read);
-}
-
-/// <summary>
-/// Access scope for policy evaluation.
-/// </summary>
-public enum AccessScope
-{
-    /// <summary>
-    /// Read access (queries, metadata, downloads).
-    /// </summary>
-    Read,
-    /// <summary>
-    /// Write access (create, update, delete).
-    /// </summary>
-    Write
-}
-
-/// <summary>
-/// Result of an access policy evaluation.
-/// </summary>
-public sealed record AccessDecision
-{
-    /// <summary>
-    /// Whether the access is allowed.
-    /// </summary>
-    public bool IsAllowed { get; init; }
+        object? scope = null);
 
     /// <summary>
-    /// Whether authentication is required to proceed.
+    /// Evaluates access synchronously for a layer and service policy combination.
     /// </summary>
-    public bool RequiresAuthentication { get; init; }
-
-    /// <summary>
-    /// Optional failure reason for diagnostics.
-    /// </summary>
-    public string? FailureReason { get; init; }
-
-    /// <summary>
-    /// Creates an allowed decision.
-    /// </summary>
-    public static AccessDecision Allowed() => new() { IsAllowed = true };
-
-    /// <summary>
-    /// Creates a decision indicating authentication is required.
-    /// </summary>
-    public static AccessDecision RequiresAuth(string? reason = null) => new()
-    {
-        IsAllowed = false,
-        RequiresAuthentication = true,
-        FailureReason = reason
-    };
-
-    /// <summary>
-    /// Creates a decision indicating access is forbidden.
-    /// </summary>
-    public static AccessDecision Forbidden(string? reason = null) => new()
-    {
-        IsAllowed = false,
-        RequiresAuthentication = false,
-        FailureReason = reason
-    };
+    /// <param name="principal">The claims principal.</param>
+    /// <param name="layerPolicy">The optional layer policy.</param>
+    /// <param name="servicePolicy">The optional service policy.</param>
+    /// <param name="scope">The requested scope object.</param>
+    /// <returns>The access decision.</returns>
+    DomainAccessDecision Evaluate(
+        ClaimsPrincipal principal,
+        AccessPolicy? layerPolicy,
+        AccessPolicy? servicePolicy,
+        object? scope = null);
 }

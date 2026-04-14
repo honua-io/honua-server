@@ -28,7 +28,7 @@ public sealed class DataConnectionTests
 
     [Theory]
     [InlineData(SslMode.Require)]
-    [InlineData(SslMode.VerifyCA)]
+    [InlineData(SslMode.VerifyCa)]
     [InlineData(SslMode.VerifyFull)]
     public void CreateWithEncryptedCredentialsSslRequiredAllowsStrictModes(SslMode sslMode)
     {
