@@ -116,15 +116,16 @@ REST API and GitOps-ready management:
 
 ## Deployment
 
-Honua runs as a single container. The default PostgreSQL provider requires an external PostGIS database; the DuckDB provider is fully embedded and needs no external infrastructure.
+Honua runs as a single container in combined mode. The job orchestration substrate ([ADR-0031](contributor/adr/0031-durable-job-orchestration-substrate.md)) is designed to support separate API and worker hosts for enterprise scale-out, but separate worker-mode hosting is not yet wired — it will land with the per-kind executor tickets. See [Operations — Job Orchestration](operator/operations.md#job-orchestration) and [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md#apiworker-host-separation) for details.
 
 ```
   PostgreSQL (default):         DuckDB (embedded):
   ---------------------         ------------------
   1x Honua container            1x Honua container
   1x PostgreSQL/PostGIS         .duckdb file (bundled or mounted)
-  Redis (optional)
-  Reverse proxy (TLS)           Reverse proxy (TLS)
+  Redis (optional; required     Reverse proxy (TLS)
+    for job orchestration)
+  Reverse proxy (TLS)
 ```
 
 **Deployment options:**

@@ -185,11 +185,14 @@ per-kind executor tickets (#721, #724, #727).
 
 > **Deployment note:** The substrate is split into API-side and worker-side
 > registrations. The API image registers shared infrastructure (queue, log
-> store) via `AddJobOrchestration()`. The worker or combined-mode image
-> additionally registers the execution host and reconciliation sweep via
-> `AddJobWorker()`. Lean API-only deployments do not run execution or
-> reconciliation overhead. See
-> [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md).
+> store) via `AddJobOrchestration()`. A future worker or combined-mode image
+> will additionally register the execution host and reconciliation sweep via
+> `AddJobWorker()`. `AddJobWorker()` is not yet invoked from a host
+> entrypoint; it will be wired when the first concrete executor is
+> integrated in follow-on tickets (#721, #724, #727). Lean API-only
+> deployments will not run execution or reconciliation overhead. See
+> [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md)
+> and [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
 
 ### Supported Job Kinds
 
@@ -303,8 +306,10 @@ with 7-day retention applied when the owning worker finalizes the job.
 
 When a job is abandoned and requeued for retry, any warnings reported by the
 executor are persisted to the structured log before clearing them from the
-requeued record. On terminal failure (retries exhausted), warnings are
-retained on the job record for post-mortem inspection.
+requeued record. This persistence is best-effort: a transient log-store
+failure is logged at Warning level but does not block the durable
+requeue or terminal transition. On terminal failure (retries exhausted),
+warnings are retained on the job record for post-mortem inspection.
 
 > **Note:** Execution logs are stored internally but are not yet exposed
 > through a public REST endpoint. Retrieval is available only through
