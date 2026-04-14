@@ -84,4 +84,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void JobSubmittedStubbed(
         ILogger logger,
         string jobId);
+
+    [LoggerMessage(8014, LogLevel.Warning, "Cancel rejected: approval required (policy: {PolicyRef})")]
+    public static partial void CancelRejectedApprovalRequired(
+        ILogger logger,
+        string policyRef);
 }

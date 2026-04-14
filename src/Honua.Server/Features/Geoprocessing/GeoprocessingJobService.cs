@@ -252,6 +252,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         EnsureAuthorized(principal, OperatorResourceType.Job, OperatorOperation.Execute);
 
+        // Cancelling a running job is a destructive action — require approval.
+        var approval = _approvalEvaluator.Evaluate(
+            principal,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute,
+                IsDestructive = true
+            });
+
+        if (approval.IsRequired)
+        {
+            GeoprocessingServiceLog.CancelRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
+            throw new GeoprocessingApprovalRequiredException(approval.PolicyRef ?? "unknown");
+        }
+
         if (string.IsNullOrWhiteSpace(jobId))
         {
             throw new GeoprocessingValidationException("Job identifier is required.");

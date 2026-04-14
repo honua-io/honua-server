@@ -236,6 +236,20 @@ public sealed class GeoprocessingJobServiceTests
         await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
     }
 
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ApprovalRequired_ThrowsApprovalException()
+    {
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("destructive-policy", "destructive-action"));
+
+        var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+    }
+
     // -----------------------------------------------------------------------
     // ProcessId disambiguation
     // -----------------------------------------------------------------------
