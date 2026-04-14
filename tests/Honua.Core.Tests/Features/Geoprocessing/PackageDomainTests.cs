@@ -319,6 +319,80 @@ public sealed class PackageDomainTests
     }
 
     [UnitTest]
+    [Operation(Operations.Create)]
+    public void AnalysisResultPackage_CreateCompleted_WithPackageRefs_PopulatesIds()
+    {
+        var provenance = new ProvenanceRecord
+        {
+            Sources = [new ProvenanceSource { SourceId = "src-1" }],
+            ProcessDefinitions = ["buffer"]
+        };
+        var summary = new ResultSummary { Title = "Buffer analysis" };
+
+        var result = AnalysisResultPackage.CreateCompleted(
+            "rp-1",
+            summary,
+            Array.Empty<ArtifactRef>(),
+            Array.Empty<WorkspaceRef>(),
+            provenance,
+            mapPackageId: "map-pkg-1",
+            appPackageId: "app-pkg-1");
+
+        result.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        result.MapPackageId.Should().Be("map-pkg-1");
+        result.AppPackageId.Should().Be("app-pkg-1");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public void AnalysisResultPackage_CreateCompleted_WithoutPackageRefs_LeavesIdsNull()
+    {
+        var provenance = new ProvenanceRecord
+        {
+            Sources = [new ProvenanceSource { SourceId = "src-1" }],
+            ProcessDefinitions = ["intersect"]
+        };
+        var summary = new ResultSummary { Title = "Intersect analysis" };
+
+        var result = AnalysisResultPackage.CreateCompleted(
+            "rp-2",
+            summary,
+            Array.Empty<ArtifactRef>(),
+            Array.Empty<WorkspaceRef>(),
+            provenance);
+
+        result.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        result.MapPackageId.Should().BeNull();
+        result.AppPackageId.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public void AnalysisResultPackage_CreateFailed_PackageRefsAreNull()
+    {
+        var provenance = new ProvenanceRecord
+        {
+            Sources = [new ProvenanceSource { SourceId = "src-1" }],
+            ProcessDefinitions = ["clip"]
+        };
+        var summary = new ResultSummary { Title = "Clip failed" };
+        var errors = new[]
+        {
+            new GeoprocessingError
+            {
+                Kind = GeoprocessingErrorKind.ExecutionFailed,
+                Message = "Execution failed"
+            }
+        };
+
+        var result = AnalysisResultPackage.CreateFailed("rp-3", summary, errors, provenance);
+
+        result.Status.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        result.MapPackageId.Should().BeNull();
+        result.AppPackageId.Should().BeNull();
+    }
+
+    [UnitTest]
     [Operation(Operations.Query)]
     public void PackageStatus_JsonRoundTrip_SerializesAsString()
     {
