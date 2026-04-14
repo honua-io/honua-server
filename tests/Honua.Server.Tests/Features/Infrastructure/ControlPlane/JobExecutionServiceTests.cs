@@ -849,6 +849,62 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// The generated worker ID must always contain a full 32-hex-char GUID suffix,
+    /// even when the machine hostname is very long. Without this, two workers on
+    /// long-hostname nodes can share the same truncated ID, breaking ownership guards.
+    /// </summary>
+    [UnitTest]
+    public void GenerateWorkerId_AlwaysPreservesFullGuid()
+    {
+        var workerId = JobExecutionService.GenerateWorkerId();
+
+        Assert.True(workerId.Length <= 48);
+
+        var lastDash = workerId.LastIndexOf('-');
+        Assert.True(lastDash >= 0, "Worker ID must contain a GUID suffix separated by '-'");
+
+        var guidPart = workerId[(lastDash + 1)..];
+        Assert.Equal(32, guidPart.Length);
+        Assert.True(guidPart.All(c => "0123456789abcdef".Contains(c)),
+            "GUID suffix must be 32 lowercase hex characters");
+    }
+
+    /// <summary>
+    /// When a worker has no executors registered, it must not enter the claim
+    /// loop. Without this guard, the worker performs O(n) Redis scans every
+    /// poll interval for no benefit.
+    /// </summary>
+    [UnitTest]
+    public async Task ExecuteAsync_SkipsClaimLoop_WhenNoExecutorsRegistered()
+    {
+        var jobQueue = Substitute.For<IJobQueue>();
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, Array.Empty<IJobExecutor>(), cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        await service.StartAsync(cts.Token);
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        await service.StopAsync(CancellationToken.None);
+
+        await jobQueue.DidNotReceive().TryClaimAsync(
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlySet<ExecutionJobKind>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>

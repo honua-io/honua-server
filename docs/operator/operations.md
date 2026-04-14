@@ -243,10 +243,11 @@ If the pump task does fault for any reason, finalization still proceeds
 from the executor outcome. The reconciliation service
 sweeps active jobs every 30 seconds. If a worker's last heartbeat exceeds
 the heartbeat timeout (default: 90 seconds), the job is considered
-abandoned. When `LastHeartbeatAt` has not yet been set (the window between
-claim and first heartbeat pump), the reconciler uses `ClaimedAt` as the
-reference timestamp. If retries remain, the reconciler requeues the job
-with a computed backoff delay; otherwise the job transitions to Failed.
+abandoned. The claim itself sets `LastHeartbeatAt` to the claim time, so
+the reconciler normally uses this value; as a defensive fallback it uses
+`ClaimedAt` if `LastHeartbeatAt` is ever null. If retries remain, the
+reconciler requeues the job with a computed backoff delay; otherwise the
+job transitions to Failed.
 
 ### Stale Claim Recovery
 

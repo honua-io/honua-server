@@ -30,12 +30,21 @@ internal sealed partial class JobExecutionService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var raw = $"worker-{Environment.MachineName}-{Guid.NewGuid():N}";
-        var workerId = raw.Length > 48 ? raw[..48] : raw;
+        var workerId = GenerateWorkerId();
 
         if (_acceptedKinds.Count == 0)
         {
             Log.NoExecutorsRegistered(logger, workerId);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+            }
+
+            Log.WorkerStopped(logger, workerId);
+            return;
         }
 
         Log.WorkerStarted(logger, workerId);
@@ -424,6 +433,23 @@ internal sealed partial class JobExecutionService(
         => status is ExecutionJobStatus.Succeeded
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
+
+    /// <summary>
+    /// Builds a worker ID that always preserves the full GUID suffix for ownership
+    /// uniqueness, truncating the machine-name prefix when necessary to stay within
+    /// the 48-character budget.
+    /// </summary>
+    internal static string GenerateWorkerId()
+    {
+        var guid = Guid.NewGuid().ToString("N");
+        var prefix = $"worker-{Environment.MachineName}";
+        const int maxLength = 48;
+        const int separatorLength = 1;
+        var maxPrefixLength = maxLength - guid.Length - separatorLength;
+        if (prefix.Length > maxPrefixLength)
+            prefix = prefix[..maxPrefixLength];
+        return $"{prefix}-{guid}";
+    }
 
     private static partial class Log
     {
