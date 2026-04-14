@@ -365,6 +365,15 @@ internal sealed partial class JobExecutionService(
                 current.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
+
+            // Clear the tracked CTS immediately so that Cancel() returns false
+            // for a job this worker no longer owns. Without this, a cancel
+            // arriving between requeue and the ProcessJobAsync finally block
+            // would be delegated to a worker that already dropped ownership,
+            // causing the cancellation to be silently swallowed while the
+            // retried job stays queued. The finally-block Remove is retained
+            // as a no-op safety net.
+            cancellationTokens.Remove(current.OperationId, workerId);
         }
         else
         {

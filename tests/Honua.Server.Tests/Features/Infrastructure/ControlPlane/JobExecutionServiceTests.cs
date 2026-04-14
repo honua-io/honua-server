@@ -549,6 +549,105 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: after a worker requeues a job on executor failure with retries
+    /// remaining, the tracked CTS must be removed immediately so that a cancel
+    /// request arriving in the window between requeue and ProcessJobAsync's finally
+    /// block is not incorrectly delegated to a worker that no longer owns the job.
+    /// Without the fix, Cancel() returns true in this window and the API caller
+    /// trusts the worker to persist Cancelled — but the worker already dropped
+    /// ownership, so the cancel is silently swallowed and the job stays Queued.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_RemovesCtsAfterRetryRequeue_SoCancelIsNotFalselyDelegated()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transient failure"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        // After ProcessJobAsync completes, Cancel must return false: the CTS
+        // was removed during AbandonJobAsync (after the requeue) so API
+        // callers will not falsely delegate cancellation to a worker that
+        // has already dropped ownership.
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
+    /// <summary>
+    /// Regression: shutdown-triggered requeue must also clear the tracked CTS
+    /// immediately to prevent cancel-delegation to a worker that dropped ownership.
+    /// Shutdown requeues bypass the retry budget (<see cref="JobRetryPolicy.None"/>)
+    /// and must still clean up the CTS before the finally block.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_RemovesCtsAfterShutdownRequeue_SoCancelIsNotFalselyDelegated()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var stoppingCts = new CancellationTokenSource();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                await stoppingCts.CancelAsync().ConfigureAwait(false);
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return JobExecutionResult.Succeeded(); // Unreachable.
+            });
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId,
+            provisioning.ClaimedBy!, stoppingCts.Token);
+
+        // After shutdown requeue, Cancel must return false.
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
+    /// <summary>
     /// Regression: when a job is requeued and immediately reclaimed by another worker,
     /// the stale worker's finally-block Remove must not delete the new worker's CTS.
     /// </summary>
