@@ -14,6 +14,7 @@ internal sealed partial class JobReconciliationService(
     IExecutionJobStore jobStore,
     IJobQueue jobQueue,
     IQueueClaimReconciler claimReconciler,
+    ExecutionJobCancellationTokens cancellationTokens,
     ILogger<JobReconciliationService> logger) : BackgroundService
 {
     private static readonly TimeSpan SweepInterval = TimeSpan.FromSeconds(30);
@@ -181,6 +182,11 @@ internal sealed partial class JobReconciliationService(
                 current.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
+
+            // Clean up any stale CTS left by the previous worker so that a
+            // Cancel() call after requeue does not falsely report that an
+            // active worker owns the terminal-state transition.
+            cancellationTokens.Revoke(current.OperationId);
         }
         else
         {
@@ -196,6 +202,8 @@ internal sealed partial class JobReconciliationService(
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+            cancellationTokens.Revoke(current.OperationId);
         }
     }
 
@@ -236,6 +244,9 @@ internal sealed partial class JobReconciliationService(
         };
         await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
         await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+        // Signal and remove any stale CTS so the hung worker stops work.
+        cancellationTokens.Revoke(current.OperationId);
     }
 
     /// <summary>

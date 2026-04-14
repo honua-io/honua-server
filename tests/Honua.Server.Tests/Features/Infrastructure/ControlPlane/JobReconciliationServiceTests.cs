@@ -83,7 +83,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -125,7 +125,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -167,7 +167,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -200,7 +200,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -247,7 +247,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -298,7 +298,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -357,7 +357,7 @@ public sealed class JobReconciliationServiceTests
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
 
         var service = new JobReconciliationService(
-            jobStore, jobQueue, claimReconciler,
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
             NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -370,6 +370,110 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
 
         await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: when the reconciler requeues a job after heartbeat expiry,
+    /// any stale CTS left by the previous worker must be revoked so that a
+    /// subsequent Cancel() call returns false and the API caller writes
+    /// Cancelled directly instead of delegating to a stale worker.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_Requeue_RevokesStaleWorkerCancellationToken()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(5),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        // Simulate a stale worker CTS registered before the sweep.
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var staleCts = cancellationTokens.CreateLinkedTokenSource(
+            snapshot.OperationId, CancellationToken.None);
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, cancellationTokens,
+            NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        // The stale CTS must have been cancelled by Revoke.
+        Assert.True(staleCts.IsCancellationRequested);
+
+        // A subsequent Cancel() must return false — the stale token was removed.
+        Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
+    }
+
+    /// <summary>
+    /// Regression: when the reconciler terminally fails a job after heartbeat
+    /// expiry (no retries remaining), the stale CTS must also be revoked.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_TerminalFailure_RevokesStaleWorkerCancellationToken()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var staleCts = cancellationTokens.CreateLinkedTokenSource(
+            snapshot.OperationId, CancellationToken.None);
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, cancellationTokens,
+            NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        Assert.True(staleCts.IsCancellationRequested);
+        Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
     }
 
     /// <summary>

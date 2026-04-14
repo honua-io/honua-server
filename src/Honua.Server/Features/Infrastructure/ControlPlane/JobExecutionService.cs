@@ -174,8 +174,10 @@ internal sealed partial class JobExecutionService(
             else
             {
                 // Executor returned failure — route through retry policy.
-                await AbandonJobAsync(running, workerId, result.ErrorMessage ?? "Execution failed.", CancellationToken.None)
-                    .ConfigureAwait(false);
+                // Thread executor warnings so they are persisted on terminal
+                // failure and logged to structured execution logs on retry.
+                await AbandonJobAsync(running, workerId, result.ErrorMessage ?? "Execution failed.",
+                    CancellationToken.None, result.Warnings).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -301,7 +303,8 @@ internal sealed partial class JobExecutionService(
         ExecutionJobRecord job,
         string workerId,
         string reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<string>? warnings = null)
     {
         // Re-read to capture progress and artifact updates made during execution.
         var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
@@ -318,6 +321,22 @@ internal sealed partial class JobExecutionService(
         {
             Log.JobAbandoned(logger, current.OperationId, reason);
 
+            // Persist per-attempt warnings to structured execution logs before
+            // clearing them from the requeued record, so they remain observable.
+            if (warnings is { Count: > 0 } && logStore != null)
+            {
+                foreach (var warning in warnings)
+                {
+                    await logStore.AppendAsync(current.OperationId, new ExecutionLogEntry
+                    {
+                        Timestamp = DateTimeOffset.UtcNow,
+                        Level = ExecutionLogLevel.Warning,
+                        Message = warning,
+                        Phase = $"Attempt {current.AttemptCount} (requeuing)"
+                    }, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
             var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
             var now = DateTimeOffset.UtcNow;
             var abandoned = current with
@@ -333,6 +352,7 @@ internal sealed partial class JobExecutionService(
                 ProviderOperationId = null,
                 CompletedAt = null,
                 ArtifactReferences = Array.Empty<string>(),
+                Warnings = Array.Empty<string>(),
                 NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -352,6 +372,7 @@ internal sealed partial class JobExecutionService(
                 UpdatedAt = now,
                 CompletedAt = now,
                 ErrorMessage = $"Job abandoned: {reason}",
+                Warnings = warnings ?? current.Warnings,
                 CurrentPhase = "Failed (abandoned)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);

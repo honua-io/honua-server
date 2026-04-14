@@ -285,6 +285,113 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: executor warnings must be persisted on the terminal failed
+    /// record when no retries remain, so clients rendering job.Warnings see them.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_PersistsWarnings_WhenExecutorReturnsFailure_NoRetries()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        // First read for executor lookup, second for CTS re-check, third for
+        // Running transition read-back, fourth inside AbandonJobAsync re-read.
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executorWarnings = new List<string> { "Projection mismatch", "CRS fallback used" };
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transform failed", executorWarnings));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        // The terminal failed record must carry the executor warnings.
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed &&
+                j.Warnings.Count == 2 &&
+                j.Warnings[0] == "Projection mismatch"),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: when executor returns failure with warnings and retries
+    /// remain, warnings must be cleared from the requeued record to prevent
+    /// stale per-attempt warnings from leaking to the next attempt.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_ClearsWarnings_WhenExecutorReturnsFailure_WithRetries()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(1),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transient failure", ["Warning A"]));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        // The requeued record must have cleared warnings.
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Queued &&
+                j.Warnings.Count == 0),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>

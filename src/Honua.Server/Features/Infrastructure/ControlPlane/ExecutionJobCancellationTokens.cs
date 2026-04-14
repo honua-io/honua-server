@@ -49,6 +49,28 @@ internal sealed class ExecutionJobCancellationTokens : IJobCancellationNotifier
     }
 
     /// <summary>
+    /// Cancels and removes the tracked token source for the specified job.
+    /// Used by the reconciliation service to clean up stale tokens when a job
+    /// is requeued or terminally failed, ensuring that subsequent
+    /// <see cref="Cancel"/> calls do not return a false positive for a
+    /// token that no longer corresponds to an active execution.
+    /// </summary>
+    public void Revoke(string jobId)
+    {
+        if (_tokens.TryRemove(jobId, out var cts))
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The execution service disposed the CTS — the job already completed.
+            }
+        }
+    }
+
+    /// <summary>
     /// Removes the tracked token source after job completion or cancellation.
     /// </summary>
     public void Remove(string jobId)
