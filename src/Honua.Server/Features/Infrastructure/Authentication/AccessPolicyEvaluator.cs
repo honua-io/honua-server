@@ -48,70 +48,57 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
     {
         var requiresWrite = IsWriteScope(scope);
 
+        var layerDecision = EvaluateSinglePolicy(principal, layerPolicy, requiresWrite);
         var serviceDecision = EvaluateSinglePolicy(principal, servicePolicy, requiresWrite);
-        if (!serviceDecision.IsAllowed)
+
+        if (layerDecision is null && serviceDecision is null)
         {
-            return serviceDecision;
+            return principal.Identity?.IsAuthenticated == true
+                ? AccessDecision.Allowed()
+                : AccessDecision.RequiresAuth("Authentication is required.");
         }
 
-        var layerDecision = EvaluateSinglePolicy(principal, layerPolicy, requiresWrite);
-        if (!layerDecision.IsAllowed)
+        if (layerDecision is { IsAllowed: false })
         {
-            return layerDecision;
+            return layerDecision.Value;
+        }
+
+        if (serviceDecision is { IsAllowed: false })
+        {
+            return serviceDecision.Value;
         }
 
         return AccessDecision.Allowed();
     }
 
-    private static AccessDecision EvaluateSinglePolicy(ClaimsPrincipal principal, AccessPolicy? policy, bool requiresWrite)
+    private static AccessDecision? EvaluateSinglePolicy(ClaimsPrincipal principal, AccessPolicy? policy, bool requiresWrite)
     {
         if (policy is null)
         {
-            return AccessDecision.Allowed();
+            return null;
         }
 
-        var isAuthenticated = principal.Identity?.IsAuthenticated == true;
         var allowAnonymous = requiresWrite ? policy.AllowAnonymousWrite : policy.AllowAnonymous;
         if (allowAnonymous)
         {
             return AccessDecision.Allowed();
         }
 
-        var allowedRoles = requiresWrite
-            ? policy.AllowedWriteRoles ?? policy.AllowedRoles
-            : policy.AllowedRoles;
-
-        if (allowedRoles is null || allowedRoles.Length == 0)
-        {
-            return AccessDecision.Allowed();
-        }
-
-        if (!isAuthenticated)
+        if (principal.Identity?.IsAuthenticated != true)
         {
             return AccessDecision.RequiresAuth("Authentication is required.");
         }
 
-        foreach (var allowedRole in allowedRoles)
+        var allowedRoles = requiresWrite
+            ? policy.AllowedWriteRoles ?? policy.AllowedRoles
+            : policy.AllowedRoles;
+
+        if (allowedRoles is { Length: > 0 } && !IsInAnyRole(principal, allowedRoles))
         {
-            if (string.IsNullOrWhiteSpace(allowedRole))
-            {
-                continue;
-            }
-
-            if (principal.Claims.Any(claim =>
-                    claim.Type == ClaimTypes.Role &&
-                    string.Equals(claim.Value, allowedRole.Trim(), StringComparison.OrdinalIgnoreCase)))
-            {
-                return AccessDecision.Allowed();
-            }
-
-            if (principal.IsInRole(allowedRole.Trim()))
-            {
-                return AccessDecision.Allowed();
-            }
+            return AccessDecision.Forbidden("User does not have the required role.");
         }
 
-        return AccessDecision.Forbidden("Access to this resource is forbidden.");
+        return AccessDecision.Allowed();
     }
 
     private static bool IsWriteScope(object? scope)
@@ -123,5 +110,31 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
             string text => string.Equals(text, "write", StringComparison.OrdinalIgnoreCase),
             _ => string.Equals(scope.ToString(), "Write", StringComparison.OrdinalIgnoreCase)
         };
+    }
+
+    private static bool IsInAnyRole(ClaimsPrincipal principal, string[] allowedRoles)
+    {
+        foreach (var allowedRole in allowedRoles)
+        {
+            if (string.IsNullOrWhiteSpace(allowedRole))
+            {
+                continue;
+            }
+
+            var trimmedRole = allowedRole.Trim();
+            if (principal.Claims.Any(claim =>
+                    claim.Type == ClaimTypes.Role &&
+                    string.Equals(claim.Value, trimmedRole, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            if (principal.IsInRole(trimmedRole))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

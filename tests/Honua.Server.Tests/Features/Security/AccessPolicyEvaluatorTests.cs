@@ -14,6 +14,30 @@ public sealed class AccessPolicyEvaluatorTests
     private readonly AccessPolicyEvaluator _evaluator = new();
 
     [Fact]
+    public void Evaluate_WithNoPolicies_AnonymousPrincipal_RequiresAuth()
+    {
+        var decision = _evaluator.Evaluate(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            layerPolicy: null,
+            servicePolicy: null);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_WithRestrictedLayerPolicy_AnonymousPrincipal_RequiresAuth()
+    {
+        var decision = _evaluator.Evaluate(
+            new ClaimsPrincipal(new ClaimsIdentity()),
+            new AccessPolicy { AllowAnonymous = false },
+            servicePolicy: null);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeTrue();
+    }
+
+    [Fact]
     public void Evaluate_WithPermissiveLayerAndRestrictedService_DeniesAnonymousRead()
     {
         var decision = _evaluator.Evaluate(
