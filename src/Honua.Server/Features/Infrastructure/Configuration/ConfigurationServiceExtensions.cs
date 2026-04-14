@@ -10,6 +10,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -99,11 +100,26 @@ public static class ConfigurationServiceExtensions
             client.DefaultRequestHeaders.Add("User-Agent", "Honua-AwsMetadata/1.0");
         });
 
-        // Register secret resolvers
-        services.AddSingleton<AzureKeyVaultResolver>();
-        services.AddSingleton<AwsSecretsManagerResolver>();
-        services.AddSingleton<CompositeSecretResolver>();
-        services.AddSingleton<IConnectionSecretResolver>(sp => sp.GetRequiredService<CompositeSecretResolver>());
+        // Register secret resolvers. When Postgres secure-connection services are
+        // already registered, reuse that composite resolver instead of overriding
+        // it with a self-referential alias that recurses during DI resolution.
+        services.TryAddSingleton<EnvironmentSecretResolver>();
+        services.TryAddSingleton<NullSecretResolver>();
+        services.TryAddSingleton<AzureKeyVaultResolver>();
+        services.TryAddSingleton<AwsSecretsManagerResolver>();
+        services.TryAddSingleton<IConnectionSecretResolver>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<CompositeSecretResolver>>();
+            var resolvers = new IConnectionSecretResolver[]
+            {
+                serviceProvider.GetRequiredService<EnvironmentSecretResolver>(),
+                serviceProvider.GetRequiredService<AwsSecretsManagerResolver>(),
+                serviceProvider.GetRequiredService<AzureKeyVaultResolver>(),
+                serviceProvider.GetRequiredService<NullSecretResolver>()
+            };
+
+            return new CompositeSecretResolver(resolvers, logger);
+        });
 
         // Register centralized secret provider
         services.AddSingleton<ISecretProvider, SecretProvider>();
@@ -153,6 +169,12 @@ public static class ConfigurationServiceExtensions
         bool enableSecretResolution = true)
         where TOptions : class
     {
+        // Secret provider options must bind directly. Resolving them through
+        // ISecretProvider would require constructing the provider to configure
+        // the options the provider itself consumes, creating a DI cycle.
+        var shouldEnableSecretResolution =
+            enableSecretResolution && typeof(TOptions) != typeof(SecretProviderOptions);
+
         // Register for validation
         services.AddSingleton<IConfigureOptions<TOptions>>(sp =>
         {
@@ -166,7 +188,7 @@ public static class ConfigurationServiceExtensions
         });
 
         // Configure options with secret resolution if enabled
-        if (enableSecretResolution)
+        if (shouldEnableSecretResolution)
         {
             services.Configure<TOptions>(options =>
             {
