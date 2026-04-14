@@ -184,16 +184,17 @@ internal sealed partial class JobReconciliationService(
             };
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
 
+            // Revoke the stale CTS immediately after the authoritative store
+            // transition to Queued, before the queue write. If RequeueAsync
+            // fails, cancel paths will not delegate to the dead worker and
+            // the stale-claim reconciler will repair the queue state.
+            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+
             await jobQueue.RequeueAsync(
                 current.OperationId,
                 current.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
-
-            // Clean up any stale CTS left by the previous worker so that a
-            // Cancel() call after requeue does not falsely report that an
-            // active worker owns the terminal-state transition.
-            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
         }
         else
         {
@@ -208,14 +209,15 @@ internal sealed partial class JobReconciliationService(
                 CurrentPhase = "Failed (heartbeat expired)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
 
             if (logStore != null)
             {
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
-
-            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
         }
 
         return true;
@@ -258,15 +260,17 @@ internal sealed partial class JobReconciliationService(
             CurrentPhase = "Failed (timeout)"
         };
         await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        // Signal and remove the stale CTS immediately after the authoritative
+        // store transition, before the queue write.
+        cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+
         await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
 
         if (logStore != null)
         {
             await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
         }
-
-        // Signal and remove any stale CTS so the hung worker stops work.
-        cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
 
         return true;
     }

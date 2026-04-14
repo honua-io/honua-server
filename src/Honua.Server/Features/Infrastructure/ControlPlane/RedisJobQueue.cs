@@ -96,7 +96,7 @@ internal sealed partial class RedisJobQueue(
         var totalScanned = 0;
         var totalVisited = 0;
 
-        while (totalScanned < MaxScanEntries && totalVisited < MaxVisitEntries)
+        while (totalScanned < MaxScanEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -202,7 +202,7 @@ internal sealed partial class RedisJobQueue(
 
         if (totalVisited >= MaxVisitEntries)
         {
-            Log.ClaimScanVisitBudgetExhausted(logger, totalVisited, totalScanned);
+            Log.ClaimScanVisitThresholdExceeded(logger, totalVisited, totalScanned);
         }
 
         return null;
@@ -295,8 +295,20 @@ internal sealed partial class RedisJobQueue(
                 // Orphaned claim: removed from pending but store was never advanced.
                 await _database.SortedSetRemoveAsync(ClaimedSetKey, operationId).ConfigureAwait(false);
                 await _database.KeyDeleteAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
-                var score = ComputeScore(job.Priority, DateTimeOffset.UtcNow);
+
+                var hasDelayedRetry = job.NextRetryAt.HasValue && job.NextRetryAt.Value > DateTimeOffset.UtcNow;
+                var enqueueTime = hasDelayedRetry ? job.NextRetryAt!.Value : DateTimeOffset.UtcNow;
+                var score = ComputeScore(job.Priority, enqueueTime);
                 await _database.SortedSetAddAsync(QueueKey, operationId, score).ConfigureAwait(false);
+
+                if (hasDelayedRetry)
+                {
+                    await _database.HashSetAsync(GetClaimMetaKey(operationId),
+                    [
+                        new HashEntry("visibleAfter", job.NextRetryAt!.Value.ToUnixTimeMilliseconds().ToString())
+                    ]).ConfigureAwait(false);
+                }
+
                 Log.OrphanedClaimRequeued(logger, operationId);
             }
             else if (job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
@@ -402,7 +414,7 @@ internal sealed partial class RedisJobQueue(
         [LoggerMessage(9026, LogLevel.Error, "Claim rollback failed: {OperationId}")]
         public static partial void ClaimRollbackFailed(ILogger logger, string operationId, Exception exception);
 
-        [LoggerMessage(9027, LogLevel.Warning, "Claim scan visit budget exhausted: visited {Visited} entries, scanned {Scanned} claimable candidates")]
-        public static partial void ClaimScanVisitBudgetExhausted(ILogger logger, int visited, int scanned);
+        [LoggerMessage(9027, LogLevel.Warning, "Claim scan visit threshold exceeded: visited {Visited} entries, scanned {Scanned} claimable candidates")]
+        public static partial void ClaimScanVisitThresholdExceeded(ILogger logger, int visited, int scanned);
     }
 }

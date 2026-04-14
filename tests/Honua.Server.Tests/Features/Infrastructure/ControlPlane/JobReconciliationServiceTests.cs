@@ -485,6 +485,107 @@ public sealed class JobReconciliationServiceTests
     }
 
     /// <summary>
+    /// Regression: when <c>RequeueAsync</c> fails after the store transition to
+    /// Queued, the stale CTS must already be revoked so cancel paths do not
+    /// delegate to a dead worker. The stale-claim reconciler repairs the queue.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_Requeue_RevokesCtBeforeRequeueAsync_SoRequeueFailureDoesNotLeakStaleCts()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(5),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var staleCts = cancellationTokens.CreateLinkedTokenSource(
+            snapshot.OperationId, snapshot.ClaimedBy!, CancellationToken.None);
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, cancellationTokens,
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        // The sweep propagates the RequeueAsync exception, but the CTS
+        // must already be revoked before that exception fires.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            RunSingleSweepAsync(service, cts.Token));
+
+        Assert.True(staleCts.IsCancellationRequested);
+        Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
+    }
+
+    /// <summary>
+    /// Regression: when <c>RemoveAsync</c> fails after the store transition to
+    /// Failed (timeout), the stale CTS must already be revoked so cancel paths
+    /// do not delegate to a dead worker.
+    /// </summary>
+    [UnitTest]
+    public async Task TimeoutExpiry_RevokesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
+    {
+        var snapshot = CreateRunningJob(
+            timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) });
+        snapshot = snapshot with { ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var staleCts = cancellationTokens.CreateLinkedTokenSource(
+            snapshot.OperationId, snapshot.ClaimedBy!, CancellationToken.None);
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, cancellationTokens,
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            RunSingleSweepAsync(service, cts.Token));
+
+        Assert.True(staleCts.IsCancellationRequested);
+        Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
+    }
+
+    /// <summary>
     /// Invokes the reconciler's sweep logic once without running the full
     /// BackgroundService loop. Uses reflection to call the private method
     /// since the service is internal and sealed.
