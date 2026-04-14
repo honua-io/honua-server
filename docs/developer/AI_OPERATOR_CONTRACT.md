@@ -480,6 +480,16 @@ Supported responsibilities should include:
 - label and popup bindings
 - legend generation inputs
 
+Conceptual shape:
+
+```json
+{
+  "styleId": "style_candidate_parcels_choropleth",
+  "label": "Candidate parcels choropleth",
+  "presetId": "analysis_choropleth"
+}
+```
+
 ### MapTemplate
 
 References a reusable cartographic composition template.
@@ -533,8 +543,8 @@ Supported source families should include:
 ### MapPackage
 
 `MapPackage` is required for analysis workflows that produce spatial output.
-The concrete `MapPackage` type is defined in downstream ticket #730; until then,
-`AnalysisResultPackage.MapPackageId` is a nullable deferred reference.
+`AnalysisResultPackage.MapPackageId` is a nullable reference to the materialized
+`MapPackage` resource when a workflow emits runnable map output.
 
 Conceptual shape:
 
@@ -560,7 +570,11 @@ Conceptual shape:
     }
   ],
   "styleRefs": [
-    "style_candidate_parcels_choropleth"
+    {
+      "styleId": "style_candidate_parcels_choropleth",
+      "label": "Candidate parcels choropleth",
+      "presetId": "analysis_choropleth"
+    }
   ],
   "themeId": "theme_flood_risk_light",
   "mapSpec": {
@@ -745,10 +759,9 @@ Conceptual shape:
 }
 ```
 
-`mapPackageId` and `appPackageId` are nullable deferred references. The concrete
-`MapPackage` and `AppPackage` types are defined in downstream tickets (#730,
-#731). In this example `mapPackageId` is null because the `MapPackage` type does
-not yet exist; once #730 lands, spatial results will carry a non-null reference.
+`mapPackageId` and `appPackageId` are nullable references to separately
+materialized package resources. They remain null when a workflow produces only
+data artifacts and summary metadata, as this example does.
 
 The package exposes factory methods `CreateCompleted` and `CreateFailed` for
 terminal construction.
