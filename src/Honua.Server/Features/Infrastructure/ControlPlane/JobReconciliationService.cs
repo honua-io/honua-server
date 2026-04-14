@@ -73,15 +73,20 @@ internal sealed partial class JobReconciliationService(
             // even when the heartbeat has also expired and retries remain.
             if (ShouldExpireTimeout(job, now))
             {
-                await HandleTimeoutExpiryAsync(job, now, cancellationToken).ConfigureAwait(false);
-                reconciled++;
+                if (await HandleTimeoutExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
+                {
+                    reconciled++;
+                }
+
                 continue;
             }
 
             if (ShouldExpireHeartbeat(job, now))
             {
-                await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false);
-                reconciled++;
+                if (await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
+                {
+                    reconciled++;
+                }
             }
         }
 
@@ -130,7 +135,8 @@ internal sealed partial class JobReconciliationService(
         return policy.IsExpired(startedAt.Value, now);
     }
 
-    private async Task HandleHeartbeatExpiryAsync(
+    /// <returns><c>true</c> when state was actually mutated; <c>false</c> when skipped.</returns>
+    private async Task<bool> HandleHeartbeatExpiryAsync(
         ExecutionJobRecord snapshot,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -141,7 +147,7 @@ internal sealed partial class JobReconciliationService(
         if (IsStaleSnapshot(snapshot, current))
         {
             Log.ReconciliationSkippedStale(logger, snapshot.OperationId, current?.Status.ToString() ?? "deleted");
-            return;
+            return false;
         }
 
         // Re-validate heartbeat expiry against the fresh record. A heartbeat
@@ -151,7 +157,7 @@ internal sealed partial class JobReconciliationService(
         if (!ShouldExpireHeartbeat(current!, freshNow))
         {
             Log.ReconciliationSkippedHeartbeatRefreshed(logger, snapshot.OperationId);
-            return;
+            return false;
         }
 
         var retryPolicy = current!.RetryPolicy ?? JobRetryPolicy.Default;
@@ -187,7 +193,7 @@ internal sealed partial class JobReconciliationService(
             // Clean up any stale CTS left by the previous worker so that a
             // Cancel() call after requeue does not falsely report that an
             // active worker owns the terminal-state transition.
-            cancellationTokens.Revoke(current.OperationId);
+            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
         }
         else
         {
@@ -209,11 +215,14 @@ internal sealed partial class JobReconciliationService(
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
 
-            cancellationTokens.Revoke(current.OperationId);
+            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
         }
+
+        return true;
     }
 
-    private async Task HandleTimeoutExpiryAsync(
+    /// <returns><c>true</c> when state was actually mutated; <c>false</c> when skipped.</returns>
+    private async Task<bool> HandleTimeoutExpiryAsync(
         ExecutionJobRecord snapshot,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -224,7 +233,7 @@ internal sealed partial class JobReconciliationService(
         if (IsStaleSnapshot(snapshot, current))
         {
             Log.ReconciliationSkippedStale(logger, snapshot.OperationId, current?.Status.ToString() ?? "deleted");
-            return;
+            return false;
         }
 
         // Re-validate timeout expiry against the fresh record. A requeued-and-
@@ -235,7 +244,7 @@ internal sealed partial class JobReconciliationService(
         if (!ShouldExpireTimeout(current!, freshNow))
         {
             Log.ReconciliationSkippedTimeoutRefreshed(logger, snapshot.OperationId);
-            return;
+            return false;
         }
 
         Log.TimeoutExpired(logger, current!.OperationId);
@@ -257,7 +266,9 @@ internal sealed partial class JobReconciliationService(
         }
 
         // Signal and remove any stale CTS so the hung worker stops work.
-        cancellationTokens.Revoke(current.OperationId);
+        cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+
+        return true;
     }
 
     /// <summary>

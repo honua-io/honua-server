@@ -411,7 +411,7 @@ public sealed class JobReconciliationServiceTests
         // Simulate a stale worker CTS registered before the sweep.
         var cancellationTokens = new ExecutionJobCancellationTokens();
         using var staleCts = cancellationTokens.CreateLinkedTokenSource(
-            snapshot.OperationId, CancellationToken.None);
+            snapshot.OperationId, snapshot.ClaimedBy!, CancellationToken.None);
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, cancellationTokens,
@@ -463,7 +463,7 @@ public sealed class JobReconciliationServiceTests
 
         var cancellationTokens = new ExecutionJobCancellationTokens();
         using var staleCts = cancellationTokens.CreateLinkedTokenSource(
-            snapshot.OperationId, CancellationToken.None);
+            snapshot.OperationId, snapshot.ClaimedBy!, CancellationToken.None);
 
         var logStore = Substitute.For<IExecutionLogStore>();
 

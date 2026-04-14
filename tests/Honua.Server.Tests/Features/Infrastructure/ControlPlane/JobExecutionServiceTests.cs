@@ -549,6 +549,58 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: when a job is requeued and immediately reclaimed by another worker,
+    /// the stale worker's finally-block Remove must not delete the new worker's CTS.
+    /// </summary>
+    [UnitTest]
+    public void Remove_PreservesNewWorkerCts_WhenJobReclaimedAfterRequeue()
+    {
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        // Worker A registers CTS.
+        using var ctsA = cancellationTokens.CreateLinkedTokenSource(
+            "job-1", "worker-A", CancellationToken.None);
+
+        // Job is requeued; Worker B claims and registers a new CTS.
+        using var ctsB = cancellationTokens.CreateLinkedTokenSource(
+            "job-1", "worker-B", CancellationToken.None);
+
+        // Worker A's finally block runs — must NOT remove Worker B's CTS.
+        cancellationTokens.Remove("job-1", "worker-A");
+
+        // Worker B's CTS must still be cancellable via the operator path.
+        Assert.True(cancellationTokens.Cancel("job-1"));
+        Assert.True(ctsB.IsCancellationRequested);
+    }
+
+    /// <summary>
+    /// Regression: when the reconciler requeues a job and a new worker claims it
+    /// before Revoke runs, the Revoke must not cancel the new worker's CTS.
+    /// </summary>
+    [UnitTest]
+    public void Revoke_PreservesNewWorkerCts_WhenJobReclaimedBeforeRevoke()
+    {
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        // Worker A registered CTS (simulated by reconciler tracking).
+        using var ctsA = cancellationTokens.CreateLinkedTokenSource(
+            "job-1", "worker-A", CancellationToken.None);
+
+        // Job was requeued; Worker B claims and registers before Revoke runs.
+        using var ctsB = cancellationTokens.CreateLinkedTokenSource(
+            "job-1", "worker-B", CancellationToken.None);
+
+        // Reconciler's Revoke targets worker-A — must NOT cancel worker-B's CTS.
+        cancellationTokens.Revoke("job-1", "worker-A");
+
+        Assert.False(ctsB.IsCancellationRequested);
+
+        // Operator cancellation must still reach the new worker.
+        Assert.True(cancellationTokens.Cancel("job-1"));
+        Assert.True(ctsB.IsCancellationRequested);
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>

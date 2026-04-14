@@ -99,14 +99,14 @@ internal sealed partial class JobExecutionService(
         var timeoutPolicy = job.TimeoutPolicy ?? JobTimeoutPolicy.Default;
         using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
         using var jobCts = cancellationTokens.CreateLinkedTokenSource(
-            operationId, stoppingToken, timeoutCts.Token);
+            operationId, workerId, stoppingToken, timeoutCts.Token);
 
         // Re-read before promoting to Running to catch cancellations that arrived
         // after the claim but before the worker registered its CTS.
         job = await jobStore.GetAsync(operationId, stoppingToken).ConfigureAwait(false);
         if (job == null)
         {
-            cancellationTokens.Remove(operationId);
+            cancellationTokens.Remove(operationId, workerId);
             await jobQueue.RemoveAsync(operationId, stoppingToken).ConfigureAwait(false);
             return;
         }
@@ -114,7 +114,7 @@ internal sealed partial class JobExecutionService(
         if (IsTerminalOrNotOwnedBy(job, workerId))
         {
             Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
-            cancellationTokens.Remove(operationId);
+            cancellationTokens.Remove(operationId, workerId);
 
             // Only remove the queue entry for terminal jobs. Requeued or reclaimed
             // jobs have a queue entry that belongs to the new attempt.
@@ -216,7 +216,7 @@ internal sealed partial class JobExecutionService(
         }
         finally
         {
-            cancellationTokens.Remove(operationId);
+            cancellationTokens.Remove(operationId, workerId);
         }
     }
 
