@@ -39,14 +39,17 @@ internal abstract class RedisServiceBase : IRedisService
         LogServiceInitialization();
     }
 
-    public bool IsUsingRedis => _isUsingRedis;
+    public bool IsUsingRedis => _isUsingRedis && HealthMonitor.IsRedisAvailable;
     public bool IsRedisConfigured => Redis != null;
     public RedisFallbackMode FallbackMode => FallbackStrategy.Mode;
 
     public virtual async Task<bool> TryRestoreRedisAsync(CancellationToken cancellationToken = default)
     {
-        if (_isUsingRedis || Database == null || !HealthMonitor.ShouldRetryRedis)
-            return _isUsingRedis;
+        if (Database == null)
+            return false;
+
+        if (IsUsingRedis)
+            return true;
 
         var restored = await HealthMonitor.TestConnectivityAsync(cancellationToken).ConfigureAwait(false);
         if (restored)
@@ -71,14 +74,19 @@ internal abstract class RedisServiceBase : IRedisService
         Func<CancellationToken, Task<T>>? fallbackOperation = null,
         CancellationToken cancellationToken = default)
     {
+        if (!HealthMonitor.IsRedisAvailable)
+        {
+            _isUsingRedis = false;
+        }
+
         // Try to restore Redis if it's currently unavailable
-        if (!_isUsingRedis && Database != null)
+        if (!IsUsingRedis && Database != null && HealthMonitor.ShouldRetryRedis)
         {
             await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
         }
 
         // Attempt Redis operation if available
-        if (_isUsingRedis && Database != null)
+        if (IsUsingRedis && Database != null)
         {
             try
             {

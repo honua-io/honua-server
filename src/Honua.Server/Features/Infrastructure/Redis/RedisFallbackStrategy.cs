@@ -71,10 +71,9 @@ internal static class RedisFallbackStrategy
 
         public bool ShouldAllowFallback(IRedisHealthMonitor healthMonitor, IHostEnvironment hostEnvironment)
         {
-            // Allow fallback in development, test, or if Redis was never configured
+            // Allow fallback only in development and test environments.
             return hostEnvironment.IsDevelopment() ||
-                   hostEnvironment.IsEnvironment("Test") ||
-                   !healthMonitor.WasRedisEverAvailable;
+                   hostEnvironment.IsEnvironment("Test");
         }
 
         public Exception GetUnavailableException(string operation, Exception? lastException = null)

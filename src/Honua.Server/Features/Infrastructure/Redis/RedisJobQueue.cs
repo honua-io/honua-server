@@ -77,7 +77,7 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
         while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
         {
             // Try to restore Redis if it's currently unavailable
-            if (!IsUsingRedis)
+            if (!IsUsingRedis && HealthMonitor.ShouldRetryRedis)
             {
                 await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
             }

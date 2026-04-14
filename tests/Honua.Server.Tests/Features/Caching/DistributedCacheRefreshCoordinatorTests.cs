@@ -170,7 +170,8 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
     {
         var refreshed = new TaskCompletionSource<bool>();
         var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-        var operationScope = Substitute.For<IDisposable>();
+        var operationScope = Substitute.For<IOperationScope>();
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
         var coordinator = new DistributedCacheRefreshCoordinator(
@@ -213,7 +214,8 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         var refreshStarted = new TaskCompletionSource<bool>();
         var refreshCanProceed = new TaskCompletionSource<bool>();
         var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-        var operationScope = Substitute.For<IDisposable>();
+        var operationScope = Substitute.For<IOperationScope>();
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
         var coordinator = new DistributedCacheRefreshCoordinator(
@@ -259,7 +261,8 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
     {
         var refreshed = new TaskCompletionSource<bool>();
         var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-        var operationScope = Substitute.For<IDisposable>();
+        var operationScope = Substitute.For<IOperationScope>();
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
         var coordinator = new DistributedCacheRefreshCoordinator(
@@ -300,7 +303,8 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
     {
         var refreshStarted = new TaskCompletionSource<bool>();
         var performanceMonitor = Substitute.For<IPerformanceMonitor>();
-        var operationScope = Substitute.For<IDisposable>();
+        var operationScope = Substitute.For<IOperationScope>();
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
 
         var coordinator = new DistributedCacheRefreshCoordinator(

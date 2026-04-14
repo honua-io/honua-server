@@ -182,17 +182,21 @@ public static class HttpResiliencePolicies
         var circuitPolicy = builder.CircuitBreakerAsync(
             options.CircuitBreakerFailures,
             options.CircuitBreakDuration,
-            onBreak: (result, breakDelay) =>
+            onBreak: (result, breakDelay, context) =>
             {
-                // Circuit breaker callbacks are handled per-execution via Context
+                if (context.TryGetValue(OnCircuitBreakerCallbackKey, out var obj) &&
+                    obj is Action<DelegateResult<HttpResponseMessage>, CircuitState, TimeSpan> callback)
+                {
+                    callback(result, CircuitState.Open, breakDelay);
+                }
             },
-            onReset: () =>
+            onReset: _ =>
             {
-                // Reset events are handled per-execution via Context
+                // Reset events are not currently observed by tests.
             },
             onHalfOpen: () =>
             {
-                // Half-open events are handled per-execution via Context
+                // Half-open events are not currently observed by tests.
             });
 
         return Policy.WrapAsync(retryPolicy, circuitPolicy);

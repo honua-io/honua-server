@@ -190,6 +190,7 @@ public sealed class RedisFallbackIntegrationTests
         // Simulate Redis recovery
         mockDatabase.Setup(db => db.PingAsync()).ReturnsAsync(TimeSpan.FromMilliseconds(10));
         mockDatabase.Setup(db => db.ListLeftPushAsync("test-queue", "redis-job")).ReturnsAsync(1);
+        mockDatabase.Setup(db => db.ListLengthAsync("test-queue")).ReturnsAsync(1);
 
         await jobQueue.TryRestoreRedisAsync();
         await leaderElection.TryRestoreRedisAsync();

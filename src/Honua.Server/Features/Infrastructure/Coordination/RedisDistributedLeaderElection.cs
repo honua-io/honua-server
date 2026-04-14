@@ -99,9 +99,8 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         if (!_useRedis || !ShouldUseRedis())
         {
-            // In fallback mode, always return true (single instance)
-            _isLeader = true;
-            return true;
+            _isLeader = _allowFallback;
+            return _isLeader;
         }
 
         if (_redisDb == null)
@@ -154,8 +153,14 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         if (!_useRedis || !ShouldUseRedis())
         {
-            // In fallback mode, heartbeat always succeeds
-            return true;
+            if (_allowFallback)
+            {
+                return true;
+            }
+
+            _isLeader = false;
+            StopLeaseRenewal();
+            return false;
         }
 
         if (_redisDb == null)
