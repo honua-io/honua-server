@@ -760,15 +760,12 @@ internal sealed partial class OgcFilterProcessor
             message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Path:", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("JsonException", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("unexpected", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("token", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("position", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("column", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("line ", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("syntax", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("parse", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains('\'') ||
-            message.Contains('"'))
+            message.Contains("Unexpected", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("syntax error", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("parse error", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" at position ", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" at column ", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" at line ", StringComparison.OrdinalIgnoreCase))
         {
             return InvalidCqlSyntaxMessage;
         }

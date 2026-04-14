@@ -809,6 +809,12 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             case PropertyReference property:
                 {
                     var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                    if (field?.Type == FieldType.Time)
+                    {
+                        throw new ArgumentException(
+                            $"Field '{property.PropertyName}' is a time-only field and cannot be used with temporal interval predicates.");
+                    }
+
                     var kind = field?.Type == FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
                     var sql = TranslateProperty(property, layer);
                     return new TemporalBounds(sql, sql, kind, false, false, false);

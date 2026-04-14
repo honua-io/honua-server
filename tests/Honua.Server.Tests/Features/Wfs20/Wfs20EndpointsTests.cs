@@ -69,6 +69,21 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_GetCapabilities_WithoutServiceParameter_ReturnsXml()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?REQUEST=GetCapabilities&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("WFS_Capabilities");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
     {
         var fixture = new WebAppFixture()

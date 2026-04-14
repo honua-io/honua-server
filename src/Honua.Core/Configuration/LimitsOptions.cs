@@ -129,8 +129,8 @@ public class QueryLimits
     /// <summary>
     /// Maximum offset for pagination.
     /// </summary>
-    [Range(0, 100000)]
-    public int MaxOffset { get; set; } = 50000;
+    [Range(0, 1000000)]
+    public int MaxOffset { get; set; } = 1000000;
 
     /// <summary>
     /// Maximum record count per query.
