@@ -60,7 +60,8 @@ internal static class DeployControlEndpoints
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
             .WithDisplayName("Rollback Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<DeployOperationResponse>();
+            .Produces<DeployOperationResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden);
     }
 
     private static async Task<IResult> HandleGetDeployPreflight(

@@ -379,6 +379,9 @@ public sealed class GrpcProcessServiceTests
     [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
     public async Task CancelJob_ApprovalRequired_ThrowsFailedPrecondition()
     {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("destructive-policy", "destructive-action"));

@@ -339,6 +339,43 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task RollbackDeployOperation_WhenApprovalRequired_ReturnsForbidden()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IDeployTargetRegistry>();
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IOperationReconciler>();
+                services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
+                services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
+                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
+                services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
+                    new AlwaysRequiresApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            var response = await client.PostAsJsonAsync(
+                "/api/v1/admin/deploy/operations/deploy-any-id/rollback",
+                new { reason = "Test approval gating on rollback" });
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/deploy/operations")]
     public async Task CreateDeployOperation_WithSubmitImmediately_ReturnsSubmittedStatus()
     {

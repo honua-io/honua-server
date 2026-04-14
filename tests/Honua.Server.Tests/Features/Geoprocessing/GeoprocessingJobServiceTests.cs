@@ -241,6 +241,9 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJob_ApprovalRequired_ThrowsApprovalException()
     {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("destructive-policy", "destructive-action"));
