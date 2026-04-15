@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
@@ -276,7 +277,7 @@ internal static class JobEndpoints
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IJobCancellationNotifier cancellationNotifier,
+        IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IUniversalProgressStore progressStore,
         [FromServices] IExecutionJobStore? jobStore = null,
         [FromServices] IJobQueue? jobQueue = null)
@@ -355,7 +356,7 @@ internal static class JobEndpoints
         }
 
         // Attempt cancellation via the canonical notifier
-        var workerOwnsTerminalState = cancellationNotifier.Cancel(jobId);
+        var workerOwnsTerminalState = cancellationNotifiers.CancelAny(jobId);
 
         if (!workerOwnsTerminalState)
         {

@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -26,14 +27,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IExecutionJobStore? _jobStore;
     private readonly IJobQueue? _jobQueue;
     private readonly IUniversalProgressStore _progressStore;
-    private readonly IJobCancellationNotifier _cancellationNotifier;
+    private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
-        IJobCancellationNotifier cancellationNotifier,
+        IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<GeoprocessingJobService> logger,
@@ -41,7 +42,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IJobQueue? jobQueue = null)
     {
         _progressStore = progressStore;
-        _cancellationNotifier = cancellationNotifier;
+        _cancellationNotifiers = cancellationNotifiers.ToArray();
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _logger = logger;
@@ -299,7 +300,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 "Job cancellation requires approval.");
         }
 
-        var workerOwnsTerminalState = _cancellationNotifier.Cancel(jobId);
+        var workerOwnsTerminalState = _cancellationNotifiers.CancelAny(jobId);
 
         if (workerOwnsTerminalState)
         {

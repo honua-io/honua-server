@@ -12,6 +12,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Server.Features.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -200,14 +201,7 @@ internal static class OperationsProgressEndpoints
         // Cancelled (if interrupted) or Completed (if rendering already finished).
         // Writing Cancelled here would race with the worker's Completed write and
         // could hide a successfully rendered result.
-        var workerOwnsTerminalState = false;
-        foreach (var notifier in cancellationNotifiers)
-        {
-            if (notifier.Cancel(operationId))
-            {
-                workerOwnsTerminalState = true;
-            }
-        }
+        var workerOwnsTerminalState = cancellationNotifiers.CancelAny(operationId);
 
         if (workerOwnsTerminalState)
         {

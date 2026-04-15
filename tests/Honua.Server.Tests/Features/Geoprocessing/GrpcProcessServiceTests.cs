@@ -43,7 +43,7 @@ public sealed class GrpcProcessServiceTests
             .Returns(ApprovalRequirement.NotRequired());
 
         var jobService = new GeoprocessingJobService(
-            _progressStore, _cancellationNotifier,
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             _jobStore);

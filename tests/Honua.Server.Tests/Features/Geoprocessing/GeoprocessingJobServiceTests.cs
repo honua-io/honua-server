@@ -44,7 +44,7 @@ public sealed class GeoprocessingJobServiceTests
             .Returns(ApprovalRequirement.NotRequired());
 
         _sut = new GeoprocessingJobService(
-            _progressStore, _cancellationNotifier,
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             NullLogger<GeoprocessingJobService>.Instance,
             _jobStore, _jobQueue);
@@ -143,7 +143,7 @@ public sealed class GeoprocessingJobServiceTests
     public async Task SubmitJob_WithoutJobStore_ThrowsStoreUnavailable()
     {
         var sut = new GeoprocessingJobService(
-            _progressStore, _cancellationNotifier,
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             NullLogger<GeoprocessingJobService>.Instance,
             jobStore: null);
@@ -279,6 +279,36 @@ public sealed class GeoprocessingJobServiceTests
 
         await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_LaterNotifierOwnsTerminalState_DoesNotDependOnRegistrationOrder()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var firstNotifier = Substitute.For<IJobCancellationNotifier>();
+        firstNotifier.Cancel("job-1").Returns(false);
+
+        var secondNotifier = Substitute.For<IJobCancellationNotifier>();
+        secondNotifier.Cancel("job-1").Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [firstNotifier, secondNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            _jobQueue);
+
+        await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        firstNotifier.Received(1).Cancel("job-1");
+        secondNotifier.Received(1).Cancel("job-1");
         await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
