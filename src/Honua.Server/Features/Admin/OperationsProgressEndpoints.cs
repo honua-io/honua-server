@@ -289,22 +289,33 @@ internal static class OperationsProgressEndpoints
         if (jobStore != null)
         {
             var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (executionJob != null && !IsExecutionJobTerminal(executionJob.Status))
+            if (executionJob != null)
             {
-                var jobNow = DateTimeOffset.UtcNow;
-                var cancelledJob = executionJob with
+                if (executionJob.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
                 {
-                    Status = ExecutionJobStatus.Cancelled,
-                    UpdatedAt = jobNow,
-                    CompletedAt = jobNow,
-                    CurrentPhase = "Cancelled"
-                };
-                await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    return ProblemDetailsHelpers.CreateAdminProblem(
+                        StatusCodes.Status409Conflict,
+                        "Conflict",
+                        $"Operation '{operationId}' reached terminal state '{executionJob.Status}' in the durable job store before cancellation could be applied");
+                }
 
-                var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
-                if (jobQueue != null)
+                if (!IsExecutionJobTerminal(executionJob.Status))
                 {
-                    await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+                    var jobNow = DateTimeOffset.UtcNow;
+                    var cancelledJob = executionJob with
+                    {
+                        Status = ExecutionJobStatus.Cancelled,
+                        UpdatedAt = jobNow,
+                        CompletedAt = jobNow,
+                        CurrentPhase = "Cancelled"
+                    };
+                    await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                    var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
+                    if (jobQueue != null)
+                    {
+                        await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }

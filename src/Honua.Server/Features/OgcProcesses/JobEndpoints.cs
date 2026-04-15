@@ -365,7 +365,22 @@ internal static class JobEndpoints
             var latest = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
             if (latest != null && OgcProcessesConversionHelpers.IsTerminal(latest.Status))
             {
-                // Job already reached a terminal state; return current status.
+                if (latest.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                {
+                    OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(latest.Status));
+                    return Results.Json(
+                        new OgcProcessError
+                        {
+                            Type = "about:blank",
+                            Title = "Cannot dismiss completed job",
+                            Status = StatusCodes.Status409Conflict,
+                            Detail = $"Job '{jobId}' is in terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(latest.Status)}' and cannot be dismissed."
+                        },
+                        OgcProcessesJsonContext.Default.OgcProcessError,
+                        MediaTypes.Json,
+                        StatusCodes.Status409Conflict);
+                }
+
                 job = latest;
             }
             else

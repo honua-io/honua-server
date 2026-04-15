@@ -148,6 +148,52 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenDurableJobAlreadySucceeded_Returns409()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Completed",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-admin-cancel-terminal"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        // Progress store still shows Processing (stale), but durable job is terminal
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-terminal-test");
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Progress store should not have been overwritten to Cancelled
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().NotBe(OperationStatus.Cancelled);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/active")]
     public async Task ListActiveOperations_WhenFiltered_ReturnsOnlyActive()
     {

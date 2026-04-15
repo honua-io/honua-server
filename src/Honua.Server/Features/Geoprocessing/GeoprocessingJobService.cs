@@ -311,7 +311,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var latest = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
         if (latest != null && IsTerminal(latest.Status))
         {
-            return;
+            if (latest.Status == ExecutionJobStatus.Cancelled)
+            {
+                return;
+            }
+
+            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, latest.Status.ToString());
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' is in terminal state '{latest.Status}' and cannot be cancelled.");
         }
 
         var now = DateTimeOffset.UtcNow;

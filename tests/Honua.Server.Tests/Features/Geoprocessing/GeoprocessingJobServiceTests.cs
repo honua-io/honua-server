@@ -312,6 +312,39 @@ public sealed class GeoprocessingJobServiceTests
         await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ReReadFindsSucceeded_ThrowsPreconditionFailed()
+    {
+        var queued = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var succeeded = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(queued, succeeded);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        var act = () => _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ReReadFindsCancelled_SucceedsIdempotently()
+    {
+        var queued = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var cancelled = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(queued, cancelled);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     // -----------------------------------------------------------------------
     // ProcessId disambiguation
     // -----------------------------------------------------------------------
