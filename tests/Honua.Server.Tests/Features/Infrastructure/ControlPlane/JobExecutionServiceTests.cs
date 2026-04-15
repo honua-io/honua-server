@@ -712,6 +712,65 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: a durable cancellation signal racing with worker shutdown must
+    /// be honoured by AbandonJobAsync instead of requeueing the job to an indefinite
+    /// Queued state that the reconciler does not sweep.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_ShutdownRequeue_HonoursDurableCancellationSignal()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None,
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1)
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var stoppingCts = new CancellationTokenSource();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                await stoppingCts.CancelAsync().ConfigureAwait(false);
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return JobExecutionResult.Succeeded();
+            });
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId,
+            provisioning.ClaimedBy!, stoppingCts.Token);
+
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Cancelled &&
+                j.CompletedAt.HasValue),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.Received().RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(),
+            Arg.Any<OperationPriority>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: after the authoritative store write in FinalizeJobAsync, the CTS
     /// must be removed before RemoveAsync so that a Redis hang does not leave a
     /// stale CTS that falsely accepts cancel delegation.

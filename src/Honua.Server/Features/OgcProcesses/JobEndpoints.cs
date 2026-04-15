@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure;
@@ -312,9 +313,23 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
-        // Already dismissed — return current status
+        // Already dismissed — reconcile side effects and return current status
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
+            if (jobQueue != null)
+            {
+                await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            }
+
+            var staleProgress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                jobId, context.RequestAborted).ConfigureAwait(false);
+            if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+            {
+                var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Dismissed via OGC API");
+                await progressStore.SetProgressAsync(
+                    jobId, reconciledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+            }
+
             var baseUrl2 = BaseUrlResolver.GetBaseUrl(context);
             return Results.Json(
                 OgcProcessesConversionHelpers.ToOgcStatusInfo(

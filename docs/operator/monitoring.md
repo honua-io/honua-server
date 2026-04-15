@@ -45,7 +45,7 @@ background sweep.
 
 | Level | Signal |
 |-------|--------|
-| Information | Worker started/stopped, job execution started, job completed, operator cancellation |
+| Information | Worker started/stopped, job execution started, job completed, operator cancellation, durable cancellation signal honoured during abandon |
 | Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup, job timeout, state transition skipped (job cancelled or reclaimed between claim and Running, or reconciler intervention), heartbeat pump faulted (finalization still proceeds), transient heartbeat write failure (pump retries on next interval), per-attempt warning log append failed (requeue/terminal transition still proceeds) |
 | Error | Job execution exception, claim loop error, pre-execution shutdown requeue failed (stale-claim reconciliation will recover) |
 

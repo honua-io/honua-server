@@ -372,6 +372,31 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        if (current.CancellationRequestedAt.HasValue)
+        {
+            Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
+
+            var cancelNow = DateTimeOffset.UtcNow;
+            var cancelled = current with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                UpdatedAt = cancelNow,
+                CompletedAt = cancelNow,
+                ErrorMessage = "Cancelled by operator (durable signal honoured during abandon).",
+                CurrentPhase = "Cancelled"
+            };
+            await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationTokens.Remove(current.OperationId, workerId);
+            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+            if (logStore != null)
+            {
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
         if (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount))
@@ -546,6 +571,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9066, LogLevel.Error, "Failed to requeue job {OperationId} during pre-execution shutdown; stale-claim reconciliation will recover")]
         public static partial void PreExecShutdownCleanupFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9068, LogLevel.Information, "Abandon honoured durable cancellation signal for job {OperationId}")]
+        public static partial void AbandonHonouredDurableCancellation(ILogger logger, string operationId);
     }
 }
 

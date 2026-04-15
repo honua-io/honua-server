@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure;
 
 namespace Honua.Server.Features.Geoprocessing;
@@ -271,7 +272,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
-            return; // Idempotent success
+            if (_jobQueue != null)
+            {
+                await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+            }
+
+            var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
+                jobId, cancellationToken).ConfigureAwait(false);
+            if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+            {
+                var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                await _progressStore.SetProgressAsync(
+                    jobId, reconciledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
         }
 
         if (IsTerminal(job.Status))
