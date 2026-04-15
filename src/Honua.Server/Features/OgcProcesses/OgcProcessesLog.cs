@@ -64,6 +64,9 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8135, LogLevel.Warning, "OGC Job dismiss rejected (terminal): JobId={JobId}, Status={Status}")]
     public static partial void DismissRejectedTerminal(ILogger logger, string jobId, string status);
 
+    [LoggerMessage(8136, LogLevel.Warning, "OGC dismiss queue cleanup failed: JobId={JobId}; stale-claim reconciler will repair")]
+    public static partial void QueueRemovalFailed(ILogger logger, string jobId, Exception exception);
+
     // 8140-8149: Job list
     [LoggerMessage(8140, LogLevel.Information, "OGC Job list requested")]
     public static partial void JobListRequested(ILogger logger);

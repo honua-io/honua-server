@@ -1405,6 +1405,87 @@ public sealed class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task ProcessJob_Finalize_NotifiesTerminalCallback_WhenLogRetentionFails()
+    {
+        var provisioning = CreateProvisioningJob();
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+
+        var logStore = Substitute.For<IExecutionLogStore>();
+        logStore.SetRetentionAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, [terminalCallback], logStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Succeeded),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ProcessJob_AbandonTerminal_NotifiesTerminalCallback_WhenLogRetentionFails()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+            .Returns(provisioning.OperationId, (string?)null);
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Permanent failure"));
+
+        var logStore = Substitute.For<IExecutionLogStore>();
+        logStore.SetRetentionAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, [terminalCallback], logStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.

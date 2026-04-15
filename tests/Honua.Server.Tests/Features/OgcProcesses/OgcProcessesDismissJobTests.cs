@@ -82,6 +82,36 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_AlreadyCancelled_ReturnsOkWhenQueueRemovalFails()
+    {
+        var cancelledJob = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Cancelled,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        _jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(cancelledJob);
+        _jobQueue.RemoveAsync(JobId, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_ReReadFindsDeleted_Returns404WithoutRecreatingJob()
     {
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");

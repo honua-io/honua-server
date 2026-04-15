@@ -317,7 +317,14 @@ internal sealed partial class JobExecutionService(
 
         if (logStore != null)
         {
-            await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.LogRetentionFailed(logger, operationId, ex);
+            }
         }
 
         await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
@@ -367,7 +374,14 @@ internal sealed partial class JobExecutionService(
 
         if (logStore != null)
         {
-            await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.LogRetentionFailed(logger, operationId, ex);
+            }
         }
 
         await NotifyTerminalAsync(terminal, cancellationToken).ConfigureAwait(false);
@@ -418,7 +432,14 @@ internal sealed partial class JobExecutionService(
 
             if (logStore != null)
             {
-                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.LogRetentionFailed(logger, current.OperationId, ex);
+                }
             }
 
             await NotifyTerminalAsync(cancelled, cancellationToken).ConfigureAwait(false);
@@ -514,7 +535,14 @@ internal sealed partial class JobExecutionService(
 
             if (logStore != null)
             {
-                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.LogRetentionFailed(logger, current.OperationId, ex);
+                }
             }
 
             await NotifyTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
@@ -633,6 +661,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9071, LogLevel.Warning, "Queue removal failed for terminal job {OperationId}; stale-claim reconciler will repair")]
         public static partial void QueueRemovalFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9073, LogLevel.Warning, "Log retention set failed for terminal job {OperationId}; execution logs may expire early")]
+        public static partial void LogRetentionFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 

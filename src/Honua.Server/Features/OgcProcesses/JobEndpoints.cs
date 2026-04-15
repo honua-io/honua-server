@@ -318,7 +318,14 @@ internal static class JobEndpoints
         {
             if (jobQueue != null)
             {
-                await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                try
+                {
+                    await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
+                }
             }
 
             var staleProgress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
@@ -404,7 +411,14 @@ internal static class JobEndpoints
 
                 if (jobQueue != null)
                 {
-                    await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    try
+                    {
+                        await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
+                    }
                 }
 
                 var staleProgress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
@@ -448,7 +462,14 @@ internal static class JobEndpoints
 
                 if (jobQueue != null)
                 {
-                    await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    try
+                    {
+                        await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
+                    }
                 }
 
                 var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(

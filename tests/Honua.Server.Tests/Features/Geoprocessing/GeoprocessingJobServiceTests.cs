@@ -441,6 +441,51 @@ public sealed class GeoprocessingJobServiceTests
         await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_AlreadyCancelled_ContinuesWhenQueueRemovalFails()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _jobQueue.RemoveAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-1", "plan-1");
+        _progressStore.GetProgressAsync<GeoprocessingProgress>("job-1", Arg.Any<CancellationToken>())
+            .Returns(staleProgress);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _progressStore.Received(1).SetProgressAsync(
+            "job-1",
+            Arg.Is<Honua.Core.Features.Infrastructure.Domain.IOperationProgress>(p =>
+                p.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_DirectCancel_ContinuesWhenQueueRemovalFails()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+        _jobQueue.RemoveAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // -----------------------------------------------------------------------
     // ProcessId disambiguation
     // -----------------------------------------------------------------------

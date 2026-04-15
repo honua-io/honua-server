@@ -274,7 +274,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             if (_jobQueue != null)
             {
-                await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
+                }
             }
 
             var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
@@ -337,7 +344,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 if (_jobQueue != null)
                 {
-                    await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
+                    }
                 }
 
                 var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
@@ -387,7 +401,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (_jobQueue != null)
         {
-            await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
+            }
         }
 
         var progress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(

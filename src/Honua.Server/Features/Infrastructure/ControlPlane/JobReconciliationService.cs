@@ -192,7 +192,14 @@ internal sealed partial class JobReconciliationService(
 
             if (logStore != null)
             {
-                await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.LogRetentionFailed(logger, current.OperationId, ex);
+                }
             }
 
             await NotifyTerminalAsync(cancelledJob, CancellationToken.None).ConfigureAwait(false);
@@ -262,7 +269,14 @@ internal sealed partial class JobReconciliationService(
 
             if (logStore != null)
             {
-                await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.LogRetentionFailed(logger, current.OperationId, ex);
+                }
             }
 
             await NotifyTerminalAsync(failed, CancellationToken.None).ConfigureAwait(false);
@@ -324,7 +338,14 @@ internal sealed partial class JobReconciliationService(
 
         if (logStore != null)
         {
-            await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.LogRetentionFailed(logger, current.OperationId, ex);
+            }
         }
 
         await NotifyTerminalAsync(failed, CancellationToken.None).ConfigureAwait(false);
@@ -398,5 +419,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9072, LogLevel.Warning, "Queue removal failed for terminal job {OperationId}; stale-claim reconciler will repair")]
         public static partial void QueueRemovalFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9074, LogLevel.Warning, "Log retention set failed for terminal job {OperationId}; execution logs may expire early")]
+        public static partial void LogRetentionFailed(ILogger logger, string operationId, Exception exception);
     }
 }
