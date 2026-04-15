@@ -363,7 +363,13 @@ internal static class JobEndpoints
             // Re-read to catch concurrent terminal transitions (e.g. reconciler
             // revoked the stale CTS after requeue or terminal failure).
             var latest = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-            if (latest != null && OgcProcessesConversionHelpers.IsTerminal(latest.Status))
+            if (latest == null)
+            {
+                OgcProcessesLog.JobNotFound(logger, jobId);
+                return JobNotFoundResult(jobId);
+            }
+
+            if (OgcProcessesConversionHelpers.IsTerminal(latest.Status))
             {
                 if (latest.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
                 {
@@ -387,7 +393,7 @@ internal static class JobEndpoints
             {
                 // No active worker — transition to cancelled directly.
                 var now = DateTimeOffset.UtcNow;
-                var cancelled = (latest ?? job) with
+                var cancelled = latest with
                 {
                     Status = ExecutionJobStatus.Cancelled,
                     UpdatedAt = now,

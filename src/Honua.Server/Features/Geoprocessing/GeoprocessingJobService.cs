@@ -309,7 +309,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var latest = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (latest != null && IsTerminal(latest.Status))
+        if (latest == null)
+        {
+            GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+            throw new GeoprocessingNotFoundException(
+                $"Job '{jobId}' was not found on re-read and could not be cancelled.");
+        }
+
+        if (IsTerminal(latest.Status))
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
             {
@@ -322,7 +329,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var cancelled = (latest ?? job) with
+        var cancelled = latest with
         {
             Status = ExecutionJobStatus.Cancelled,
             UpdatedAt = now,
