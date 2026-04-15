@@ -350,6 +350,21 @@ internal static class OperationsProgressEndpoints
                         await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
                     }
                 }
+                else if (executionJob.Status is ExecutionJobStatus.Cancelled)
+                {
+                    var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
+                    if (jobQueue != null)
+                    {
+                        try
+                        {
+                            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (Exception)
+                        {
+                            // Best-effort: stale-claim reconciler will repair.
+                        }
+                    }
+                }
             }
         }
 

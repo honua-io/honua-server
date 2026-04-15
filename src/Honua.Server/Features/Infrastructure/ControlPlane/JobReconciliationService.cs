@@ -181,14 +181,21 @@ internal sealed partial class JobReconciliationService(
 
             cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
 
-            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.QueueRemovalFailed(logger, current.OperationId, ex);
+            }
 
             if (logStore != null)
             {
-                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
             }
 
-            await NotifyTerminalAsync(cancelledJob, cancellationToken).ConfigureAwait(false);
+            await NotifyTerminalAsync(cancelledJob, CancellationToken.None).ConfigureAwait(false);
             return true;
         }
 
@@ -244,14 +251,21 @@ internal sealed partial class JobReconciliationService(
 
             cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
 
-            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.QueueRemovalFailed(logger, current.OperationId, ex);
+            }
 
             if (logStore != null)
             {
-                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
             }
 
-            await NotifyTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
+            await NotifyTerminalAsync(failed, CancellationToken.None).ConfigureAwait(false);
         }
 
         return true;
@@ -299,14 +313,21 @@ internal sealed partial class JobReconciliationService(
         // store transition, before the queue write.
         cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
 
-        await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.QueueRemovalFailed(logger, current.OperationId, ex);
+        }
 
         if (logStore != null)
         {
-            await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
         }
 
-        await NotifyTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
+        await NotifyTerminalAsync(failed, CancellationToken.None).ConfigureAwait(false);
         return true;
     }
 
@@ -374,5 +395,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9070, LogLevel.Warning, "Terminal callback failed for job {OperationId}; admin progress may be stale")]
         public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9072, LogLevel.Warning, "Queue removal failed for terminal job {OperationId}; stale-claim reconciler will repair")]
+        public static partial void QueueRemovalFailed(ILogger logger, string operationId, Exception exception);
     }
 }

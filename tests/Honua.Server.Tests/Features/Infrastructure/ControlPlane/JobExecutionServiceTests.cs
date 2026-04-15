@@ -1323,6 +1323,89 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: after the authoritative store write, a queue removal failure
+    /// must not prevent the terminal callback from firing. The admin API reads
+    /// from the progress store (synced by the callback), so skipping it leaves
+    /// stale in-progress state until TTL expiry.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_Finalize_NotifiesTerminalCallback_WhenQueueRemovalFails()
+    {
+        var provisioning = CreateProvisioningJob();
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, [terminalCallback], null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Succeeded),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: terminal callback must fire even when queue removal fails
+    /// in the abandon path (retries exhausted).
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_AbandonTerminal_NotifiesTerminalCallback_WhenQueueRemovalFails()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Permanent failure"));
+
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, [terminalCallback], null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>

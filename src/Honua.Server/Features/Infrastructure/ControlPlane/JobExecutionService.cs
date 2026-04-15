@@ -305,7 +305,15 @@ internal sealed partial class JobExecutionService(
 
         await jobStore.SetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false);
         cancellationTokens.Remove(operationId, workerId);
-        await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.QueueRemovalFailed(logger, operationId, ex);
+        }
 
         if (logStore != null)
         {
@@ -347,7 +355,15 @@ internal sealed partial class JobExecutionService(
 
         await jobStore.SetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false);
         cancellationTokens.Remove(operationId, workerId);
-        await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.QueueRemovalFailed(logger, operationId, ex);
+        }
 
         if (logStore != null)
         {
@@ -390,7 +406,15 @@ internal sealed partial class JobExecutionService(
             };
             await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
             cancellationTokens.Remove(current.OperationId, workerId);
-            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.QueueRemovalFailed(logger, current.OperationId, ex);
+            }
 
             if (logStore != null)
             {
@@ -478,7 +502,15 @@ internal sealed partial class JobExecutionService(
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
             cancellationTokens.Remove(current.OperationId, workerId);
-            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.QueueRemovalFailed(logger, current.OperationId, ex);
+            }
 
             if (logStore != null)
             {
@@ -598,6 +630,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9069, LogLevel.Warning, "Terminal callback failed for job {OperationId}; admin progress may be stale")]
         public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9071, LogLevel.Warning, "Queue removal failed for terminal job {OperationId}; stale-claim reconciler will repair")]
+        public static partial void QueueRemovalFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 

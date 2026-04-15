@@ -661,11 +661,11 @@ public sealed class JobReconciliationServiceTests
 
     /// <summary>
     /// Regression: when <c>RemoveAsync</c> fails after the store transition to
-    /// Failed (timeout), the stale CTS must already be revoked so cancel paths
-    /// do not delegate to a dead worker.
+    /// Failed (timeout), the stale CTS must already be revoked and the terminal
+    /// callback must still fire despite the queue failure.
     /// </summary>
     [UnitTest]
-    public async Task TimeoutExpiry_RevokesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
+    public async Task TimeoutExpiry_RevokesCtsAndNotifiesCallback_WhenQueueRemovalFails()
     {
         var snapshot = CreateRunningJob(
             timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) });
@@ -688,17 +688,21 @@ public sealed class JobReconciliationServiceTests
         using var staleCts = cancellationTokens.CreateLinkedTokenSource(
             snapshot.OperationId, snapshot.ClaimedBy!, CancellationToken.None);
 
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, cancellationTokens,
-            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+            [terminalCallback], null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            RunSingleSweepAsync(service, cts.Token));
+        await RunSingleSweepAsync(service, cts.Token);
 
         Assert.True(staleCts.IsCancellationRequested);
         Assert.False(cancellationTokens.Cancel(snapshot.OperationId));
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
@@ -755,6 +759,110 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
 
         await jobQueue.Received(1).RemoveAsync(snapshot.OperationId, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: when queue removal fails after a heartbeat-expired terminal
+    /// failure, the terminal callback must still fire so the admin progress store
+    /// reflects the correct terminal state.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_TerminalFailure_NotifiesCallback_WhenQueueRemovalFails()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            [terminalCallback], null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: when queue removal fails for a heartbeat-expired job honouring
+    /// a durable cancellation signal, the terminal callback must still fire.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_DurableCancellation_NotifiesCallback_WhenQueueRemovalFails()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(5),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            }) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            [terminalCallback], null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<CancellationToken>());
     }
 
     /// <summary>
