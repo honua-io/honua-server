@@ -202,7 +202,7 @@ per-kind executor tickets (#721, #724, #727).
 | ExtractTransformLoad | Data movement and transformation workloads |
 | TileCache | Tile cache generation or refresh workloads |
 
-Workers can filter which job kinds they claim. In the default configuration,
+Workers can filter which job kinds they claim. In the default configuration
 a single worker host processes all kinds.
 
 ### Job Lifecycle
@@ -265,13 +265,13 @@ want visibility into recovery events.
 
 Jobs are dequeued in priority order. Within a priority band, FIFO ordering
 applies. Delayed entries (jobs requeued with a visibility delay for retry
-backoff) and kind-mismatched entries do not consume the scan budget,
-so a backlog of delayed retries or jobs for other worker kinds cannot
-starve ready work in lower-priority bands. The scan terminates when the
-scan budget (100 claimable candidates) is exhausted, the traverse budget
-(5000 total entries traversed) is exhausted, or the queue is drained.
-Exceeding the traverse threshold is logged at Warning level to signal
-queue pathology.
+backoff) and kind-mismatched entries do not consume the scan budget.
+Each poll scans up to 100 claimable candidates within a traverse window
+of 5,000 total entries. A rotating cursor advances the window across
+successive polls so that ready jobs beyond the first traverse window are
+discovered on subsequent claim attempts. When the queue is drained from
+the cursor position, the cursor resets to the beginning. Exceeding the
+traverse threshold is logged at Warning level to signal queue pathology.
 
 | Priority | Use case |
 |----------|----------|

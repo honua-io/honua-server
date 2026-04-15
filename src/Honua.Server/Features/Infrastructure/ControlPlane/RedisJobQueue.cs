@@ -69,6 +69,7 @@ internal sealed partial class RedisJobQueue(
         """;
 
     private readonly IDatabase _database = redis.GetDatabase();
+    private long _traverseCursor;
 
     public async Task EnqueueAsync(
         string operationId,
@@ -92,7 +93,7 @@ internal sealed partial class RedisJobQueue(
 
         const int batchSize = 10;
         var now = DateTimeOffset.UtcNow;
-        long offset = 0;
+        long offset = Interlocked.Read(ref _traverseCursor);
         var totalScanned = 0;
         var totalTraversed = 0;
         var totalSkipped = 0;
@@ -106,6 +107,11 @@ internal sealed partial class RedisJobQueue(
 
             if (candidates.Length == 0)
             {
+                if (offset > 0)
+                {
+                    Interlocked.Exchange(ref _traverseCursor, 0);
+                }
+
                 break;
             }
 
@@ -205,6 +211,7 @@ internal sealed partial class RedisJobQueue(
 
         if (totalTraversed >= MaxTraverseEntries)
         {
+            Interlocked.Exchange(ref _traverseCursor, offset);
             Log.ClaimScanTraverseThresholdExceeded(logger, totalTraversed, totalScanned, totalSkipped);
         }
 
