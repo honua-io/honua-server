@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Geoprocessing;
@@ -31,6 +32,7 @@ public sealed class GrpcProcessServiceTests
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
     private readonly IOperatorApprovalEvaluator _approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+    private readonly IProcessCatalog _processCatalog = new BuiltInProcessCatalog();
     private readonly HonuaProcessService _sut;
 
     public GrpcProcessServiceTests()
@@ -46,6 +48,7 @@ public sealed class GrpcProcessServiceTests
         var jobService = new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
+            _processCatalog,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             _jobStore);
 
@@ -825,7 +828,8 @@ public sealed class GrpcProcessServiceTests
         {
             StepId = "step-1",
             Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            ProcessId = "geometry.buffer",
+            Inputs = { { "wkb", "AAAA" }, { "srid", "4326" }, { "distance", "100" } }
         };
 
     private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)

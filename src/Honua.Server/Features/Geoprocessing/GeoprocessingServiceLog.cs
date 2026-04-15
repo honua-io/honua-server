@@ -89,12 +89,23 @@ internal static partial class GeoprocessingServiceLog
     public static partial void CancelRejectedApprovalRequired(
         ILogger logger,
         string policyRef);
-
+    
     [LoggerMessage(8015, LogLevel.Warning, "Queue cleanup failed for cancelled job {JobId}; stale-claim reconciler will repair")]
     public static partial void QueueRemovalFailed(
         ILogger logger,
         string jobId,
         Exception exception);
+
+    [LoggerMessage(8016, LogLevel.Information, "Process catalog loaded with {Count} built-in processes")]
+    public static partial void ProcessCatalogLoaded(
+        ILogger logger,
+        int count);
+
+    [LoggerMessage(8017, LogLevel.Warning, "Unknown process referenced: Field={FieldPath}, Detail={Detail}")]
+    public static partial void UnknownProcessReferenced(
+        ILogger logger,
+        string fieldPath,
+        string detail);
 
     [LoggerMessage(8020, LogLevel.Information, "Map package created: MapPackageId={MapPackageId}, Status={Status}")]
     public static partial void MapPackageCreated(

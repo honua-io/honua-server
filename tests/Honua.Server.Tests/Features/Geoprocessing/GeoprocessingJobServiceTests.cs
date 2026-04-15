@@ -47,6 +47,7 @@ public sealed class GeoprocessingJobServiceTests
         _sut = new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             _jobStore, _jobQueue);
     }
@@ -163,6 +164,7 @@ public sealed class GeoprocessingJobServiceTests
         var sut = new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             jobStore: null);
 
@@ -791,7 +793,13 @@ public sealed class GeoprocessingJobServiceTests
             {
                 StepId = "step-1",
                 Kind = AnalysisPlanStepKind.Geoprocess,
-                ProcessId = "buffer"
+                ProcessId = "geometry.buffer",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["wkb"] = "AAAA",
+                    ["srid"] = "4326",
+                    ["distance"] = "100"
+                }
             }
         ]
     };

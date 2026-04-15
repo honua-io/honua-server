@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -32,6 +33,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
+    private readonly IProcessCatalog _processCatalog;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -39,6 +41,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
+        IProcessCatalog processCatalog,
         ILogger<GeoprocessingJobService> logger,
         IExecutionJobStore? jobStore = null,
         IJobQueue? jobQueue = null)
@@ -47,6 +50,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
+        _processCatalog = processCatalog;
         _logger = logger;
         _jobStore = jobStore;
         _jobQueue = jobQueue;
@@ -85,6 +89,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 Message = "Plan must contain at least one step.",
                 FieldPath = "steps"
             });
+        }
+
+        var (catalogViolations, catalogWarnings) = ProcessPlanValidator.Validate(plan, _processCatalog);
+        violations.AddRange(catalogViolations);
+        warnings.AddRange(catalogWarnings);
+
+        foreach (var v in catalogViolations)
+        {
+            if (v.Code == "UNKNOWN_PROCESS")
+            {
+                GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
+            }
         }
 
         var approvalReq = _approvalEvaluator.Evaluate(
