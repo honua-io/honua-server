@@ -160,7 +160,37 @@ internal sealed partial class JobReconciliationService(
             return false;
         }
 
-        var retryPolicy = current!.RetryPolicy ?? JobRetryPolicy.Default;
+        // If cancellation was durably requested before the heartbeat expired,
+        // honour it with a terminal Cancelled state instead of retrying. The
+        // worker either never observed the signal or crashed before acting on it.
+        if (current!.CancellationRequestedAt.HasValue)
+        {
+            Log.HeartbeatExpiredCancellationHonoured(logger, current.OperationId);
+
+            var cancelledNow = DateTimeOffset.UtcNow;
+            var cancelledJob = current with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                UpdatedAt = cancelledNow,
+                CompletedAt = cancelledNow,
+                ErrorMessage = "Cancelled by operator (durable signal honoured by reconciler).",
+                CurrentPhase = "Cancelled"
+            };
+            await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+
+            await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+
+            if (logStore != null)
+            {
+                await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+
+            return true;
+        }
+
+        var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
         if (retryPolicy.ShouldRetry(current.AttemptCount))
         {
@@ -318,5 +348,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9049, LogLevel.Information, "Reconciliation skipped for job {OperationId}: timeout no longer expired since sweep snapshot")]
         public static partial void ReconciliationSkippedTimeoutRefreshed(ILogger logger, string operationId);
+
+        [LoggerMessage(9067, LogLevel.Information, "Heartbeat expired for job {OperationId}: honouring durable cancellation signal")]
+        public static partial void HeartbeatExpiredCancellationHonoured(ILogger logger, string operationId);
     }
 }

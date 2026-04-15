@@ -301,6 +301,28 @@ internal static class OperationsProgressEndpoints
 
                 if (!IsExecutionJobTerminal(executionJob.Status))
                 {
+                    // If the job is actively claimed by a remote worker whose
+                    // local notifier is unreachable, persist a durable
+                    // cancellation signal instead of writing terminal state.
+                    if (executionJob.ClaimedBy != null)
+                    {
+                        var reqNow = DateTimeOffset.UtcNow;
+                        var requested = executionJob with
+                        {
+                            CancellationRequestedAt = reqNow,
+                            UpdatedAt = reqNow
+                        };
+                        await jobStore.SetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                        var delegated = new CancelOperationResponse
+                        {
+                            OperationId = operationId,
+                            Message = "Operation cancellation requested",
+                            Type = progress.Type
+                        };
+                        return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                    }
+
                     var jobNow = DateTimeOffset.UtcNow;
                     var cancelledJob = executionJob with
                     {

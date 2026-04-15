@@ -370,6 +370,54 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ClaimedByRemoteWorker_SetsDurableCancellationSignal()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running) with
+        {
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.CancellationRequestedAt.HasValue &&
+                j.Status == ExecutionJobStatus.Running),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedJob_WritesCancelledDirectly()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).SetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
     // -----------------------------------------------------------------------
     // ProcessId disambiguation
     // -----------------------------------------------------------------------

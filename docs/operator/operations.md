@@ -407,6 +407,15 @@ stale worker's cancellation token source. This ensures that a subsequent
 API-side `Cancel()` call does not return a false positive for a token that
 no longer corresponds to an active execution.
 
+In split API/worker deployments, the API host has no local cancellation
+notifier for jobs running on remote workers. When a cancel request arrives
+for a claimed job and no local notifier can signal the worker, the API
+persists a `CancellationRequestedAt` timestamp on the job record as a
+durable cancellation signal. The worker observes this signal during its
+next heartbeat read and cancels locally. If the worker's heartbeat expires
+before it processes the signal, the reconciler honours the request with a
+terminal Cancelled state instead of retrying.
+
 If a worker crashes without clean abandonment, the reconciliation service
 detects the stale heartbeat and performs the same recovery. This ensures
 rolling deployments and scale-down events do not permanently fail jobs

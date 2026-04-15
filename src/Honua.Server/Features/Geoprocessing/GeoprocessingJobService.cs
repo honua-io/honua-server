@@ -328,6 +328,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' is in terminal state '{latest.Status}' and cannot be cancelled.");
         }
 
+        // If the job is actively claimed by a worker but no local notifier
+        // could cancel it, the worker is on a remote host. Persist a durable
+        // cancellation signal instead of writing terminal Cancelled — the
+        // worker will observe it during its next heartbeat read.
+        if (latest.ClaimedBy != null)
+        {
+            var reqNow = DateTimeOffset.UtcNow;
+            var requested = latest with
+            {
+                CancellationRequestedAt = reqNow,
+                UpdatedAt = reqNow
+            };
+            await jobStore.SetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+            GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var cancelled = latest with
         {

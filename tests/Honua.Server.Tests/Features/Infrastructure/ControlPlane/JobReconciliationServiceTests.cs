@@ -702,6 +702,62 @@ public sealed class JobReconciliationServiceTests
     }
 
     /// <summary>
+    /// Regression: when a durable cancellation signal (CancellationRequestedAt) is
+    /// set on a job whose heartbeat has expired, the reconciler must transition to
+    /// Cancelled instead of retrying, honouring the operator's cancellation intent.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_HonoursDurableCancellationSignal_TransitionsToCancelled()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(5),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            }) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            logStore: null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await jobStore.Received(1).SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        await jobQueue.Received(1).RemoveAsync(snapshot.OperationId, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the reconciler's sweep logic once without running the full
     /// BackgroundService loop. Uses reflection to call the private method
     /// since the service is internal and sealed.

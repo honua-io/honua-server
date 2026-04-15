@@ -162,6 +162,18 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        // A durable cancellation signal may have been written by a remote API
+        // host between the claim and the CTS registration. Honour it before
+        // promoting to Running.
+        if (job.CancellationRequestedAt.HasValue)
+        {
+            Log.JobCancelledByOperator(logger, operationId);
+            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
+                "Cancelled by operator (durable signal).", CancellationToken.None).ConfigureAwait(false);
+            cancellationTokens.Remove(operationId, workerId);
+            return;
+        }
+
         // Transition to Running.
         var now = DateTimeOffset.UtcNow;
         var running = job with
@@ -177,7 +189,7 @@ internal sealed partial class JobExecutionService(
 
         // Create execution context with heartbeat pump.
         using var context = new JobExecutionContext(
-            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, logger);
+            operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -549,6 +561,7 @@ internal sealed partial class JobExecutionContext(
     IExecutionJobStore jobStore,
     IExecutionLogStore? logStore,
     JobHeartbeatPolicy heartbeatPolicy,
+    CancellationTokenSource? durableCancellationCts,
     ILogger logger) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -669,6 +682,16 @@ internal sealed partial class JobExecutionContext(
                     // or ownership has moved to another worker.
                     if (!IsOwnedBy(job))
                     {
+                        break;
+                    }
+
+                    // A remote API host persisted a durable cancellation signal.
+                    // Cancel the local CTS so the executor receives the signal
+                    // through its CancellationToken.
+                    if (job.CancellationRequestedAt.HasValue && durableCancellationCts != null)
+                    {
+                        try { durableCancellationCts.Cancel(); }
+                        catch (ObjectDisposedException) { }
                         break;
                     }
 

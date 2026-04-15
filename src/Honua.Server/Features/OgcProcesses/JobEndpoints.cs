@@ -389,9 +389,23 @@ internal static class JobEndpoints
 
                 job = latest;
             }
+            else if (latest.ClaimedBy != null)
+            {
+                // Job is actively claimed by a remote worker whose local
+                // notifier is unreachable. Persist a durable cancellation
+                // signal so the worker observes it during its next heartbeat.
+                var reqNow = DateTimeOffset.UtcNow;
+                var requested = latest with
+                {
+                    CancellationRequestedAt = reqNow,
+                    UpdatedAt = reqNow
+                };
+                await jobStore.SetAsync(requested, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                job = requested;
+            }
             else
             {
-                // No active worker — transition to cancelled directly.
+                // Unclaimed job — transition to cancelled directly.
                 var now = DateTimeOffset.UtcNow;
                 var cancelled = latest with
                 {

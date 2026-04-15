@@ -657,6 +657,13 @@ public sealed record ExecutionJobRecord
     /// </summary>
     public DateTimeOffset? LastHeartbeatAt { get; init; }
 
+    /// <summary>
+    /// Time when cancellation was durably requested via the API. Workers observe
+    /// this signal during heartbeat and cancel locally; the reconciler honours it
+    /// when the worker's heartbeat expires before the signal is processed.
+    /// </summary>
+    public DateTimeOffset? CancellationRequestedAt { get; init; }
+
     // -----------------------------------------------------------------------
     // Retry tracking (ticket #681)
     // -----------------------------------------------------------------------

@@ -104,12 +104,22 @@ Millisecond timestamps break ties within a band.
 
 ### Cancellation
 
-- API-side cancellation uses the existing `IJobCancellationNotifier` to signal
-  in-flight workers. The worker registers its per-job cancellation token source
-  before the `Provisioning → Running` transition so that operator cancellation
-  arriving during that window is delivered through the token rather than as a
-  direct store write. If no worker token is registered, the API marks the job
-  as Cancelled directly and removes it from the queue.
+- API-side cancellation first attempts to signal in-flight workers via the
+  process-local `IJobCancellationNotifier`. The worker registers its per-job
+  cancellation token source before the `Provisioning → Running` transition so
+  that operator cancellation arriving during that window is delivered through
+  the token rather than as a direct store write.
+- When the local notifier confirms the signal was delivered, the worker owns
+  the terminal state transition and the API returns immediately.
+- When no local notifier can reach the worker (the common case in split
+  API/worker deployments), the API checks the job's claim state:
+  - **Unclaimed** (`ClaimedBy` is null): the API marks the job as Cancelled
+    directly and removes it from the queue.
+  - **Actively claimed**: the API persists `CancellationRequestedAt` on the
+    `ExecutionJobRecord` as a durable cancellation signal. The worker observes
+    this signal during its next heartbeat read and cancels locally. If the
+    worker's heartbeat expires before it processes the signal, the reconciler
+    honours the request with a terminal Cancelled state instead of retrying.
 - Worker-side cancellation flows through `CancellationToken` passed to
   `IJobExecutor.ExecuteAsync`.
 - When the reconciler requeues or terminally fails a job (heartbeat or timeout

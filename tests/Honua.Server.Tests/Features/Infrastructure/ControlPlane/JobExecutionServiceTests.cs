@@ -207,7 +207,7 @@ public sealed class JobExecutionServiceTests
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, null,
             new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
-            NullLogger.Instance);
+            null, NullLogger.Instance);
 
         // The pump should detect the ownership change and exit without writing.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -243,7 +243,7 @@ public sealed class JobExecutionServiceTests
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, null,
             JobHeartbeatPolicy.Default,
-            NullLogger.Instance);
+            null, NullLogger.Instance);
 
         await context.ReportProgressAsync(50, "Processing", CancellationToken.None);
 
@@ -277,7 +277,7 @@ public sealed class JobExecutionServiceTests
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, null,
             JobHeartbeatPolicy.Default,
-            NullLogger.Instance);
+            null, NullLogger.Instance);
 
         await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
 
@@ -596,7 +596,7 @@ public sealed class JobExecutionServiceTests
         using var context = new JobExecutionContext(
             running.OperationId, "worker-stale", jobStore, logStore,
             JobHeartbeatPolicy.Default,
-            NullLogger.Instance);
+            null, NullLogger.Instance);
 
         await context.AppendLogAsync(new ExecutionLogEntry
         {
@@ -943,7 +943,7 @@ public sealed class JobExecutionServiceTests
         using var context = new JobExecutionContext(
             running.OperationId, running.ClaimedBy!, jobStore, null,
             new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
-            NullLogger.Instance);
+            null, NullLogger.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(80));
 
@@ -976,7 +976,7 @@ public sealed class JobExecutionServiceTests
         using var context = new JobExecutionContext(
             running.OperationId, running.ClaimedBy!, jobStore, null,
             new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
-            NullLogger.Instance);
+            null, NullLogger.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
         await context.RunHeartbeatPumpAsync(cts.Token);
@@ -1183,6 +1183,84 @@ public sealed class JobExecutionServiceTests
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<IJobExecutionContext>(),
             Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a durable cancellation signal (CancellationRequestedAt) set by
+    /// a remote API host before the worker transitions to Running must be honoured
+    /// so the job does not proceed to execution.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_SkipsExecution_WhenDurableCancellationSignalIsSet()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-2)
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Running),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await executor.DidNotReceive().ExecuteAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<IJobExecutionContext>(),
+            Arg.Any<CancellationToken>());
+
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: the heartbeat pump must detect a durable cancellation signal
+    /// and cancel the per-job CTS so the executor receives the cancellation
+    /// through its CancellationToken.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatPump_CancelsJobCts_WhenDurableCancellationSignalDetected()
+    {
+        var running = CreateProvisioningJob(claimedBy: "worker-test") with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+        var withSignal = running with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(withSignal);
+
+        using var jobCts = new CancellationTokenSource();
+        using var context = new JobExecutionContext(
+            running.OperationId, "worker-test", jobStore, null,
+            new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
+            jobCts, NullLogger.Instance);
+
+        using var pumpTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await context.RunHeartbeatPumpAsync(pumpTimeout.Token);
+
+        Assert.True(jobCts.IsCancellationRequested);
     }
 
     /// <summary>
