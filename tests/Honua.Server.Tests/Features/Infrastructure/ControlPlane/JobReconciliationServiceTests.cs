@@ -989,6 +989,132 @@ public sealed class JobReconciliationServiceTests
     }
 
     /// <summary>
+    /// Regression: a durable cancellation signal that arrives between the initial
+    /// cancellation check and the retry write must be caught by the pre-retry
+    /// re-read so the reconciler cancels instead of requeueing.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_HonoursCancellation_WhenSignalArrivesBeforeRetryWrite()
+    {
+        var snapshot = CreateRunningJob(
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            },
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(1),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            });
+
+        var withCancel = snapshot with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var callCount = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                // Read 1: initial re-read (no cancel). Read 2+: pre-retry re-read (cancel present).
+                return callCount <= 1 ? snapshot : withCancel;
+            });
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a durable cancellation signal that arrives between the initial
+    /// cancellation check and the terminal fail write (retries exhausted) must be
+    /// caught by the pre-fail re-read so the reconciler cancels instead of failing.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_HonoursCancellation_WhenSignalArrivesBeforeFailWrite()
+    {
+        var snapshot = CreateRunningJob(
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            },
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 1,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            });
+
+        var withCancel = snapshot with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var callCount = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                // Read 1: initial re-read (no cancel). Read 2+: pre-fail re-read (cancel present).
+                return callCount <= 1 ? snapshot : withCancel;
+            });
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the reconciler's sweep logic once without running the full
     /// BackgroundService loop. Uses reflection to call the private method
     /// since the service is internal and sealed.

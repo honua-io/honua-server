@@ -1487,6 +1487,123 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: a durable cancellation signal that arrives during the retry-
+    /// preparation phase (log appends) must be honoured by the pre-requeue re-read
+    /// instead of being silently overwritten by the requeue write.
+    /// </summary>
+    [UnitTest]
+    public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesDuringRetryPrep()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(1),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            }
+        };
+
+        var withCancel = provisioning with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var callCount = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                // Reads 1-3: executor lookup, CTS re-read, AbandonJobAsync re-read — no cancel.
+                // Read 4+: pre-requeue re-read and TerminateJobAsync — cancel signal present.
+                return callCount <= 3 ? provisioning : withCancel;
+            });
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transient failure"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a durable cancellation signal that arrives before the terminal
+    /// fail write (retries exhausted) must be honoured by the pre-fail re-read.
+    /// </summary>
+    [UnitTest]
+    public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesBeforeFailWrite()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var withCancel = provisioning with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var callCount = 0;
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                // Reads 1-3: executor lookup, CTS re-read, AbandonJobAsync re-read — no cancel.
+                // Read 4+: pre-fail re-read and TerminateJobAsync — cancel signal present.
+                return callCount <= 3 ? provisioning : withCancel;
+            });
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Permanent failure"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.Received().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Invokes the private ProcessJobAsync method via reflection.
     /// Follows the same test pattern used in <see cref="JobReconciliationServiceTests"/>.
     /// </summary>

@@ -166,54 +166,30 @@ internal sealed partial class JobReconciliationService(
         // worker either never observed the signal or crashed before acting on it.
         if (current!.CancellationRequestedAt.HasValue)
         {
-            Log.HeartbeatExpiredCancellationHonoured(logger, current.OperationId);
-
-            var cancelledNow = DateTimeOffset.UtcNow;
-            var cancelledJob = current with
-            {
-                Status = ExecutionJobStatus.Cancelled,
-                UpdatedAt = cancelledNow,
-                CompletedAt = cancelledNow,
-                ErrorMessage = "Cancelled by operator (durable signal honoured by reconciler).",
-                CurrentPhase = "Cancelled"
-            };
-            await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
-
-            try
-            {
-                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Log.QueueRemovalFailed(logger, current.OperationId, ex);
-            }
-
-            if (logStore != null)
-            {
-                try
-                {
-                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Log.LogRetentionFailed(logger, current.OperationId, ex);
-                }
-            }
-
-            await NotifyTerminalAsync(cancelledJob, CancellationToken.None).ConfigureAwait(false);
-            return true;
+            return await TransitionToCancelledFromDurableSignalAsync(current, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
         }
 
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
         if (retryPolicy.ShouldRetry(current.AttemptCount))
         {
-            Log.HeartbeatExpiredRetrying(logger, current.OperationId, current.AttemptCount, retryPolicy.MaxAttempts);
+            // Re-read before the retry write to catch cancellation signals
+            // that arrived between the initial check and this write.
+            var preRetry = await jobStore.GetAsync(current!.OperationId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (IsStaleSnapshot(snapshot, preRetry))
+            {
+                return false;
+            }
 
-            var delay = retryPolicy.ComputeDelay(current.AttemptCount + 1);
-            var abandoned = current with
+            if (preRetry!.CancellationRequestedAt.HasValue)
+            {
+                return await TransitionToCancelledFromDurableSignalAsync(preRetry, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
+            }
+
+            Log.HeartbeatExpiredRetrying(logger, preRetry.OperationId, preRetry.AttemptCount, retryPolicy.MaxAttempts);
+
+            var delay = retryPolicy.ComputeDelay(preRetry.AttemptCount + 1);
+            var abandoned = preRetry with
             {
                 Status = ExecutionJobStatus.Queued,
                 ClaimedBy = null,
@@ -234,48 +210,60 @@ internal sealed partial class JobReconciliationService(
             // transition to Queued, before the queue write. If RequeueAsync
             // fails, cancel paths will not delegate to the dead worker and
             // the stale-claim reconciler will repair the queue state.
-            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+            cancellationTokens.Revoke(preRetry.OperationId, snapshot.ClaimedBy!);
 
             await jobQueue.RequeueAsync(
-                current.OperationId,
-                current.Priority,
+                preRetry.OperationId,
+                preRetry.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            Log.HeartbeatExpiredFailed(logger, current.OperationId, current.AttemptCount);
+            // Re-read before the fail write to catch late cancellation signals.
+            var preFail = await jobStore.GetAsync(current!.OperationId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (IsStaleSnapshot(snapshot, preFail))
+            {
+                return false;
+            }
 
-            var failed = current with
+            if (preFail!.CancellationRequestedAt.HasValue)
+            {
+                return await TransitionToCancelledFromDurableSignalAsync(preFail, snapshot.ClaimedBy!, cancellationToken).ConfigureAwait(false);
+            }
+
+            Log.HeartbeatExpiredFailed(logger, preFail.OperationId, preFail.AttemptCount);
+
+            var failed = preFail with
             {
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
                 CompletedAt = now,
-                ErrorMessage = $"Worker heartbeat expired after {current.AttemptCount} attempt(s).",
+                ErrorMessage = $"Worker heartbeat expired after {preFail.AttemptCount} attempt(s).",
                 CurrentPhase = "Failed (heartbeat expired)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
+            cancellationTokens.Revoke(preFail.OperationId, snapshot.ClaimedBy!);
 
             try
             {
-                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+                await jobQueue.RemoveAsync(preFail.OperationId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                Log.QueueRemovalFailed(logger, current.OperationId, ex);
+                Log.QueueRemovalFailed(logger, preFail.OperationId, ex);
             }
 
             if (logStore != null)
             {
                 try
                 {
-                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+                    await logStore.SetRetentionAsync(preFail.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    Log.LogRetentionFailed(logger, current.OperationId, ex);
+                    Log.LogRetentionFailed(logger, preFail.OperationId, ex);
                 }
             }
 
@@ -365,6 +353,55 @@ internal sealed partial class JobReconciliationService(
                 Log.TerminalCallbackFailed(logger, job.OperationId, ex);
             }
         }
+    }
+
+    /// <summary>
+    /// Shared cancel-from-durable-signal path used by heartbeat-expiry handlers
+    /// when <see cref="ExecutionJobRecord.CancellationRequestedAt"/> is set.
+    /// </summary>
+    private async Task<bool> TransitionToCancelledFromDurableSignalAsync(
+        ExecutionJobRecord job,
+        string claimedBy,
+        CancellationToken cancellationToken)
+    {
+        Log.HeartbeatExpiredCancellationHonoured(logger, job.OperationId);
+
+        var now = DateTimeOffset.UtcNow;
+        var cancelledJob = job with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            UpdatedAt = now,
+            CompletedAt = now,
+            ErrorMessage = "Cancelled by operator (durable signal honoured by reconciler).",
+            CurrentPhase = "Cancelled"
+        };
+        await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        cancellationTokens.Revoke(job.OperationId, claimedBy);
+
+        try
+        {
+            await jobQueue.RemoveAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.QueueRemovalFailed(logger, job.OperationId, ex);
+        }
+
+        if (logStore != null)
+        {
+            try
+            {
+                await logStore.SetRetentionAsync(job.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.LogRetentionFailed(logger, job.OperationId, ex);
+            }
+        }
+
+        await NotifyTerminalAsync(cancelledJob, CancellationToken.None).ConfigureAwait(false);
+        return true;
     }
 
     /// <summary>

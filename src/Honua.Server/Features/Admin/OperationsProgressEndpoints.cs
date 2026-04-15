@@ -139,6 +139,39 @@ internal static class OperationsProgressEndpoints
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
+    private static async Task TryReconcileDurableCancelAsync(
+        HttpContext httpContext,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return;
+        }
+
+        var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (executionJob == null)
+        {
+            return;
+        }
+
+        if (!IsExecutionJobTerminal(executionJob.Status))
+        {
+            var now = DateTimeOffset.UtcNow;
+            var cancelled = executionJob with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                UpdatedAt = now,
+                CompletedAt = now,
+                CurrentPhase = "Cancelled"
+            };
+            await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task TryRemoveJobQueueEntryAsync(
         HttpContext httpContext,
         string operationId,
@@ -219,6 +252,8 @@ internal static class OperationsProgressEndpoints
 
         if (progress.Status is OperationStatus.Cancelled)
         {
+            await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+
             var alreadyCancelled = new CancelOperationResponse
             {
                 OperationId = operationId,
@@ -280,6 +315,8 @@ internal static class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
+            await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+
             var alreadyCancelled = new CancelOperationResponse
             {
                 OperationId = operationId,

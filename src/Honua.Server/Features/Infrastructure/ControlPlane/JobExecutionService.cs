@@ -477,9 +477,26 @@ internal sealed partial class JobExecutionService(
                 }
             }
 
-            var delay = forceRequeue ? TimeSpan.Zero : retryPolicy.ComputeDelay(current.AttemptCount + 1);
+            // Re-read before the requeue write to catch cancellation signals
+            // that arrived during the log-append phase.
+            var latestBeforeRequeue = await jobStore.GetAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            if (latestBeforeRequeue == null || IsTerminalOrNotOwnedBy(latestBeforeRequeue, workerId))
+            {
+                cancellationTokens.Remove(current.OperationId, workerId);
+                return;
+            }
+
+            if (latestBeforeRequeue.CancellationRequestedAt.HasValue)
+            {
+                Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
+                await TerminateJobAsync(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
+                    "Cancelled by operator (durable signal honoured during abandon).", cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var delay = forceRequeue ? TimeSpan.Zero : retryPolicy.ComputeDelay(latestBeforeRequeue.AttemptCount + 1);
             var now = DateTimeOffset.UtcNow;
-            var abandoned = current with
+            var abandoned = latestBeforeRequeue with
             {
                 Status = ExecutionJobStatus.Queued,
                 ClaimedBy = null,
@@ -501,47 +518,63 @@ internal sealed partial class JobExecutionService(
             // transition to Queued, before the queue write. If RequeueAsync
             // fails, cancel paths will not delegate to the dead worker and
             // the stale-claim reconciler will repair the queue state.
-            cancellationTokens.Remove(current.OperationId, workerId);
+            cancellationTokens.Remove(latestBeforeRequeue.OperationId, workerId);
 
             await jobQueue.RequeueAsync(
-                current.OperationId,
-                current.Priority,
+                latestBeforeRequeue.OperationId,
+                latestBeforeRequeue.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
         }
         else
         {
+            // Re-read before the fail write to catch late cancellation signals.
+            var latestBeforeFail = await jobStore.GetAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+            if (latestBeforeFail == null || IsTerminalOrNotOwnedBy(latestBeforeFail, workerId))
+            {
+                cancellationTokens.Remove(current.OperationId, workerId);
+                return;
+            }
+
+            if (latestBeforeFail.CancellationRequestedAt.HasValue)
+            {
+                Log.AbandonHonouredDurableCancellation(logger, current.OperationId);
+                await TerminateJobAsync(current.OperationId, workerId, ExecutionJobStatus.Cancelled,
+                    "Cancelled by operator (durable signal honoured during abandon).", cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             var now = DateTimeOffset.UtcNow;
-            var failed = current with
+            var failed = latestBeforeFail with
             {
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
                 CompletedAt = now,
                 ErrorMessage = $"Job abandoned: {reason}",
-                Warnings = warnings ?? current.Warnings,
+                Warnings = warnings ?? latestBeforeFail.Warnings,
                 CurrentPhase = "Failed (abandoned)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
-            cancellationTokens.Remove(current.OperationId, workerId);
+            cancellationTokens.Remove(latestBeforeFail.OperationId, workerId);
 
             try
             {
-                await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
+                await jobQueue.RemoveAsync(latestBeforeFail.OperationId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                Log.QueueRemovalFailed(logger, current.OperationId, ex);
+                Log.QueueRemovalFailed(logger, latestBeforeFail.OperationId, ex);
             }
 
             if (logStore != null)
             {
                 try
                 {
-                    await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+                    await logStore.SetRetentionAsync(latestBeforeFail.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    Log.LogRetentionFailed(logger, current.OperationId, ex);
+                    Log.LogRetentionFailed(logger, latestBeforeFail.OperationId, ex);
                 }
             }
 
