@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Honua.Core.Configuration;
 
 /// <summary>
@@ -19,5 +21,7 @@ public interface IConfigurationDiscovery
     /// </summary>
     /// <typeparam name="TOptions">The registered options type.</typeparam>
     /// <returns>The configuration metadata.</returns>
-    ConfigurationOptionsMetadata GetOptionsMetadata<TOptions>() where TOptions : class;
+    ConfigurationOptionsMetadata GetOptionsMetadata<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>()
+        where TOptions : class;
 }

@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -19,6 +21,9 @@ public static class AdminServiceCollectionExtensions
     /// <returns>Updated service collection for chaining</returns>
     public static IServiceCollection AddEnhancedAdminServices(this IServiceCollection services)
     {
+        services.TryAddSingleton<IConfigurationValidator, ConfigurationValidator>();
+        services.TryAddSingleton<IConfigurationDiscovery>(sp => (ConfigurationValidator)sp.GetRequiredService<IConfigurationValidator>());
+
         // Register configuration documentation service (existing)
         services.TryAddScoped<ConfigurationDocumentationService>();
 

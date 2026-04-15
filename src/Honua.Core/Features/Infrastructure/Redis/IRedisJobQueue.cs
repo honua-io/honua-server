@@ -6,6 +6,7 @@ namespace Honua.Core.Features.Infrastructure.Redis;
 /// <summary>
 /// Interface for Redis-backed job queue with fallback capabilities.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Queue is the correct domain term for this public abstraction.")]
 public interface IRedisJobQueue : IRedisService
 {
     /// <summary>

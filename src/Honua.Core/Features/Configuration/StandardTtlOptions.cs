@@ -8,6 +8,7 @@ namespace Honua.Core.Features.Configuration;
 /// <summary>
 /// Standard TTL categories used across the application.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "Short and long TTL names are stable public configuration categories.")]
 public enum TtlCategory
 {
     /// <summary>
@@ -39,6 +40,7 @@ public enum TtlCategory
 /// <summary>
 /// Provides standardized cache TTL values with environment-aware defaults.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "Short and long TTL property names are part of the public configuration contract.")]
 public sealed class StandardTtlOptions
 {
     /// <summary>

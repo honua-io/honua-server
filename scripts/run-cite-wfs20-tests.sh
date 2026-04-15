@@ -19,6 +19,8 @@ CITE_TIMEOUT=1800  # 30 minutes timeout
 HEALTHCHECK_TIMEOUT=300  # 5 minutes
 HONUA_BASE_URL="http://localhost:8090"
 HONUA_WFS_URL="${HONUA_BASE_URL}/wfs?service=WFS&version=2.0.0&request=GetCapabilities"
+HONUA_CITE_WFS20_POSTGRES_PORT="${HONUA_CITE_WFS20_POSTGRES_PORT:-5433}"
+export HONUA_CITE_WFS20_POSTGRES_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 TOTAL_TESTS=0
@@ -230,7 +232,7 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo "  Honua Server:        $HONUA_BASE_URL"
     echo "  WFS GetCapabilities: $HONUA_WFS_URL"
     echo "  CITE Team Engine:    http://localhost:8081/teamengine"
-    echo "  PostgreSQL:          localhost:5433"
+    echo "  PostgreSQL:          localhost:${HONUA_CITE_WFS20_POSTGRES_PORT}"
     echo ""
     echo "Manual WFS 2.0 testing commands:"
     echo "  GetCapabilities:     curl '$HONUA_WFS_URL'"

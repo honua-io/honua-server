@@ -799,10 +799,14 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
+        // WMS validates coordinate ordering separately from CRS bounds.
+        // Keep parsing strict on axis order and min/max ordering, but allow
+        // out-of-range geographic coordinates so GetMap can return blank
+        // imagery and GetFeatureInfo can emit a targeted CRS-range exception.
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
                 crsDefinition.AxisOrder,
-                crsDefinition.IsGeographic,
+                isGeographic: false,
                 out var minX,
                 out var minY,
                 out var maxX,

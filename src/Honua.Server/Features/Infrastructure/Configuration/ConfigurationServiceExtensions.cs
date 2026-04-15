@@ -161,7 +161,7 @@ public static class ConfigurationServiceExtensions
     /// <param name="enableSecretResolution">Whether to enable automatic secret resolution</param>
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection ConfigureWithValidation<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TOptions>(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         this IServiceCollection services,
         IConfiguration configuration,
         string sectionName,
@@ -253,7 +253,7 @@ public static class ConfigurationServiceExtensions
 /// Post-configuration service that resolves secrets in options after binding.
 /// </summary>
 internal sealed class SecretResolutionPostConfigureOptions<
-    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TOptions> : IPostConfigureOptions<TOptions>
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IPostConfigureOptions<TOptions>
     where TOptions : class
 {
     private readonly ISecretProvider _secretProvider;
@@ -389,7 +389,8 @@ internal sealed class ConfigurationValidationStartupService : IHostedService
 /// <summary>
 /// Data annotation validate options that integrates with the configuration validator.
 /// </summary>
-internal sealed class DataAnnotationValidateOptions<TOptions> : IValidateOptions<TOptions>
+internal sealed class DataAnnotationValidateOptions<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IValidateOptions<TOptions>
     where TOptions : class
 {
     private readonly IConfigurationValidator _validator;
