@@ -144,5 +144,10 @@ public enum OperationType
     /// <summary>
     /// Geoprocessing analysis or operator workflow operation.
     /// </summary>
-    Geoprocessing
+    Geoprocessing,
+
+    /// <summary>
+    /// Publishing lifecycle operation (intent validation, execution, service creation).
+    /// </summary>
+    Publishing
 }
