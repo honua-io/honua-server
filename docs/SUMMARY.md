@@ -53,6 +53,8 @@
 - [MCP Server](developer/MCP_SERVER.md)
 - [AI Operator Contract](developer/AI_OPERATOR_CONTRACT.md)
 - [Deterministic Operator Workflow Results](developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
+- [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
+- [Service Registration Consolidation](developer/SERVICE_REGISTRATION_CONSOLIDATION.md)
 - [Versioning Policy](developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 - [Migration Guide](developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 

@@ -276,16 +276,16 @@ internal sealed partial class JobReconciliationService(
     }
 
     /// <summary>
-    /// Returns <c>true</c> when the fresh record has already moved past the state
-    /// captured in the sweep snapshot — the worker finalized the job, another
-    /// process intervened, or the record was deleted.
+    /// Returns <c>true</c> when the fresh record is no longer the same actively
+    /// claimed attempt captured in the sweep snapshot. This mirrors the worker-
+    /// side ownership guard so the reconciler only mutates jobs that are still
+    /// in an active state owned by the same claim.
     /// </summary>
     private static bool IsStaleSnapshot(ExecutionJobRecord snapshot, ExecutionJobRecord? current)
         => current is null
-           || current.Status is ExecutionJobStatus.Succeeded
-               or ExecutionJobStatus.Failed
-               or ExecutionJobStatus.Cancelled
-           || current.ClaimedBy != snapshot.ClaimedBy;
+           || current.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
+           || string.IsNullOrWhiteSpace(current.ClaimedBy)
+           || !string.Equals(current.ClaimedBy, snapshot.ClaimedBy, StringComparison.Ordinal);
 
     private static partial class Log
     {

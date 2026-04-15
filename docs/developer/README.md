@@ -19,6 +19,11 @@ Build applications and integrations with Honua APIs and SDKs.
 - [AI Operator Contract](AI_OPERATOR_CONTRACT.md) — draft canonical MCP/gRPC contract for analyst and builder workflows
 - [Deterministic Operator Workflow Results](DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md) — draft stage model and result envelope for AI-first execution
 
+## Internal Architecture
+
+- [Redis Fallback Patterns](REDIS_FALLBACK_PATTERNS.md) — Standardized Redis health monitoring, circuit breaker, and fallback strategies
+- [Service Registration Consolidation](SERVICE_REGISTRATION_CONSOLIDATION.md) — Reusable service registration framework for feature slices
+
 ## Versioning & Migration
 
 - [Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md) — Deprecation lifecycle and breaking change rules

@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -178,6 +179,67 @@ public sealed class JobReconciliationServiceTests
                 j.Status == ExecutionJobStatus.Failed || j.Status == ExecutionJobStatus.Queued),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: once the fresh record has moved back to Queued, the
+    /// reconciler must classify the snapshot as stale even if stale claim
+    /// metadata is still present. Only actively claimed attempts are eligible
+    /// for heartbeat expiry handling.
+    /// </summary>
+    [UnitTest]
+    public async Task HeartbeatExpiry_LogsStale_WhenJobMovedBackToQueuedSinceSweep()
+    {
+        var snapshot = CreateRunningJob(
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        var requeued = snapshot with
+        {
+            Status = ExecutionJobStatus.Queued,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            CurrentPhase = "Requeued: Worker shutdown."
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(requeued);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+        var logger = new ListLogger<JobReconciliationService>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            logStore: null, logger);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        Assert.Contains(logger.Entries, entry =>
+            entry.EventId.Id == 9047 &&
+            entry.Message.Contains(snapshot.OperationId, StringComparison.Ordinal) &&
+            entry.Message.Contains("Queued", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == 9048);
     }
 
     [UnitTest]
@@ -370,6 +432,60 @@ public sealed class JobReconciliationServiceTests
             Arg.Any<CancellationToken>());
 
         await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: once the fresh record has moved back to Queued, the timeout
+    /// handler must classify the snapshot as stale rather than as a refreshed
+    /// timeout window. Only actively claimed attempts are eligible for timeout
+    /// expiry handling.
+    /// </summary>
+    [UnitTest]
+    public async Task TimeoutExpiry_LogsStale_WhenJobMovedBackToQueuedSinceSweep()
+    {
+        var snapshot = CreateRunningJob(
+            timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) });
+        snapshot = snapshot with { ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
+
+        var requeued = snapshot with
+        {
+            Status = ExecutionJobStatus.Queued,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            CurrentPhase = "Requeued: Worker shutdown."
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(requeued);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+        var logger = new ListLogger<JobReconciliationService>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            logStore: null, logger);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        Assert.Contains(logger.Entries, entry =>
+            entry.EventId.Id == 9047 &&
+            entry.Message.Contains(snapshot.OperationId, StringComparison.Ordinal) &&
+            entry.Message.Contains("Queued", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Entries, entry => entry.EventId.Id == 9049);
     }
 
     /// <summary>
@@ -600,5 +716,37 @@ public sealed class JobReconciliationServiceTests
 
         var task = (Task)method!.Invoke(service, [cancellationToken])!;
         await task.ConfigureAwait(false);
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull
+            => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(new LogEntry(logLevel, eventId, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed record LogEntry(LogLevel LogLevel, EventId EventId, string Message, Exception? Exception);
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+
+        public void Dispose()
+        {
+        }
     }
 }
