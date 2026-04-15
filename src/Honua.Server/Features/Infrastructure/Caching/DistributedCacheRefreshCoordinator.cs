@@ -461,6 +461,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // Atomically mark the key as invalidated regardless of current state.
         _localPendingKeys.TryUpdate(key, 1, 0);
         _localPendingKeys.TryUpdate(key, 1, 2);
+        _localPendingKeys.TryAdd(key, 1);
     }
 
     private void ReleaseRefreshClaim(string key)

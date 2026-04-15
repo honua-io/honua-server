@@ -352,6 +352,7 @@ public sealed class MetadataURL
 /// <summary>
 /// Filter capabilities
 /// </summary>
+[XmlRoot("Filter_Capabilities", Namespace = Wfs20Utilities.FesNamespace)]
 public sealed class FilterCapabilities
 {
     [XmlElement("Conformance", Namespace = Wfs20Utilities.FesNamespace)]
