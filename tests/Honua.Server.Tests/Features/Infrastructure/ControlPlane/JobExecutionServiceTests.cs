@@ -658,7 +658,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         // After ProcessJobAsync completes, Cancel must return false: the CTS
-        // was removed during AbandonJobAsync (after the requeue) so API
+        // was removed during AbandonJobAsync (before the requeue) so API
         // callers will not falsely delegate cancellation to a worker that
         // has already dropped ownership.
         Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
@@ -709,6 +709,198 @@ public sealed class JobExecutionServiceTests
 
         // After shutdown requeue, Cancel must return false.
         Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
+    /// <summary>
+    /// Regression: after the authoritative store write in FinalizeJobAsync, the CTS
+    /// must be removed before RemoveAsync so that a Redis hang does not leave a
+    /// stale CTS that falsely accepts cancel delegation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_Finalize_RemovesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
+    {
+        var provisioning = CreateProvisioningJob();
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        bool ctsRemovedBeforeQueueIo = false;
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ctsRemovedBeforeQueueIo = !cancellationTokens.Cancel(provisioning.OperationId);
+                return Task.CompletedTask;
+            });
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(ctsRemovedBeforeQueueIo,
+            "CTS must be removed after authoritative store write and before queue RemoveAsync");
+    }
+
+    /// <summary>
+    /// Regression: after the authoritative store write in TerminateJobAsync, the CTS
+    /// must be removed before RemoveAsync so that a Redis hang does not leave a
+    /// stale CTS that falsely accepts cancel delegation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_Terminate_RemovesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
+    {
+        var provisioning = CreateProvisioningJob();
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        bool ctsRemovedBeforeQueueIo = false;
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ctsRemovedBeforeQueueIo = !cancellationTokens.Cancel(provisioning.OperationId);
+                return Task.CompletedTask;
+            });
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                cancellationTokens.Cancel(provisioning.OperationId);
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return JobExecutionResult.Succeeded();
+            });
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(ctsRemovedBeforeQueueIo,
+            "CTS must be removed after authoritative store write and before queue RemoveAsync");
+    }
+
+    /// <summary>
+    /// Regression: after the authoritative store transition to Queued in
+    /// AbandonJobAsync, the CTS must be removed before RequeueAsync so that
+    /// a Redis failure does not leave a stale CTS that falsely accepts cancel
+    /// delegation while the stale-claim reconciler repairs the queue.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_AbandonRequeue_RemovesCtsBeforeQueueRequeue_SoRequeueFailureDoesNotLeakStaleCts()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.Zero,
+                MaxDelay = TimeSpan.Zero
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        bool ctsRemovedBeforeQueueIo = false;
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RequeueAsync(
+                Arg.Any<string>(), Arg.Any<OperationPriority>(),
+                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ctsRemovedBeforeQueueIo = !cancellationTokens.Cancel(provisioning.OperationId);
+                return Task.CompletedTask;
+            });
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transient failure"));
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(ctsRemovedBeforeQueueIo,
+            "CTS must be removed after authoritative store write and before queue RequeueAsync");
+    }
+
+    /// <summary>
+    /// Regression: after the authoritative store write in AbandonJobAsync's terminal
+    /// path (retries exhausted), the CTS must be removed before RemoveAsync so that
+    /// a Redis hang does not leave a stale CTS that falsely accepts cancel delegation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_AbandonTerminal_RemovesCtsBeforeQueueRemove_SoRemoveFailureDoesNotLeakStaleCts()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        bool ctsRemovedBeforeQueueIo = false;
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ctsRemovedBeforeQueueIo = !cancellationTokens.Cancel(provisioning.OperationId);
+                return Task.CompletedTask;
+            });
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Permanent failure"));
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(ctsRemovedBeforeQueueIo,
+            "CTS must be removed after authoritative store write and before queue RemoveAsync");
     }
 
     /// <summary>

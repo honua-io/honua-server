@@ -291,6 +291,7 @@ internal sealed partial class JobExecutionService(
         };
 
         await jobStore.SetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false);
+        cancellationTokens.Remove(operationId, workerId);
         await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
 
         if (logStore != null)
@@ -331,6 +332,7 @@ internal sealed partial class JobExecutionService(
         };
 
         await jobStore.SetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false);
+        cancellationTokens.Remove(operationId, workerId);
         await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
 
         if (logStore != null)
@@ -409,20 +411,17 @@ internal sealed partial class JobExecutionService(
             };
             await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
 
+            // Clear the tracked CTS immediately after the authoritative store
+            // transition to Queued, before the queue write. If RequeueAsync
+            // fails, cancel paths will not delegate to the dead worker and
+            // the stale-claim reconciler will repair the queue state.
+            cancellationTokens.Remove(current.OperationId, workerId);
+
             await jobQueue.RequeueAsync(
                 current.OperationId,
                 current.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
-
-            // Clear the tracked CTS immediately so that Cancel() returns false
-            // for a job this worker no longer owns. Without this, a cancel
-            // arriving between requeue and the ProcessJobAsync finally block
-            // would be delegated to a worker that already dropped ownership,
-            // causing the cancellation to be silently swallowed while the
-            // retried job stays queued. The finally-block Remove is retained
-            // as a no-op safety net.
-            cancellationTokens.Remove(current.OperationId, workerId);
         }
         else
         {
@@ -437,6 +436,7 @@ internal sealed partial class JobExecutionService(
                 CurrentPhase = "Failed (abandoned)"
             };
             await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationTokens.Remove(current.OperationId, workerId);
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
 
             if (logStore != null)
