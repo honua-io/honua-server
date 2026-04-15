@@ -139,6 +139,28 @@ internal static class OperationsProgressEndpoints
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
+    private static async Task TryRemoveJobQueueEntryAsync(
+        HttpContext httpContext,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
+        if (jobQueue == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Best-effort: the durable store is authoritative and stale-claim
+            // reconciliation or later terminal cleanup will repair the queue.
+        }
+    }
+
     private static void NormalizeCanonicalProperty(JsonObject operation, string propertyName, JsonNode? value)
     {
         var duplicateKeys = new List<string>();
@@ -344,26 +366,11 @@ internal static class OperationsProgressEndpoints
                     };
                     await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-                    var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
-                    if (jobQueue != null)
-                    {
-                        await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
-                    }
+                    await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 }
                 else if (executionJob.Status is ExecutionJobStatus.Cancelled)
                 {
-                    var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
-                    if (jobQueue != null)
-                    {
-                        try
-                        {
-                            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
-                        }
-                        catch (Exception)
-                        {
-                            // Best-effort: stale-claim reconciler will repair.
-                        }
-                    }
+                    await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 }
             }
         }

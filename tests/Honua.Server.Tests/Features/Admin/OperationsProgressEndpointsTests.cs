@@ -241,6 +241,71 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenQueueRemovalFailsAfterDurableCancel_StillReturns200AndUpdatesProgress()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<IJobQueue>(new ThrowingRemoveJobQueue());
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var jobStore = fixture.GetOptionalService<IExecutionJobStore>();
+        var jobQueue = fixture.GetOptionalService<IJobQueue>();
+        if (jobStore == null || jobQueue == null)
+        {
+            await fixture.DisposeAsync();
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Queued",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "test-admin-cancel-remove-failure"
+                }
+            };
+
+            await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+            await jobQueue.EnqueueAsync(operationId);
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-remove-failure");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var updatedJob = await jobStore.GetAsync(operationId);
+            updatedJob.Should().NotBeNull();
+            updatedJob!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+
+            var updatedProgress = await progressStore.GetProgressAsync(operationId);
+            updatedProgress.Should().NotBeNull();
+            updatedProgress!.Status.Should().Be(OperationStatus.Cancelled);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/active")]
     public async Task ListActiveOperations_WhenFiltered_ReturnsOnlyActive()
     {
@@ -468,5 +533,43 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         }
 
         return count;
+    }
+
+    private sealed class ThrowingRemoveJobQueue : IJobQueue
+    {
+        private readonly HashSet<string> _operationIds = [];
+
+        public Task EnqueueAsync(
+            string operationId,
+            OperationPriority priority = OperationPriority.Normal,
+            CancellationToken cancellationToken = default)
+        {
+            _operationIds.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_operationIds.FirstOrDefault());
+
+        public Task RequeueAsync(
+            string operationId,
+            OperationPriority priority = OperationPriority.Normal,
+            TimeSpan? visibleAfter = null,
+            CancellationToken cancellationToken = default)
+        {
+            _operationIds.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveAsync(
+            string operationId,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Simulated queue removal failure");
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult((long)_operationIds.Count);
     }
 }
