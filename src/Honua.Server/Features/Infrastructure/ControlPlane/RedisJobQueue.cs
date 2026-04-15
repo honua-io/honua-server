@@ -34,7 +34,7 @@ internal sealed partial class RedisJobQueue(
     private const string QueueKey = "controlplane:jobqueue:pending";
     private const string ClaimedSetKey = "controlplane:jobqueue:claimed";
     private const int MaxScanEntries = 100;
-    private const int MaxVisitEntries = 1000;
+    private const int MaxTraverseEntries = 5000;
 
     /// <summary>
     /// Lua script that atomically removes a job from the pending set and adds it
@@ -94,9 +94,10 @@ internal sealed partial class RedisJobQueue(
         var now = DateTimeOffset.UtcNow;
         long offset = 0;
         var totalScanned = 0;
-        var totalVisited = 0;
+        var totalTraversed = 0;
+        var totalSkipped = 0;
 
-        while (totalScanned < MaxScanEntries && totalVisited < MaxVisitEntries)
+        while (totalScanned < MaxScanEntries && totalTraversed < MaxTraverseEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -121,12 +122,13 @@ internal sealed partial class RedisJobQueue(
 
                 var operationId = candidate.ToString();
 
-                totalVisited++;
+                totalTraversed++;
 
                 var meta = await _database.HashGetAllAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
                 var visibleAfter = GetVisibleAfter(meta);
                 if (visibleAfter.HasValue && visibleAfter.Value > now)
                 {
+                    totalSkipped++;
                     continue;
                 }
 
@@ -143,6 +145,7 @@ internal sealed partial class RedisJobQueue(
 
                 if (acceptedKinds != null && !acceptedKinds.Contains(job.Spec.Kind))
                 {
+                    totalSkipped++;
                     continue;
                 }
 
@@ -200,9 +203,9 @@ internal sealed partial class RedisJobQueue(
             offset += candidates.Length - removedFromSet;
         }
 
-        if (totalVisited >= MaxVisitEntries)
+        if (totalTraversed >= MaxTraverseEntries)
         {
-            Log.ClaimScanVisitThresholdExceeded(logger, totalVisited, totalScanned);
+            Log.ClaimScanTraverseThresholdExceeded(logger, totalTraversed, totalScanned, totalSkipped);
         }
 
         return null;
@@ -418,7 +421,7 @@ internal sealed partial class RedisJobQueue(
         [LoggerMessage(9026, LogLevel.Error, "Claim rollback failed: {OperationId}")]
         public static partial void ClaimRollbackFailed(ILogger logger, string operationId, Exception exception);
 
-        [LoggerMessage(9027, LogLevel.Warning, "Claim scan visit threshold exceeded: visited {Visited} entries, scanned {Scanned} claimable candidates")]
-        public static partial void ClaimScanVisitThresholdExceeded(ILogger logger, int visited, int scanned);
+        [LoggerMessage(9027, LogLevel.Warning, "Claim scan traverse threshold exceeded: traversed {Traversed} entries, scanned {Scanned} claimable candidates, skipped {Skipped} delayed/kind-mismatched")]
+        public static partial void ClaimScanTraverseThresholdExceeded(ILogger logger, int traversed, int scanned, int skipped);
     }
 }

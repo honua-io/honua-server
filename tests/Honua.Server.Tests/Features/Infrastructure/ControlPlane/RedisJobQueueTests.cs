@@ -125,7 +125,7 @@ public sealed class RedisJobQueueTests
     }
 
     [UnitTest]
-    public async Task TryClaimAsync_WhenAllEntriesDelayed_RespectsVisitBudgetAndTerminates()
+    public async Task TryClaimAsync_WhenAllEntriesDelayed_RespectsTraverseBudgetAndTerminates()
     {
         var database = Substitute.For<IDatabase>();
         database.SortedSetRangeByRankAsync(
@@ -146,19 +146,148 @@ public sealed class RedisJobQueueTests
         var jobStore = Substitute.For<IExecutionJobStore>();
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 
-        var result = await queue.TryClaimAsync("worker-visit-budget");
+        var result = await queue.TryClaimAsync("worker-traverse-budget");
 
         Assert.Null(result);
 
         var rangeCallCount = database.ReceivedCalls()
             .Count(c => c.GetMethodInfo().Name == nameof(IDatabase.SortedSetRangeByRankAsync));
-        Assert.True(rangeCallCount <= 1000, $"Visit budget should cap iteration; got {rangeCallCount} range calls");
+        Assert.True(rangeCallCount <= 5000, $"Traverse budget should cap iteration; got {rangeCallCount} range calls");
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_WhenDelayedEntriesExceedOldVisitBudget_StillClaimsReadyJob()
+    {
+        const int delayedCount = 1100;
+        const string readyJobId = "ready-job-behind-delayed";
+
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var start = (long)callInfo[1];
+                var stop = (long)callInfo[2];
+                var results = new List<RedisValue>();
+
+                for (var i = start; i <= stop && i <= delayedCount; i++)
+                {
+                    results.Add(i < delayedCount ? $"delayed-{i}" : readyJobId);
+                }
+
+                return Task.FromResult(results.ToArray());
+            });
+
+        var futureMs = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            .ToString(CultureInfo.InvariantCulture);
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var key = ((RedisKey)callInfo[0]).ToString();
+                if (key.Contains("delayed-"))
+                {
+                    return Task.FromResult(new[] { new HashEntry("visibleAfter", futureMs) });
+                }
+
+                return Task.FromResult(Array.Empty<HashEntry>());
+            });
+
+        database.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<HashEntry[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.CompletedTask);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)"1")));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob(operationId: readyJobId));
+        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var result = await queue.TryClaimAsync("worker-1");
+
+        Assert.Equal(readyJobId, result);
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_WhenKindMismatchedEntriesExceedOldVisitBudget_StillClaimsReadyJob()
+    {
+        const int mismatchedCount = 1100;
+        const string readyJobId = "ready-job-behind-mismatched";
+        var acceptedKinds = new HashSet<ExecutionJobKind> { ExecutionJobKind.ExtractTransformLoad };
+
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var start = (long)callInfo[1];
+                var stop = (long)callInfo[2];
+                var results = new List<RedisValue>();
+
+                for (var i = start; i <= stop && i <= mismatchedCount; i++)
+                {
+                    results.Add(i < mismatchedCount ? $"mismatched-{i}" : readyJobId);
+                }
+
+                return Task.FromResult(results.ToArray());
+            });
+
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(Array.Empty<HashEntry>()));
+        database.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<HashEntry[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.CompletedTask);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)"1")));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.GetAsync(Arg.Is<string>(id => id.StartsWith("mismatched-")), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var id = (string)callInfo[0];
+                return Task.FromResult<ExecutionJobRecord?>(
+                    CreateQueuedJob(operationId: id, kind: ExecutionJobKind.Geoprocessing));
+            });
+        jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob(operationId: readyJobId, kind: ExecutionJobKind.ExtractTransformLoad));
+        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var result = await queue.TryClaimAsync("worker-1", acceptedKinds);
+
+        Assert.Equal(readyJobId, result);
     }
 
     private static ExecutionJobRecord CreateQueuedJob(
         string operationId = "job-1",
         OperationPriority priority = OperationPriority.Normal,
-        DateTimeOffset? nextRetryAt = null)
+        DateTimeOffset? nextRetryAt = null,
+        ExecutionJobKind kind = ExecutionJobKind.Geoprocessing)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -174,7 +303,7 @@ public sealed class RedisJobQueueTests
             TimeoutPolicy = JobTimeoutPolicy.Default,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.Geoprocessing,
+                Kind = kind,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "local",
                 WorkloadName = "test"

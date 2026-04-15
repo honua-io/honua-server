@@ -146,7 +146,7 @@ redis-cli -h redis ZCARD controlplane:jobqueue:pending
 | Heartbeat expiry warnings | Worker crashed or network partition | Check worker health; reconciler auto-recovers |
 | Retry exhaustion errors | Executor fails repeatedly | Check executor logs for root cause |
 | Claim rollback warnings | Transient Redis error during claim | Self-healing; monitor frequency |
-| Claim scan budget exhaustion | Queue front dominated by delayed retries | Review retry backoff settings; clear stale entries |
+| Claim scan traverse threshold | Queue front dominated by delayed retries | Review retry backoff settings; clear stale entries |
 | `503` on OGC Processes or GPServer job routes | Redis not configured | Enable Redis — see [Infrastructure](infrastructure.md) |
 
 The reconciliation service automatically recovers abandoned jobs when heartbeats

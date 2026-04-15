@@ -265,12 +265,12 @@ want visibility into recovery events.
 
 Jobs are dequeued in priority order. Within a priority band, FIFO ordering
 applies. Delayed entries (jobs requeued with a visibility delay for retry
-backoff) and kind-mismatched entries do not consume the claim scan budget,
+backoff) and kind-mismatched entries do not consume the scan budget,
 so a backlog of delayed retries or jobs for other worker kinds cannot
 starve ready work in lower-priority bands. The scan terminates when the
-scan budget (100 claimable candidates) is exhausted, the visit budget
-(1000 total entries examined) is exhausted, or the queue is drained.
-Exceeding the visit threshold is logged at Warning level to signal
+scan budget (100 claimable candidates) is exhausted, the traverse budget
+(5000 total entries traversed) is exhausted, or the queue is drained.
+Exceeding the traverse threshold is logged at Warning level to signal
 queue pathology.
 
 | Priority | Use case |

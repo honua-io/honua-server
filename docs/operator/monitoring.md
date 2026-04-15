@@ -63,7 +63,7 @@ background sweep.
 | Level | Signal |
 |-------|--------|
 | Information | Job enqueued, job claimed, job requeued |
-| Warning | Orphaned claim requeued (claim succeeded but store update failed), claim rolled back after store failure, claim scan visit threshold exceeded |
+| Warning | Orphaned claim requeued (claim succeeded but store update failed), claim rolled back after store failure, claim scan traverse threshold exceeded |
 | Error | Claim rollback failed (orphaned claim will be caught by reconciliation) |
 
 Monitor for `JobExecutionService`, `JobReconciliationService`, and
@@ -81,7 +81,7 @@ events. For lifecycle details and tuning, see
 | Claim rollback failures | Any occurrence | `RedisJobQueue` Error (`ClaimRollbackFailed`) |
 | Worker with no executors | Any occurrence at startup | `JobExecutionService` Warning |
 | Sustained claim-loop errors | > 3 errors in 5 min | `JobExecutionService` Error |
-| Claim scan visit threshold exceeded | > 1 occurrence in 5 min | `RedisJobQueue` Warning (`ClaimScanVisitThresholdExceeded`) |
+| Claim scan traverse threshold exceeded | > 1 occurrence in 5 min | `RedisJobQueue` Warning (`ClaimScanTraverseThresholdExceeded`) |
 
 Queue depth is available via `IJobQueue.GetQueueDepthAsync` but is not yet
 exposed through a public metrics endpoint. Operators requiring queue depth
