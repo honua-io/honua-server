@@ -271,8 +271,9 @@ The following fields default to empty collections when not supplied:
 - `workspaceRefs`
 - `errors`
 
-`mapPackageId` and `appPackageId` are deferred optional references whose package
-types are defined in downstream tickets (#730, #731).
+`mapPackageId` and `appPackageId` are nullable references to separately
+materialized package resources. They remain null when a workflow produces only
+data artifacts and summary metadata.
 
 ## Deterministic Rules
 
