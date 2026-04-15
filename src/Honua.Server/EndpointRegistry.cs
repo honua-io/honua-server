@@ -15,7 +15,15 @@ public static class EndpointRegistry
     public static IReadOnlyList<EndpointDefinition> All { get; } =
     [
         new("GET", "/healthz/live"),
+        new("POST", "/healthz/live"),
+        new("PUT", "/healthz/live"),
+        new("DELETE", "/healthz/live"),
+        new("PATCH", "/healthz/live"),
         new("GET", "/healthz/ready"),
+        new("POST", "/healthz/ready"),
+        new("PUT", "/healthz/ready"),
+        new("DELETE", "/healthz/ready"),
+        new("PATCH", "/healthz/ready"),
         new("GET", "/healthz/metrics"),
         new("GET", "/metrics"),
 
@@ -23,6 +31,10 @@ public static class EndpointRegistry
         new("GET", "/docs"),
 
         new("GET", "/api/v1/admin/config"),
+        new("POST", "/api/v1/admin/config"),
+        new("PUT", "/api/v1/admin/config"),
+        new("DELETE", "/api/v1/admin/config"),
+        new("PATCH", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/auth/config"),
         new("POST", "/api/v1/admin/auth/logout"),
         new("GET", "/api/v1/admin/auth/session"),
@@ -31,6 +43,10 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/auth/providers/{providerKey}/logout-url"),
         new("GET", "/api/v1/admin/openapi.json"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
+        new("POST", "/api/v1/admin/connections/{id}/tables"),
+        new("PUT", "/api/v1/admin/connections/{id}/tables"),
+        new("DELETE", "/api/v1/admin/connections/{id}/tables"),
+        new("PATCH", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
         new("GET", "/api/v1/admin/connections/{id}/layers"),
@@ -114,14 +130,6 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/roles/{id}/permissions"),
         new("PUT", "/api/v1/admin/roles/{id}/permissions"),
 
-        // v1 admin rate limit policy endpoints (#511)
-        new("GET", "/api/v1/admin/rate-limits"),
-        new("POST", "/api/v1/admin/rate-limits"),
-        new("GET", "/api/v1/admin/rate-limits/{id}"),
-        new("PUT", "/api/v1/admin/rate-limits/{id}"),
-        new("DELETE", "/api/v1/admin/rate-limits/{id}"),
-        new("GET", "/api/v1/admin/rate-limits/status"),
-
         // v1 admin metadata resource endpoints
         new("GET", "/api/v1/admin/metadata/resources"),
         new("GET", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
@@ -149,7 +157,15 @@ public static class EndpointRegistry
 
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),
+        new("POST", "/api/v1/admin/import/formats"),
+        new("PUT", "/api/v1/admin/import/formats"),
+        new("DELETE", "/api/v1/admin/import/formats"),
+        new("PATCH", "/api/v1/admin/import/formats"),
         new("POST", "/api/v1/admin/import/preview"),
+        new("GET", "/api/v1/admin/import/preview"),
+        new("PUT", "/api/v1/admin/import/preview"),
+        new("DELETE", "/api/v1/admin/import/preview"),
+        new("PATCH", "/api/v1/admin/import/preview"),
         new("POST", "/api/v1/admin/import/preview-url"),
         new("POST", "/api/v1/admin/import/upload"),
         new("POST", "/api/v1/admin/import/upload-url"),

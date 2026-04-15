@@ -341,8 +341,6 @@ builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserSto
     Honua.Server.Features.Admin.Services.InMemoryUserStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
-builder.Services.AddSingleton<Honua.Core.Features.RateLimiting.Abstractions.IRateLimitPolicyStore,
-    Honua.Server.Features.Admin.Services.InMemoryRateLimitPolicyStore>();
 builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
 builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
 
@@ -981,7 +979,6 @@ app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
-app.MapRateLimitEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
 app.MapMetadataResourceEndpoints();

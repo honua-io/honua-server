@@ -102,48 +102,36 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         content.Should().Be("Not Ready");
     }
 
-    [Theory]
-    [InlineData("POST")]
-    [InlineData("PUT")]
-    [InlineData("DELETE")]
-    [InlineData("PATCH")]
+    [IntegrationTest]
     [Operation(Operations.LivenessCheck)]
     [Endpoint("POST /healthz/live")]
     [Endpoint("PUT /healthz/live")]
     [Endpoint("DELETE /healthz/live")]
     [Endpoint("PATCH /healthz/live")]
-    public async Task LivenessProbe_WithNonGetMethod_Returns405(string method)
+    public async Task LivenessProbe_WithNonGetMethods_Returns405()
     {
-        // Arrange
-        using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/live");
-
-        // Act
-        var response = await _client.SendAsync(request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/live");
+            var response = await _client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        }
     }
 
-    [Theory]
-    [InlineData("POST")]
-    [InlineData("PUT")]
-    [InlineData("DELETE")]
-    [InlineData("PATCH")]
+    [IntegrationTest]
     [Operation(Operations.ReadinessCheck)]
     [Endpoint("POST /healthz/ready")]
     [Endpoint("PUT /healthz/ready")]
     [Endpoint("DELETE /healthz/ready")]
     [Endpoint("PATCH /healthz/ready")]
-    public async Task ReadinessProbe_WithNonGetMethod_Returns405(string method)
+    public async Task ReadinessProbe_WithNonGetMethods_Returns405()
     {
-        // Arrange
-        using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/ready");
-
-        // Act
-        var response = await _client.SendAsync(request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/ready");
+            var response = await _client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        }
     }
 
     [IntegrationTest]
@@ -151,11 +139,17 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     [Endpoint("GET /healthz/live")]
     public async Task LivenessProbe_ResponseTime_IsUnder200Ms()
     {
-        // Arrange
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // Warm the in-memory test host so the timing assertion measures the probe path
+        // instead of first-request startup overhead in local pre-PR runs.
+        using (var warmupResponse = await _client.GetAsync("/healthz/live"))
+        {
+            warmupResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
         var maxElapsedMs = Environment.GetEnvironmentVariable("CI") == "true" ? 1000 : 200;
 
         // Act
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var response = await _client.GetAsync("/healthz/live");
         stopwatch.Stop();
 

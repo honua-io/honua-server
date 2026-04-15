@@ -62,16 +62,16 @@ public class ValidationErrorHelpersTests
     }
 
     [Fact]
-    public void CreateMethodNotAllowed_WithAllowedMethods_CreatesCorrectResponse()
+    public async Task CreateMethodNotAllowed_WithAllowedMethods_SetsAllowHeader()
     {
-        // Arrange
         var allowedMethods = new HashSet<string> { "GET", "POST", "PUT" };
-
-        // Act
         var result = ValidationErrorHelpers.CreateMethodNotAllowed(allowedMethods);
+        var context = CreateContext("/test");
 
-        // Assert
-        result.Should().NotBeNull();
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status405MethodNotAllowed);
+        context.Response.Headers["Allow"].ToString().Should().Be("GET, POST, PUT");
     }
 
     [Fact]

@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.Admin;
@@ -22,6 +23,13 @@ internal static class AdminEndpoints
 {
     private static readonly FrozenSet<string> _openApiAllowedQueryParameters =
         new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly string[] _nonGetMethods =
+    [
+        HttpMethods.Post,
+        HttpMethods.Put,
+        HttpMethods.Delete,
+        HttpMethods.Patch
+    ];
 
     /// <summary>
     /// Configure admin endpoints using AOT-compatible routing with formal API versioning
@@ -36,28 +44,30 @@ internal static class AdminEndpoints
             .RequireAdminAuthorization();
 
         // Configuration documentation endpoint (self-documenting)
-        _ = adminGroup.Map("/config", HandleGetConfiguration)
+        _ = adminGroup.MapMethods("/config", [HttpMethods.Get], HandleGetConfiguration)
             .WithDisplayName("Get Configuration Documentation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = adminGroup.MapMethods("/config", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
+            .WithDisplayName("Get Configuration Documentation Method Not Allowed");
 
         // Runtime OpenAPI endpoint for admin/control-plane contract.
         _ = adminGroup.Map("/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("Get Admin OpenAPI Specification")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        endpoints.MapConfigurationDiscoveryEndpoints();
-
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
-        _ = adminGroup.Map("/connections/{id}/tables", HandleGetConnectionTables)
+        _ = adminGroup.MapMethods("/connections/{id}/tables", [HttpMethods.Get], HandleGetConnectionTables)
             .WithDisplayName("Get Connection Tables")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = adminGroup.MapMethods("/connections/{id}/tables", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
+            .WithDisplayName("Get Connection Tables Method Not Allowed");
 
-        _ = adminGroup.Map("/connections/tables", HandleGetConnectionTablesWithCatchAll)
+        _ = adminGroup.MapMethods("/connections/tables", [HttpMethods.Get], HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Missing ID")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Use catch-all parameter to handle edge cases like empty segments
-        _ = adminGroup.Map("/connections/{*path}", HandleGetConnectionTablesWithCatchAll)
+        _ = adminGroup.MapMethods("/connections/{*path}", [HttpMethods.Get], HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Catch All")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
@@ -68,17 +78,6 @@ internal static class AdminEndpoints
     /// </summary>
     private static async Task HandleGetConfiguration(HttpContext context)
     {
-        // Ensure only GET requests
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Only GET requests are allowed for this endpoint")
-                .ExecuteAsync(context);
-            return;
-        }
-
         var configService = context.RequestServices.GetRequiredService<ConfigurationDocumentationService>();
         var documentation = configService.BuildDocumentation();
 
@@ -125,17 +124,6 @@ internal static class AdminEndpoints
     /// </summary>
     private static async Task HandleGetConnectionTables(HttpContext context)
     {
-        // Ensure only GET requests
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Only GET requests are allowed for this endpoint")
-                .ExecuteAsync(context);
-            return;
-        }
-
         // Extract connection ID from route
         string? id = context.GetRouteValue("id")?.ToString();
 
@@ -257,5 +245,11 @@ internal static class AdminEndpoints
             _openApiAllowedQueryParameters,
             "admin-openapi.json",
             fallbackSpec);
+    }
+
+    private static Task HandleGetOnlyMethodNotAllowed(HttpContext context)
+    {
+        var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { HttpMethods.Get };
+        return ValidationErrorHelpers.CreateMethodNotAllowed(allowedMethods).ExecuteAsync(context);
     }
 }

@@ -14,6 +14,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -27,6 +28,20 @@ namespace Honua.Server.Features.Import;
 internal static partial class ImportEndpoints
 {
     private const string InvalidMultipartImportRequestMessage = "Multipart import request is invalid.";
+    private static readonly string[] NonGetMethods =
+    [
+        HttpMethods.Post,
+        HttpMethods.Put,
+        HttpMethods.Delete,
+        HttpMethods.Patch
+    ];
+    private static readonly string[] NonPostMethods =
+    [
+        HttpMethods.Get,
+        HttpMethods.Put,
+        HttpMethods.Delete,
+        HttpMethods.Patch
+    ];
     internal sealed class ImportEndpointsLog
     {
     }
@@ -54,17 +69,23 @@ internal static partial class ImportEndpoints
         var nameSuffix = isV1 ? "V1" : "";
 
         // Get supported file formats
-        _ = group.Map("/formats", HandleGetSupportedFormats)
+        _ = group.MapMethods("/formats", [HttpMethods.Get], HandleGetSupportedFormats)
             .WithName($"GetSupportedFileFormats{nameSuffix}")
             .WithSummary("Get supported geospatial file formats")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetSupportedFileFormats{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get supported geospatial file formats method not allowed");
 
         // Preview file before import
-        _ = group.Map("/preview", HandlePreviewFile)
+        _ = group.MapMethods("/preview", [HttpMethods.Post], HandlePreviewFile)
             .WithName($"PreviewFile{nameSuffix}")
             .WithSummary("Preview geospatial file contents")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .DisableAntiforgery(); // For file uploads
+        _ = group.MapMethods("/preview", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"PreviewFile{nameSuffix}MethodNotAllowed")
+            .WithSummary("Preview geospatial file contents method not allowed");
 
         _ = group.Map("/preview-url", HandlePreviewFileFromUrl)
             .WithName($"PreviewFileFromUrl{nameSuffix}")
@@ -131,16 +152,6 @@ internal static partial class ImportEndpoints
     /// </summary>
     private static async Task HandleGetSupportedFormats(HttpContext context)
     {
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         string[] extensions = importService.GetSupportedExtensions();
         var formatDescriptions = new Dictionary<string, string>
@@ -179,16 +190,6 @@ internal static partial class ImportEndpoints
     /// </summary>
     private static async Task HandlePreviewFile(HttpContext context)
     {
-        if (!HttpMethods.IsPost(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
         IFormFile? file = GetFormFile(form, "file", "File");
@@ -311,6 +312,18 @@ internal static partial class ImportEndpoints
             Log.ImportFailed(logger, parseResult.Request?.TableName ?? "unknown", ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Import failed", StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static Task HandleGetMethodNotAllowed(HttpContext context)
+    {
+        var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { HttpMethods.Get };
+        return ValidationErrorHelpers.CreateMethodNotAllowed(allowedMethods).ExecuteAsync(context);
+    }
+
+    private static Task HandlePostMethodNotAllowed(HttpContext context)
+    {
+        var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { HttpMethods.Post };
+        return ValidationErrorHelpers.CreateMethodNotAllowed(allowedMethods).ExecuteAsync(context);
     }
 
     private static async Task HandlePreviewFileFromUrl(HttpContext context)

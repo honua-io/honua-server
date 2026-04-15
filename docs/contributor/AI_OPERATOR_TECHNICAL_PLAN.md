@@ -1497,7 +1497,10 @@ Existing seeded issues:
 - `#724` chaining/scheduling/DAGs
 - `#725` workspace artifacts and cleanup
 - `#726` approval gates
-- `#727` cloud executor adapters
+- `#727` shared cloud executor adapter boundary
+- `#758` Kubernetes Jobs executor adapter
+- `#759` AWS Batch executor adapter
+- `#760` Azure Batch executor adapter
 - `#728` MCP operator extensions
 - `#735` seeded built-in process catalog from existing server capabilities
 - `#738` MCP resource integration for published services and deployments

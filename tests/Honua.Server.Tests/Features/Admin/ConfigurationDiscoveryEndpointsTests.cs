@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -9,19 +10,17 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests confirming the MVP runtime does not expose application rate-limit admin endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(Protocols.Admin)]
-public sealed class RateLimitEndpointsTests : IAsyncLifetime
+[Operation(Operations.Configuration)]
+public sealed class ConfigurationDiscoveryEndpointsTests : IAsyncLifetime
 {
-    private const string AdminPassword = "ratelimit-admin-key";
+    private const string AdminPassword = "configuration-discovery-admin-key";
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public RateLimitEndpointsTests()
+    public ConfigurationDiscoveryEndpointsTests()
     {
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -42,12 +41,11 @@ public sealed class RateLimitEndpointsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /api/v1/admin/rate-limits")]
-    public async Task GetRateLimitPolicies_MvpRuntime_ReturnsNotFound()
+    [Endpoint("GET /api/v1/admin/configuration/discover")]
+    public async Task DiscoverConfiguration_WithAdminAuth_ReturnsNotFound()
     {
-        var response = await _client.GetAsync("/api/v1/admin/rate-limits");
+        var response = await _client.GetAsync("/api/v1/admin/configuration/discover");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

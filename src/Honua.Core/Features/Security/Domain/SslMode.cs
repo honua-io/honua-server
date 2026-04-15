@@ -6,6 +6,7 @@ namespace Honua.Core.Features.Security.Domain;
 /// <summary>
 /// SSL connection mode for database connections.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1708:Identifiers should differ by more than case", Justification = "VerifyCA is kept as a compatibility alias for existing callers while VerifyCa remains the canonical member.")]
 public enum SslMode
 {
     /// <summary>
