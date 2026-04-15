@@ -404,8 +404,11 @@ Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`
 
 Geoprocessing operations report workflow-specific progress including the current
 deterministic stage and plan step counts. Cancellation is supported through the
-cancel endpoint; the server re-reads progress before writing terminal state to
-mitigate TOCTOU races with worker-owned state transitions.
+cancel endpoint. Operations that have already reached a terminal state
+(`Completed` or `Failed`) return `409 Conflict`; already-cancelled operations
+return `200` idempotently. The server re-reads progress before writing the
+cancellation and checks the durable job store (when present) to mitigate TOCTOU
+races with worker-owned state transitions.
 
 Jobs submitted through the durable job orchestration substrate (via
 `ProcessService.SubmitPlanJob`) surface through these same operations endpoints
