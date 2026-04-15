@@ -16,6 +16,7 @@ internal sealed partial class JobExecutionService(
     IExecutionJobStore jobStore,
     IEnumerable<IJobExecutor> executors,
     ExecutionJobCancellationTokens cancellationTokens,
+    IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
     ILogger<JobExecutionService> logger) : BackgroundService
 {
@@ -311,6 +312,7 @@ internal sealed partial class JobExecutionService(
             await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
         }
 
+        await NotifyTerminalAsync(final, cancellationToken).ConfigureAwait(false);
         Log.JobExecutionCompleted(logger, operationId, result.Status.ToString());
     }
 
@@ -352,6 +354,7 @@ internal sealed partial class JobExecutionService(
             await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
         }
 
+        await NotifyTerminalAsync(terminal, cancellationToken).ConfigureAwait(false);
         Log.JobExecutionCompleted(logger, operationId, terminalStatus.ToString());
     }
 
@@ -394,6 +397,7 @@ internal sealed partial class JobExecutionService(
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
 
+            await NotifyTerminalAsync(cancelled, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -479,6 +483,23 @@ internal sealed partial class JobExecutionService(
             if (logStore != null)
             {
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
+            }
+
+            await NotifyTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task NotifyTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        foreach (var callback in terminalCallbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.TerminalCallbackFailed(logger, job.OperationId, ex);
             }
         }
     }
@@ -574,6 +595,9 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9068, LogLevel.Information, "Abandon honoured durable cancellation signal for job {OperationId}")]
         public static partial void AbandonHonouredDurableCancellation(ILogger logger, string operationId);
+
+        [LoggerMessage(9069, LogLevel.Warning, "Terminal callback failed for job {OperationId}; admin progress may be stale")]
+        public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 

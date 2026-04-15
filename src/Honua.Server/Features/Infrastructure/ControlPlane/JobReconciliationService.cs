@@ -15,6 +15,7 @@ internal sealed partial class JobReconciliationService(
     IJobQueue jobQueue,
     IQueueClaimReconciler claimReconciler,
     ExecutionJobCancellationTokens cancellationTokens,
+    IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
     ILogger<JobReconciliationService> logger) : BackgroundService
 {
@@ -187,6 +188,7 @@ internal sealed partial class JobReconciliationService(
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
 
+            await NotifyTerminalAsync(cancelledJob, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -248,6 +250,8 @@ internal sealed partial class JobReconciliationService(
             {
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
+
+            await NotifyTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
         }
 
         return true;
@@ -302,7 +306,23 @@ internal sealed partial class JobReconciliationService(
             await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
         }
 
+        await NotifyTerminalAsync(failed, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    private async Task NotifyTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        foreach (var callback in terminalCallbacks)
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.TerminalCallbackFailed(logger, job.OperationId, ex);
+            }
+        }
     }
 
     /// <summary>
@@ -351,5 +371,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9067, LogLevel.Information, "Heartbeat expired for job {OperationId}: honouring durable cancellation signal")]
         public static partial void HeartbeatExpiredCancellationHonoured(ILogger logger, string operationId);
+
+        [LoggerMessage(9070, LogLevel.Warning, "Terminal callback failed for job {OperationId}; admin progress may be stale")]
+        public static partial void TerminalCallbackFailed(ILogger logger, string operationId, Exception exception);
     }
 }

@@ -298,7 +298,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_AlreadyCancelled_ReturnsIdempotent()
+    public async Task CancelOperation_AlreadyCancelled_ReturnsIdempotent200()
     {
         var operationId = Guid.NewGuid().ToString("N");
         var progress = UploadProgress.CreateInitial(operationId, "double-cancel.geojson", 10) with
@@ -311,12 +311,12 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_CompletedOperation_ReturnsBadRequest()
+    public async Task CancelOperation_CompletedOperation_Returns409Conflict()
     {
         var operationId = Guid.NewGuid().ToString("N");
         var progress = UploadProgress.CreateInitial(operationId, "completed.geojson", 50) with
@@ -329,7 +329,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [IntegrationTest]

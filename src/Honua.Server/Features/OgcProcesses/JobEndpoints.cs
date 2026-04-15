@@ -402,6 +402,20 @@ internal static class JobEndpoints
                         StatusCodes.Status409Conflict);
                 }
 
+                if (jobQueue != null)
+                {
+                    await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                }
+
+                var staleProgress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                    jobId, context.RequestAborted).ConfigureAwait(false);
+                if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+                {
+                    var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Dismissed via OGC API");
+                    await progressStore.SetProgressAsync(
+                        jobId, reconciledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                }
+
                 job = latest;
             }
             else if (latest.ClaimedBy != null)

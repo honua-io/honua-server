@@ -187,12 +187,23 @@ internal static class OperationsProgressEndpoints
                 $"Operation '{operationId}' not found");
         }
 
-        if (progress.Status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled)
+        if (progress.Status is OperationStatus.Completed or OperationStatus.Failed)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Operation is already completed, failed, or cancelled");
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Operation '{operationId}' reached terminal state '{progress.Status}' before cancellation could be applied");
+        }
+
+        if (progress.Status is OperationStatus.Cancelled)
+        {
+            var alreadyCancelled = new CancelOperationResponse
+            {
+                OperationId = operationId,
+                Message = "Operation cancellation requested",
+                Type = progress.Type
+            };
+            return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
         }
 
         if (progress is not ICancellableOperationProgress cancellableProgress)

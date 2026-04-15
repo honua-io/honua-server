@@ -70,7 +70,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -118,7 +118,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, "worker-test");
@@ -166,7 +166,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, "worker-test");
@@ -327,7 +327,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -381,7 +381,7 @@ public sealed class JobExecutionServiceTests
         var logStore = Substitute.For<IExecutionLogStore>();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, logStore,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), logStore,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -430,7 +430,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -484,7 +484,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, logStore,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), logStore,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -542,7 +542,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId,
@@ -652,7 +652,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -701,7 +701,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId,
@@ -748,7 +748,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId,
@@ -804,7 +804,7 @@ public sealed class JobExecutionServiceTests
             .Returns(JobExecutionResult.Succeeded());
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -852,7 +852,7 @@ public sealed class JobExecutionServiceTests
             });
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -907,7 +907,7 @@ public sealed class JobExecutionServiceTests
             .Returns(JobExecutionResult.Failed("Transient failure"));
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -953,7 +953,7 @@ public sealed class JobExecutionServiceTests
             .Returns(JobExecutionResult.Failed("Permanent failure"));
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
@@ -1150,7 +1150,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, Array.Empty<IJobExecutor>(), cancellationTokens, null,
+            jobQueue, jobStore, Array.Empty<IJobExecutor>(), cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
@@ -1209,7 +1209,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await service.StartAsync(stoppingCts.Token);
@@ -1268,7 +1268,7 @@ public sealed class JobExecutionServiceTests
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
-            jobQueue, jobStore, [executor], cancellationTokens, null,
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
             NullLogger<JobExecutionService>.Instance);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);

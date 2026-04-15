@@ -335,6 +335,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
             {
+                if (_jobQueue != null)
+                {
+                    await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+                }
+
+                var staleProgress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
+                    jobId, cancellationToken).ConfigureAwait(false);
+                if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+                {
+                    var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+                    await _progressStore.SetProgressAsync(
+                        jobId, reconciledProgress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                }
+
                 return;
             }
 

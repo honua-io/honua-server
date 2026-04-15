@@ -355,7 +355,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Delete)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
-    public async Task CancelJob_ReReadFindsCancelled_SucceedsIdempotently()
+    public async Task CancelJob_ReReadFindsCancelled_ReconcilesSideEffectsIdempotently()
     {
         var queued = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
         var cancelled = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled);
@@ -365,7 +365,7 @@ public sealed class GeoprocessingJobServiceTests
 
         await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
-        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
