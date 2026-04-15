@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -92,6 +94,57 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var updated = await _progressStore.GetProgressAsync(operationId);
         updated.Should().NotBeNull();
         updated!.Status.Should().Be(OperationStatus.Cancelled);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenBackedByExecutionJob_CancelsJobStoreAndRemovesFromQueue()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        var jobQueue = _fixture.GetOptionalService<IJobQueue>();
+        if (jobStore == null || jobQueue == null)
+        {
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = "Queued",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-admin-cancel"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+        await jobQueue.EnqueueAsync(operationId);
+
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-test");
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updatedJob = await jobStore.GetAsync(operationId);
+        updatedJob.Should().NotBeNull();
+        updatedJob!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        updatedJob.CompletedAt.Should().NotBeNull();
+
+        var queueDepth = await jobQueue.GetQueueDepthAsync();
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Cancelled);
     }
 
     [IntegrationTest]

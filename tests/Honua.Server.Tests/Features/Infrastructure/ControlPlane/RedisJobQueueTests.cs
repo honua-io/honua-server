@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -121,6 +122,37 @@ public sealed class RedisJobQueueTests
         Assert.False(HasCall(database, nameof(IDatabase.SortedSetRemoveAsync), (RedisKey)ClaimedSetKey, (RedisValue)operationId));
         Assert.False(HasCall(database, nameof(IDatabase.SortedSetAddAsync), (RedisKey)QueueKey, (RedisValue)operationId));
         Assert.False(HasCall(database, nameof(IDatabase.KeyDeleteAsync), (RedisKey)GetClaimMetaKey(operationId)));
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_WhenAllEntriesDelayed_RespectsVisitBudgetAndTerminates()
+    {
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(new RedisValue[] { "delayed-job" }));
+
+        var futureMs = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(new[] { new HashEntry("visibleAfter", futureMs) }));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var result = await queue.TryClaimAsync("worker-visit-budget");
+
+        Assert.Null(result);
+
+        var rangeCallCount = database.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(IDatabase.SortedSetRangeByRankAsync));
+        Assert.True(rangeCallCount <= 1000, $"Visit budget should cap iteration; got {rangeCallCount} range calls");
     }
 
     private static ExecutionJobRecord CreateQueuedJob(

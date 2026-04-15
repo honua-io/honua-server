@@ -3,6 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -132,6 +134,11 @@ internal static class OperationsProgressEndpoints
         return JsonSerializer.SerializeToElement(operation);
     }
 
+    private static bool IsExecutionJobTerminal(ExecutionJobStatus status)
+        => status is ExecutionJobStatus.Succeeded
+            or ExecutionJobStatus.Failed
+            or ExecutionJobStatus.Cancelled;
+
     private static void NormalizeCanonicalProperty(JsonObject operation, string propertyName, JsonNode? value)
     {
         var duplicateKeys = new List<string>();
@@ -159,6 +166,7 @@ internal static class OperationsProgressEndpoints
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
         [FromServices] IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(operationId))
@@ -272,6 +280,33 @@ internal static class OperationsProgressEndpoints
                 StatusCodes.Status409Conflict,
                 "Conflict",
                 $"Operation '{operationId}' reached terminal state '{preWriteProgress.Status}' before cancellation could be applied");
+        }
+
+        // If this operation is backed by a durable execution job, synchronize the
+        // cancellation to the authoritative job store and remove from the queue so
+        // the job does not remain claimable after the admin cancel.
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
+        if (jobStore != null)
+        {
+            var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (executionJob != null && !IsExecutionJobTerminal(executionJob.Status))
+            {
+                var jobNow = DateTimeOffset.UtcNow;
+                var cancelledJob = executionJob with
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    UpdatedAt = jobNow,
+                    CompletedAt = jobNow,
+                    CurrentPhase = "Cancelled"
+                };
+                await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
+                if (jobQueue != null)
+                {
+                    await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
         var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");

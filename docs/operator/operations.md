@@ -268,10 +268,10 @@ applies. Delayed entries (jobs requeued with a visibility delay for retry
 backoff) and kind-mismatched entries do not consume the claim scan budget,
 so a backlog of delayed retries or jobs for other worker kinds cannot
 starve ready work in lower-priority bands. The scan terminates when the
-scan budget (100 claimable candidates) is exhausted or the queue is
-drained. A visit counter tracks total entries examined; exceeding the
-visit threshold (1000 entries) is logged at Warning level to signal
-queue pathology, but does not halt the scan.
+scan budget (100 claimable candidates) is exhausted, the visit budget
+(1000 total entries examined) is exhausted, or the queue is drained.
+Exceeding the visit threshold is logged at Warning level to signal
+queue pathology.
 
 | Priority | Use case |
 |----------|----------|
