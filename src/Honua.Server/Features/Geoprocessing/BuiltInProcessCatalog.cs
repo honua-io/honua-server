@@ -200,6 +200,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Must be ≥ 1. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
                 Param("k", "K", "Number of clusters for KMeans. Must be ≥ 1. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
                 Param("returnHullPerCluster", "Return Hull", "Return convex hull polygon per cluster instead of labeled points.", ProcessParameterValueType.Flag, defaultValue: "false"),
+                Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated over each cluster. Requires returnHullPerCluster=true; per-feature output cannot carry aggregate columns.", ProcessParameterValueType.Text),
+                .. SharedAnalyticsFilterParameters,
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
         },
@@ -215,6 +217,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects, contains, within, dwithin. Defaults to intersects.", ProcessParameterValueType.Text),
                 Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin.", ProcessParameterValueType.FloatingPoint),
+                Param("carryFields", "Carry Fields", "Comma-separated join-layer columns whose matched values are emitted as arrays on each target feature.", ProcessParameterValueType.Text),
+                Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated over the matched join rows for each target feature.", ProcessParameterValueType.Text),
+                .. SharedAnalyticsFilterParameters,
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
         },
@@ -227,9 +232,12 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("distance", "Distance", "Buffer distance value in the supplied unit. Must be > 0.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("distance", "Distance", "Buffer distance value in the supplied unit. Must be ≥ 0; the maximum cap is enforced after unit conversion.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("unit", "Unit", "Distance unit. Allowed values: meters, kilometers, feet, miles.", ProcessParameterValueType.Text, defaultValue: "meters"),
                 Param("dissolve", "Dissolve", "Dissolve overlapping buffers.", ProcessParameterValueType.Flag, defaultValue: "true"),
+                Param("groupByFields", "Group By Fields", "Comma-separated columns used to group dissolved buffers; one row is emitted per group.", ProcessParameterValueType.Text),
+                Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated per group. Requires dissolve=true; per-feature output cannot carry aggregate columns.", ProcessParameterValueType.Text),
+                .. SharedAnalyticsFilterParameters,
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -245,9 +253,27 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("mode", "Bin Mode", "Binning mode. Allowed values: hex, square. Defaults to hex.", ProcessParameterValueType.Text),
                 Param("cellSize", "Cell Size", "Grid cell size in meters. Must be > 0.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("weightField", "Weight Field", "Optional field name for weighted sums instead of counts.", ProcessParameterValueType.Text),
+                .. SharedAnalyticsFilterParameters,
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
         },
+    ];
+
+    // Shared GeoServices-style filter inputs that every analytics handler honors via
+    // AnalyticsFeatureQueryFactory. Declared here so the catalog matches the live
+    // surface and ProcessPlanValidator does not reject plans the handlers accept.
+    // Values are passed through as strings; the handler parses and rejects bad
+    // shapes (SQL syntax, non-numeric SRID, distance-based spatialRel, etc.).
+    private static readonly ProcessParameterSpec[] SharedAnalyticsFilterParameters =
+    [
+        Param("where", "Where", "ArcGIS SQL filter applied to the source layer.", ProcessParameterValueType.Text),
+        Param("objectIds", "Object IDs", "Comma-separated feature identifiers to limit the analysis to.", ProcessParameterValueType.Text),
+        Param("geometry", "Geometry Filter", "GeoServices geometry filter (envelope, polygon, etc.) restricting the input set.", ProcessParameterValueType.Text),
+        Param("geometryType", "Geometry Type", "GeoServices geometry type for the geometry filter (e.g. esriGeometryEnvelope).", ProcessParameterValueType.Text),
+        Param("inSR", "Input SR", "Spatial reference identifier of the geometry filter.", ProcessParameterValueType.Text),
+        Param("spatialRel", "Spatial Relationship", "GeoServices spatial relationship (e.g. esriSpatialRelIntersects). Distance-based relationships are rejected here; use the operation-specific 'distance' or the 'where' clause instead.", ProcessParameterValueType.Text),
+        Param("time", "Time Filter", "Temporal filter (instant or extent) following the FeatureServer time convention.", ProcessParameterValueType.Text),
+        Param("timeRelation", "Time Relation", "Temporal predicate paired with the 'time' filter.", ProcessParameterValueType.Text),
     ];
 
     private static ProcessParameterSpec Param(
