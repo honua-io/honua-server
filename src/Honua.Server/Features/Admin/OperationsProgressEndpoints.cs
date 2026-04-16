@@ -19,7 +19,6 @@ using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Infrastructure;
-using Honua.Server.Features.Orchestration;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -149,8 +148,8 @@ internal static class OperationsProgressEndpoints
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        var engine = httpContext.RequestServices.GetService<WorkflowOrchestrationEngine>();
-        if (engine is null)
+        var coordinator = httpContext.RequestServices.GetService<IWorkflowCancellationCoordinator>();
+        if (coordinator is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status503ServiceUnavailable,
@@ -158,7 +157,7 @@ internal static class OperationsProgressEndpoints
                 "Orchestration engine is not available to process cancellation");
         }
 
-        var outcome = await engine.CancelRunAsync(operationId, cancellationToken).ConfigureAwait(false);
+        var outcome = await coordinator.CancelRunAsync(operationId, cancellationToken).ConfigureAwait(false);
         return outcome switch
         {
             WorkflowCancellationOutcome.NotFound => ProblemDetailsHelpers.CreateAdminProblem(

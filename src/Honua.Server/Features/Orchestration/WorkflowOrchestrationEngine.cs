@@ -17,7 +17,7 @@ namespace Honua.Server.Features.Orchestration;
 /// <see cref="IWorkflowJobExecutor"/> substrate. Mirrors the lease-based reconcile
 /// pattern established for deploy workflows.
 /// </summary>
-internal sealed class WorkflowOrchestrationEngine
+internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
@@ -823,22 +823,4 @@ internal sealed class WorkflowOrchestrationEngine
             or WorkflowStepStatus.Failed
             or WorkflowStepStatus.Cancelled
             or WorkflowStepStatus.Skipped;
-}
-
-/// <summary>
-/// Outcome categories returned by <see cref="WorkflowOrchestrationEngine.CancelRunAsync"/>.
-/// </summary>
-internal enum WorkflowCancellationOutcome
-{
-    /// <summary>The run was not found in the durable store.</summary>
-    NotFound,
-
-    /// <summary>The run already reached a terminal non-cancelled status.</summary>
-    AlreadyTerminal,
-
-    /// <summary>The run was already cancelled.</summary>
-    AlreadyCancelled,
-
-    /// <summary>Cancellation has been recorded and will propagate on the next reconcile tick.</summary>
-    CancellationRequested
 }

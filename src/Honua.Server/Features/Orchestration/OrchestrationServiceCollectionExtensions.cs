@@ -28,6 +28,8 @@ internal static class OrchestrationServiceCollectionExtensions
         }
 
         services.TryAddSingleton<WorkflowOrchestrationEngine>();
+        services.TryAddSingleton<IWorkflowCancellationCoordinator>(sp =>
+            sp.GetRequiredService<WorkflowOrchestrationEngine>());
 
         return services;
     }

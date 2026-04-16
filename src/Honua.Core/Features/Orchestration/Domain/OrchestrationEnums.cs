@@ -106,3 +106,22 @@ public enum WorkflowTriggerKind
     /// </summary>
     Cron
 }
+
+/// <summary>
+/// Outcome categories returned when a caller requests cancellation of a workflow run
+/// via <see cref="Abstractions.IWorkflowCancellationCoordinator"/>.
+/// </summary>
+public enum WorkflowCancellationOutcome
+{
+    /// <summary>The run was not found in the durable store.</summary>
+    NotFound,
+
+    /// <summary>The run already reached a terminal non-cancelled status.</summary>
+    AlreadyTerminal,
+
+    /// <summary>The run was already cancelled.</summary>
+    AlreadyCancelled,
+
+    /// <summary>Cancellation has been recorded and will propagate on the next reconcile tick.</summary>
+    CancellationRequested
+}
