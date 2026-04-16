@@ -208,11 +208,12 @@ Conceptual shape:
     {
       "stepId": "buffer_schools",
       "kind": "Geoprocess",
-      "processId": "buffer",
+      "processId": "geometry.buffer",
       "inputs": {
-        "source": "schools_all",
+        "wkb": "AQMAAAABAAAABQAAAA...",
+        "srid": "4326",
         "distance": "500",
-        "distanceUnit": "meters"
+        "geodesic": "true"
       },
       "dependsOn": []
     },
@@ -724,7 +725,7 @@ Conceptual shape:
       "description": "City parcels dataset"
     }
   ],
-  "processDefinitions": ["buffer", "spatial_join"],
+  "processDefinitions": ["geometry.buffer", "analytics.spatial-join"],
   "assumptions": ["Used public schools dataset."],
   "clarificationsAsked": ["q_dataset"],
   "clarificationsAnswered": ["q_dataset"],

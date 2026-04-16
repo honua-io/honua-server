@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Geoprocessing;
@@ -31,6 +32,7 @@ public sealed class GrpcProcessServiceTests
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
     private readonly IOperatorApprovalEvaluator _approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+    private readonly IProcessCatalog _processCatalog = new BuiltInProcessCatalog();
     private readonly HonuaProcessService _sut;
 
     public GrpcProcessServiceTests()
@@ -46,6 +48,7 @@ public sealed class GrpcProcessServiceTests
         var jobService = new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
+            _processCatalog,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             _jobStore);
 
@@ -165,6 +168,50 @@ public sealed class GrpcProcessServiceTests
 
         response.EstimatedDurationSeconds.Should().Be(0);
         response.EstimatedArtifacts.Should().ContainSingle(a => a == Proto.ArtifactKind.FeatureLayer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithUnknownProcessId_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
+        plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "does.not.exist"
+        });
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("UNKNOWN_PROCESS");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithMissingRequiredParameter_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
+        plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "geometry.buffer"
+        });
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("MISSING_REQUIRED_PARAMETER");
     }
 
     // -----------------------------------------------------------------------
@@ -825,7 +872,8 @@ public sealed class GrpcProcessServiceTests
         {
             StepId = "step-1",
             Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            ProcessId = "geometry.buffer",
+            Inputs = { { "wkb", "AAAA" }, { "srid", "4326" }, { "distance", "100" } }
         };
 
     private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)

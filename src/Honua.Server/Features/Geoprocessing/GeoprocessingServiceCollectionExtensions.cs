@@ -17,8 +17,8 @@ namespace Honua.Server.Features.Geoprocessing;
 internal static class GeoprocessingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers geoprocessing service dependencies including workspace lifecycle
-    /// and the execution job store.
+    /// Registers geoprocessing service dependencies including workspace lifecycle,
+    /// the execution job store, and built-in process catalog.
     /// </summary>
     public static IServiceCollection AddGeoprocessing(
         this IServiceCollection services,
@@ -48,6 +48,9 @@ internal static class GeoprocessingServiceCollectionExtensions
             services.AddScoped<IWorkspaceLifecycleService, WorkspaceLifecycleService>();
             services.AddHostedService<WorkspaceCleanupService>();
         }
+
+        // Built-in process catalog (ticket #735)
+        services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
 
         // Execution job store (ticket #722)
         if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))

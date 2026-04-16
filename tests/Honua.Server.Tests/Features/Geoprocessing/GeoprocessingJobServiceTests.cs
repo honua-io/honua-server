@@ -47,6 +47,7 @@ public sealed class GeoprocessingJobServiceTests
         _sut = new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             _jobStore, _jobQueue);
     }
@@ -163,12 +164,71 @@ public sealed class GeoprocessingJobServiceTests
         var sut = new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             jobStore: null);
 
         var act = async () => await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_UnknownProcessId_ThrowsValidation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "intent-1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "unknown.process"
+                }
+            ]
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_MissingRequiredParameter_ThrowsValidation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "intent-1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.buffer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "AAAA"
+                    }
+                }
+            ]
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -342,6 +402,7 @@ public sealed class GeoprocessingJobServiceTests
             [firstNotifier, secondNotifier],
             _authEvaluator,
             _approvalEvaluator,
+            new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             _jobStore,
             _jobQueue);
@@ -678,11 +739,12 @@ public sealed class GeoprocessingJobServiceTests
         _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("Redis unavailable"));
 
+        var validPlan = CreateValidPlan();
         var plan = new AnalysisPlan
         {
             PlanId = "plan-rollback",
-            IntentId = "intent-1",
-            Steps = [new AnalysisPlanStep { StepId = "s1", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "buf" }]
+            IntentId = validPlan.IntentId,
+            Steps = validPlan.Steps
         };
 
         var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
@@ -791,7 +853,13 @@ public sealed class GeoprocessingJobServiceTests
             {
                 StepId = "step-1",
                 Kind = AnalysisPlanStepKind.Geoprocess,
-                ProcessId = "buffer"
+                ProcessId = "geometry.buffer",
+                Inputs = new Dictionary<string, string>
+                {
+                    ["wkb"] = "AAAA",
+                    ["srid"] = "4326",
+                    ["distance"] = "100"
+                }
             }
         ]
     };

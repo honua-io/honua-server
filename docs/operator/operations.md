@@ -513,7 +513,8 @@ The lifecycle rules described in this section are the current workspace contract
 
 GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
 Esri clients. Currently, job status polling and cancellation are functional;
-`submitJob` and `execute` return 501 pending process catalog and ExecutePlan
+`submitJob` and `execute` return 501 pending GPServer per-task projection of the
+built-in `IProcessCatalog` (14 seeded processes) and canonical `ExecutePlan`
 support. The mapping between admin operation tracking and GPServer responses
 (once submission is available):
 

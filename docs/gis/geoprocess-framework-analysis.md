@@ -313,7 +313,7 @@ semantics.
 
 | Canonical Noun | Domain Type | Purpose |
 | --- | --- | --- |
-| Process definition | Via `CatalogService` (not yet formalized as a domain type) | Discoverable unit of geoprocessing capability |
+| Process definition | `ProcessDefinition` (with `ProcessParameterSpec` / `ProcessParameterValueType`) discoverable via `IProcessCatalog` | Discoverable unit of geoprocessing capability; the built-in catalog seeds 14 geometry and analytics processes referenced by `AnalysisPlanStep.ProcessId` |
 | Analysis intent | `AnalysisIntent` | Natural-language or structured goal before planning |
 | Analysis plan | `AnalysisPlan` | Executable DAG of steps compiled from a grounded intent |
 | Plan step | `AnalysisPlanStep` | One unit of work in the execution DAG |
@@ -357,7 +357,7 @@ API Processes Part 1 Core contract. Key mappings:
 
 | OGC Concept | Honua Source / V1 implementation |
 | --- | --- |
-| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); catalog formalization is follow-on work |
+| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); the internal `IProcessCatalog` now enumerates 14 built-in processes, but per-process projection into the adapter surface is follow-on work |
 | `GET /processes/{processId}` | V1 static process description with JSON Schema inputs/outputs for the canonical process stub |
 | `POST /processes/{id}/execution` (sync) | Not implemented in V1; synchronous execution returns `501 Not Implemented` |
 | `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
@@ -402,7 +402,7 @@ This ticket builds the canonical process contract. It must:
 This **protocol adapter** is implemented. The adapter:
 
 - Implements OGC API Processes Part 1 Core routes that project canonical process service operations
-- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) while process catalog formalization is follow-on work
+- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) in `/processes`; plan submissions are validated against the built-in `IProcessCatalog` (14 seeded geometry/analytics processes) so unknown process IDs and missing required parameters are rejected at the adapter boundary, but per-process projection into the OGC surface is follow-on work
 - Translates JSON Schema process descriptions from the canonical process stub
 - Validates canonical plan structure at the adapter boundary before durable job creation
 - Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above

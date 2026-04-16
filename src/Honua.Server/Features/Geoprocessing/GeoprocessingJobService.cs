@@ -5,15 +5,18 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -32,6 +35,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
+    private readonly IProcessCatalog _processCatalog;
+    private readonly AnalyticsLimits _analyticsLimits;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -39,14 +44,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
+        IProcessCatalog processCatalog,
         ILogger<GeoprocessingJobService> logger,
         IExecutionJobStore? jobStore = null,
-        IJobQueue? jobQueue = null)
+        IJobQueue? jobQueue = null,
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
+        _processCatalog = processCatalog;
+        _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _logger = logger;
         _jobStore = jobStore;
         _jobQueue = jobQueue;
@@ -87,6 +96,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             });
         }
 
+        var (catalogViolations, catalogWarnings) = ProcessPlanValidator.Validate(plan, _processCatalog, _analyticsLimits);
+        violations.AddRange(catalogViolations);
+        warnings.AddRange(catalogWarnings);
+
+        foreach (var v in catalogViolations)
+        {
+            if (v.Code == "UNKNOWN_PROCESS")
+            {
+                GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
+            }
+        }
+
         var approvalReq = _approvalEvaluator.Evaluate(
             principal,
             new OperatorAuthorizationRequest
@@ -111,6 +132,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         ValidatePlanStructure(plan);
+        EnsurePlanCatalogValid(plan);
 
         var result = new DryRunResult
         {
@@ -133,6 +155,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
+        EnsurePlanCatalogValid(plan);
         EnsureApproved(principal);
 
         var jobStore = RequireJobStore();
@@ -509,6 +532,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingValidationException(
                 "Plan must contain at least one step for job submission.");
         }
+    }
+
+    private void EnsurePlanCatalogValid(AnalysisPlan plan)
+    {
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _processCatalog, _analyticsLimits);
+        if (violations.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var v in violations)
+        {
+            if (v.Code == "UNKNOWN_PROCESS")
+            {
+                GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
+            }
+        }
+
+        var first = violations[0];
+        throw new GeoprocessingValidationException(
+            $"Plan failed catalog validation: {first.Code} — {first.Message}");
     }
 
     internal static string CreateJobId(string? idempotencyKey)

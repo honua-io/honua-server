@@ -61,8 +61,11 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
             HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
         request.Headers.Add("Prefer", "respond-async");
+        // Plan must pass catalog validation so the code path reaches enqueue
+        // and exercises the rollback branch. geometry.buffer requires wkb,
+        // srid, and distance.
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"plan-rollback","steps":[{"stepId":"s1","kind":"geoprocess","inputs":{"distance":"100"}}]}}}""",
+            """{"inputs":{"plan":{"planId":"plan-rollback","steps":[{"stepId":"s1","kind":"geoprocess","processId":"geometry.buffer","inputs":{"wkb":"AAAA","srid":"4326","distance":"100"}}]}}}""",
             Encoding.UTF8,
             "application/json");
 

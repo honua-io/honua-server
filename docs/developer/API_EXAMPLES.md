@@ -429,7 +429,7 @@ curl http://localhost:8080/ogc/processes/processes/honua-geoprocessing
 
 ### **Execute (Async)**
 
-Async execution requires the `Prefer: respond-async` header and only accepts `response: "document"` in V1. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`); step input values and `dependsOn` entries must be strings, and `outputs` must be an array of supported artifact-kind strings when present. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` headers.
+Async execution requires the `Prefer: respond-async` header and only accepts `response: "document"` in V1. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`); step input values and `dependsOn` entries must be strings, and `outputs` must be an array of supported artifact-kind strings when present. Geoprocess steps are additionally validated against the built-in process catalog: `processId` must match a catalog entry (e.g. `geometry.buffer`) and required parameters must be supplied. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` headers.
 
 ```bash
 curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/execution \
@@ -443,8 +443,12 @@ curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/e
           {
             "stepId": "s1",
             "kind": "geoprocess",
-            "processId": "buffer",
-            "inputs": {"distance": "100"}
+            "processId": "geometry.buffer",
+            "inputs": {
+              "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "srid": "4326",
+              "distance": "100"
+            }
           }
         ]
       }
