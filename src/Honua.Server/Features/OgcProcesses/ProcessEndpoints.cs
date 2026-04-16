@@ -5,11 +5,14 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -311,6 +314,28 @@ internal static class ProcessEndpoints
                 StatusCodes.Status400BadRequest);
         }
 
+        // Validate the plan against the built-in process catalog. Structural
+        // validation accepts any processId string; this check rejects unknown
+        // processes and missing/invalid typed inputs so OGC-submitted jobs
+        // match what the canonical gRPC submit path accepts.
+        var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+        var catalogError = ValidatePlanAgainstCatalog(planElement, planId, catalog, logger);
+        if (catalogError != null)
+        {
+            OgcProcessesLog.PlanStructureInvalid(logger, processId, catalogError);
+            return Results.Json(
+                new OgcProcessError
+                {
+                    Type = "about:blank",
+                    Title = "Invalid analysis plan",
+                    Status = StatusCodes.Status400BadRequest,
+                    Detail = catalogError
+                },
+                OgcProcessesJsonContext.Default.OgcProcessError,
+                MediaTypes.Json,
+                StatusCodes.Status400BadRequest);
+        }
+
         OgcProcessesLog.ExecutionRequested(logger, processId, true);
 
         if (jobStore == null)
@@ -386,6 +411,140 @@ internal static class ProcessEndpoints
         context.Response.Headers["Preference-Applied"] = "respond-async";
 
         return Results.Json(statusInfo, OgcProcessesJsonContext.Default.OgcStatusInfo, MediaTypes.Json, StatusCodes.Status201Created);
+    }
+
+    /// <summary>
+    /// Validates Geoprocess steps against the supplied <see cref="IProcessCatalog"/>.
+    /// Rejects unknown process IDs, missing required parameters, and typed input
+    /// values that do not parse against their declared parameter types — matching
+    /// what <see cref="GeoprocessingJobService.SubmitJobAsync"/> enforces.
+    /// </summary>
+    /// <returns>Error message if invalid; null if valid.</returns>
+    private static string? ValidatePlanAgainstCatalog(
+        JsonElement plan, string planId, IProcessCatalog catalog, ILogger logger)
+    {
+        var steps = ExtractPlanSteps(plan);
+        if (steps.Count == 0)
+        {
+            return null;
+        }
+
+        var analysisPlan = new AnalysisPlan
+        {
+            PlanId = planId,
+            IntentId = "ogc-execute",
+            Steps = steps
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(analysisPlan, catalog);
+        if (violations.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var v in violations)
+        {
+            if (v.Code == "UNKNOWN_PROCESS")
+            {
+                GeoprocessingServiceLog.UnknownProcessReferenced(logger, v.FieldPath ?? string.Empty, v.Message);
+            }
+        }
+
+        var first = violations[0];
+        return $"{first.Code}: {first.Message}";
+    }
+
+    private static List<AnalysisPlanStep> ExtractPlanSteps(JsonElement plan)
+    {
+        var results = new List<AnalysisPlanStep>();
+        if (!plan.TryGetProperty("steps", out var stepsProp)
+            || stepsProp.ValueKind != JsonValueKind.Array)
+        {
+            return results;
+        }
+
+        foreach (var stepElem in stepsProp.EnumerateArray())
+        {
+            if (stepElem.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (!stepElem.TryGetProperty("kind", out var kindProp)
+                || kindProp.ValueKind != JsonValueKind.String
+                || !TryParseStepKind(kindProp.GetString(), out var kind))
+            {
+                continue;
+            }
+
+            var stepId = (stepElem.TryGetProperty("stepId", out var sid)
+                    || stepElem.TryGetProperty("step_id", out sid))
+                    && sid.ValueKind == JsonValueKind.String
+                ? sid.GetString() ?? string.Empty
+                : string.Empty;
+
+            string? processId = null;
+            if ((stepElem.TryGetProperty("processId", out var pid)
+                    || stepElem.TryGetProperty("process_id", out pid))
+                && pid.ValueKind == JsonValueKind.String)
+            {
+                processId = pid.GetString();
+            }
+
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (stepElem.TryGetProperty("inputs", out var inputsProp)
+                && inputsProp.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in inputsProp.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        inputs[prop.Name] = prop.Value.GetString() ?? string.Empty;
+                    }
+                }
+            }
+
+            results.Add(new AnalysisPlanStep
+            {
+                StepId = stepId,
+                Kind = kind,
+                ProcessId = processId,
+                Inputs = inputs
+            });
+        }
+
+        return results;
+    }
+
+    private static bool TryParseStepKind(string? kindStr, out AnalysisPlanStepKind kind)
+    {
+        if (string.Equals(kindStr, "queryFeatures", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisPlanStepKind.QueryFeatures;
+            return true;
+        }
+        if (string.Equals(kindStr, "geoprocess", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisPlanStepKind.Geoprocess;
+            return true;
+        }
+        if (string.Equals(kindStr, "aggregate", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisPlanStepKind.Aggregate;
+            return true;
+        }
+        if (string.Equals(kindStr, "renderMap", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisPlanStepKind.RenderMap;
+            return true;
+        }
+        if (string.Equals(kindStr, "export", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisPlanStepKind.Export;
+            return true;
+        }
+        kind = default;
+        return false;
     }
 
     /// <summary>

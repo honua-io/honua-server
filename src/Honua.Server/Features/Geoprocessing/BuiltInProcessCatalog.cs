@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -18,7 +19,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     private readonly ImmutableArray<ProcessDefinition> _all;
     private readonly FrozenDictionary<string, ImmutableArray<ProcessDefinition>> _byCategory;
 
-    public BuiltInProcessCatalog()
+    public BuiltInProcessCatalog(ILogger<BuiltInProcessCatalog>? logger = null)
     {
         var definitions = BuildDefinitions();
         _all = definitions.ToImmutableArray();
@@ -26,6 +27,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         _byCategory = definitions
             .GroupBy(d => d.Category, StringComparer.Ordinal)
             .ToFrozenDictionary(g => g.Key, g => g.ToImmutableArray(), StringComparer.Ordinal);
+
+        GeoprocessingServiceLog.ProcessCatalogLoaded(logger ?? NullLogger<BuiltInProcessCatalog>.Instance, _all.Length);
     }
 
     public ProcessDefinition? GetProcess(string processId)
