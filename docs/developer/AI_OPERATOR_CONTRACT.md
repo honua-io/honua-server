@@ -825,18 +825,36 @@ Recommended public services:
 - `GetJobResults`
 - `CancelJob`
 
-**Implementation status** (as of #722):
+**Implementation status** (as of #681):
 
 All seven RPCs are wired. `ValidatePlan` and `DryRunPlan` are fully functional
 and enforce structural validation (null plan, valid step kinds, valid artifact
 kinds). `SubmitPlanJob` creates durable job records with idempotency support
 and requires Redis-backed storage. `GetJob` and `CancelJob` are fully wired.
 
+The durable job orchestration substrate (#681,
+[ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
+defines the execution contracts and infrastructure: atomic claim via
+`IJobQueue`, heartbeat liveness detection, configurable retry policies
+(exponential backoff by default), timeout enforcement with terminal failure
+semantics, operator cancellation via `ExecutionJobCancellationTokens`,
+structured execution logs via `IExecutionLogStore`, and artifact reference
+accumulation on `ExecutionJobRecord`. Workers implement `IJobExecutor` per
+`ExecutionJobKind` and receive a `IJobExecutionContext` for progress,
+logging, and artifact publication. The `JobReconciliationService` sweeps
+for expired heartbeats and timed-out jobs in worker hosts.
+
+**Note:** The substrate contracts exist but are not yet wired into the
+geoprocessing submission path. `SubmitPlanJob` creates durable job records
+but does not yet enqueue them via `IJobQueue`. End-to-end queue/worker
+integration is follow-on work (#721, #724, #727).
+
 Stubbed RPCs:
 - `ExecutePlan` enforces authorization then returns `Unimplemented`; callers
   should use `SubmitPlanJob` for asynchronous execution.
 - `GetJobResults` enforces terminal-state preconditions but returns `NotFound`
-  until the execution engine and result storage are implemented.
+  until concrete `IJobExecutor` implementations and result storage are
+  implemented.
 
 Authorization and approval checks are enforced on all mutating RPCs.
 

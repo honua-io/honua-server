@@ -138,7 +138,10 @@ Honua's canonical model supports both modes:
 - **Synchronous**: `ProcessService.ExecutePlan` (currently stubbed, returns
   `Unimplemented` — to be completed in #721)
 - **Asynchronous**: `ProcessService.SubmitPlanJob` → `ExecutionJob` with status
-  polling via `GetJob`
+  polling via `GetJob`. The durable job orchestration substrate
+  ([ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
+  defines the claim/heartbeat/retry/cancellation contracts that this path will
+  use once wired end-to-end (follow-on: #721).
 
 The canonical model does not force a per-process execution type. Both modes
 operate on the same `AnalysisPlan`. The protocol adapters determine how to

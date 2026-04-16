@@ -14,6 +14,7 @@ using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Honua.Server.Tests.Helpers;
 using NSubstitute;
 using Proto = Geospatial.V1;
 
@@ -25,7 +26,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Protocol(Protocols.Grpc)]
 public sealed class GrpcProcessServiceTests
 {
-    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>();
+    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
     private readonly IUniversalProgressStore _progressStore = Substitute.For<IUniversalProgressStore>();
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
@@ -43,7 +44,7 @@ public sealed class GrpcProcessServiceTests
             .Returns(ApprovalRequirement.NotRequired());
 
         var jobService = new GeoprocessingJobService(
-            _progressStore, _cancellationNotifier,
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             _jobStore);
@@ -354,7 +355,7 @@ public sealed class GrpcProcessServiceTests
 
         response.Should().NotBeNull();
         _cancellationNotifier.Received(1).Cancel("job-123");
-        await _jobStore.Received(1).SetAsync(
+        await _jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }

@@ -35,6 +35,89 @@ Admin-only diagnostics:
 
 ---
 
+## Job Orchestration Observability
+
+Worker hosts running `AddJobWorker()` emit log entries from the
+`JobExecutionService` claim loop and the `JobReconciliationService`
+background sweep.
+
+**JobExecutionService** (claim and execution):
+
+| Level | Signal |
+|-------|--------|
+| Information | Worker started/stopped, job execution started, job completed, operator cancellation, durable cancellation signal honoured during abandon |
+| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup, job timeout, state transition skipped (job cancelled or reclaimed between claim and Running, or reconciler intervention), heartbeat pump faulted (finalization still proceeds), transient heartbeat write failure (pump retries on next interval), per-attempt warning log append failed (requeue/terminal transition still proceeds) |
+| Error | Job execution exception, claim loop error, pre-execution shutdown requeue failed (stale-claim reconciliation will recover) |
+
+**JobReconciliationService** (liveness sweep):
+
+| Level | Signal |
+|-------|--------|
+| Information | Service started/stopped, reconciliation skipped — job already terminal or claim owner changed since sweep snapshot; heartbeat refreshed since sweep snapshot (worker still alive); timeout no longer expired since sweep snapshot (job reclaimed with fresh claim time) |
+| Debug | Sweep results when at least one job was reconciled (count out of active total) |
+| Warning | Heartbeat expired — job requeued for retry |
+| Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
+
+**RedisJobQueue** (queue operations and claim recovery):
+
+| Level | Signal |
+|-------|--------|
+| Information | Job enqueued, job claimed, job requeued |
+| Warning | Orphaned claim requeued (claim succeeded but store update failed), claim rolled back after store failure, claim scan traverse threshold exceeded |
+| Error | Claim rollback failed (orphaned claim will be caught by reconciliation) |
+
+Monitor for `JobExecutionService`, `JobReconciliationService`, and
+`RedisJobQueue` entries in worker hosts to detect execution failures,
+stale heartbeats, abandoned jobs, retry exhaustion, and claim-recovery
+events. For lifecycle details and tuning, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Repeated heartbeat expiry | > 2 expiry events in 10 min | `JobReconciliationService` Warning/Error |
+| Retry exhaustion spike | > 1 exhaustion event in 5 min | `JobReconciliationService` Error |
+| Claim rollback failures | Any occurrence | `RedisJobQueue` Error (`ClaimRollbackFailed`) |
+| Worker with no executors | Any occurrence at startup | `JobExecutionService` Warning |
+| Sustained claim-loop errors | > 3 errors in 5 min | `JobExecutionService` Error |
+| Claim scan traverse threshold exceeded | > 1 occurrence in 5 min | `RedisJobQueue` Warning (`ClaimScanTraverseThresholdExceeded`) |
+
+Queue depth is available via `IJobQueue.GetQueueDepthAsync` but is not yet
+exposed through a public metrics endpoint. Operators requiring queue depth
+alerting can query the Redis sorted set `controlplane:jobqueue:pending`
+directly until a metrics projection is added.
+
+---
+
+## Workspace Lifecycle Observability
+
+Background cleanup and lifecycle operations emit log entries from
+`WorkspaceCleanupService` and `WorkspaceLifecycleService`.
+
+**WorkspaceCleanupService** (periodic sweep):
+
+| Level | Signal |
+|-------|--------|
+| Information | Service started/stopped, cleanup disabled, sweep results (expired/deleted/artifact counts) |
+| Debug | Sweep started |
+| Warning | Partial error during cleanup (individual workspace failure) |
+| Error | Sweep failed |
+
+**WorkspaceLifecycleService** (workspace and artifact operations):
+
+| Level | Signal |
+|-------|--------|
+| Information | Workspace created, workspace expired, workspace deleted, artifact promoted |
+| Warning | Artifact addition rejected (wrong state or expired), promotion source transition failed, cleanup skipped (orphan risk) |
+| Error | Cleanup error for individual workspace, promotion rollback failed (duplicate artifact may exist) |
+
+Monitor for these entries to detect cleanup failures, quota-related
+rejections, and promotion errors. For configuration and retention
+details, see [Operations — Workspace Lifecycle](operations.md#workspace-lifecycle).
+
+---
+
 ## OpenTelemetry
 
 Honua uses standard OpenTelemetry APIs.

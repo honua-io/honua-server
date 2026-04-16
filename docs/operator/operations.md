@@ -174,6 +174,255 @@ Honua uses a layered caching approach:
 
 ---
 
+## Job Orchestration
+
+The durable job orchestration substrate provides queuing, claim/heartbeat
+liveness, retry, cancellation, progress reporting, and structured execution
+logs for geoprocessing, ETL, and tile-cache workloads. The substrate
+contract and infrastructure are implemented; end-to-end wiring from
+submission endpoints through the queue to worker execution lands with the
+per-kind executor tickets (#721, #724, #727).
+
+> **Deployment note:** The substrate is split into API-side and worker-side
+> registrations. The API image registers shared infrastructure (queue, log
+> store) via `AddJobOrchestration()`. A future worker or combined-mode image
+> will additionally register the execution host and reconciliation sweep via
+> `AddJobWorker()`. `AddJobWorker()` is not yet invoked from a host
+> entrypoint; it will be wired when the first concrete executor is
+> integrated in follow-on tickets (#721, #724, #727). Lean API-only
+> deployments will not run execution or reconciliation overhead. See
+> [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md)
+> and [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
+
+### Supported Job Kinds
+
+| Kind | Description |
+|------|-------------|
+| Geoprocessing | Analytical compute workloads (buffer, spatial join, etc.) |
+| ExtractTransformLoad | Data movement and transformation workloads |
+| TileCache | Tile cache generation or refresh workloads |
+
+Workers can filter which job kinds they claim. In the default configuration
+a single worker host processes all kinds.
+
+### Job Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Queued | In the queue, not yet claimed by a worker |
+| Provisioning | Worker has claimed the job, preparing to execute |
+| Running | Execution is in progress |
+| Succeeded | Terminal: completed successfully |
+| Failed | Terminal: failed (may be retried if policy allows) |
+| Cancelled | Terminal: cancelled by user or system |
+
+### Heartbeat and Liveness
+
+Workers poll for claimable jobs every 5 seconds. Once a job is claimed,
+the worker registers its cancellation token and re-reads the job record
+before promoting to Running. If the job was cancelled or reached another
+terminal state during the claim-to-Running window, the worker skips
+execution and removes the queue entry. If the job was requeued or
+reclaimed by another worker, the worker skips execution but preserves
+the queue entry since it belongs to the new attempt. This prevents
+operator cancellations arriving between claim and Running from being
+silently overwritten, while also protecting pending retries from
+accidental deletion.
+
+Once the Running transition succeeds, the worker pumps heartbeats at the
+configured interval (default: 30 seconds). The heartbeat pump, progress
+reports, and artifact publications all verify ownership before writing —
+if the reconciler requeues the job or another worker reclaims it, the
+stale worker's writes are silently dropped. When a new worker registers
+its cancellation token for a reclaimed job, the previous worker's token
+source is cancelled automatically so the stale executor observes
+cancellation promptly even if the reconciler's Revoke has not yet run.
+Transient store failures during heartbeat persistence are caught and
+logged; the pump continues on the next interval rather than faulting.
+If the pump task does fault for any reason, finalization still proceeds
+from the executor outcome. The reconciliation service
+sweeps active jobs every 30 seconds. If a worker's last heartbeat exceeds
+the heartbeat timeout (default: 90 seconds), the job is considered
+abandoned. The claim itself sets `LastHeartbeatAt` to the claim time, so
+the reconciler normally uses this value; as a defensive fallback it uses
+`ClaimedAt` if `LastHeartbeatAt` is ever null. If retries remain, the
+reconciler requeues the job with a computed backoff delay; otherwise the
+job transitions to Failed.
+
+### Stale Claim Recovery
+
+The queue uses a two-phase claim: an atomic Redis move from the pending
+set to the claimed set, followed by a job store update. If the store
+update fails (e.g. transient Redis error), the claim is rolled back
+immediately. If the rollback also fails, the reconciliation service
+detects the orphaned claim after 60 seconds and requeues the job
+automatically. No operator intervention is required; monitor for
+`RedisJobQueue` Warning entries (`OrphanedClaimRequeued`,
+`ClaimRolledBack`) or Error entries (`ClaimRollbackFailed`) if you
+want visibility into recovery events.
+
+### Priority Queue
+
+Jobs are dequeued in priority order. Within a priority band, FIFO ordering
+applies. Delayed entries (jobs requeued with a visibility delay for retry
+backoff) and kind-mismatched entries do not consume the scan budget.
+Each poll scans up to 100 claimable candidates within a traverse window
+of 5,000 total entries. A rotating cursor advances the window across
+successive polls so that ready jobs beyond the first traverse window are
+discovered on subsequent claim attempts. When the queue is drained from
+the cursor position, the cursor resets to the beginning. Exceeding the
+traverse threshold is logged at Warning level to signal queue pathology.
+
+| Priority | Use case |
+|----------|----------|
+| Critical | Operator-initiated urgent work |
+| High | Time-sensitive processing |
+| Normal | Default for most workloads |
+| Low | Background or deferrable work |
+
+### Retry Policy
+
+Default: 3 attempts with exponential backoff starting at 30 seconds, capped
+at 10 minutes. Per-job override is supported via `JobRetryPolicy` on the
+`ExecutionJobRecord`.
+
+Supported backoff strategies: `Fixed` (constant delay), `Linear` (delay
+grows linearly per attempt), `Exponential` (delay doubles per attempt).
+Use `JobRetryPolicy.None` to disable retries for a specific job.
+
+### Timeout Policy
+
+Default maximum execution duration is 1 hour. Long-running ETL or
+geoprocessing workloads can use the 24-hour policy. Jobs exceeding their
+timeout are marked Failed directly by the worker (without retry). The
+reconciler serves as a fallback for jobs whose workers stop reporting
+heartbeats.
+
+### Structured Execution Logs
+
+Workers append `ExecutionLogEntry` records (timestamp, level, message,
+phase, optional metadata) through `IExecutionLogStore`. Logs are
+append-only during execution and read-only after terminal state. Redis-backed
+with 7-day retention applied when the owning worker finalizes the job.
+
+When a job is abandoned and requeued for retry, any warnings reported by the
+executor are persisted to the structured log before clearing them from the
+requeued record. This persistence is best-effort: a transient log-store
+failure is logged at Warning level but does not block the durable
+requeue or terminal transition. On terminal failure (retries exhausted),
+warnings are retained on the job record for post-mortem inspection.
+
+> **Note:** Execution logs are stored internally but are not yet exposed
+> through a public REST endpoint. Retrieval is available only through
+> direct Redis access or internal diagnostics.
+
+### Monitoring
+
+Active jobs surface through the existing operations endpoints:
+
+- `GET /api/v1/admin/operations/active` — lists all active operations
+- `GET /api/v1/admin/operations/{operationId}` — job progress and status
+- `GET /api/v1/admin/operations/type/Geoprocessing` — geoprocessing jobs
+
+> **Note:** The operations endpoints read from `IUniversalProgressStore`.
+> Execution job progress written through `IJobExecutionContext` is stored in
+> `IExecutionJobStore` and is not yet projected to the operations surface.
+> A substrate-level projection is a follow-on integration point.
+
+The reconciliation service logs sweep results at Debug level only when at
+least one job was reconciled; clean sweeps are silent. Heartbeat and
+timeout expiry are logged at Warning/Error level. See
+[Monitoring — Job Orchestration Observability](monitoring.md#job-orchestration-observability)
+for the full log level table across `JobExecutionService`,
+`JobReconciliationService`, and `RedisJobQueue`.
+
+### Policy Defaults and Tuning
+
+The substrate's timing and retry behavior is governed by built-in defaults on
+the policy models. Per-job overrides are set on the `ExecutionJobRecord` at
+submission time.
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Worker claim poll interval | 5 s | How often workers check for claimable jobs |
+| Heartbeat interval | 30 s | `JobHeartbeatPolicy.Interval` — how often the worker refreshes liveness |
+| Heartbeat timeout | 90 s | `JobHeartbeatPolicy.Timeout` — stale threshold before reconciler acts |
+| Reconciliation sweep interval | 30 s | How often the reconciler checks active jobs for expiry |
+| Stale claim threshold | 60 s | Orphaned claims in the claimed set are recovered after this window |
+| Retry max attempts | 3 | `JobRetryPolicy.MaxAttempts` — includes initial attempt (1 = no retries) |
+| Retry backoff strategy | Exponential | `JobRetryPolicy.Strategy` — Fixed, Linear, or Exponential |
+| Retry base delay | 30 s | `JobRetryPolicy.BaseDelay` — starting delay for first retry |
+| Retry max delay | 10 min | `JobRetryPolicy.MaxDelay` — upper bound on computed backoff |
+| Execution timeout | 1 h | `JobTimeoutPolicy.MaxDuration` — default ceiling |
+| Long-running timeout | 24 h | `JobTimeoutPolicy.LongRunning` preset for ETL/large workloads |
+| Execution log retention | 7 d | TTL applied to Redis log lists at job finalization |
+
+These values are compile-time defaults on the policy record types. To change
+defaults for all jobs, modify the submission path that creates
+`ExecutionJobRecord` instances. To change a single job, set the corresponding
+policy field on the record before enqueuing.
+
+### Graceful Shutdown
+
+When a worker host shuts down, in-flight jobs are abandoned rather than
+marked as terminal failures. The worker itself transitions the job back to
+Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
+`LastHeartbeatAt`), and re-enqueues it immediately. This applies both
+during active execution and during the pre-execution window between
+claim and Running — if shutdown arrives before the executor is entered,
+the claim loop performs the same force-requeue. Shutdown requeue always
+succeeds regardless of the job's retry budget because a host shutdown is
+an infrastructure event, not an execution failure.
+
+Both the worker and the reconciler re-read the current job record
+before writing any state transition. If the record is already terminal or
+the claim owner has changed, the writer skips its update. Additionally,
+the reconciler re-validates the expiry predicate (heartbeat or timeout)
+against the fresh record — a heartbeat that landed between the sweep
+snapshot and the handler invocation means the worker is still alive, and a
+job reclaimed with a fresh claim time has not actually timed out. In both
+cases the transition is skipped. This bidirectional guard prevents four
+specific race windows:
+
+- **Worker completes after reconciler snapshot**: the reconciler snapshots
+  active jobs, then a worker finalizes the job before the reconciler
+  handler runs. Without the guard the reconciler would overwrite the
+  terminal state.
+- **Reconciler transitions before worker finalizes**: the reconciler
+  requeues or fails the job, then the worker's post-execution handler
+  runs. Without the guard the worker would overwrite the reconciler's
+  update.
+- **Heartbeat arrives between sweep and handler**: a heartbeat lands
+  after the reconciler's sweep snapshot but before the handler runs.
+  Without the guard the reconciler would requeue or fail a healthy
+  running job.
+- **Timeout snapshot outdated by reclaim**: the reconciler snapshots a
+  timed-out job, but the job is requeued and reclaimed (possibly by the
+  same worker) with a fresh claim time before the handler runs. Without
+  the guard the reconciler would fail a new attempt that has not yet
+  timed out.
+
+When the reconciler requeues or terminally fails a job, it also revokes the
+stale worker's cancellation token source. This ensures that a subsequent
+API-side `Cancel()` call does not return a false positive for a token that
+no longer corresponds to an active execution.
+
+In split API/worker deployments, the API host has no local cancellation
+notifier for jobs running on remote workers. When a cancel request arrives
+for a claimed job and no local notifier can signal the worker, the API
+persists a `CancellationRequestedAt` timestamp on the job record as a
+durable cancellation signal. The worker observes this signal during its
+next heartbeat read and cancels locally. If the worker's heartbeat expires
+before it processes the signal, the reconciler honours the request with a
+terminal Cancelled state instead of retrying.
+
+If a worker crashes without clean abandonment, the reconciliation service
+detects the stale heartbeat and performs the same recovery. This ensures
+rolling deployments and scale-down events do not permanently fail jobs
+that still have retry budget.
+
+---
+
 ## OGC API Processes
 
 The OGC API Processes adapter is always registered and serves routes under

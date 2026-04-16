@@ -124,6 +124,40 @@ curl http://localhost:8080/api/v1/admin/import/jobs
 
 ---
 
+## Job Orchestration Issues
+
+**Symptom**: jobs stuck in Provisioning or Running without progress.
+
+**Quick triage**:
+```bash
+# Check worker host logs for heartbeat/claim events
+docker logs honua-worker 2>&1 | grep -E "JobExecutionService|JobReconciliationService|RedisJobQueue"
+
+# Verify Redis connectivity (job queue, execution logs, and claim state require Redis)
+redis-cli -h redis ping
+redis-cli -h redis ZCARD controlplane:jobqueue:pending
+```
+
+**Common causes and fixes**:
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Jobs stay Queued | No worker host running `AddJobWorker()` | Follow-on: worker-mode hosting lands with per-kind executor tickets (#721, #724, #727) |
+| Heartbeat expiry warnings | Worker crashed or network partition | Check worker health; reconciler auto-recovers |
+| Retry exhaustion errors | Executor fails repeatedly | Check executor logs for root cause |
+| Claim rollback warnings | Transient Redis error during claim | Self-healing; monitor frequency |
+| Claim scan traverse threshold | Queue front dominated by delayed retries | Review retry backoff settings; clear stale entries |
+| `503` on OGC Processes or GPServer job routes | Redis not configured | Enable Redis — see [Infrastructure](infrastructure.md) |
+
+The reconciliation service automatically recovers abandoned jobs when heartbeats
+expire. No operator intervention is required unless retry budgets are exhausted.
+For log-level details and alerting thresholds, see
+[Monitoring — Job Orchestration Observability](monitoring.md#job-orchestration-observability).
+For policy tuning, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+---
+
 ## Spatial Query Problems
 
 **FeatureServer bbox query**:

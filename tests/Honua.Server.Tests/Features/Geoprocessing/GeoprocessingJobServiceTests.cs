@@ -14,6 +14,7 @@ using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using Honua.Server.Tests.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
@@ -25,7 +26,8 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Protocol(Protocols.GPServer)]
 public sealed class GeoprocessingJobServiceTests
 {
-    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>();
+    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+    private readonly IJobQueue _jobQueue = Substitute.For<IJobQueue>();
     private readonly IUniversalProgressStore _progressStore = Substitute.For<IUniversalProgressStore>();
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
@@ -43,10 +45,10 @@ public sealed class GeoprocessingJobServiceTests
             .Returns(ApprovalRequirement.NotRequired());
 
         _sut = new GeoprocessingJobService(
-            _progressStore, _cancellationNotifier,
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             NullLogger<GeoprocessingJobService>.Instance,
-            _jobStore);
+            _jobStore, _jobQueue);
     }
 
     // -----------------------------------------------------------------------
@@ -139,10 +141,27 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithValidPlan_EnqueuesJob()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var plan = CreateValidPlan();
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await _jobQueue.Received(1).EnqueueAsync(
+            job.OperationId,
+            Arg.Any<OperationPriority>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithoutJobStore_ThrowsStoreUnavailable()
     {
         var sut = new GeoprocessingJobService(
-            _progressStore, _cancellationNotifier,
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             NullLogger<GeoprocessingJobService>.Instance,
             jobStore: null);
@@ -221,6 +240,29 @@ public sealed class GeoprocessingJobServiceTests
         await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
         _cancellationNotifier.DidNotReceive().Cancel(Arg.Any<string>());
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_AlreadyCancelled_ReconcilesStalProgressStore()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-1", "plan-1");
+        _progressStore.GetProgressAsync<GeoprocessingProgress>("job-1", Arg.Any<CancellationToken>())
+            .Returns(staleProgress);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _progressStore.Received(1).SetProgressAsync(
+            "job-1",
+            Arg.Is<Honua.Core.Features.Infrastructure.Domain.IOperationProgress>(p =>
+                p.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -251,6 +293,442 @@ public sealed class GeoprocessingJobServiceTests
         var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_NoActiveWorker_RemovesFromQueue()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_WorkerOwnsTerminalState_DoesNotCallRemove()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_LaterNotifierOwnsTerminalState_DoesNotDependOnRegistrationOrder()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var firstNotifier = Substitute.For<IJobCancellationNotifier>();
+        firstNotifier.Cancel("job-1").Returns(false);
+
+        var secondNotifier = Substitute.For<IJobCancellationNotifier>();
+        secondNotifier.Cancel("job-1").Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [firstNotifier, secondNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            _jobQueue);
+
+        await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        firstNotifier.Received(1).Cancel("job-1");
+        secondNotifier.Received(1).Cancel("job-1");
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ReReadFindsSucceeded_ThrowsPreconditionFailed()
+    {
+        var queued = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var succeeded = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(queued, succeeded);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        var act = () => _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ReReadFindsCancelled_ReconcilesSideEffectsIdempotently()
+    {
+        var queued = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var cancelled = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(queued, cancelled);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ReReadFindsDeleted_ThrowsNotFoundWithoutRecreatingJob()
+    {
+        var queued = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(queued, (ExecutionJobRecord?)null);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        var act = () => _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        await _jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _progressStore.DidNotReceive().SetProgressAsync(
+            Arg.Any<string>(),
+            Arg.Any<Honua.Core.Features.Infrastructure.Domain.IOperationProgress>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ClaimedByRemoteWorker_SetsDurableCancellationSignal()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running) with
+        {
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.CancellationRequestedAt.HasValue &&
+                j.Status == ExecutionJobStatus.Running),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedJob_WritesCancelledDirectly()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_AlreadyCancelled_ContinuesWhenQueueRemovalFails()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _jobQueue.RemoveAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-1", "plan-1");
+        _progressStore.GetProgressAsync<GeoprocessingProgress>("job-1", Arg.Any<CancellationToken>())
+            .Returns(staleProgress);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _progressStore.Received(1).SetProgressAsync(
+            "job-1",
+            Arg.Is<Honua.Core.Features.Infrastructure.Domain.IOperationProgress>(p =>
+                p.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_DirectCancel_ContinuesWhenQueueRemovalFails()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+        _jobQueue.RemoveAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Simulated Redis failure"));
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ClaimedCasConflict_RetriesUntilSignalConfirmed()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running) with
+        {
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+        var freshRecord = record with { UpdatedAt = DateTimeOffset.UtcNow };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, freshRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(2).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.CancellationRequestedAt.HasValue),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ClaimedCasConflict_ReReadShowsSignal_SucceedsWithoutRetry()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running) with
+        {
+            ClaimedBy = "worker-remote-1"
+        };
+        var conflictRecord = record with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, conflictRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedCasConflict_RetriesUntilCancelConfirmed()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var freshRecord = record with { UpdatedAt = DateTimeOffset.UtcNow };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, freshRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(2).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedCasConflict_ReReadShowsSucceeded_ThrowsPrecondition()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var succeededRecord = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, succeededRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_CasExhausted_ThrowsPreconditionFailed()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*could not be confirmed*");
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedCasConflict_JobBecomeClaimed_SwitchesToDurableSignal()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var claimedRecord = record with
+        {
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow,
+            Status = ExecutionJobStatus.Running,
+            LastHeartbeatAt = DateTimeOffset.UtcNow
+        };
+
+        // Initial reads return unclaimed; CAS fails; re-read shows claimed.
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, claimedRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        // Must have written CancellationRequestedAt, not terminal Cancelled.
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.CancellationRequestedAt.HasValue &&
+                j.Status != ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Queue should NOT have been cleaned up — worker owns the terminal state.
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_EnqueueFails_RollsBackJobToFailed()
+    {
+        ExecutionJobRecord? createdJob = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                createdJob = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => createdJob == null ? null : createdJob with { Version = 1 });
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Redis unavailable"));
+
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-rollback",
+            IntentId = "intent-1",
+            Steps = [new AnalysisPlanStep { StepId = "s1", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "buf" }]
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // The job record must have been rolled back to Failed.
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed &&
+                j.Version == 1 &&
+                j.ErrorMessage!.Contains("progress or queue persistence")),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentRetryAfterSubmissionRollback_ThrowsInsteadOfReturningFailedRecord()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "retry-submission-rollback";
+        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey);
+        var requestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
+
+        var failedSubmission = CreateJobRecord(jobId, ExecutionJobStatus.Failed) with
+        {
+            CurrentPhase = "Failed (submission)",
+            ErrorMessage = "Submission failed: progress or queue persistence error.",
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestFingerprint = requestFingerprint
+            }
+        };
+
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _jobStore.GetAsync(jobId, Arg.Any<CancellationToken>())
+            .Returns(failedSubmission);
+
+        var act = async () => await _sut.SubmitJobAsync(plan, idempotencyKey, CreatePrincipal());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*previously failed before queueing*");
     }
 
     // -----------------------------------------------------------------------

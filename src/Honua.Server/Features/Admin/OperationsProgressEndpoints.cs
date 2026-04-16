@@ -3,6 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -10,8 +12,10 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Server.Features.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -131,6 +135,58 @@ internal static class OperationsProgressEndpoints
         return JsonSerializer.SerializeToElement(operation);
     }
 
+    private static async Task TryReconcileDurableCancelAsync(
+        HttpContext httpContext,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return;
+        }
+
+        var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (executionJob == null)
+        {
+            return;
+        }
+
+        var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
+            jobStore,
+            operationId,
+            executionJob,
+            "Cancelled",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (cancelOutcome.State == ExecutionJobCancellationState.Cancelled)
+        {
+            await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task TryRemoveJobQueueEntryAsync(
+        HttpContext httpContext,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        var jobQueue = httpContext.RequestServices.GetService<IJobQueue>();
+        if (jobQueue == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Best-effort: the durable store is authoritative and stale-claim
+            // reconciliation or later terminal cleanup will repair the queue.
+        }
+    }
+
     private static void NormalizeCanonicalProperty(JsonObject operation, string propertyName, JsonNode? value)
     {
         var duplicateKeys = new List<string>();
@@ -158,6 +214,7 @@ internal static class OperationsProgressEndpoints
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
         [FromServices] IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(operationId))
@@ -178,12 +235,25 @@ internal static class OperationsProgressEndpoints
                 $"Operation '{operationId}' not found");
         }
 
-        if (progress.Status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled)
+        if (progress.Status is OperationStatus.Completed or OperationStatus.Failed)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Operation is already completed, failed, or cancelled");
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Operation '{operationId}' reached terminal state '{progress.Status}' before cancellation could be applied");
+        }
+
+        if (progress.Status is OperationStatus.Cancelled)
+        {
+            await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+
+            var alreadyCancelled = new CancelOperationResponse
+            {
+                OperationId = operationId,
+                Message = "Operation cancellation requested",
+                Type = progress.Type
+            };
+            return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
         }
 
         if (progress is not ICancellableOperationProgress cancellableProgress)
@@ -200,14 +270,7 @@ internal static class OperationsProgressEndpoints
         // Cancelled (if interrupted) or Completed (if rendering already finished).
         // Writing Cancelled here would race with the worker's Completed write and
         // could hide a successfully rendered result.
-        var workerOwnsTerminalState = false;
-        foreach (var notifier in cancellationNotifiers)
-        {
-            if (notifier.Cancel(operationId))
-            {
-                workerOwnsTerminalState = true;
-            }
-        }
+        var workerOwnsTerminalState = cancellationNotifiers.CancelAny(operationId);
 
         if (workerOwnsTerminalState)
         {
@@ -245,6 +308,8 @@ internal static class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
+            await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+
             var alreadyCancelled = new CancelOperationResponse
             {
                 OperationId = operationId,
@@ -278,6 +343,56 @@ internal static class OperationsProgressEndpoints
                 StatusCodes.Status409Conflict,
                 "Conflict",
                 $"Operation '{operationId}' reached terminal state '{preWriteProgress.Status}' before cancellation could be applied");
+        }
+
+        // If this operation is backed by a durable execution job, synchronize the
+        // cancellation to the authoritative job store and remove from the queue so
+        // the job does not remain claimable after the admin cancel.
+        var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
+        if (jobStore != null)
+        {
+            var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (executionJob != null)
+            {
+                var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
+                    jobStore,
+                    operationId,
+                    executionJob,
+                    "Cancelled",
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                switch (cancelOutcome.State)
+                {
+                    case ExecutionJobCancellationState.Cancelled:
+                        await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                        break;
+                    case ExecutionJobCancellationState.CancellationRequested:
+                        var delegated = new CancelOperationResponse
+                        {
+                            OperationId = operationId,
+                            Message = "Operation cancellation requested",
+                            Type = progress.Type
+                        };
+                        return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                    case ExecutionJobCancellationState.TerminalConflict:
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' reached terminal state '{cancelOutcome.Job?.Status}' in the durable job store before cancellation could be applied");
+                    case ExecutionJobCancellationState.Missing:
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' was deleted before cancellation could be applied");
+                    case ExecutionJobCancellationState.Unconfirmed:
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' cancellation could not be confirmed after retries.");
+                    default:
+                        throw new InvalidOperationException($"Unexpected durable cancellation outcome '{cancelOutcome.State}'.");
+                }
+            }
         }
 
         var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");

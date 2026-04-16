@@ -90,6 +90,12 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string policyRef);
 
+    [LoggerMessage(8015, LogLevel.Warning, "Queue cleanup failed for cancelled job {JobId}; stale-claim reconciler will repair")]
+    public static partial void QueueRemovalFailed(
+        ILogger logger,
+        string jobId,
+        Exception exception);
+
     [LoggerMessage(8020, LogLevel.Information, "Map package created: MapPackageId={MapPackageId}, Status={Status}")]
     public static partial void MapPackageCreated(
         ILogger logger,

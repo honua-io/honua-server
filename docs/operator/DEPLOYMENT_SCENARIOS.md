@@ -55,7 +55,7 @@ curl http://localhost:8080/healthz/ready
 
 **Baseline components:**
 - Managed Postgres with backups and monitoring
-- Redis for caching
+- Redis for caching (and **required** when running geoprocessing, ETL, or tile-cache job workloads — see [Operations — Job Orchestration](operations.md#job-orchestration))
 - Container runtime (Kubernetes or managed container service)
 - Edge TLS termination and rate limiting
 
@@ -76,6 +76,31 @@ curl http://localhost:8080/healthz/ready
 - Global load balancing and WAF
 - Database replication and automated failover
 - Centralized logging, tracing, and alerting
+
+---
+
+## **API/Worker Host Separation**
+
+Honua's durable job orchestration substrate
+([ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
+separates API-side and worker-side concerns at the service-registration level:
+
+- `AddJobOrchestration()` registers shared queue and log store dependencies.
+  Safe for a lean, request-serving image.
+- `AddJobWorker()` additionally registers the execution host and
+  reconciliation sweep. Intended for worker or combined-mode hosts.
+
+**Current release:** The geoprocessing feature registration calls
+`AddJobOrchestration()` to wire the shared queue and log store. `AddJobWorker()`
+(execution host + reconciliation sweep) is not yet invoked from a host
+entrypoint; it will be wired when the first concrete executor is integrated in
+follow-on tickets. Separate API-only and worker-only images are a planned
+topology for Scenario 3 (enterprise scale-out).
+
+In Scenarios 1–2, the combined host is the expected deployment mode. The
+registration split exists so that future enterprise deployments can scale API
+and worker replicas independently and keep heavyweight execution dependencies
+out of the request path.
 
 ---
 

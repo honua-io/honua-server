@@ -323,7 +323,7 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         {
             try
             {
-                _ = Task.Run(async () => await ReleaseLeadershipAsync());
+                ReleaseLeadershipAsync().GetAwaiter().GetResult();
             }
             catch
             {

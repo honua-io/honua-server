@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
@@ -184,7 +185,8 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null,
+        [FromServices] IJobQueue? jobQueue = null)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -354,9 +356,26 @@ internal static class ProcessEndpoints
 
         await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.RequestAborted).ConfigureAwait(false);
 
-        var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, planId);
-        await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
-            .ConfigureAwait(false);
+        try
+        {
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, planId);
+            await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
+                .ConfigureAwait(false);
+
+            if (jobQueue != null)
+            {
+                await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+            }
+        }
+        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
+        {
+            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                jobStore,
+                jobId,
+                CancellationToken.None).ConfigureAwait(false);
+
+            throw;
+        }
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);
 
