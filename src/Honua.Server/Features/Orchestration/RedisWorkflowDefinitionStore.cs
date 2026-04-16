@@ -137,6 +137,19 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
             when: When.NotExists).ConfigureAwait(false);
     }
 
+    public async Task ReleaseScheduleClaimAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Best-effort delete. If the claim key has already expired the TTL made it a
+        // no-op; either way the slot becomes eligible for a fresh claim on the next tick.
+        await _database.KeyDeleteAsync(GetScheduleClaimKey(workflowId, fireTime)).ConfigureAwait(false);
+    }
+
     public async Task<DateTimeOffset?> GetScheduleCursorAsync(
         string workflowId,
         CancellationToken cancellationToken = default)

@@ -55,6 +55,17 @@ public interface IWorkflowDefinitionStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Releases a previously-won schedule fire-time claim so another tick (on this replica
+    /// or a peer) can retry the same occurrence. Intended for use when the winner encounters
+    /// a transient failure creating the corresponding run and has not yet advanced the
+    /// durable schedule cursor past the occurrence.
+    /// </summary>
+    Task ReleaseScheduleClaimAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reads the durable "last fired" cursor for the workflow's scheduler. Returned value
     /// survives restarts so cron enumeration never rewinds into previously-fired history.
     /// </summary>

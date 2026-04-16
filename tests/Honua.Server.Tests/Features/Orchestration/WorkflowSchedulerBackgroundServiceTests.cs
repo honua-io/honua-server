@@ -158,6 +158,48 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     }
 
     [Fact]
+    public async Task TickAsync_RetriesSameOccurrence_WhenCreateRunAsyncFailsTransiently()
+    {
+        // Regression: previously the tick advanced both the in-memory and durable
+        // cursors before calling CreateRunAsync. A transient failure inside
+        // CreateRunAsync (e.g. a run-store blip) would then permanently skip the
+        // occurrence. After the fix the winner holds the cursor at the failed
+        // occurrence, releases the claim, and the next tick can retry.
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var definition = BuildCronDefinition(start, "* * * * *");
+        await harness.Definitions.TryCreateAsync(definition);
+
+        // Advance into the first cron window (12:01 is eligible).
+        harness.Clock.Advance(TimeSpan.FromMinutes(2));
+
+        // Inject a transient store failure for the first CreateRunAsync call.
+        harness.RunStore.NextTryCreateFailure = new InvalidOperationException("transient store blip");
+
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        // No run was created, the durable cursor must not have advanced past the
+        // failed occurrence, and no run landed in the run store.
+        Assert.Empty(harness.RunStore.Snapshot);
+        var cursorAfterTransient = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.True(cursorAfterTransient is null || cursorAfterTransient < start.AddMinutes(1));
+
+        // The claim must have been released so the next tick can retry. The clock
+        // hasn't moved, so the same occurrence (12:01) should fire.
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Single(harness.RunStore.Snapshot);
+        var run = harness.RunStore.Snapshot.Single();
+        Assert.Equal(
+            start.AddMinutes(1).ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            run.Metadata["scheduler.fire_time"]);
+
+        var cursorAfterRetry = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.NotNull(cursorAfterRetry);
+        Assert.True(cursorAfterRetry >= start.AddMinutes(1));
+    }
+
+    [Fact]
     public async Task TickAsync_SeedsCursorFromDurableState_SkippingBacklog()
     {
         // Boot state: the durable cursor already reflects a prior firing. The scheduler must

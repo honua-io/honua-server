@@ -22,6 +22,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
+    private static readonly TimeSpan CancelLeaseRetryInterval = TimeSpan.FromMilliseconds(100);
+    private const int CancelLeaseMaxAttempts = 30;
 
     private readonly IWorkflowRunStore _runStore;
     private readonly IWorkflowDefinitionStore _definitionStore;
@@ -126,28 +128,61 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             return WorkflowCancellationOutcome.NotFound;
         }
 
-        var run = await _runStore.GetAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (run is null)
+        // Take the reconcile lease before read-modify-write. `IWorkflowRunStore.SetAsync`
+        // is unconditional last-write-wins, so without serialising against the reconcile
+        // loop's writes a concurrent reconcile could clobber the Cancelled status back to
+        // Running or Succeeded after this method has already returned success to the
+        // caller. Bounded polling absorbs transient contention without blocking the admin
+        // request path indefinitely; if the lease cannot be acquired within the window the
+        // caller may safely retry.
+        var leaseAcquired = false;
+        for (var attempt = 0; attempt < CancelLeaseMaxAttempts && !leaseAcquired; attempt++)
         {
-            return WorkflowCancellationOutcome.NotFound;
+            cancellationToken.ThrowIfCancellationRequested();
+            leaseAcquired = await _runStore
+                .TryAcquireLeaseAsync(runId, _ownerId, LeaseDuration, cancellationToken)
+                .ConfigureAwait(false);
+            if (!leaseAcquired)
+            {
+                await Task.Delay(CancelLeaseRetryInterval, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        if (IsRunTerminal(run.Status))
+        if (!leaseAcquired)
         {
-            return run.Status == WorkflowRunStatus.Cancelled
-                ? WorkflowCancellationOutcome.AlreadyCancelled
-                : WorkflowCancellationOutcome.AlreadyTerminal;
+            throw new InvalidOperationException(
+                $"Could not acquire reconcile lease for workflow run '{runId}' within the cancel retry window.");
         }
 
-        var now = _clock.GetUtcNow();
-        var cancelled = run with
+        try
         {
-            Status = WorkflowRunStatus.Cancelled,
-            UpdatedAt = now
-        };
+            var run = await _runStore.GetAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (run is null)
+            {
+                return WorkflowCancellationOutcome.NotFound;
+            }
 
-        await PersistRunAsync(cancelled, cancellationToken).ConfigureAwait(false);
-        return WorkflowCancellationOutcome.CancellationRequested;
+            if (IsRunTerminal(run.Status))
+            {
+                return run.Status == WorkflowRunStatus.Cancelled
+                    ? WorkflowCancellationOutcome.AlreadyCancelled
+                    : WorkflowCancellationOutcome.AlreadyTerminal;
+            }
+
+            var now = _clock.GetUtcNow();
+            var cancelled = run with
+            {
+                Status = WorkflowRunStatus.Cancelled,
+                UpdatedAt = now
+            };
+
+            await PersistRunAsync(cancelled, cancellationToken).ConfigureAwait(false);
+            return WorkflowCancellationOutcome.CancellationRequested;
+        }
+        finally
+        {
+            await _runStore.ReleaseLeaseAsync(runId, _ownerId, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async Task ReconcileWorkflowRunAsync(
@@ -439,7 +474,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         var planForAttempt = WorkflowBindingResolver.ApplyBindings(stepDefinition.Plan, bindingResolution.ResolvedValues);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
-        var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber);
+        var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);
 
         ExecutionJobRecord jobRecord;
         try
@@ -795,14 +830,28 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private static Dictionary<string, string> BuildOrchestrationMetadata(
         WorkflowRun run,
         string stepId,
-        int attemptNumber)
-        => new(StringComparer.Ordinal)
+        int attemptNumber,
+        int? timeoutSeconds)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["orchestration.runId"] = run.RunId,
             ["orchestration.workflowId"] = run.WorkflowId,
             ["orchestration.stepId"] = stepId,
             ["orchestration.attempt"] = attemptNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
+
+        // Surface the step-level timeout to the underlying job substrate so executor
+        // adapters (and downstream cost/quota controls) can honour it without coupling
+        // their contract to WorkflowStepDefinition. A null or non-positive value is
+        // treated as "no workflow-level timeout" and is omitted from the metadata.
+        if (timeoutSeconds is { } seconds && seconds > 0)
+        {
+            metadata["orchestration.timeoutSeconds"] = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return metadata;
+    }
 
     private static WorkflowStepStatus MapJobStatusToStepStatus(ExecutionJobStatus status) => status switch
     {

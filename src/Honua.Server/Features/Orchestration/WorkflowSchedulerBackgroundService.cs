@@ -120,42 +120,32 @@ internal sealed class WorkflowSchedulerBackgroundService(
             }
 
             // Atomically claim the fire-time occurrence so replicas and restarts can never
-            // create duplicate runs for the same cron firing. Move this replica's cursor past
-            // the occurrence regardless of who won the claim.
+            // create duplicate runs for the same cron firing.
             var claimed = await definitionStore.TryClaimScheduleFireAsync(
                 definition.WorkflowId,
                 next.Value,
                 ScheduleClaimRetention,
                 cancellationToken).ConfigureAwait(false);
 
-            _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
-
-            // Persist the cursor immediately so the next startup (even beyond the claim TTL
-            // window) resumes after this occurrence. Advancing is monotonic so a competing
-            // replica that already advanced past this point keeps its newer cursor.
-            try
-            {
-                await definitionStore
-                    .AdvanceScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // Best-effort — a durable cursor write failure does not block the active tick.
-                // The next successful tick will try again; in the meantime the in-memory cursor
-                // and schedule-claim TTL still protect against duplicate firings.
-                OrchestrationLog.SchedulerTickFailed(logger, ex);
-            }
-
             if (!claimed)
             {
+                // Another replica owns this occurrence. Advance only this replica's
+                // in-memory cursor so we don't spin on the claim key, and leave the
+                // durable cursor for the winning replica to advance after it persists
+                // the run. Losers never advance the durable cursor: that would consume
+                // the occurrence even if the winner ultimately hit a transient failure
+                // and needs to retry.
+                _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
                 continue;
             }
 
+            // Winner path: create the run first so the durable cursor only moves past the
+            // occurrence when the firing has actually been materialised (or the definition
+            // is permanently invalid). A transient CreateRunAsync failure must release the
+            // claim and leave the cursor untouched so the next tick can retry the same
+            // occurrence — otherwise a one-off store outage would silently drop the run.
+            var runCreated = false;
+            var permanentFailure = false;
             try
             {
                 var principal = OrchestrationSystemPrincipal.Create(null);
@@ -172,11 +162,73 @@ internal sealed class WorkflowSchedulerBackgroundService(
                     cancellationToken).ConfigureAwait(false);
 
                 OrchestrationLog.SchedulerTriggered(logger, definition.WorkflowId, next.Value);
+                runCreated = true;
             }
             catch (WorkflowDefinitionValidationException ex)
             {
+                // Permanent: the definition is structurally invalid. Advance past the
+                // occurrence so the next tick moves on instead of re-attempting the same
+                // broken firing every interval.
+                OrchestrationLog.SchedulerTickFailed(logger, ex);
+                permanentFailure = true;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await TryReleaseScheduleClaimAsync(definition.WorkflowId, next.Value).ConfigureAwait(false);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Transient: release the claim so another tick (on this replica or a peer)
+                // can retry the occurrence. Do not advance cursors; the retry depends on
+                // them still pointing at this firing.
+                OrchestrationLog.SchedulerTickFailed(logger, ex);
+                await TryReleaseScheduleClaimAsync(definition.WorkflowId, next.Value).ConfigureAwait(false);
+                continue;
+            }
+
+            if (!runCreated && !permanentFailure)
+            {
+                continue;
+            }
+
+            _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+
+            // Persist the cursor so the next startup (even beyond the claim TTL window)
+            // resumes after this occurrence. AdvanceScheduleCursorAsync is monotonic, so
+            // a competing replica that already advanced past this point keeps its newer
+            // cursor. Failure to persist is best-effort: the in-memory cursor still
+            // protects this replica; the next successful tick will retry the write.
+            try
+            {
+                await definitionStore
+                    .AdvanceScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
             }
+        }
+    }
+
+    private async Task TryReleaseScheduleClaimAsync(string workflowId, DateTimeOffset fireTime)
+    {
+        try
+        {
+            await definitionStore
+                .ReleaseScheduleClaimAsync(workflowId, fireTime, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // If release fails, the claim TTL still bounds the worst case: the slot stays
+            // reserved until the retention expires. Log but do not surface the failure.
+            OrchestrationLog.SchedulerTickFailed(logger, ex);
         }
     }
 

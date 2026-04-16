@@ -106,7 +106,7 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
             }
 
             var run = await GetAsync(id.ToString(), cancellationToken).ConfigureAwait(false);
-            if (run == null || IsTerminal(run.Status))
+            if (run == null || IsReconcileComplete(run))
             {
                 stale.Add(id);
                 continue;
@@ -175,7 +175,10 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
 
         var writeTask = transaction.StringSetAsync(key, payload, retention);
         var indexMemberId = (RedisValue)run.RunId;
-        var activeIndexTask = IsTerminal(run.Status)
+        // Keep the run in the active reconcile set until every step is terminal — a run
+        // that is marked Cancelled at the top level can still own queued or running child
+        // jobs that the reconcile loop must cascade-cancel before the run is truly done.
+        var activeIndexTask = IsReconcileComplete(run)
             ? transaction.SetRemoveAsync(ActiveIndexKey, indexMemberId)
             : transaction.SetAddAsync(ActiveIndexKey, indexMemberId);
 
@@ -197,6 +200,15 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
         => status is WorkflowRunStatus.Succeeded
             or WorkflowRunStatus.Failed
             or WorkflowRunStatus.Cancelled;
+
+    private static bool IsStepTerminal(WorkflowStepStatus status)
+        => status is WorkflowStepStatus.Succeeded
+            or WorkflowStepStatus.Failed
+            or WorkflowStepStatus.Cancelled
+            or WorkflowStepStatus.Skipped;
+
+    private static bool IsReconcileComplete(WorkflowRun run)
+        => IsTerminal(run.Status) && run.StepStates.All(s => IsStepTerminal(s.Status));
 
     private static string GetRunKey(string runId) => RunKeyPrefix + runId;
 

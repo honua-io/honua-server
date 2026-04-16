@@ -35,8 +35,23 @@ internal sealed class FakeWorkflowRunStore : IWorkflowRunStore
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// When set, the next <see cref="TryCreateAsync"/> call raises this exception and
+    /// clears itself. Used to simulate a transient store failure so the scheduler's
+    /// retry-preserving behaviour can be exercised without a live Redis.
+    /// </summary>
+    public Exception? NextTryCreateFailure { get; set; }
+
     public Task<bool> TryCreateAsync(WorkflowRun run, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
-        => Task.FromResult(_runs.TryAdd(run.RunId, run));
+    {
+        if (NextTryCreateFailure is { } failure)
+        {
+            NextTryCreateFailure = null;
+            throw failure;
+        }
+
+        return Task.FromResult(_runs.TryAdd(run.RunId, run));
+    }
 
     public Task<WorkflowRun?> GetAsync(string runId, CancellationToken cancellationToken = default)
         => Task.FromResult(_runs.TryGetValue(runId, out var run) ? run : null);
@@ -49,7 +64,16 @@ internal sealed class FakeWorkflowRunStore : IWorkflowRunStore
 
     public Task<IReadOnlyList<WorkflowRun>> ListActiveAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<WorkflowRun>>(
-            _runs.Values.Where(r => r.Status is WorkflowRunStatus.Pending or WorkflowRunStatus.Running).ToArray());
+            _runs.Values
+                .Where(r => !IsReconcileComplete(r))
+                .ToArray());
+
+    private static bool IsReconcileComplete(WorkflowRun run)
+        => run.Status is WorkflowRunStatus.Succeeded or WorkflowRunStatus.Failed or WorkflowRunStatus.Cancelled
+            && run.StepStates.All(s => s.Status is WorkflowStepStatus.Succeeded
+                or WorkflowStepStatus.Failed
+                or WorkflowStepStatus.Cancelled
+                or WorkflowStepStatus.Skipped);
 
     public Task<IReadOnlyList<WorkflowRun>> ListByWorkflowAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<WorkflowRun>>(
@@ -94,9 +118,22 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
         CancellationToken cancellationToken = default)
     {
         _ = retention;
+        return Task.FromResult(_scheduleClaims.TryAdd(BuildClaimKey(workflowId, fireTime), 0));
+    }
+
+    public Task ReleaseScheduleClaimAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default)
+    {
+        _scheduleClaims.TryRemove(BuildClaimKey(workflowId, fireTime), out _);
+        return Task.CompletedTask;
+    }
+
+    private static string BuildClaimKey(string workflowId, DateTimeOffset fireTime)
+    {
         var minute = fireTime.ToUniversalTime().ToUnixTimeSeconds() / 60L;
-        var key = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{workflowId}:{minute}");
-        return Task.FromResult(_scheduleClaims.TryAdd(key, 0));
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{workflowId}:{minute}");
     }
 
     public Task<DateTimeOffset?> GetScheduleCursorAsync(string workflowId, CancellationToken cancellationToken = default)

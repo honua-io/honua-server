@@ -471,8 +471,10 @@ dependents according to each step's `FailurePolicy`.
   dependents; `Skip` marks the step `Skipped` and cascades `Skipped` only to
   dependents that bind artifacts from this step (structural-only dependents
   still proceed).
-- `TimeoutSeconds` — optional per-step wall-clock bound surfaced to the
-  underlying job substrate.
+- `TimeoutSeconds` — optional per-step wall-clock bound. When set to a
+  positive value it is surfaced to the underlying job substrate via the
+  `orchestration.timeoutSeconds` protocol metadata key; null or
+  non-positive values are omitted. Substrate enforcement is executor-specific.
 
 ### Idempotency and Crash Safety
 
@@ -481,7 +483,9 @@ dependents according to each step's `FailurePolicy`.
 - Protocol metadata `orchestration.runId`, `orchestration.workflowId`,
   `orchestration.stepId`, and `orchestration.attempt` is stamped on each
   submitted job so downstream rate/cost controls and audit surfaces can
-  correlate step executions to their parent run.
+  correlate step executions to their parent run. When the step definition
+  sets a positive `TimeoutSeconds`, the value is also stamped as
+  `orchestration.timeoutSeconds`.
 - All state is persisted through `IWorkflowRunStore` before side effects.
   After a crash the reconciler rehydrates state from Redis and resumes from
   the same DAG position; no in-memory workflow state is required.

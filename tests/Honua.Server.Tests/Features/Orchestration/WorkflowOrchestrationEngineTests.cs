@@ -370,6 +370,112 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
+    public async Task CancelRunAsync_KeepsRunInActiveReconcileSetUntilStepsTerminate()
+    {
+        // Regression: before the fix, CancelRunAsync marked the run Cancelled which made
+        // the run-store treat it as terminal and drop it from the active reconcile index.
+        // The reconcile loop then never cascaded cancellation to the queued child job.
+        // After the fix, a run stays in the active set until every step has also reached
+        // a terminal state, so the background reconciler still sees it.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = (await harness.RunStore.GetAsync(run.RunId))!;
+        Assert.Equal(WorkflowStepStatus.Queued, submitted.StepStates[0].Status);
+
+        var cancelled = await harness.Engine.CancelRunAsync(run.RunId);
+        Assert.Equal(WorkflowCancellationOutcome.CancellationRequested, cancelled);
+
+        // Run is Cancelled but its single step is still Queued. Because the step is not
+        // terminal, the reconciler MUST still receive this run from ListActiveAsync.
+        var activeBeforeCascade = await harness.RunStore.ListActiveAsync();
+        Assert.Contains(activeBeforeCascade, r => r.RunId == run.RunId);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = (await harness.RunStore.GetAsync(run.RunId))!;
+        Assert.Equal(WorkflowRunStatus.Cancelled, final.Status);
+        Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates[0].Status);
+
+        var activeAfterCascade = await harness.RunStore.ListActiveAsync();
+        Assert.DoesNotContain(activeAfterCascade, r => r.RunId == run.RunId);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_SerialisesAgainstReconcileLease()
+    {
+        // Regression: CancelRunAsync previously did a read-modify-write without taking
+        // the reconcile lease, so a concurrent reconcile could clobber the Cancelled
+        // status back to Running/Succeeded after cancel had already returned success.
+        // Verify the cancel path now blocks on the lease and resumes cleanly after the
+        // lease is released.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        // Simulate an in-flight reconcile by taking the lease out-of-band.
+        const string leaseHolder = "test-reconciler";
+        Assert.True(await harness.RunStore.TryAcquireLeaseAsync(
+            run.RunId,
+            leaseHolder,
+            TimeSpan.FromSeconds(30)));
+
+        var cancelTask = Task.Run(() => harness.Engine.CancelRunAsync(run.RunId));
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => cancelTask.WaitAsync(TimeSpan.FromMilliseconds(200)));
+
+        await harness.RunStore.ReleaseLeaseAsync(run.RunId, leaseHolder);
+
+        var outcome = await cancelTask;
+        Assert.Equal(WorkflowCancellationOutcome.CancellationRequested, outcome);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, final!.Status);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_SubmitsJobWithTimeoutSecondsMetadataWhenConfigured()
+    {
+        // Regression: WorkflowStepDefinition.TimeoutSeconds was documented as surfaced to
+        // the underlying job substrate but was not plumbed into the protocol metadata.
+        // Verify it is now published so substrate adapters and cost/quota controls can
+        // consume it.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinitionWithTimeout(
+            harness.Clock.GetUtcNow(),
+            timeoutSeconds: 600);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var metadata = Assert.Single(harness.JobService.SubmittedMetadata);
+        Assert.NotNull(metadata);
+        Assert.Equal("600", metadata["orchestration.timeoutSeconds"]);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_OmitsTimeoutSecondsMetadataWhenNotConfigured()
+    {
+        // Null or non-positive TimeoutSeconds must not stamp a bogus key — the contract
+        // is "omitted when not set" so adapters can use key presence to short-circuit.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var metadata = Assert.Single(harness.JobService.SubmittedMetadata);
+        Assert.NotNull(metadata);
+        Assert.False(metadata.ContainsKey("orchestration.timeoutSeconds"));
+    }
+
+    [Fact]
     public async Task CancelRunAsync_RecordsWarningWhenCascadeCancelThrows()
     {
         // Cascade cancel is best-effort: substrate errors must not block the run from reaching
@@ -439,6 +545,26 @@ public sealed class WorkflowOrchestrationEngineTests
                     Plan = BuildPlan("plan-a"),
                     RetryPolicy = retryPolicy,
                     FailurePolicy = failurePolicy
+                }
+            },
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+    private static WorkflowDefinition BuildSingleStepDefinitionWithTimeout(
+        DateTimeOffset now,
+        int timeoutSeconds)
+        => new()
+        {
+            WorkflowId = "wf-single-timeout",
+            Name = "single-timeout",
+            Steps = new[]
+            {
+                new WorkflowStepDefinition
+                {
+                    StepId = "a",
+                    Plan = BuildPlan("plan-a"),
+                    TimeoutSeconds = timeoutSeconds
                 }
             },
             CreatedAt = now,
