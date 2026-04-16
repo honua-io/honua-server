@@ -8,14 +8,13 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
-using Honua.Server.Features.Geoprocessing;
 
 namespace Honua.Server.Features.Orchestration;
 
 /// <summary>
 /// Durable workflow orchestration engine. Composes canonical analysis-plan jobs into
 /// declarative DAG runs and reconciles each run's state against the underlying
-/// <see cref="IGeoprocessingJobService"/> substrate. Mirrors the lease-based reconcile
+/// <see cref="IWorkflowJobExecutor"/> substrate. Mirrors the lease-based reconcile
 /// pattern established for deploy workflows.
 /// </summary>
 internal sealed class WorkflowOrchestrationEngine
@@ -26,7 +25,7 @@ internal sealed class WorkflowOrchestrationEngine
 
     private readonly IWorkflowRunStore _runStore;
     private readonly IWorkflowDefinitionStore _definitionStore;
-    private readonly IGeoprocessingJobService _jobService;
+    private readonly IWorkflowJobExecutor _jobService;
     private readonly IUniversalProgressStore _progressStore;
     private readonly TimeProvider _clock;
     private readonly ILogger<WorkflowOrchestrationEngine> _logger;
@@ -35,7 +34,7 @@ internal sealed class WorkflowOrchestrationEngine
     public WorkflowOrchestrationEngine(
         IWorkflowRunStore runStore,
         IWorkflowDefinitionStore definitionStore,
-        IGeoprocessingJobService jobService,
+        IWorkflowJobExecutor jobService,
         IUniversalProgressStore progressStore,
         TimeProvider clock,
         ILogger<WorkflowOrchestrationEngine> logger)

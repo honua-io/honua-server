@@ -128,7 +128,7 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
             RunStore = new FakeWorkflowRunStore();
             Definitions = new FakeWorkflowDefinitionStore();
             Progress = new FakeProgressStore();
-            JobService = new FakeGeoprocessingJobService();
+            JobService = new FakeWorkflowJobExecutor();
             Clock = new TestClock(start);
             Engine = new WorkflowOrchestrationEngine(
                 RunStore,
@@ -147,7 +147,7 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
         public FakeWorkflowRunStore RunStore { get; }
         public FakeWorkflowDefinitionStore Definitions { get; }
         public FakeProgressStore Progress { get; }
-        public FakeGeoprocessingJobService JobService { get; }
+        public FakeWorkflowJobExecutor JobService { get; }
         public TestClock Clock { get; }
         public WorkflowOrchestrationEngine Engine { get; }
         public WorkflowSchedulerBackgroundService Scheduler { get; }

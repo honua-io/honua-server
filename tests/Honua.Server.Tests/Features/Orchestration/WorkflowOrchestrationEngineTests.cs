@@ -303,7 +303,7 @@ public sealed class WorkflowOrchestrationEngineTests
             RunStore = new FakeWorkflowRunStore();
             Definitions = new FakeWorkflowDefinitionStore();
             Progress = new FakeProgressStore();
-            JobService = new FakeGeoprocessingJobService();
+            JobService = new FakeWorkflowJobExecutor();
             Clock = new TestClock(new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero));
             Engine = new WorkflowOrchestrationEngine(
                 RunStore,
@@ -317,7 +317,7 @@ public sealed class WorkflowOrchestrationEngineTests
         public FakeWorkflowRunStore RunStore { get; }
         public FakeWorkflowDefinitionStore Definitions { get; }
         public FakeProgressStore Progress { get; }
-        public FakeGeoprocessingJobService JobService { get; }
+        public FakeWorkflowJobExecutor JobService { get; }
         public TestClock Clock { get; }
         public WorkflowOrchestrationEngine Engine { get; }
     }

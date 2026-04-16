@@ -5,12 +5,10 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
-using Honua.Server.Features.Geoprocessing;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
@@ -122,7 +120,7 @@ internal sealed class FakeProgressStore : IUniversalProgressStore
             _progress.Values.OfType<TProgress>().Where(p => p.Type == operationType).ToArray());
 }
 
-internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
+internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 {
     private readonly ConcurrentDictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, AnalysisResultPackage> _results = new(StringComparer.Ordinal);
@@ -191,16 +189,6 @@ internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
         };
     }
 
-    public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
-    {
-    }
-
-    public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
-        => new() { IsExecutable = true };
-
-    public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
-        => new() { EstimatedDurationSeconds = 0 };
-
     public Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,
         string? idempotencyKey,
@@ -263,15 +251,5 @@ internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
         }
 
         return Task.FromResult(pkg);
-    }
-
-    public Task CancelJobAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
-    {
-        if (_jobs.TryGetValue(jobId, out var job))
-        {
-            _jobs[jobId] = job with { Status = ExecutionJobStatus.Cancelled, UpdatedAt = DateTimeOffset.UtcNow };
-        }
-
-        return Task.CompletedTask;
     }
 }
