@@ -113,6 +113,13 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
 
         var removed = await _database.KeyDeleteAsync(GetKey(workflowId)).ConfigureAwait(false);
         await _database.SetRemoveAsync(DefinitionIndexKey, workflowId).ConfigureAwait(false);
+
+        // Clear the durable scheduler cursor so a later recreate of the same workflow id
+        // does not inherit the deleted definition's fire history and skip the first run
+        // for the replacement. Per-occurrence claim keys carry a short TTL and key off
+        // the absolute fire time, so stale claims cannot suppress fresh occurrences; no
+        // scan-based cleanup is required.
+        await _database.KeyDeleteAsync(GetScheduleCursorKey(workflowId)).ConfigureAwait(false);
         return removed;
     }
 

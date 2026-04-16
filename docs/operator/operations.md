@@ -503,18 +503,32 @@ tick (30-second interval). For each definition, the scheduler:
    restarts never rewind into previously-fired occurrences.
 3. Claims the fire-time occurrence via `TryClaimScheduleFireAsync` so only
    one replica creates a run per (workflow, fire-time) pair.
-4. Advances the durable cursor after the claim so the window is monotonic.
+4. Advances the durable cursor only after the winning replica successfully
+   creates the run, or after the definition is deleted/permanently invalid.
+   Transient `CreateRunAsync` failures release the claim so the same
+   occurrence can be retried on a later tick without losing the fire.
 
 Invalid cron expressions or unknown time zones are skipped and logged at
 `Warning` with event `8116`; the workflow stops firing until the definition
 is corrected.
+
+Deleting a scheduled workflow clears its durable cursor so a later recreate
+of the same workflow id starts fresh; the scheduler also evicts its
+in-memory compiled-cron cache on the next tick for any workflow id that is
+no longer present, so the replacement definition never inherits the
+predecessor's fire history.
 
 ### Cancellation
 
 Cancellation on an `Orchestration` operation flows through
 `/api/v1/admin/operations/{runId}/cancel` to the
 `WorkflowOrchestrationEngine`, which marks the run `Cancelled` on the durable
-record. The next reconcile tick inspects every step:
+record. The cancel path acquires the same per-run reconcile lease used by the
+reconciler so a concurrent tick cannot overwrite the `Cancelled` status with
+a stale `SetAsync`. Cancelled runs stay in the active reconcile set until
+every step reaches a terminal state, so cascade cancellation keeps making
+progress across ticks. On each reconcile pass over a cancelled run the engine
+inspects every step:
 
 - `Pending` steps transition to `Cancelled` immediately.
 - `Queued` or `Running` steps are cancelled through `CancelJobAsync` on the
@@ -525,6 +539,17 @@ record. The next reconcile tick inspects every step:
 The engine swallows `GeoprocessingNotFoundException` and
 `GeoprocessingPreconditionFailedException` from the cascade so partially
 pruned or already-terminal child jobs stay idempotent.
+
+If the cancel path cannot acquire the reconcile lease within its bounded
+retry window (a concurrent reconcile tick is holding it longer than expected),
+the endpoint returns a shaped `409 Conflict` with a retriable message rather
+than a `500`. The run state has not been mutated, so callers can safely retry
+the same cancel request.
+
+If the workflow definition is deleted while a run is still active, the next
+reconcile tick fails the run with a descriptive error and finalises every
+non-terminal step state to `Cancelled`. This guarantees the run leaves the
+active reconcile set exactly once and emits terminal telemetry.
 
 ### Policy Defaults and Tuning
 

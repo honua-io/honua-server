@@ -200,6 +200,45 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     }
 
     [Fact]
+    public async Task TickAsync_DoesNotInheritStaleCache_WhenDefinitionIsDeletedAndRecreated()
+    {
+        // MEDIUM regression: after delete+recreate of a workflow id, the scheduler's in-memory
+        // _compiled cache held the deleted definition's LastFireAt, and the durable cursor
+        // carried the old firing time too. A fresh recreate would therefore skip its first
+        // occurrence. The fix clears both state sources on delete, and evicts the compile
+        // cache for any workflow id no longer present in the scheduled list.
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var original = BuildCronDefinition(start, "* * * * *");
+        await harness.Definitions.TryCreateAsync(original);
+
+        // Fire the first occurrence so both caches are populated.
+        harness.Clock.Advance(TimeSpan.FromMinutes(2));
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+        Assert.Single(harness.RunStore.Snapshot);
+        Assert.NotNull(await harness.Definitions.GetScheduleCursorAsync(original.WorkflowId));
+
+        // Delete the definition — durable cursor must clear, and the next tick must evict
+        // the compile cache for the missing id.
+        await harness.Definitions.DeleteAsync(original.WorkflowId);
+        Assert.Null(await harness.Definitions.GetScheduleCursorAsync(original.WorkflowId));
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        // Recreate with the same id and confirm the first occurrence after UpdatedAt fires,
+        // rather than inheriting the previous LastFireAt from stale state.
+        var recreateAt = harness.Clock.GetUtcNow();
+        var replacement = BuildCronDefinition(recreateAt, "* * * * *");
+        await harness.Definitions.TryCreateAsync(replacement);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        // The replacement should produce exactly one additional run — its first occurrence
+        // after UpdatedAt — without skipping it because of inherited scheduler state.
+        Assert.Equal(2, harness.RunStore.Snapshot.Count);
+    }
+
+    [Fact]
     public async Task TickAsync_SeedsCursorFromDurableState_SkippingBacklog()
     {
         // Boot state: the durable cursor already reflects a prior firing. The scheduler must

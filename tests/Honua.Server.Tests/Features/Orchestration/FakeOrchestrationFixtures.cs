@@ -109,7 +109,11 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
                 .ToArray());
 
     public Task<bool> DeleteAsync(string workflowId, CancellationToken cancellationToken = default)
-        => Task.FromResult(_definitions.TryRemove(workflowId, out _));
+    {
+        var removed = _definitions.TryRemove(workflowId, out _);
+        _scheduleCursors.TryRemove(workflowId, out _);
+        return Task.FromResult(removed);
+    }
 
     public Task<bool> TryClaimScheduleFireAsync(
         string workflowId,
@@ -215,6 +219,13 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     /// cascade-cancel warning behavior can be exercised.
     /// </summary>
     public Exception? NextCancelJobFailure { get; set; }
+
+    /// <summary>
+    /// When set, <see cref="GetJobResultsAsync"/> raises this exception on the next call
+    /// and clears itself. Lets tests exercise the "job succeeded but result package is
+    /// unavailable" transient path without hitting a real store.
+    /// </summary>
+    public Exception? NextGetJobResultsFailure { get; set; }
 
     public IReadOnlyList<AnalysisPlan> Submitted
     {
@@ -360,6 +371,12 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 
     public Task<AnalysisResultPackage> GetJobResultsAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
+        if (NextGetJobResultsFailure is { } failure)
+        {
+            NextGetJobResultsFailure = null;
+            throw failure;
+        }
+
         if (!_results.TryGetValue(jobId, out var pkg))
         {
             throw new KeyNotFoundException(jobId);

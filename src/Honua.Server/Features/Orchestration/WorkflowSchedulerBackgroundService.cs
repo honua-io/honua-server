@@ -64,6 +64,12 @@ internal sealed class WorkflowSchedulerBackgroundService(
 
         var now = clock.GetUtcNow();
         var scheduled = await definitionStore.ListScheduledAsync(cancellationToken).ConfigureAwait(false);
+
+        // Evict compiled-cron cache entries for workflow ids that no longer appear in the
+        // scheduled list. Without this, a definition that is deleted and recreated with the
+        // same id would inherit its predecessor's LastFireAt and skip early occurrences.
+        EvictCompiledCacheForMissingWorkflows(scheduled);
+
         foreach (var definition in scheduled)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -212,6 +218,28 @@ internal sealed class WorkflowSchedulerBackgroundService(
             catch (Exception ex)
             {
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
+            }
+        }
+    }
+
+    private void EvictCompiledCacheForMissingWorkflows(IReadOnlyList<WorkflowDefinition> scheduled)
+    {
+        if (_compiled.IsEmpty)
+        {
+            return;
+        }
+
+        var present = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var definition in scheduled)
+        {
+            present.Add(definition.WorkflowId);
+        }
+
+        foreach (var cachedId in _compiled.Keys)
+        {
+            if (!present.Contains(cachedId))
+            {
+                _compiled.TryRemove(cachedId, out _);
             }
         }
     }

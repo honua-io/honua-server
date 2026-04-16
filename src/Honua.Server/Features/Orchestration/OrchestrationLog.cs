@@ -128,4 +128,14 @@ internal static partial class OrchestrationLog
         string stepId,
         string jobId,
         Exception exception);
+
+    [LoggerMessage(8119, LogLevel.Information, "Cancel request for workflow run {RunId} could not acquire reconcile lease within the polling window; caller should retry")]
+    public static partial void WorkflowCancelLeaseContention(ILogger logger, string runId);
+
+    [LoggerMessage(8120, LogLevel.Warning, "Workflow step {RunId}:{StepId} succeeded but artifact retrieval failed and downstream bindings cannot be satisfied; failing step so the workflow does not silently produce a null-artifact success")]
+    public static partial void WorkflowStepArtifactsUnavailableForBoundDependents(
+        ILogger logger,
+        string runId,
+        string stepId,
+        Exception exception);
 }

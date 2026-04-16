@@ -266,6 +266,116 @@ public sealed class WorkflowOrchestrationEngineTests
         var final = await harness.RunStore.GetAsync(run.RunId);
         Assert.Equal(WorkflowRunStatus.Failed, final!.Status);
         Assert.NotNull(final.ErrorMessage);
+
+        // Sibling-path regression: the previous implementation left step states Pending,
+        // which kept the run in the active reconcile set forever and blocked the persist-
+        // time terminal telemetry gate. Step states must also be terminal so the run
+        // leaves the active set exactly once.
+        Assert.All(final.StepStates, s => Assert.True(
+            s.Status is WorkflowStepStatus.Cancelled
+                or WorkflowStepStatus.Failed
+                or WorkflowStepStatus.Succeeded
+                or WorkflowStepStatus.Skipped,
+            $"Step {s.StepId} was left in non-terminal state {s.Status} despite missing definition."));
+        var active = await harness.RunStore.ListActiveAsync();
+        Assert.DoesNotContain(active, r => r.RunId == run.RunId);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_FailsStepWhenArtifactsUnavailable_AndDownstreamBindingsExist()
+    {
+        // HIGH regression: when a step's underlying job succeeds but results retrieval fails
+        // (e.g. transient result-package store outage) AND downstream steps bind artifacts
+        // from it, the engine must fail the step fast so the run surfaces the real cause
+        // rather than later failing the dependent with a confusing selector error.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildChainedDefinition(harness.Clock.GetUtcNow());
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        // Tick 1: submit A.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var afterSubmit = await harness.RunStore.GetAsync(run.RunId);
+        var stepA = afterSubmit!.StepStates.Single(s => s.StepId == "a");
+
+        // Job itself succeeds, but the next results-fetch fails transiently; step A has a
+        // downstream binding in step B, so the engine must surface the failure at A.
+        harness.JobService.Complete(stepA.JobId!, artifacts: Array.Empty<ArtifactRef>());
+        harness.JobService.NextGetJobResultsFailure = new InvalidOperationException("result package not yet available");
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Failed, final!.StepStates.Single(s => s.StepId == "a").Status);
+        Assert.Contains("result package not yet available", final.StepStates.Single(s => s.StepId == "a").ErrorMessage);
+        Assert.Equal(WorkflowRunStatus.Failed, final.Status);
+
+        // Step B was gated on A's artifacts and must be cancelled, not submitted to the substrate.
+        Assert.Single(harness.JobService.Submitted);
+        Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates.Single(s => s.StepId == "b").Status);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_SucceedsStepWhenArtifactsUnavailable_AndNoDownstreamBindings()
+    {
+        // Mirror of the HIGH regression: when NO downstream step binds the successful step's
+        // artifacts, a transient result-fetch failure must not terminalise the step. Artifact
+        // retrieval is best-effort for steps whose outputs are not consumed downstream.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = (await harness.RunStore.GetAsync(run.RunId))!.StepStates[0];
+
+        harness.JobService.Complete(submitted.JobId!, artifacts: Array.Empty<ArtifactRef>());
+        harness.JobService.NextGetJobResultsFailure = new InvalidOperationException("result package blip");
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Succeeded, final!.StepStates[0].Status);
+        Assert.Equal(WorkflowRunStatus.Succeeded, final.Status);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_ReturnsLeaseContention_WhenLeaseUnavailableWithinRetryWindow()
+    {
+        // MEDIUM regression: before the fix, a lease-contention scenario on the admin cancel
+        // path surfaced as a TimeoutException / 500. The outcome is now shaped as
+        // LeaseContention, which the admin endpoint translates into a retriable 409 instead
+        // of leaking an internal exception to the caller.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        // Hold the lease for longer than the cancel retry window (30 attempts × 100 ms = 3 s).
+        const string leaseHolder = "blocking-reconciler";
+        Assert.True(await harness.RunStore.TryAcquireLeaseAsync(
+            run.RunId,
+            leaseHolder,
+            TimeSpan.FromMinutes(1)));
+
+        try
+        {
+            var outcome = await harness.Engine.CancelRunAsync(run.RunId);
+            Assert.Equal(WorkflowCancellationOutcome.LeaseContention, outcome);
+
+            // Run must not have been mutated — a retry with the lease released should succeed.
+            var unchanged = await harness.RunStore.GetAsync(run.RunId);
+            Assert.NotEqual(WorkflowRunStatus.Cancelled, unchanged!.Status);
+        }
+        finally
+        {
+            await harness.RunStore.ReleaseLeaseAsync(run.RunId, leaseHolder);
+        }
+
+        var retry = await harness.Engine.CancelRunAsync(run.RunId);
+        Assert.Equal(WorkflowCancellationOutcome.CancellationRequested, retry);
     }
 
     [Fact]

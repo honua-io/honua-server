@@ -123,5 +123,11 @@ public enum WorkflowCancellationOutcome
     AlreadyCancelled,
 
     /// <summary>Cancellation has been recorded and will propagate on the next reconcile tick.</summary>
-    CancellationRequested
+    CancellationRequested,
+
+    /// <summary>
+    /// The reconcile lease is currently held by another writer and could not be acquired
+    /// within the bounded cancel polling window. Callers may retry after a short delay.
+    /// </summary>
+    LeaseContention
 }

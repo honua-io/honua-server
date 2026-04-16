@@ -150,8 +150,12 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
         if (!leaseAcquired)
         {
-            throw new InvalidOperationException(
-                $"Could not acquire reconcile lease for workflow run '{runId}' within the cancel retry window.");
+            // A reconcile is actively holding the lease. Surface this as a retriable
+            // outcome so the admin endpoint translates it into a shaped 409 rather than
+            // leaking a 500. The caller can safely retry the same cancel request; the
+            // run state has not been mutated by this attempt.
+            OrchestrationLog.WorkflowCancelLeaseContention(_logger, runId);
+            return WorkflowCancellationOutcome.LeaseContention;
         }
 
         try
@@ -233,12 +237,27 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 }
 
                 var now = _clock.GetUtcNow();
+                // Finalise any non-terminal step states alongside the run so the persist-time
+                // terminal telemetry gate (run+every step terminal) fires exactly once for this
+                // path. Without this, steps stay Pending/Queued forever and the run would never
+                // leave the active reconcile set despite its Failed status.
+                var finalisedSteps = run.StepStates
+                    .Select(s => IsStepTerminal(s.Status)
+                        ? s
+                        : s with
+                        {
+                            Status = WorkflowStepStatus.Cancelled,
+                            CompletedAt = now,
+                            ErrorMessage = s.ErrorMessage ?? "Workflow definition missing; step was not executed."
+                        })
+                    .ToArray();
                 var failed = run with
                 {
                     Status = WorkflowRunStatus.Failed,
                     UpdatedAt = now,
                     CompletedAt = now,
-                    ErrorMessage = $"Workflow definition '{run.WorkflowId}' was not found."
+                    ErrorMessage = $"Workflow definition '{run.WorkflowId}' was not found.",
+                    StepStates = finalisedSteps
                 };
                 await PersistRunAsync(failed, reconciliationCancellation.Token).ConfigureAwait(false);
                 return;
@@ -376,7 +395,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 case WorkflowStepStatus.Queued:
                 case WorkflowStepStatus.Running:
                     {
-                        var observation = await ObserveStepAsync(run, definitionStep, state, cancellationToken).ConfigureAwait(false);
+                        var observation = await ObserveStepAsync(run, definition, definitionStep, state, cancellationToken).ConfigureAwait(false);
                         if (observation is not null)
                         {
                             states[state.StepId] = observation;
@@ -527,6 +546,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
     private async Task<WorkflowStepState?> ObserveStepAsync(
         WorkflowRun run,
+        WorkflowDefinition definition,
         WorkflowStepDefinition stepDefinition,
         WorkflowStepState state,
         CancellationToken cancellationToken)
@@ -565,6 +585,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             case ExecutionJobStatus.Succeeded:
                 {
                     IReadOnlyList<ArtifactRef>? artifacts = null;
+                    Exception? artifactsFailure = null;
                     try
                     {
                         var results = await _jobService.GetJobResultsAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
@@ -572,7 +593,41 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
+                        artifactsFailure = ex;
                         OrchestrationLog.InputBindingFailed(_logger, run.RunId, state.StepId, "<results>", ex.Message);
+                    }
+
+                    // If artifact retrieval failed and any downstream step binds artifacts from
+                    // this step, the workflow cannot succeed end-to-end: the binding resolver
+                    // will fail the dependent with a confusing "could not resolve selector"
+                    // error and the run status derivation marks the parent Succeeded-with-null
+                    // artifacts. Surface the failure at this step instead so operators see the
+                    // real cause (e.g. "result package not yet available"), and the run fails
+                    // fast rather than silently skipping artifact chaining.
+                    if (artifactsFailure is not null &&
+                        (artifacts is null || artifacts.Count == 0) &&
+                        HasDownstreamBindingFromStep(definition, state.StepId))
+                    {
+                        OrchestrationLog.WorkflowStepArtifactsUnavailableForBoundDependents(
+                            _logger,
+                            run.RunId,
+                            state.StepId,
+                            artifactsFailure);
+                        OrchestrationTelemetry.StepDuration.Record(
+                            (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds,
+                            new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Failed.ToString()));
+                        OrchestrationTelemetry.StepsCompleted.Add(
+                            1,
+                            new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Failed.ToString()));
+                        return state with
+                        {
+                            Status = WorkflowStepStatus.Failed,
+                            CompletedAt = now,
+                            OutputArtifacts = null,
+                            ErrorMessage =
+                                $"Step '{state.StepId}' job succeeded but artifact retrieval failed; " +
+                                $"downstream bindings cannot be resolved: {artifactsFailure.Message}"
+                        };
                     }
 
                     var duration = (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds;
@@ -728,6 +783,19 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         return false;
     }
 
+    private static bool HasDownstreamBindingFromStep(WorkflowDefinition definition, string upstreamStepId)
+    {
+        foreach (var step in definition.Steps)
+        {
+            if (HasBindingFrom(step, upstreamStepId))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static string ResolveUpstreamPolicy(
         IReadOnlyDictionary<string, WorkflowStepDefinition> definitionById,
         string upstreamStepId)
@@ -789,7 +857,13 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         };
         await _progressStore.SetProgressAsync(run.RunId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        if (IsRunTerminal(run.Status))
+        // Only emit terminal run telemetry when the run has actually finished in full.
+        // CancelRunAsync flips the run status to Cancelled before cascade step cleanup has
+        // run, and a follow-up reconcile persists the run again once every step is terminal.
+        // Gating on both the run and every step being terminal keeps telemetry to one
+        // emission per run — otherwise cancelled runs would double-count in run_duration_ms,
+        // runs_completed_total, and the WorkflowRunCompleted log line.
+        if (IsRunTerminal(run.Status) && run.StepStates.All(s => IsStepTerminal(s.Status)))
         {
             var duration = ((run.CompletedAt ?? _clock.GetUtcNow()) - run.CreatedAt).TotalMilliseconds;
             OrchestrationTelemetry.RunDuration.Record(

@@ -168,6 +168,10 @@ internal static class OperationsProgressEndpoints
                 StatusCodes.Status409Conflict,
                 "Conflict",
                 $"Workflow run '{operationId}' already reached a terminal state"),
+            WorkflowCancellationOutcome.LeaseContention => ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Workflow run '{operationId}' is currently being reconciled; retry the cancel request shortly"),
             _ => Results.Json(
                 new CancelOperationResponse
                 {
