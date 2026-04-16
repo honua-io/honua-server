@@ -3,8 +3,11 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.SpatialAnalytics.Domain;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -12,9 +15,10 @@ namespace Honua.Server.Features.Geoprocessing;
 /// Validates analysis plan steps against the process catalog, checking that
 /// referenced process IDs exist, required parameters are supplied, values parse
 /// cleanly against their declared <see cref="ProcessParameterValueType"/>, and
-/// per-process semantic rules (enum values, conditional requiredness, positive
-/// numeric ranges) match the live handler contracts so plans accepted here are
-/// also accepted downstream by <c>SpatialAnalyticsRequestHandlers</c>.
+/// per-process semantic rules (enum values, conditional requiredness, numeric
+/// ranges including <see cref="AnalyticsLimits"/> upper bounds) match the live
+/// handler contracts so plans accepted here are also accepted downstream by
+/// <c>SpatialAnalyticsRequestHandlers</c>.
 /// </summary>
 internal static class ProcessPlanValidator
 {
@@ -47,11 +51,25 @@ internal static class ProcessPlanValidator
 
     /// <summary>
     /// Validates all <see cref="AnalysisPlanStepKind.Geoprocess"/> steps in the plan
-    /// against the catalog, returning any violations and warnings found.
+    /// against the catalog, returning any violations and warnings found. Uses the
+    /// default <see cref="AnalyticsLimits"/> values when no configured instance is
+    /// supplied — call the overload taking <see cref="AnalyticsLimits"/> to enforce
+    /// the runtime-configured upper bounds the live handlers use.
     /// </summary>
     public static (List<GeoprocessingValidationFailure> Violations, List<string> Warnings) Validate(
         AnalysisPlan plan,
         IProcessCatalog catalog)
+        => Validate(plan, catalog, new AnalyticsLimits());
+
+    /// <summary>
+    /// Validates the plan using the supplied <paramref name="analyticsLimits"/> so
+    /// upper-bound checks (eps, k, distance, cellSize, buffer cap) match the
+    /// bounds enforced by <c>SpatialAnalyticsRequestHandlers</c> at execution time.
+    /// </summary>
+    public static (List<GeoprocessingValidationFailure> Violations, List<string> Warnings) Validate(
+        AnalysisPlan plan,
+        IProcessCatalog catalog,
+        AnalyticsLimits analyticsLimits)
     {
         var violations = new List<GeoprocessingValidationFailure>();
         var warnings = new List<string>();
@@ -88,6 +106,9 @@ internal static class ProcessPlanValidator
 
             var paramsByName = definition.Parameters.ToDictionary(p => p.Name, StringComparer.Ordinal);
 
+            // Declared-required: key must be present. Blank declared-required
+            // values fall through to type validation so callers get a concrete
+            // type-specific INVALID_PARAMETER_VALUE hint (e.g. empty layerId).
             foreach (var param in definition.Parameters)
             {
                 if (!param.Required)
@@ -106,16 +127,53 @@ internal static class ProcessPlanValidator
                 }
             }
 
+            // Flag unknown parameter names up front so callers see typos before
+            // other rules. Skips type/semantic validation for unknown params.
+            var unknownInputs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (inputName, _) in step.Inputs)
+            {
+                if (paramsByName.ContainsKey(inputName))
+                {
+                    continue;
+                }
+
+                unknownInputs.Add(inputName);
+                violations.Add(new GeoprocessingValidationFailure
+                {
+                    Code = "UNKNOWN_PARAMETER",
+                    Message = $"Step '{step.StepId}' supplies unknown parameter '{inputName}' for process '{step.ProcessId}'.",
+                    FieldPath = $"steps[{step.StepId}].inputs.{inputName}"
+                });
+            }
+
+            // Semantic rules (enum, conditional requiredness, numeric bounds)
+            // run before type validation so blank conditional values surface as
+            // MISSING_REQUIRED_PARAMETER — matching handler error semantics — and
+            // so range violations emit a single, bound-aware message per field.
+            ApplyProcessSemantics(step, analyticsLimits, violations);
+
             foreach (var (inputName, inputValue) in step.Inputs)
             {
-                if (!paramsByName.TryGetValue(inputName, out var spec))
+                if (unknownInputs.Contains(inputName))
                 {
-                    violations.Add(new GeoprocessingValidationFailure
-                    {
-                        Code = "UNKNOWN_PARAMETER",
-                        Message = $"Step '{step.StepId}' supplies unknown parameter '{inputName}' for process '{step.ProcessId}'.",
-                        FieldPath = $"steps[{step.StepId}].inputs.{inputName}"
-                    });
+                    continue;
+                }
+
+                var spec = paramsByName[inputName];
+                var fieldPath = $"steps[{step.StepId}].inputs.{inputName}";
+
+                // Blank values for optional parameters are "not supplied" to the
+                // live handlers (SpatialAnalytics*.cs uses IsNullOrWhiteSpace).
+                // Skipping them here keeps handler/validator behavior aligned.
+                if (!spec.Required && string.IsNullOrWhiteSpace(inputValue))
+                {
+                    continue;
+                }
+
+                // Suppress duplicate INVALID/MISSING when a semantic rule already
+                // flagged this field (range, conditional required, enum).
+                if (violations.Any(v => v.FieldPath == fieldPath))
+                {
                     continue;
                 }
 
@@ -125,12 +183,10 @@ internal static class ProcessPlanValidator
                     {
                         Code = "INVALID_PARAMETER_VALUE",
                         Message = $"Step '{step.StepId}' supplies invalid value for parameter '{inputName}' of process '{step.ProcessId}': {typeErrorDetail}.",
-                        FieldPath = $"steps[{step.StepId}].inputs.{inputName}"
+                        FieldPath = fieldPath
                     });
                 }
             }
-
-            ApplyProcessSemantics(step, violations);
         }
 
         return (violations, warnings);
@@ -138,33 +194,36 @@ internal static class ProcessPlanValidator
 
     /// <summary>
     /// Applies per-process semantic rules that the live request handlers enforce
-    /// (enum value sets, conditional requiredness, positive numeric ranges).
-    /// Mirrors <c>SpatialAnalyticsRequestHandlers</c> so catalog validation does
-    /// not admit plans the handlers will reject at execution time.
+    /// (enum value sets, conditional requiredness, numeric ranges including the
+    /// upper bounds carried by <see cref="AnalyticsLimits"/>). Mirrors
+    /// <c>SpatialAnalyticsRequestHandlers</c> so catalog validation does not
+    /// admit plans the handlers will reject at execution time.
     /// </summary>
     private static void ApplyProcessSemantics(
         AnalysisPlanStep step,
+        AnalyticsLimits analyticsLimits,
         List<GeoprocessingValidationFailure> violations)
     {
         switch (step.ProcessId)
         {
             case "analytics.cluster":
-                ValidateClusterSemantics(step, violations);
+                ValidateClusterSemantics(step, analyticsLimits, violations);
                 break;
             case "analytics.spatial-join":
-                ValidateSpatialJoinSemantics(step, violations);
+                ValidateSpatialJoinSemantics(step, analyticsLimits, violations);
                 break;
             case "analytics.density":
-                ValidateDensitySemantics(step, violations);
+                ValidateDensitySemantics(step, analyticsLimits, violations);
                 break;
             case "analytics.buffer-aggregate":
-                ValidateBufferAggregateSemantics(step, violations);
+                ValidateBufferAggregateSemantics(step, analyticsLimits, violations);
                 break;
         }
     }
 
     private static void ValidateClusterSemantics(
         AnalysisPlanStep step,
+        AnalyticsLimits analyticsLimits,
         List<GeoprocessingValidationFailure> violations)
     {
         // algorithm must be one of the canonical values; empty defaults to dbscan.
@@ -192,13 +251,24 @@ internal static class ProcessPlanValidator
             RequireConditionalParameter(step, "k", "algorithm=kmeans", violations);
         }
 
-        RequirePositiveDouble(step, "eps", violations);
-        RequirePositiveInt(step, "minPoints", minimum: 1, violations);
-        RequirePositiveInt(step, "k", minimum: 1, violations);
+        // Cluster eps — handler rejects <= MinEps (0) and > MaxDbscanEpsMeters.
+        RequireDoubleInRange(
+            step, "eps",
+            minimumExclusive: ClusterQuery.MinEps,
+            maximum: analyticsLimits.MaxDbscanEpsMeters,
+            maximumUnit: "meters",
+            violations);
+
+        // minPoints — handler rejects < MinMinPoints (1). No upper bound.
+        RequireIntAtLeast(step, "minPoints", ClusterQuery.MinMinPoints, violations);
+
+        // k — handler rejects < MinK (1) or > MaxKMeansK.
+        RequireIntInRange(step, "k", ClusterQuery.MinK, analyticsLimits.MaxKMeansK, violations);
     }
 
     private static void ValidateSpatialJoinSemantics(
         AnalysisPlanStep step,
+        AnalyticsLimits analyticsLimits,
         List<GeoprocessingValidationFailure> violations)
     {
         var hasPredicate = step.Inputs.TryGetValue("predicate", out var predicateRaw)
@@ -216,11 +286,18 @@ internal static class ProcessPlanValidator
             RequireConditionalParameter(step, "distance", "predicate=dwithin", violations);
         }
 
-        RequirePositiveDouble(step, "distance", violations);
+        // DWithin distance — handler rejects <= 0 and > MaxDWithinDistanceMeters.
+        RequireDoubleInRange(
+            step, "distance",
+            minimumExclusive: 0d,
+            maximum: analyticsLimits.MaxDWithinDistanceMeters,
+            maximumUnit: "meters",
+            violations);
     }
 
     private static void ValidateDensitySemantics(
         AnalysisPlanStep step,
+        AnalyticsLimits analyticsLimits,
         List<GeoprocessingValidationFailure> violations)
     {
         if (step.Inputs.TryGetValue("mode", out var modeRaw)
@@ -230,22 +307,76 @@ internal static class ProcessPlanValidator
             AddEnumViolation(step, "mode", modeRaw, "hex, square", violations);
         }
 
-        RequirePositiveDouble(step, "cellSize", violations);
+        // cellSize — handler enforces Min/MaxDensityCellSizeMeters window (inclusive).
+        RequireDoubleInClosedRange(
+            step, "cellSize",
+            minimum: analyticsLimits.MinDensityCellSizeMeters,
+            maximum: analyticsLimits.MaxDensityCellSizeMeters,
+            unit: "meters",
+            violations);
     }
 
     private static void ValidateBufferAggregateSemantics(
         AnalysisPlanStep step,
+        AnalyticsLimits analyticsLimits,
         List<GeoprocessingValidationFailure> violations)
     {
-        if (step.Inputs.TryGetValue("unit", out var unitRaw)
-            && !string.IsNullOrWhiteSpace(unitRaw)
-            && !BufferAggregateUnitValues.Contains(unitRaw.Trim()))
+        var hasUnit = step.Inputs.TryGetValue("unit", out var unitRaw)
+            && !string.IsNullOrWhiteSpace(unitRaw);
+        var unitLabel = hasUnit ? unitRaw!.Trim() : "meters";
+
+        if (hasUnit && !BufferAggregateUnitValues.Contains(unitLabel))
         {
-            AddEnumViolation(step, "unit", unitRaw, "meters, kilometers, feet, miles", violations);
+            AddEnumViolation(step, "unit", unitLabel, "meters, kilometers, feet, miles", violations);
+            return;
         }
 
-        RequirePositiveDouble(step, "distance", violations);
+        // Buffer distance — handler accepts >= 0 (non-negative) and enforces the
+        // MaxBufferDistanceMeters cap after unit conversion so non-meter units
+        // cannot bypass the limit.
+        if (!step.Inputs.TryGetValue("distance", out var distanceRaw)
+            || string.IsNullOrWhiteSpace(distanceRaw))
+        {
+            return;
+        }
+
+        if (!double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance)
+            || double.IsNaN(distance) || double.IsInfinity(distance)
+            || distance < BufferAggregateQuery.MinDistanceMeters)
+        {
+            AddRangeViolationIfNew(step, "distance",
+                $"expected non-negative number ≥ {BufferAggregateQuery.MinDistanceMeters.ToString(CultureInfo.InvariantCulture)}, got '{distanceRaw}'",
+                violations);
+            return;
+        }
+
+        var unit = ResolveBufferDistanceUnit(unitLabel);
+        var distanceInMeters = ConvertDistanceToMeters(distance, unit);
+        if (distanceInMeters > analyticsLimits.MaxBufferDistanceMeters)
+        {
+            AddRangeViolationIfNew(step, "distance",
+                $"distance must not exceed {analyticsLimits.MaxBufferDistanceMeters.ToString(CultureInfo.InvariantCulture)} meters (in the supplied unit), got '{distanceRaw}'",
+                violations);
+        }
     }
+
+    private static DistanceUnit ResolveBufferDistanceUnit(string unitLabel) => unitLabel.ToLowerInvariant() switch
+    {
+        "kilometers" or "kilometer" or "km" => DistanceUnit.Kilometers,
+        "feet" or "foot" or "ft" => DistanceUnit.Feet,
+        "miles" or "mile" or "mi" => DistanceUnit.Miles,
+        _ => DistanceUnit.Meters,
+    };
+
+    // Mirrors SpatialAnalyticsRequestHandlers.BufferAggregate.ConvertDistanceToMeters
+    // so validator caps agree bit-for-bit with the handler's pre-execute check.
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) => unit switch
+    {
+        DistanceUnit.Kilometers => distance * 1000d,
+        DistanceUnit.Feet => distance * 0.3048d,
+        DistanceUnit.Miles => distance * 1609.344d,
+        _ => distance,
+    };
 
     private static void AddEnumViolation(
         AnalysisPlanStep step,
@@ -273,9 +404,6 @@ internal static class ProcessPlanValidator
             return;
         }
 
-        // Avoid duplicate MISSING_REQUIRED_PARAMETER if the declared-required
-        // path already reported this parameter (it cannot in current catalog
-        // since these are declared optional, but guard defensively).
         var fieldPath = $"steps[{step.StepId}].inputs.{parameter}";
         if (violations.Any(v => v.Code == "MISSING_REQUIRED_PARAMETER" && v.FieldPath == fieldPath))
         {
@@ -290,9 +418,12 @@ internal static class ProcessPlanValidator
         });
     }
 
-    private static void RequirePositiveDouble(
+    private static void RequireDoubleInRange(
         AnalysisPlanStep step,
         string parameter,
+        double minimumExclusive,
+        double maximum,
+        string maximumUnit,
         List<GeoprocessingValidationFailure> violations)
     {
         if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
@@ -302,13 +433,45 @@ internal static class ProcessPlanValidator
 
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
             || double.IsNaN(parsed) || double.IsInfinity(parsed)
-            || parsed <= 0d)
+            || parsed <= minimumExclusive)
         {
             AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
+            return;
+        }
+
+        if (parsed > maximum)
+        {
+            AddRangeViolationIfNew(step, parameter,
+                $"must not exceed {maximum.ToString(CultureInfo.InvariantCulture)} {maximumUnit}, got '{value}'",
+                violations);
         }
     }
 
-    private static void RequirePositiveInt(
+    private static void RequireDoubleInClosedRange(
+        AnalysisPlanStep step,
+        string parameter,
+        double minimum,
+        double maximum,
+        string unit,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed) || double.IsInfinity(parsed)
+            || parsed < minimum
+            || parsed > maximum)
+        {
+            AddRangeViolationIfNew(step, parameter,
+                $"must be between {minimum.ToString(CultureInfo.InvariantCulture)} and {maximum.ToString(CultureInfo.InvariantCulture)} {unit}, got '{value}'",
+                violations);
+        }
+    }
+
+    private static void RequireIntAtLeast(
         AnalysisPlanStep step,
         string parameter,
         int minimum,
@@ -326,9 +489,34 @@ internal static class ProcessPlanValidator
         }
     }
 
-    // Range checks run after the type-validation pass, which already emits
-    // INVALID_PARAMETER_VALUE for non-numeric text. Skip duplicates so callers
-    // see one violation per field.
+    private static void RequireIntInRange(
+        AnalysisPlanStep step,
+        string parameter,
+        int minimum,
+        int maximum,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            || parsed < minimum)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected integer ≥ {minimum}, got '{value}'", violations);
+            return;
+        }
+
+        if (parsed > maximum)
+        {
+            AddRangeViolationIfNew(step, parameter, $"must not exceed {maximum}, got '{value}'", violations);
+        }
+    }
+
+    // Range checks emit one violation per field, even when multiple bounds or
+    // type checks would each report the same parameter. Keeps error payloads
+    // small enough for user-facing surfaces without hiding any offending field.
     private static void AddRangeViolationIfNew(
         AnalysisPlanStep step,
         string parameter,
@@ -336,7 +524,7 @@ internal static class ProcessPlanValidator
         List<GeoprocessingValidationFailure> violations)
     {
         var fieldPath = $"steps[{step.StepId}].inputs.{parameter}";
-        if (violations.Any(v => v.Code == "INVALID_PARAMETER_VALUE" && v.FieldPath == fieldPath))
+        if (violations.Any(v => v.FieldPath == fieldPath))
         {
             return;
         }

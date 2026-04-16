@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -20,6 +21,7 @@ using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.OgcProcesses;
 
@@ -319,7 +321,9 @@ internal static class ProcessEndpoints
         // processes and missing/invalid typed inputs so OGC-submitted jobs
         // match what the canonical gRPC submit path accepts.
         var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-        var catalogError = ValidatePlanAgainstCatalog(planElement, planId, catalog, logger);
+        var analyticsLimits = context.RequestServices
+            .GetRequiredService<IOptions<LimitsOptions>>().Value.Analytics;
+        var catalogError = ValidatePlanAgainstCatalog(planElement, planId, catalog, analyticsLimits, logger);
         if (catalogError != null)
         {
             OgcProcessesLog.PlanStructureInvalid(logger, processId, catalogError);
@@ -421,7 +425,7 @@ internal static class ProcessEndpoints
     /// </summary>
     /// <returns>Error message if invalid; null if valid.</returns>
     private static string? ValidatePlanAgainstCatalog(
-        JsonElement plan, string planId, IProcessCatalog catalog, ILogger logger)
+        JsonElement plan, string planId, IProcessCatalog catalog, AnalyticsLimits analyticsLimits, ILogger logger)
     {
         var steps = ExtractPlanSteps(plan);
         if (steps.Count == 0)
@@ -436,7 +440,7 @@ internal static class ProcessEndpoints
             Steps = steps
         };
 
-        var (violations, _) = ProcessPlanValidator.Validate(analysisPlan, catalog);
+        var (violations, _) = ProcessPlanValidator.Validate(analysisPlan, catalog, analyticsLimits);
         if (violations.Count == 0)
         {
             return null;

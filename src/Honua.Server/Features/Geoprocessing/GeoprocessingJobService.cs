@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -15,6 +16,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -34,6 +36,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IProcessCatalog _processCatalog;
+    private readonly AnalyticsLimits _analyticsLimits;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -44,13 +47,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IProcessCatalog processCatalog,
         ILogger<GeoprocessingJobService> logger,
         IExecutionJobStore? jobStore = null,
-        IJobQueue? jobQueue = null)
+        IJobQueue? jobQueue = null,
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
         _processCatalog = processCatalog;
+        _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _logger = logger;
         _jobStore = jobStore;
         _jobQueue = jobQueue;
@@ -91,7 +96,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             });
         }
 
-        var (catalogViolations, catalogWarnings) = ProcessPlanValidator.Validate(plan, _processCatalog);
+        var (catalogViolations, catalogWarnings) = ProcessPlanValidator.Validate(plan, _processCatalog, _analyticsLimits);
         violations.AddRange(catalogViolations);
         warnings.AddRange(catalogWarnings);
 
@@ -530,7 +535,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private void EnsurePlanCatalogValid(AnalysisPlan plan)
     {
-        var (violations, _) = ProcessPlanValidator.Validate(plan, _processCatalog);
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _processCatalog, _analyticsLimits);
         if (violations.Count == 0)
         {
             return;

@@ -1126,6 +1126,356 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
+    // Validator — handler parity: configured analytics bounds, blank-conditional
+    //   ordering, and buffer non-negative distance with unit-aware cap.
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_BlankEpsWithDbscan_ReportsMissingNotInvalid()
+    {
+        // Handler treats IsNullOrWhiteSpace values as "not supplied". The
+        // validator must match: blank eps under algorithm=dbscan should surface
+        // MISSING_REQUIRED_PARAMETER rather than a stray INVALID_PARAMETER_VALUE.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.eps");
+        violations.Single(v => v.FieldPath == "steps[s1].inputs.eps").Code
+            .Should().Be("MISSING_REQUIRED_PARAMETER");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_EpsExceedsMaxDbscanEps_ProducesRangeViolation()
+    {
+        // Handler caps eps at AnalyticsLimits.MaxDbscanEpsMeters (default 100_000).
+        // The validator must reject the same out-of-range value instead of waiting
+        // for the handler to reject it at execution time.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "500000",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.eps");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_KExceedsMaxKMeansK_ProducesRangeViolation()
+    {
+        // Handler caps k at AnalyticsLimits.MaxKMeansK (default 1_000). The
+        // validator must reject values above the configured upper bound.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "kmeans",
+                        ["k"] = "5000"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.k");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_DistanceExceedsMaxDWithin_ProducesRangeViolation()
+    {
+        // Handler caps dwithin distance at AnalyticsLimits.MaxDWithinDistanceMeters.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["joinLayerId"] = "zoning",
+                        ["predicate"] = "dwithin",
+                        ["distance"] = "250000"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_CellSizeBelowMin_ProducesRangeViolation()
+    {
+        // Handler enforces AnalyticsLimits.MinDensityCellSizeMeters (default 10).
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["cellSize"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_CellSizeAboveMax_ProducesRangeViolation()
+    {
+        // Handler enforces AnalyticsLimits.MaxDensityCellSizeMeters (default 100_000).
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["cellSize"] = "500000"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_DistanceZero_IsAccepted()
+    {
+        // Handler accepts distance >= BufferAggregateQuery.MinDistanceMeters (0).
+        // Validator must match so zero-buffer dissolves are not spuriously rejected.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["distance"] = "0"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty(
+            "buffer-aggregate handler allows distance=0 (>= MinDistanceMeters)");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_NegativeDistance_ProducesRangeViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["distance"] = "-1"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_DistanceAboveMaxMeters_ProducesRangeViolation()
+    {
+        // Handler caps distance at AnalyticsLimits.MaxBufferDistanceMeters (default 100_000).
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["distance"] = "200000",
+                        ["unit"] = "meters"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_DistanceCapBypassedByUnit_ProducesRangeViolation()
+    {
+        // A 200 km buffer exceeds the default 100 km cap once converted to
+        // meters. Handler converts unit before applying MaxBufferDistanceMeters
+        // so non-meter units cannot bypass the limit; validator must match.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["distance"] = "200",
+                        ["unit"] = "km"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    // -----------------------------------------------------------------------
     // Catalog — immutability contract
     // -----------------------------------------------------------------------
 

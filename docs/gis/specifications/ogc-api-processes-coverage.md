@@ -24,7 +24,7 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 | Conformance | GET | `/ogc/processes/conformance` | Implemented | Declares conformance classes listed above |
 | Process list | GET | `/ogc/processes/processes` | Implemented | V1: single canonical process (`honua-geoprocessing`) |
 | Process description | GET | `/ogc/processes/processes/{processId}` | Implemented | JSON Schema input/output descriptions |
-| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` and accepts only `response=document`. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`. Validates plan structure (`planId`, non-empty `steps`, allowed step kinds, string step inputs, string `dependsOn` entries, output artifact kinds) and catalog conformance for geoprocess steps (`processId` must resolve to a built-in process and required parameters must be supplied). Returns `503` when Redis-backed durable storage is not configured. Authorization and approval gates match the canonical geoprocessing service. |
+| Execute process | POST | `/ogc/processes/processes/{processId}/execution` | Implemented | Async-only; requires `Prefer: respond-async` and accepts only `response=document`. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`. Validates plan structure (`planId`, non-empty `steps`, allowed step kinds, string step inputs, string `dependsOn` entries, output artifact kinds) and catalog conformance for geoprocess steps (see [Catalog Validation Semantics](#catalog-validation-semantics)). Returns `503` when Redis-backed durable storage is not configured. Authorization and approval gates match the canonical geoprocessing service. |
 | Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; defaults to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document. V1 intentionally omits the OGC results relation because `/results` is still stubbed. |
 | Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Stub | Non-terminal jobs return `404` (result not ready). Failed jobs return `500`. Dismissed jobs return `410 Gone`. Successful jobs return `404` (result storage pending execution engine integration). |
@@ -42,6 +42,29 @@ The adapter maps canonical `ExecutionJobStatus` values to OGC status strings:
 | Succeeded | `successful` |
 | Failed | `failed` |
 | Cancelled | `dismissed` |
+
+## Catalog Validation Semantics
+
+Geoprocess steps are validated against the built-in `IProcessCatalog` (14 seeded geometry/analytics processes) before a job is created. The adapter surfaces the following structured violation codes:
+
+| Code | Meaning |
+|---|---|
+| `MISSING_PROCESS_ID` | Geoprocess step omitted `processId` |
+| `UNKNOWN_PROCESS` | `processId` is not in the built-in catalog |
+| `MISSING_REQUIRED_PARAMETER` | A required parameter (or conditionally-required parameter) was not supplied |
+| `UNKNOWN_PARAMETER` | Step supplied a parameter name not declared on the process |
+| `INVALID_PARAMETER_VALUE` | Value failed type, enum, or range validation |
+
+Typed parameter validation runs against `ProcessParameterValueType` (`Text`, `WholeNumber`, `FloatingPoint`, `Flag`, `Wkb`, `WkbArray`, `Srid`, `LayerId`); WKB inputs must be base64-encoded bytes and `WkbArray` expects a JSON array of base64 strings with at least one element. Blank (whitespace-only) values for optional or conditional parameters are treated as "not supplied" to match the handler's `IsNullOrWhiteSpace` gate — so blank conditional inputs surface as `MISSING_REQUIRED_PARAMETER`, not `INVALID_PARAMETER_VALUE`.
+
+Per-process semantic rules mirror the live request handlers so plans accepted here are also accepted at execution time. Upper bounds read from `Limits:Analytics` (`MaxDbscanEpsMeters`, `MaxKMeansK`, `MaxDWithinDistanceMeters`, `MaxBufferDistanceMeters`, `MinDensityCellSizeMeters`, `MaxDensityCellSizeMeters`) are applied here too, so callers see the same rejection boundaries the handlers apply at execution time:
+
+| Process | Enum parameters (allowed values) | Conditional requiredness | Numeric ranges |
+|---|---|---|---|
+| `analytics.cluster` | `algorithm` ∈ {`dbscan`, `kmeans`} | `eps`+`minPoints` when `algorithm=dbscan` (default); `k` when `algorithm=kmeans` | `0 < eps ≤ MaxDbscanEpsMeters`; `minPoints ≥ 1`; `1 ≤ k ≤ MaxKMeansK` |
+| `analytics.spatial-join` | `predicate` ∈ {`intersects`, `contains`, `within`, `dwithin`} | `distance` when `predicate=dwithin` | `0 < distance ≤ MaxDWithinDistanceMeters` |
+| `analytics.density` | `mode` ∈ {`hex`, `square`} | — | `MinDensityCellSizeMeters ≤ cellSize ≤ MaxDensityCellSizeMeters` |
+| `analytics.buffer-aggregate` | `unit` ∈ {`meters`, `kilometers`, `feet`, `miles`} | — | `distance ≥ 0`; cap of `MaxBufferDistanceMeters` applied after converting `distance` to meters so alternate units cannot bypass the limit |
 
 ## Configuration
 
