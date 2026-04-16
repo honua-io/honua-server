@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
@@ -17,6 +18,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// used by the control-plane worker and reconciler services.
 /// </summary>
 [Collection("Redis")]
+[Protocol(Protocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
     [IntegrationTest]
