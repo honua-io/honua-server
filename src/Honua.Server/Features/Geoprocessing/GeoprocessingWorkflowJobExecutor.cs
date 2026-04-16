@@ -43,4 +43,23 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default)
         => _jobService.GetJobResultsAsync(jobId, principal, cancellationToken);
+
+    public async Task CancelJobAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _jobService.CancelJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            // The child job was already pruned; orchestration cascade cancel is still successful.
+        }
+        catch (GeoprocessingPreconditionFailedException)
+        {
+            // The child job already reached a terminal state on its own; no further action required.
+        }
+    }
 }

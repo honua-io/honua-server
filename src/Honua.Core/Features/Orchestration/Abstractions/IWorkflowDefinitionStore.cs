@@ -53,4 +53,23 @@ public interface IWorkflowDefinitionStore
         DateTimeOffset fireTime,
         TimeSpan retention,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the durable "last fired" cursor for the workflow's scheduler. Returned value
+    /// survives restarts so cron enumeration never rewinds into previously-fired history.
+    /// </summary>
+    /// <returns>The last fired occurrence time, or <c>null</c> when the workflow has never fired.</returns>
+    Task<DateTimeOffset?> GetScheduleCursorAsync(
+        string workflowId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Advances the durable "last fired" cursor for the workflow's scheduler. Implementations
+    /// must only move the cursor forward so concurrent replicas and clock drift cannot cause
+    /// historical occurrences to be replayed after restart.
+    /// </summary>
+    Task AdvanceScheduleCursorAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default);
 }

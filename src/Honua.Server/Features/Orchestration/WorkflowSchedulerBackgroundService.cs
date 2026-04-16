@@ -98,6 +98,20 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 continue;
             }
 
+            // Seed the in-memory cursor from the durable cursor on first encounter after a
+            // restart so we never rewind into previously-fired occurrences. The per-firing
+            // claim key only survives ScheduleClaimRetention; the cursor is the long-lived
+            // source of truth for replay protection.
+            if (cached.LastFireAt is null)
+            {
+                var durableCursor = await definitionStore
+                    .GetScheduleCursorAsync(definition.WorkflowId, cancellationToken)
+                    .ConfigureAwait(false);
+                var seeded = durableCursor ?? definition.UpdatedAt;
+                cached = cached with { LastFireAt = seeded };
+                _compiled[definition.WorkflowId] = cached;
+            }
+
             var lastFire = cached.LastFireAt ?? definition.UpdatedAt;
             var next = cached.Cron.GetNextOccurrence(lastFire, cached.TimeZone);
             if (next is null || next.Value > now)
@@ -115,6 +129,27 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 cancellationToken).ConfigureAwait(false);
 
             _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+
+            // Persist the cursor immediately so the next startup (even beyond the claim TTL
+            // window) resumes after this occurrence. Advancing is monotonic so a competing
+            // replica that already advanced past this point keeps its newer cursor.
+            try
+            {
+                await definitionStore
+                    .AdvanceScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Best-effort — a durable cursor write failure does not block the active tick.
+                // The next successful tick will try again; in the meantime the in-memory cursor
+                // and schedule-claim TTL still protect against duplicate firings.
+                OrchestrationLog.SchedulerTickFailed(logger, ex);
+            }
 
             if (!claimed)
             {

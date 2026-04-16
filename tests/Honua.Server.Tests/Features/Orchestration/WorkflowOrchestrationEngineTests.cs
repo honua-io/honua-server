@@ -268,6 +268,128 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.NotNull(final.ErrorMessage);
     }
 
+    [Fact]
+    public async Task CancelRunAsync_CascadesCancelToUnderlyingJobAndMarksStepCancelled()
+    {
+        // Admin cancel must cascade through the substrate so a running child job does not
+        // outlive the parent workflow. The engine should call CancelJobAsync on every
+        // non-terminal step and transition the run to Cancelled.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        // Tick to submit the single step and get the job id.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = await harness.RunStore.GetAsync(run.RunId);
+        var jobId = submitted!.StepStates[0].JobId;
+        Assert.False(string.IsNullOrEmpty(jobId));
+
+        // Admin cancels the run.
+        var outcome = await harness.Engine.CancelRunAsync(run.RunId);
+        Assert.Equal(WorkflowCancellationOutcome.CancellationRequested, outcome);
+
+        // Reconcile must cascade cancel to the substrate and finalise the step.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        Assert.Contains(jobId!, harness.JobService.Cancelled);
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, final!.Status);
+        Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates[0].Status);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_IsIdempotentAndReportsAlreadyCancelled()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        Assert.Equal(WorkflowCancellationOutcome.CancellationRequested, await harness.Engine.CancelRunAsync(run.RunId));
+        Assert.Equal(WorkflowCancellationOutcome.AlreadyCancelled, await harness.Engine.CancelRunAsync(run.RunId));
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_ReturnsNotFoundForUnknownRun()
+    {
+        var harness = new OrchestrationTestHarness();
+        Assert.Equal(WorkflowCancellationOutcome.NotFound, await harness.Engine.CancelRunAsync("missing"));
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_ReturnsAlreadyTerminalForSucceededRun()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var step = (await harness.RunStore.GetAsync(run.RunId))!.StepStates[0];
+        harness.JobService.Complete(step.JobId!);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        Assert.Equal(WorkflowCancellationOutcome.AlreadyTerminal, await harness.Engine.CancelRunAsync(run.RunId));
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_TransientObservationFailureDoesNotTerminaliseStep()
+    {
+        // Regression: a transient GetJobAsync exception must not surface as a permanent step
+        // failure. The state should be preserved so the next reconcile observes the actual
+        // job outcome. After the transport heals, the step completes normally.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        // Tick 1: submit.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = (await harness.RunStore.GetAsync(run.RunId))!.StepStates[0];
+        Assert.Equal(WorkflowStepStatus.Queued, submitted.Status);
+
+        // Tick 2: inject a transient observation failure. Step must stay Queued with no error.
+        harness.JobService.NextGetJobFailure = new InvalidOperationException("transient network blip");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterTransient = await harness.RunStore.GetAsync(run.RunId);
+        var transientStep = afterTransient!.StepStates[0];
+        Assert.Equal(WorkflowStepStatus.Queued, transientStep.Status);
+        Assert.Null(transientStep.CompletedAt);
+        Assert.Null(transientStep.ErrorMessage);
+        Assert.NotEqual(WorkflowRunStatus.Failed, afterTransient.Status);
+
+        // Tick 3: transport recovers, job actually completed upstream; run finalises.
+        harness.JobService.Complete(transientStep.JobId!);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Succeeded, final!.StepStates[0].Status);
+        Assert.Equal(WorkflowRunStatus.Succeeded, final.Status);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_RecordsWarningWhenCascadeCancelThrows()
+    {
+        // Cascade cancel is best-effort: substrate errors must not block the run from reaching
+        // a terminal Cancelled state. The run records a warning so operators can investigate.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        await harness.Engine.CancelRunAsync(run.RunId);
+        harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, final!.Status);
+        Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates[0].Status);
+        Assert.Contains(final.Warnings, w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static WorkflowDefinition BuildChainedDefinition(DateTimeOffset now)
     {
         var stepA = new WorkflowStepDefinition

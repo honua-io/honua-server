@@ -60,6 +60,7 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
 {
     private readonly ConcurrentDictionary<string, WorkflowDefinition> _definitions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _scheduleClaims = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _scheduleCursors = new(StringComparer.Ordinal);
 
     public Task<WorkflowDefinition?> GetAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult(_definitions.TryGetValue(workflowId, out var d) ? d : null);
@@ -97,6 +98,26 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
         var key = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{workflowId}:{minute}");
         return Task.FromResult(_scheduleClaims.TryAdd(key, 0));
     }
+
+    public Task<DateTimeOffset?> GetScheduleCursorAsync(string workflowId, CancellationToken cancellationToken = default)
+        => Task.FromResult(_scheduleCursors.TryGetValue(workflowId, out var cursor) ? cursor : (DateTimeOffset?)null);
+
+    public Task AdvanceScheduleCursorAsync(string workflowId, DateTimeOffset fireTime, CancellationToken cancellationToken = default)
+    {
+        var candidate = fireTime.ToUniversalTime();
+        _scheduleCursors.AddOrUpdate(
+            workflowId,
+            _ => candidate,
+            (_, existing) => existing >= candidate ? existing : candidate);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Test-only helper: pre-seed the durable scheduler cursor so harnesses can simulate
+    /// the state a prior process left behind before a restart.
+    /// </summary>
+    public void SeedScheduleCursor(string workflowId, DateTimeOffset cursor)
+        => _scheduleCursors[workflowId] = cursor.ToUniversalTime();
 }
 
 internal sealed class FakeProgressStore : IUniversalProgressStore
@@ -140,9 +161,23 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     private readonly ConcurrentDictionary<string, string> _idempotency = new(StringComparer.Ordinal);
     private readonly List<AnalysisPlan> _submitted = [];
     private readonly List<IReadOnlyDictionary<string, string>?> _submittedMetadata = [];
+    private readonly List<string> _cancelled = [];
     private int _seq;
 
     public Func<AnalysisPlan, string?, ExecutionJobRecord>? OnSubmit { get; set; }
+
+    /// <summary>
+    /// When set, <see cref="GetJobAsync"/> raises this exception on the first call and clears
+    /// itself so subsequent reconcile ticks can succeed. Used to verify that transient
+    /// observation failures do not terminalise a workflow step.
+    /// </summary>
+    public Exception? NextGetJobFailure { get; set; }
+
+    /// <summary>
+    /// When set, <see cref="CancelJobAsync"/> raises this exception on the next call so
+    /// cascade-cancel warning behavior can be exercised.
+    /// </summary>
+    public Exception? NextCancelJobFailure { get; set; }
 
     public IReadOnlyList<AnalysisPlan> Submitted
     {
@@ -162,6 +197,17 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
             lock (_submitted)
             {
                 return _submittedMetadata.ToArray();
+            }
+        }
+    }
+
+    public IReadOnlyList<string> Cancelled
+    {
+        get
+        {
+            lock (_cancelled)
+            {
+                return _cancelled.ToArray();
             }
         }
     }
@@ -261,6 +307,12 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 
     public Task<ExecutionJobRecord> GetJobAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
+        if (NextGetJobFailure is { } failure)
+        {
+            NextGetJobFailure = null;
+            throw failure;
+        }
+
         if (!_jobs.TryGetValue(jobId, out var job))
         {
             throw new KeyNotFoundException(jobId);
@@ -277,5 +329,32 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         }
 
         return Task.FromResult(pkg);
+    }
+
+    public Task CancelJobAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
+    {
+        lock (_cancelled)
+        {
+            _cancelled.Add(jobId);
+        }
+
+        if (NextCancelJobFailure is { } failure)
+        {
+            NextCancelJobFailure = null;
+            throw failure;
+        }
+
+        if (_jobs.TryGetValue(jobId, out var job))
+        {
+            var now = DateTimeOffset.UtcNow;
+            _jobs[jobId] = job with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                CompletedAt = now,
+                UpdatedAt = now
+            };
+        }
+
+        return Task.CompletedTask;
     }
 }

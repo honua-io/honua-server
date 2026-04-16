@@ -40,4 +40,15 @@ public interface IWorkflowJobExecutor
         string jobId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cancels an in-flight job owned by this substrate. Implementations should swallow
+    /// "already terminal" and "not found" conditions so orchestration cascade cancel
+    /// semantics stay idempotent. Throws only for transport-level failures the caller
+    /// can surface as warnings.
+    /// </summary>
+    Task CancelJobAsync(
+        string jobId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default);
 }

@@ -111,6 +111,45 @@ internal sealed class WorkflowOrchestrationEngine
         return run;
     }
 
+    /// <summary>
+    /// Attempts to mark a workflow run as cancelled and synchronise the progress projection.
+    /// The reconcile loop picks up the cancelled status on its next tick and cascades child
+    /// job cancellation. Returns <see cref="WorkflowCancellationOutcome"/> describing the
+    /// resulting state so callers (e.g., the admin endpoint) can shape their responses.
+    /// </summary>
+    public async Task<WorkflowCancellationOutcome> CancelRunAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            return WorkflowCancellationOutcome.NotFound;
+        }
+
+        var run = await _runStore.GetAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return WorkflowCancellationOutcome.NotFound;
+        }
+
+        if (IsRunTerminal(run.Status))
+        {
+            return run.Status == WorkflowRunStatus.Cancelled
+                ? WorkflowCancellationOutcome.AlreadyCancelled
+                : WorkflowCancellationOutcome.AlreadyTerminal;
+        }
+
+        var now = _clock.GetUtcNow();
+        var cancelled = run with
+        {
+            Status = WorkflowRunStatus.Cancelled,
+            UpdatedAt = now
+        };
+
+        await PersistRunAsync(cancelled, cancellationToken).ConfigureAwait(false);
+        return WorkflowCancellationOutcome.CancellationRequested;
+    }
+
     public async Task ReconcileWorkflowRunAsync(
         string runId,
         CancellationToken cancellationToken = default)
@@ -134,7 +173,14 @@ internal sealed class WorkflowOrchestrationEngine
         try
         {
             var run = await _runStore.GetAsync(runId, reconciliationCancellation.Token).ConfigureAwait(false);
-            if (run is null || IsRunTerminal(run.Status))
+            if (run is null)
+            {
+                return;
+            }
+
+            // A Cancelled run may still own queued or running child jobs that require cascade
+            // cleanup. Only skip reconcile when every step has also reached a terminal state.
+            if (IsRunTerminal(run.Status) && run.StepStates.All(s => IsStepTerminal(s.Status)))
             {
                 return;
             }
@@ -144,6 +190,13 @@ internal sealed class WorkflowOrchestrationEngine
             var definition = await _definitionStore.GetAsync(run.WorkflowId, reconciliationCancellation.Token).ConfigureAwait(false);
             if (definition is null)
             {
+                // If the run was already cancelled, keep that terminal status; only a
+                // still-active run should transition to Failed when its definition is missing.
+                if (IsRunTerminal(run.Status))
+                {
+                    return;
+                }
+
                 var now = _clock.GetUtcNow();
                 var failed = run with
                 {
@@ -212,9 +265,34 @@ internal sealed class WorkflowOrchestrationEngine
                 continue;
             }
 
-            // Cascade cancellation if the run is already cancelled (the background service marks it).
+            // Cascade cancellation if the run is already cancelled (the admin cancel path or
+            // the background service marks it). Before finalising the step, signal the
+            // underlying substrate so worker-owned jobs do not keep running past the parent
+            // workflow's terminal state.
             if (run.Status == WorkflowRunStatus.Cancelled && state.Status is WorkflowStepStatus.Pending or WorkflowStepStatus.Queued or WorkflowStepStatus.Running)
             {
+                if (!string.IsNullOrWhiteSpace(state.JobId) &&
+                    state.Status is WorkflowStepStatus.Queued or WorkflowStepStatus.Running)
+                {
+                    var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+                    try
+                    {
+                        await _jobService.CancelJobAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Cascade cancel is best-effort — the substrate may be unreachable or the
+                        // job may already be terminal. Record the failure and keep finalising
+                        // the workflow step so the run still reaches a terminal state.
+                        OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, state.StepId, state.JobId!, ex);
+                        warnings.Add($"{state.StepId}: failed to cancel underlying job '{state.JobId}': {ex.Message}");
+                    }
+                }
+
                 states[state.StepId] = state with
                 {
                     Status = WorkflowStepStatus.Cancelled,
@@ -433,13 +511,12 @@ internal sealed class WorkflowOrchestrationEngine
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            OrchestrationLog.WorkflowStepFailed(_logger, run.RunId, state.StepId, ex.Message);
-            return state with
-            {
-                Status = WorkflowStepStatus.Failed,
-                CompletedAt = now,
-                ErrorMessage = ex.Message
-            };
+            // Observation transport errors (store outage, transient network failure) must not
+            // terminalise a workflow step: the underlying job may still be healthy. Leave the
+            // state untouched so the reconcile loop retries, and surface the failure via
+            // telemetry and a run-level warning for operator visibility.
+            OrchestrationLog.WorkflowStepObservationTransientFailure(_logger, run.RunId, state.StepId, state.JobId!, ex);
+            return null;
         }
 
         var newStepStatus = MapJobStatusToStepStatus(job.Status);
@@ -746,4 +823,22 @@ internal sealed class WorkflowOrchestrationEngine
             or WorkflowStepStatus.Failed
             or WorkflowStepStatus.Cancelled
             or WorkflowStepStatus.Skipped;
+}
+
+/// <summary>
+/// Outcome categories returned by <see cref="WorkflowOrchestrationEngine.CancelRunAsync"/>.
+/// </summary>
+internal enum WorkflowCancellationOutcome
+{
+    /// <summary>The run was not found in the durable store.</summary>
+    NotFound,
+
+    /// <summary>The run already reached a terminal non-cancelled status.</summary>
+    AlreadyTerminal,
+
+    /// <summary>The run was already cancelled.</summary>
+    AlreadyCancelled,
+
+    /// <summary>Cancellation has been recorded and will propagate on the next reconcile tick.</summary>
+    CancellationRequested
 }

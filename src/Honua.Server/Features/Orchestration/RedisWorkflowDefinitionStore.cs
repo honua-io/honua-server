@@ -16,6 +16,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
     private const string DefinitionKeyPrefix = "orchestration:def:";
     private const string DefinitionIndexKey = "orchestration:def:all";
     private const string ScheduleClaimKeyPrefix = "orchestration:schedule:claim:";
+    private const string ScheduleCursorKeyPrefix = "orchestration:schedule:cursor:";
 
     private readonly IDatabase _database = redis.GetDatabase();
 
@@ -136,6 +137,87 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
             when: When.NotExists).ConfigureAwait(false);
     }
 
+    public async Task<DateTimeOffset?> GetScheduleCursorAsync(
+        string workflowId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var payload = await _database.StringGetAsync(GetScheduleCursorKey(workflowId)).ConfigureAwait(false);
+        if (!payload.HasValue)
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            payload.ToString(),
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? parsed
+            : null;
+    }
+
+    public async Task AdvanceScheduleCursorAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var key = GetScheduleCursorKey(workflowId);
+        var candidate = fireTime.ToUniversalTime();
+        var encoded = candidate.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Move the cursor forward only: competing replicas and late ticks must never rewind
+        // the scheduler past a firing that has already been enumerated locally. Looping lets
+        // us retry through concurrent updates without an explicit compare-and-swap primitive.
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var current = await _database.StringGetAsync(key).ConfigureAwait(false);
+            if (!current.HasValue)
+            {
+                var inserted = await _database.StringSetAsync(
+                    key,
+                    encoded,
+                    when: When.NotExists).ConfigureAwait(false);
+                if (inserted)
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            if (!DateTimeOffset.TryParse(
+                    current.ToString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out var existing))
+            {
+                // Corrupt or legacy value — overwrite unconditionally with the known-good encoding.
+                await _database.StringSetAsync(key, encoded).ConfigureAwait(false);
+                return;
+            }
+
+            if (existing >= candidate)
+            {
+                return;
+            }
+
+            var transaction = _database.CreateTransaction();
+            transaction.AddCondition(Condition.StringEqual(key, current));
+            _ = transaction.StringSetAsync(key, encoded);
+            if (await transaction.ExecuteAsync().ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+    }
+
     private static string GetKey(string workflowId) => DefinitionKeyPrefix + workflowId;
 
     private static string GetScheduleClaimKey(string workflowId, DateTimeOffset fireTime)
@@ -147,4 +229,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
             System.Globalization.CultureInfo.InvariantCulture,
             $"{ScheduleClaimKeyPrefix}{workflowId}:{minuteStamp}");
     }
+
+    private static string GetScheduleCursorKey(string workflowId)
+        => ScheduleCursorKeyPrefix + workflowId;
 }
