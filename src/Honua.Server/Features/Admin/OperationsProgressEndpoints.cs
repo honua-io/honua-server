@@ -382,7 +382,17 @@ internal static class OperationsProgressEndpoints
                             CancellationRequestedAt = reqNow,
                             UpdatedAt = reqNow
                         };
-                        await jobStore.SetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+                        if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                        {
+                            var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                            if (conflict != null && IsExecutionJobTerminal(conflict.Status))
+                            {
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' reached terminal state '{conflict.Status}' before cancellation could be applied");
+                            }
+                        }
 
                         var delegated = new CancelOperationResponse
                         {
@@ -401,7 +411,17 @@ internal static class OperationsProgressEndpoints
                         CompletedAt = jobNow,
                         CurrentPhase = "Cancelled"
                     };
-                    await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    if (!await jobStore.TrySetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false))
+                    {
+                        var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                        if (conflict != null && IsExecutionJobTerminal(conflict.Status))
+                        {
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' reached terminal state '{conflict.Status}' before cancellation could be applied");
+                        }
+                    }
 
                     await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 }

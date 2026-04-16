@@ -443,7 +443,27 @@ internal static class JobEndpoints
                     CancellationRequestedAt = reqNow,
                     UpdatedAt = reqNow
                 };
-                await jobStore.SetAsync(requested, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                if (!await jobStore.TrySetAsync(requested, cancellationToken: context.RequestAborted).ConfigureAwait(false))
+                {
+                    var conflict = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    if (conflict != null && OgcProcessesConversionHelpers.IsTerminal(conflict.Status)
+                        && conflict.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                    {
+                        OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(conflict.Status));
+                        return Results.Json(
+                            new OgcProcessError
+                            {
+                                Type = "about:blank",
+                                Title = "Cannot dismiss completed job",
+                                Status = StatusCodes.Status409Conflict,
+                                Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(conflict.Status)}' before dismiss could be applied."
+                            },
+                            OgcProcessesJsonContext.Default.OgcProcessError,
+                            MediaTypes.Json,
+                            StatusCodes.Status409Conflict);
+                    }
+                }
+
                 job = requested;
             }
             else
@@ -458,7 +478,26 @@ internal static class JobEndpoints
                     CurrentPhase = "Dismissed"
                 };
 
-                await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                if (!await jobStore.TrySetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false))
+                {
+                    var conflict = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    if (conflict != null && OgcProcessesConversionHelpers.IsTerminal(conflict.Status)
+                        && conflict.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                    {
+                        OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(conflict.Status));
+                        return Results.Json(
+                            new OgcProcessError
+                            {
+                                Type = "about:blank",
+                                Title = "Cannot dismiss completed job",
+                                Status = StatusCodes.Status409Conflict,
+                                Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(conflict.Status)}' before dismiss could be applied."
+                            },
+                            OgcProcessesJsonContext.Default.OgcProcessError,
+                            MediaTypes.Json,
+                            StatusCodes.Status409Conflict);
+                    }
+                }
 
                 if (jobQueue != null)
                 {

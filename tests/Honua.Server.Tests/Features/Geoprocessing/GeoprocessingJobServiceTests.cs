@@ -14,6 +14,7 @@ using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using Honua.Server.Tests.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
@@ -25,7 +26,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Protocol(Protocols.GPServer)]
 public sealed class GeoprocessingJobServiceTests
 {
-    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>();
+    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
     private readonly IJobQueue _jobQueue = Substitute.For<IJobQueue>();
     private readonly IUniversalProgressStore _progressStore = Substitute.For<IUniversalProgressStore>();
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
@@ -409,7 +410,7 @@ public sealed class GeoprocessingJobServiceTests
 
         await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
-        await _jobStore.Received(1).SetAsync(
+        await _jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.OperationId == "job-1" &&
                 j.CancellationRequestedAt.HasValue &&
@@ -431,7 +432,7 @@ public sealed class GeoprocessingJobServiceTests
 
         await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
-        await _jobStore.Received(1).SetAsync(
+        await _jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.OperationId == "job-1" &&
                 j.Status == ExecutionJobStatus.Cancelled),
@@ -478,7 +479,7 @@ public sealed class GeoprocessingJobServiceTests
 
         await _sut.CancelJobAsync("job-1", CreatePrincipal());
 
-        await _jobStore.Received(1).SetAsync(
+        await _jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.OperationId == "job-1" &&
                 j.Status == ExecutionJobStatus.Cancelled),

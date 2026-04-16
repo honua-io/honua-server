@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Honua.Server.Tests.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OgcProcesses;
@@ -35,7 +36,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 
     public OgcProcessesDismissJobTests()
     {
-        _jobStore = Substitute.For<IExecutionJobStore>();
+        _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         _jobQueue = Substitute.For<IJobQueue>();
         _progressStore = Substitute.For<IUniversalProgressStore>();
         _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();

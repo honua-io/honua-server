@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Helpers;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -74,7 +75,7 @@ public sealed class JobReconciliationServiceTests
             CompletedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -116,7 +117,7 @@ public sealed class JobReconciliationServiceTests
             CompletedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([succeeded.Status == ExecutionJobStatus.Succeeded ? snapshot : snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -158,7 +159,7 @@ public sealed class JobReconciliationServiceTests
             LastHeartbeatAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -209,7 +210,7 @@ public sealed class JobReconciliationServiceTests
             CurrentPhase = "Requeued: Worker shutdown."
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -252,7 +253,7 @@ public sealed class JobReconciliationServiceTests
                 Timeout = TimeSpan.FromSeconds(1)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -299,7 +300,7 @@ public sealed class JobReconciliationServiceTests
             LastHeartbeatAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -349,7 +350,7 @@ public sealed class JobReconciliationServiceTests
                 MaxDuration = TimeSpan.FromHours(24)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         // Re-read returns the same active record — no intervening completion.
@@ -367,7 +368,7 @@ public sealed class JobReconciliationServiceTests
         await RunSingleSweepAsync(service, cts.Token);
 
         // The reconciler should proceed with the retry transition.
-        await jobStore.Received(1).SetAsync(
+        await jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Queued),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -409,7 +410,7 @@ public sealed class JobReconciliationServiceTests
             LastHeartbeatAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -455,7 +456,7 @@ public sealed class JobReconciliationServiceTests
             CurrentPhase = "Requeued: Worker shutdown."
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -515,7 +516,7 @@ public sealed class JobReconciliationServiceTests
                 MaxDuration = TimeSpan.FromHours(24)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -568,7 +569,7 @@ public sealed class JobReconciliationServiceTests
                 MaxDuration = TimeSpan.FromHours(24)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -626,7 +627,7 @@ public sealed class JobReconciliationServiceTests
                 MaxDuration = TimeSpan.FromHours(24)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -671,7 +672,7 @@ public sealed class JobReconciliationServiceTests
             timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) });
         snapshot = snapshot with { ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -734,7 +735,7 @@ public sealed class JobReconciliationServiceTests
             CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-5)
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -750,7 +751,7 @@ public sealed class JobReconciliationServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.Received(1).SetAsync(
+        await jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -787,7 +788,7 @@ public sealed class JobReconciliationServiceTests
                 MaxDuration = TimeSpan.FromHours(24)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -840,7 +841,7 @@ public sealed class JobReconciliationServiceTests
             CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-5)
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -886,7 +887,7 @@ public sealed class JobReconciliationServiceTests
                 MaxDuration = TimeSpan.FromHours(24)
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -919,7 +920,7 @@ public sealed class JobReconciliationServiceTests
             timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) });
         snapshot = snapshot with { ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -962,7 +963,7 @@ public sealed class JobReconciliationServiceTests
             CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-5)
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -1020,7 +1021,7 @@ public sealed class JobReconciliationServiceTests
         };
 
         var callCount = 0;
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -1041,7 +1042,7 @@ public sealed class JobReconciliationServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -1082,7 +1083,7 @@ public sealed class JobReconciliationServiceTests
         };
 
         var callCount = 0;
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
@@ -1103,12 +1104,12 @@ public sealed class JobReconciliationServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());

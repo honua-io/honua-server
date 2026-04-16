@@ -175,7 +175,8 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        // Transition to Running.
+        // Transition to Running. Use CAS to prevent overwriting a concurrent
+        // cancel signal or terminal write that landed after the re-read above.
         var now = DateTimeOffset.UtcNow;
         var running = job with
         {
@@ -184,7 +185,12 @@ internal sealed partial class JobExecutionService(
             LastHeartbeatAt = now,
             CurrentPhase = "Running"
         };
-        await jobStore.SetAsync(running, cancellationToken: stoppingToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(running, cancellationToken: stoppingToken).ConfigureAwait(false))
+        {
+            Log.TerminalStateSkipped(logger, operationId, "CAS conflict on Running transition");
+            cancellationTokens.Remove(operationId, workerId);
+            return;
+        }
 
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
 
@@ -303,7 +309,13 @@ internal sealed partial class JobExecutionService(
             CurrentPhase = result.Status == ExecutionJobStatus.Succeeded ? "Completed" : "Failed"
         };
 
-        await jobStore.SetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            Log.TerminalStateSkipped(logger, operationId, "CAS conflict on finalize");
+            cancellationTokens.Remove(operationId, workerId);
+            return;
+        }
+
         cancellationTokens.Remove(operationId, workerId);
 
         try
@@ -360,7 +372,13 @@ internal sealed partial class JobExecutionService(
             CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled ? "Cancelled" : "Failed"
         };
 
-        await jobStore.SetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(terminal, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            Log.TerminalStateSkipped(logger, operationId, "CAS conflict on terminate");
+            cancellationTokens.Remove(operationId, workerId);
+            return;
+        }
+
         cancellationTokens.Remove(operationId, workerId);
 
         try
@@ -418,7 +436,12 @@ internal sealed partial class JobExecutionService(
                 ErrorMessage = "Cancelled by operator (durable signal honoured during abandon).",
                 CurrentPhase = "Cancelled"
             };
-            await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                cancellationTokens.Remove(current.OperationId, workerId);
+                return;
+            }
+
             cancellationTokens.Remove(current.OperationId, workerId);
 
             try
@@ -512,7 +535,11 @@ internal sealed partial class JobExecutionService(
                 Warnings = Array.Empty<string>(),
                 NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
-            await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!await jobStore.TrySetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                cancellationTokens.Remove(latestBeforeRequeue.OperationId, workerId);
+                return;
+            }
 
             // Clear the tracked CTS immediately after the authoritative store
             // transition to Queued, before the queue write. If RequeueAsync
@@ -554,7 +581,12 @@ internal sealed partial class JobExecutionService(
                 Warnings = warnings ?? latestBeforeFail.Warnings,
                 CurrentPhase = "Failed (abandoned)"
             };
-            await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                cancellationTokens.Remove(latestBeforeFail.OperationId, workerId);
+                return;
+            }
+
             cancellationTokens.Remove(latestBeforeFail.OperationId, workerId);
 
             try

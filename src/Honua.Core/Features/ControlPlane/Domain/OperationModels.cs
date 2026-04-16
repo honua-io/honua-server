@@ -578,6 +578,11 @@ public sealed record ExecutionJobRecord
     public required ExecutionJobStatus Status { get; init; }
 
     /// <summary>
+    /// Optimistic concurrency version token incremented on every store write.
+    /// </summary>
+    public long Version { get; init; }
+
+    /// <summary>
     /// Relative operator priority.
     /// </summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;

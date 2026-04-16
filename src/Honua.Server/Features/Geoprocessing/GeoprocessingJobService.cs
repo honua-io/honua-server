@@ -383,7 +383,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 CancellationRequestedAt = reqNow,
                 UpdatedAt = reqNow
             };
-            await jobStore.SetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                var conflict = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                if (conflict != null && IsTerminal(conflict.Status) && conflict.Status != ExecutionJobStatus.Cancelled)
+                {
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' reached terminal state '{conflict.Status}' before cancellation could be applied.");
+                }
+            }
+
             GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
             return;
         }
@@ -397,7 +406,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             CurrentPhase = "Cancelled"
         };
 
-        await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            var conflict = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (conflict != null && IsTerminal(conflict.Status) && conflict.Status != ExecutionJobStatus.Cancelled)
+            {
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' reached terminal state '{conflict.Status}' before cancellation could be applied.");
+            }
+        }
 
         if (_jobQueue != null)
         {

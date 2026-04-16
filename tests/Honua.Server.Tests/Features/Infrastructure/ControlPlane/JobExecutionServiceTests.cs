@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Helpers;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -58,7 +59,7 @@ public sealed class JobExecutionServiceTests
             ErrorMessage = "Cancelled by operator."
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         // First read returns Provisioning (for executor lookup); re-read returns Cancelled.
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning, cancelled);
@@ -76,7 +77,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         // The worker must NOT write a Running record.
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Running),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -106,7 +107,7 @@ public sealed class JobExecutionServiceTests
             ClaimedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         // First read returns our claim; re-read shows a different owner.
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning, reclaimedByOther);
@@ -123,7 +124,7 @@ public sealed class JobExecutionServiceTests
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, "worker-test");
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Running),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -155,7 +156,7 @@ public sealed class JobExecutionServiceTests
             CurrentPhase = "Requeued: Worker shutdown."
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning, requeued);
 
@@ -200,7 +201,7 @@ public sealed class JobExecutionServiceTests
             ClaimedAt = now
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns(reclaimed);
 
@@ -236,7 +237,7 @@ public sealed class JobExecutionServiceTests
             ClaimedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns(reclaimed);
 
@@ -270,7 +271,7 @@ public sealed class JobExecutionServiceTests
             ClaimedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns(reclaimed);
 
@@ -305,7 +306,7 @@ public sealed class JobExecutionServiceTests
             }
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         // First read for executor lookup, second for CTS re-check, third for
         // Running transition read-back, fourth inside AbandonJobAsync re-read.
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
@@ -333,7 +334,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         // The terminal failed record must carry the executor warnings.
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed &&
                 j.Warnings.Count == 2 &&
@@ -361,7 +362,7 @@ public sealed class JobExecutionServiceTests
             }
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -411,7 +412,7 @@ public sealed class JobExecutionServiceTests
             }
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -436,7 +437,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         // The requeued record must have cleared warnings.
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Queued &&
                 j.Warnings.Count == 0),
@@ -463,7 +464,7 @@ public sealed class JobExecutionServiceTests
             }
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -490,7 +491,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         // The job must still be requeued despite the log-store failure.
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Queued &&
                 j.Warnings.Count == 0),
@@ -518,7 +519,7 @@ public sealed class JobExecutionServiceTests
             RetryPolicy = JobRetryPolicy.None
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -549,7 +550,7 @@ public sealed class JobExecutionServiceTests
             provisioning.ClaimedBy!, stoppingCts.Token);
 
         // The job must be requeued (Queued), not permanently failed.
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Queued &&
                 j.ClaimedBy == null),
@@ -563,7 +564,7 @@ public sealed class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
 
         // Must NOT have been terminally failed.
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -587,7 +588,7 @@ public sealed class JobExecutionServiceTests
             ClaimedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns(reclaimed);
 
@@ -635,7 +636,7 @@ public sealed class JobExecutionServiceTests
             }
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -678,7 +679,7 @@ public sealed class JobExecutionServiceTests
             RetryPolicy = JobRetryPolicy.None
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -725,7 +726,7 @@ public sealed class JobExecutionServiceTests
             CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1)
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -754,7 +755,7 @@ public sealed class JobExecutionServiceTests
         await InvokeProcessJobAsync(service, provisioning.OperationId,
             provisioning.ClaimedBy!, stoppingCts.Token);
 
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Cancelled &&
                 j.CompletedAt.HasValue),
@@ -780,7 +781,7 @@ public sealed class JobExecutionServiceTests
     {
         var provisioning = CreateProvisioningJob();
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -823,7 +824,7 @@ public sealed class JobExecutionServiceTests
     {
         var provisioning = CreateProvisioningJob();
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -881,7 +882,7 @@ public sealed class JobExecutionServiceTests
             }
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -929,7 +930,7 @@ public sealed class JobExecutionServiceTests
             RetryPolicy = JobRetryPolicy.None
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -995,7 +996,7 @@ public sealed class JobExecutionServiceTests
     {
         var running = CreateProvisioningJob() with { Status = ExecutionJobStatus.Running };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns<ExecutionJobRecord?>(_ => throw new InvalidOperationException("Simulated store failure"));
 
@@ -1022,7 +1023,7 @@ public sealed class JobExecutionServiceTests
         var running = CreateProvisioningJob() with { Status = ExecutionJobStatus.Running };
 
         var callCount = 0;
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
@@ -1146,7 +1147,7 @@ public sealed class JobExecutionServiceTests
     public async Task ExecuteAsync_SkipsClaimLoop_WhenNoExecutorsRegistered()
     {
         var jobQueue = Substitute.For<IJobQueue>();
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         var cancellationTokens = new ExecutionJobCancellationTokens();
 
         var service = new JobExecutionService(
@@ -1195,7 +1196,7 @@ public sealed class JobExecutionServiceTests
                 return (string?)provisioning.OperationId;
             });
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
@@ -1224,7 +1225,7 @@ public sealed class JobExecutionServiceTests
         await service.StopAsync(CancellationToken.None);
 
         // The job must be requeued, not left to heartbeat expiry.
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Queued &&
                 j.ClaimedBy == null),
@@ -1257,7 +1258,7 @@ public sealed class JobExecutionServiceTests
             CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-2)
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -1273,7 +1274,7 @@ public sealed class JobExecutionServiceTests
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Running),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -1283,7 +1284,7 @@ public sealed class JobExecutionServiceTests
             Arg.Any<IJobExecutionContext>(),
             Arg.Any<CancellationToken>());
 
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -1306,7 +1307,7 @@ public sealed class JobExecutionServiceTests
             CancellationRequestedAt = DateTimeOffset.UtcNow
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
             .Returns(withSignal);
 
@@ -1333,7 +1334,7 @@ public sealed class JobExecutionServiceTests
     {
         var provisioning = CreateProvisioningJob();
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -1375,7 +1376,7 @@ public sealed class JobExecutionServiceTests
             RetryPolicy = JobRetryPolicy.None
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -1410,7 +1411,7 @@ public sealed class JobExecutionServiceTests
     {
         var provisioning = CreateProvisioningJob();
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -1452,7 +1453,7 @@ public sealed class JobExecutionServiceTests
             RetryPolicy = JobRetryPolicy.None
         };
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(provisioning);
 
@@ -1511,7 +1512,7 @@ public sealed class JobExecutionServiceTests
         };
 
         var callCount = 0;
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -1538,7 +1539,7 @@ public sealed class JobExecutionServiceTests
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -1565,7 +1566,7 @@ public sealed class JobExecutionServiceTests
         };
 
         var callCount = 0;
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -1592,12 +1593,12 @@ public sealed class JobExecutionServiceTests
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());

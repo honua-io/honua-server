@@ -204,7 +204,10 @@ internal sealed partial class JobReconciliationService(
                 ArtifactReferences = Array.Empty<string>(),
                 NextRetryAt = delay > TimeSpan.Zero ? now.Add(delay) : null
             };
-            await jobStore.SetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!await jobStore.TrySetAsync(abandoned, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
 
             // Revoke the stale CTS immediately after the authoritative store
             // transition to Queued, before the queue write. If RequeueAsync
@@ -242,7 +245,10 @@ internal sealed partial class JobReconciliationService(
                 ErrorMessage = $"Worker heartbeat expired after {preFail.AttemptCount} attempt(s).",
                 CurrentPhase = "Failed (heartbeat expired)"
             };
-            await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
 
             cancellationTokens.Revoke(preFail.OperationId, snapshot.ClaimedBy!);
 
@@ -309,7 +315,10 @@ internal sealed partial class JobReconciliationService(
             ErrorMessage = $"Job exceeded maximum execution duration of {(current.TimeoutPolicy ?? JobTimeoutPolicy.Default).MaxDuration}.",
             CurrentPhase = "Failed (timeout)"
         };
-        await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
 
         // Signal and remove the stale CTS immediately after the authoritative
         // store transition, before the queue write.
@@ -375,7 +384,10 @@ internal sealed partial class JobReconciliationService(
             ErrorMessage = "Cancelled by operator (durable signal honoured by reconciler).",
             CurrentPhase = "Cancelled"
         };
-        await jobStore.SetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
 
         cancellationTokens.Revoke(job.OperationId, claimedBy);
 

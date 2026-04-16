@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
+using Honua.Server.Tests.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using StackExchange.Redis;
@@ -53,7 +54,7 @@ public sealed class RedisJobQueueTests
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
         var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(2);
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(
                 operationId: operationId,
@@ -106,7 +107,7 @@ public sealed class RedisJobQueueTests
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: operationId, priority: OperationPriority.Critical));
         jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -143,7 +144,7 @@ public sealed class RedisJobQueueTests
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 
         var result = await queue.TryClaimAsync("worker-traverse-budget");
@@ -208,7 +209,7 @@ public sealed class RedisJobQueueTests
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId));
         jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -275,7 +276,7 @@ public sealed class RedisJobQueueTests
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId));
         jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -351,7 +352,7 @@ public sealed class RedisJobQueueTests
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId));
         jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -411,7 +412,7 @@ public sealed class RedisJobQueueTests
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
-        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(Arg.Is<string>(id => id.StartsWith("mismatched-")), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
