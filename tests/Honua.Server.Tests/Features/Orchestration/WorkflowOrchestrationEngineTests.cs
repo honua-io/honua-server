@@ -122,14 +122,15 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
-    public async Task ReconcileWorkflowRun_CascadesSkipWhenFailurePolicyIsSkip()
+    public async Task ReconcileWorkflowRun_CascadesSkipOnlyToBoundDependentsWhenFailurePolicyIsSkip()
     {
         var harness = new OrchestrationTestHarness();
         var now = harness.Clock.GetUtcNow();
         var definition = BuildTwoStepDefinition(
             now,
             firstFailurePolicy: WorkflowStepFailurePolicy.Skip,
-            firstRetryPolicy: null);
+            firstRetryPolicy: null,
+            bindDependentOnUpstream: true);
         await harness.Definitions.TryCreateAsync(definition);
 
         var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
@@ -143,7 +144,7 @@ public sealed class WorkflowOrchestrationEngineTests
         harness.JobService.Fail(stepA.JobId!, "unrecoverable");
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
 
-        // Next reconcile propagates Skipped to dependent step B and finalises run.
+        // Next reconcile propagates Skipped to the bound dependent step B and finalises run.
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
 
         var final = await harness.RunStore.GetAsync(run.RunId);
@@ -155,13 +156,57 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
-    public async Task ReconcileWorkflowRun_FailsRunWhenFailurePolicyIsFail()
+    public async Task ReconcileWorkflowRun_SkippedUpstreamWithoutBindingDoesNotCascadeSkip()
+    {
+        // A is Skip-policy; B only has structural DependsOn (no input binding), so per the
+        // design contract B must proceed normally once A reaches its terminal skipped state.
+        var harness = new OrchestrationTestHarness();
+        var now = harness.Clock.GetUtcNow();
+        var definition = BuildTwoStepDefinition(
+            now,
+            firstFailurePolicy: WorkflowStepFailurePolicy.Skip,
+            firstRetryPolicy: null,
+            bindDependentOnUpstream: false);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        // Submit A.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var afterSubmit = await harness.RunStore.GetAsync(run.RunId);
+        var stepA = afterSubmit!.StepStates.Single(s => s.StepId == "a");
+
+        // Fail A ⇒ Skipped under the skip policy.
+        harness.JobService.Fail(stepA.JobId!, "unrecoverable");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        // Reconcile again: B should now be submitted because it has no artifact binding to A.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var afterSubmitB = await harness.RunStore.GetAsync(run.RunId);
+        var stepBState = afterSubmitB!.StepStates.Single(s => s.StepId == "b");
+        Assert.Equal(WorkflowStepStatus.Queued, stepBState.Status);
+        Assert.NotNull(stepBState.JobId);
+
+        // Complete B and finalise.
+        harness.JobService.Complete(stepBState.JobId!);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Skipped, final!.StepStates.Single(s => s.StepId == "a").Status);
+        Assert.Equal(WorkflowStepStatus.Succeeded, final.StepStates.Single(s => s.StepId == "b").Status);
+        Assert.Equal(WorkflowRunStatus.Succeeded, final.Status);
+        Assert.Equal(2, harness.JobService.Submitted.Count);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_FailsRunAndCancelsDependentsWhenFailurePolicyIsFail()
     {
         var harness = new OrchestrationTestHarness();
         var definition = BuildTwoStepDefinition(
             harness.Clock.GetUtcNow(),
             firstFailurePolicy: WorkflowStepFailurePolicy.Fail,
-            firstRetryPolicy: null);
+            firstRetryPolicy: null,
+            bindDependentOnUpstream: false);
         await harness.Definitions.TryCreateAsync(definition);
 
         var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
@@ -175,9 +220,34 @@ public sealed class WorkflowOrchestrationEngineTests
 
         var final = await harness.RunStore.GetAsync(run.RunId);
         Assert.Equal(WorkflowStepStatus.Failed, final!.StepStates.Single(s => s.StepId == "a").Status);
-        Assert.Equal(WorkflowStepStatus.Skipped, final.StepStates.Single(s => s.StepId == "b").Status);
+        Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates.Single(s => s.StepId == "b").Status);
         Assert.Equal(WorkflowRunStatus.Failed, final.Status);
         Assert.Contains("hard fail", final.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_SubmitsJobWithOrchestrationMetadata()
+    {
+        // Acceptance criterion: downstream cost/rate controls can consume orchestration metadata
+        // without reopening the orchestration contract. Each submitted job must carry the run
+        // and step identifiers so distributed consumers can correlate parent and child jobs.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(),
+            retryPolicy: null,
+            WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var metadata = Assert.Single(harness.JobService.SubmittedMetadata);
+        Assert.NotNull(metadata);
+        Assert.Equal(run.RunId, metadata["orchestration.runId"]);
+        Assert.Equal(definition.WorkflowId, metadata["orchestration.workflowId"]);
+        Assert.Equal("a", metadata["orchestration.stepId"]);
+        Assert.Equal("1", metadata["orchestration.attempt"]);
     }
 
     [Fact]
@@ -256,8 +326,22 @@ public sealed class WorkflowOrchestrationEngineTests
     private static WorkflowDefinition BuildTwoStepDefinition(
         DateTimeOffset now,
         WorkflowStepFailurePolicy firstFailurePolicy,
-        StepRetryPolicy? firstRetryPolicy)
-        => new()
+        StepRetryPolicy? firstRetryPolicy,
+        bool bindDependentOnUpstream = false)
+    {
+        var bindings = bindDependentOnUpstream
+            ? new[]
+            {
+                new StepInputBinding
+                {
+                    SourceStepId = "a",
+                    SourceArtifactSelector = "artifact:0",
+                    TargetInputKey = "upstream_uri"
+                }
+            }
+            : Array.Empty<StepInputBinding>();
+
+        return new()
         {
             WorkflowId = "wf-cascade",
             Name = "cascade",
@@ -274,12 +358,14 @@ public sealed class WorkflowOrchestrationEngineTests
                 {
                     StepId = "b",
                     DependsOn = new[] { "a" },
-                    Plan = BuildPlan("plan-b")
+                    Plan = BuildPlan("plan-b"),
+                    InputBindings = bindings
                 }
             },
             CreatedAt = now,
             UpdatedAt = now
         };
+    }
 
     private static AnalysisPlan BuildPlan(string planId) => new()
     {

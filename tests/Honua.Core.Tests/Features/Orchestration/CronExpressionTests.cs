@@ -83,4 +83,46 @@ public sealed class CronExpressionTests
 
         Assert.Null(next);
     }
+
+    [Fact]
+    public void GetNextOccurrence_OrsDayOfMonthAndDayOfWeek_WhenBothRestricted()
+    {
+        // "At 00:00 on day-of-month 1 or on Sunday" — POSIX OR semantics.
+        // After Apr 16, 2026 (Thursday) the next firing should be the earliest of Sunday
+        // Apr 19 or the 1st of the next month. Sunday Apr 19 wins.
+        var cron = CronExpression.Parse("0 0 1 * 0");
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+
+        var next = cron.GetNextOccurrence(start, TimeZoneInfo.Utc);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2026, 4, 19, 0, 0, 0, TimeSpan.Zero), next);
+    }
+
+    [Fact]
+    public void GetNextOccurrence_OrsDayOfMonthAndDayOfWeek_SelectsFirstOfMonthWhenCloser()
+    {
+        // After Sunday Apr 26, 2026 the next occurrence should be May 1 (DOM match)
+        // before the following Sunday May 3 (DOW match).
+        var cron = CronExpression.Parse("0 0 1 * 0");
+        var start = new DateTimeOffset(2026, 4, 26, 12, 0, 0, TimeSpan.Zero);
+
+        var next = cron.GetNextOccurrence(start, TimeZoneInfo.Utc);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero), next);
+    }
+
+    [Fact]
+    public void GetNextOccurrence_UsesIntersection_WhenDayOfWeekWildcarded()
+    {
+        // DOW unrestricted (*) ⇒ plain AND semantics: require DOM == 15 regardless of weekday.
+        var cron = CronExpression.Parse("0 0 15 * *");
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+
+        var next = cron.GetNextOccurrence(start, TimeZoneInfo.Utc);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero), next);
+    }
 }

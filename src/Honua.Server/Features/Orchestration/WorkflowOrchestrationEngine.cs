@@ -228,7 +228,7 @@ internal sealed class WorkflowOrchestrationEngine
             {
                 case WorkflowStepStatus.Pending:
                 {
-                    if (!AreDependenciesSatisfied(definitionStep, states, out var cascadePolicy))
+                    if (!AreDependenciesSatisfied(definitionStep, definitionById, states, out var cascadePolicy))
                     {
                         if (cascadePolicy is { } cascadeReason)
                         {
@@ -361,6 +361,7 @@ internal sealed class WorkflowOrchestrationEngine
         var planForAttempt = WorkflowBindingResolver.ApplyBindings(stepDefinition.Plan, bindingResolution.ResolvedValues);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
         var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+        var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber);
 
         ExecutionJobRecord jobRecord;
         try
@@ -369,7 +370,8 @@ internal sealed class WorkflowOrchestrationEngine
                 planForAttempt,
                 idempotencyKey,
                 principal,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                protocolMetadata,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -554,6 +556,7 @@ internal sealed class WorkflowOrchestrationEngine
 
     private static bool AreDependenciesSatisfied(
         WorkflowStepDefinition stepDefinition,
+        IReadOnlyDictionary<string, WorkflowStepDefinition> definitionById,
         Dictionary<string, WorkflowStepState> states,
         out CascadeReason? cascade)
     {
@@ -572,10 +575,22 @@ internal sealed class WorkflowOrchestrationEngine
                 case WorkflowStepStatus.Succeeded:
                     continue;
                 case WorkflowStepStatus.Skipped:
+                    // Per the design contract, a Skip-policy upstream only cascades to dependents
+                    // that actually consume its artifacts. Structural DependsOn alone is not enough
+                    // to trigger a cascade skip; the downstream step proceeds as if satisfied.
+                    if (!HasBindingFrom(stepDefinition, dependency))
+                    {
+                        continue;
+                    }
+
                     cascade = new CascadeReason(WorkflowStepStatus.Skipped, $"Upstream step '{dependency}' was skipped.");
                     return false;
                 case WorkflowStepStatus.Failed:
-                    cascade = new CascadeReason(WorkflowStepStatus.Skipped, $"Upstream step '{dependency}' failed.");
+                    // A Fail-policy upstream cancels non-terminal dependents so the run records them
+                    // as cancelled (not skipped), while the run itself derives Failed from the upstream.
+                    cascade = new CascadeReason(
+                        WorkflowStepStatus.Cancelled,
+                        $"Upstream step '{dependency}' failed under {ResolveUpstreamPolicy(definitionById, dependency)} policy.");
                     return false;
                 case WorkflowStepStatus.Cancelled:
                     cascade = new CascadeReason(WorkflowStepStatus.Cancelled, $"Upstream step '{dependency}' was cancelled.");
@@ -587,6 +602,26 @@ internal sealed class WorkflowOrchestrationEngine
 
         return true;
     }
+
+    private static bool HasBindingFrom(WorkflowStepDefinition stepDefinition, string upstreamStepId)
+    {
+        foreach (var binding in stepDefinition.InputBindings)
+        {
+            if (string.Equals(binding.SourceStepId, upstreamStepId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string ResolveUpstreamPolicy(
+        IReadOnlyDictionary<string, WorkflowStepDefinition> definitionById,
+        string upstreamStepId)
+        => definitionById.TryGetValue(upstreamStepId, out var def)
+            ? def.FailurePolicy.ToString()
+            : WorkflowStepFailurePolicy.Fail.ToString();
 
     private sealed record CascadeReason(WorkflowStepStatus Status, string Reason);
 
@@ -679,6 +714,18 @@ internal sealed class WorkflowOrchestrationEngine
             }
         }
     }
+
+    private static Dictionary<string, string> BuildOrchestrationMetadata(
+        WorkflowRun run,
+        string stepId,
+        int attemptNumber)
+        => new(StringComparer.Ordinal)
+        {
+            ["orchestration.runId"] = run.RunId,
+            ["orchestration.workflowId"] = run.WorkflowId,
+            ["orchestration.stepId"] = stepId,
+            ["orchestration.attempt"] = attemptNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
 
     private static WorkflowStepStatus MapJobStatusToStepStatus(ExecutionJobStatus status) => status switch
     {

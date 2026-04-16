@@ -59,6 +59,7 @@ internal sealed class FakeWorkflowRunStore : IWorkflowRunStore
 internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
 {
     private readonly ConcurrentDictionary<string, WorkflowDefinition> _definitions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _scheduleClaims = new(StringComparer.Ordinal);
 
     public Task<WorkflowDefinition?> GetAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult(_definitions.TryGetValue(workflowId, out var d) ? d : null);
@@ -84,6 +85,18 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
 
     public Task<bool> DeleteAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult(_definitions.TryRemove(workflowId, out _));
+
+    public Task<bool> TryClaimScheduleFireAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        TimeSpan retention,
+        CancellationToken cancellationToken = default)
+    {
+        _ = retention;
+        var minute = fireTime.ToUniversalTime().ToUnixTimeSeconds() / 60L;
+        var key = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{workflowId}:{minute}");
+        return Task.FromResult(_scheduleClaims.TryAdd(key, 0));
+    }
 }
 
 internal sealed class FakeProgressStore : IUniversalProgressStore
@@ -126,6 +139,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     private readonly ConcurrentDictionary<string, AnalysisResultPackage> _results = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _idempotency = new(StringComparer.Ordinal);
     private readonly List<AnalysisPlan> _submitted = [];
+    private readonly List<IReadOnlyDictionary<string, string>?> _submittedMetadata = [];
     private int _seq;
 
     public Func<AnalysisPlan, string?, ExecutionJobRecord>? OnSubmit { get; set; }
@@ -137,6 +151,17 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
             lock (_submitted)
             {
                 return _submitted.ToArray();
+            }
+        }
+    }
+
+    public IReadOnlyList<IReadOnlyDictionary<string, string>?> SubmittedMetadata
+    {
+        get
+        {
+            lock (_submitted)
+            {
+                return _submittedMetadata.ToArray();
             }
         }
     }
@@ -206,6 +231,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         lock (_submitted)
         {
             _submitted.Add(plan);
+            _submittedMetadata.Add(protocolMetadata);
         }
 
         var jobId = $"job-{Interlocked.Increment(ref _seq)}";

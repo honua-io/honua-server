@@ -107,10 +107,35 @@ public static class WorkflowDefinitionValidator
             failures.Add("Workflow contains a dependency cycle.");
         }
 
-        if (definition.Trigger is { Kind: WorkflowTriggerKind.Cron } trigger &&
-            string.IsNullOrWhiteSpace(trigger.CronExpression))
+        if (definition.Trigger is { Kind: WorkflowTriggerKind.Cron } trigger)
         {
-            failures.Add("Cron trigger requires a non-empty cron expression.");
+            if (string.IsNullOrWhiteSpace(trigger.CronExpression))
+            {
+                failures.Add("Cron trigger requires a non-empty cron expression.");
+            }
+            else
+            {
+                try
+                {
+                    _ = CronExpression.Parse(trigger.CronExpression);
+                }
+                catch (Exception ex) when (ex is FormatException or ArgumentException)
+                {
+                    failures.Add($"Cron trigger expression '{trigger.CronExpression}' is not a valid 5-field cron expression: {ex.Message}");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(trigger.TimeZone))
+            {
+                try
+                {
+                    _ = TimeZoneInfo.FindSystemTimeZoneById(trigger.TimeZone);
+                }
+                catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+                {
+                    failures.Add($"Cron trigger time zone '{trigger.TimeZone}' could not be resolved: {ex.Message}");
+                }
+            }
         }
 
         return failures;

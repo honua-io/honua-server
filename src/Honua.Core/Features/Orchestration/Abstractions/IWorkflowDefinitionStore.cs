@@ -41,4 +41,16 @@ public interface IWorkflowDefinitionStore
     /// </summary>
     /// <returns>True when a definition was removed.</returns>
     Task<bool> DeleteAsync(string workflowId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a single scheduler fire-time occurrence for the given workflow so
+    /// only one replica creates the corresponding run. The claim is valid for the supplied
+    /// retention window and is idempotent across restarts.
+    /// </summary>
+    /// <returns>True when this caller successfully claimed the occurrence; false when another replica has already claimed it.</returns>
+    Task<bool> TryClaimScheduleFireAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        TimeSpan retention,
+        CancellationToken cancellationToken = default);
 }

@@ -105,4 +105,11 @@ internal static partial class OrchestrationLog
         string runId,
         string stepId,
         string reason);
+
+    [LoggerMessage(8116, LogLevel.Warning, "Scheduler skipping workflow {WorkflowId}: cron expression '{CronExpression}' or time zone '{TimeZoneId}' could not be compiled; runs will not fire until the definition is corrected.")]
+    public static partial void SchedulerDefinitionInvalid(
+        ILogger logger,
+        string workflowId,
+        string cronExpression,
+        string timeZoneId);
 }

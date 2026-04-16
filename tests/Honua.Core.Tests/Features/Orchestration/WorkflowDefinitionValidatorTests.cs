@@ -67,6 +67,55 @@ public sealed class WorkflowDefinitionValidatorTests
     }
 
     [Fact]
+    public void Validate_RejectsMalformedCronExpression()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger { Kind = WorkflowTriggerKind.Cron, CronExpression = "nope nope nope" }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("not a valid 5-field cron expression", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsUnknownTimeZone()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.Cron,
+                CronExpression = "*/5 * * * *",
+                TimeZone = "Mars/Olympus_Mons"
+            }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("could not be resolved", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_AcceptsWellFormedCronTrigger()
+    {
+        var definition = BuildDefinition(("a", Empty)) with
+        {
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.Cron,
+                CronExpression = "*/5 * * * *",
+                TimeZone = TimeZoneInfo.Utc.Id
+            }
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
     public void Validate_DetectsMissingBindingSourceStep()
     {
         var definition = BuildDefinition(("a", Empty));

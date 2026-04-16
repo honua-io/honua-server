@@ -15,6 +15,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
 {
     private const string DefinitionKeyPrefix = "orchestration:def:";
     private const string DefinitionIndexKey = "orchestration:def:all";
+    private const string ScheduleClaimKeyPrefix = "orchestration:schedule:claim:";
 
     private readonly IDatabase _database = redis.GetDatabase();
 
@@ -114,5 +115,36 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         return removed;
     }
 
+    public async Task<bool> TryClaimScheduleFireAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        TimeSpan retention,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var key = GetScheduleClaimKey(workflowId, fireTime);
+        var ttl = retention > TimeSpan.Zero ? retention : TimeSpan.FromHours(24);
+
+        // SET NX with TTL atomically claims the fire-time slot across replicas. Restarts
+        // inherit the existing claim for the remaining TTL window.
+        return await _database.StringSetAsync(
+            key,
+            Environment.MachineName,
+            ttl,
+            when: When.NotExists).ConfigureAwait(false);
+    }
+
     private static string GetKey(string workflowId) => DefinitionKeyPrefix + workflowId;
+
+    private static string GetScheduleClaimKey(string workflowId, DateTimeOffset fireTime)
+    {
+        // Round to minute precision so a single occurrence produces one claim key, regardless
+        // of any sub-minute clock skew between replicas.
+        var minuteStamp = fireTime.ToUniversalTime().ToUnixTimeSeconds() / 60L;
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{ScheduleClaimKeyPrefix}{workflowId}:{minuteStamp}");
+    }
 }

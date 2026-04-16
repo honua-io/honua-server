@@ -20,6 +20,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
     ILogger<WorkflowSchedulerBackgroundService> logger) : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ScheduleClaimRetention = TimeSpan.FromHours(24);
 
     // Compiled cron expressions, keyed by workflow id. Recomputed lazily when the
     // definition's cron expression changes.
@@ -84,12 +85,38 @@ internal sealed class WorkflowSchedulerBackgroundService(
 
             if (cached.Cron is null || cached.TimeZone is null)
             {
+                if (!cached.InvalidLogged)
+                {
+                    OrchestrationLog.SchedulerDefinitionInvalid(
+                        logger,
+                        definition.WorkflowId,
+                        cached.Expression,
+                        cached.TimeZoneId);
+                    _compiled[definition.WorkflowId] = cached with { InvalidLogged = true };
+                }
+
                 continue;
             }
 
             var lastFire = cached.LastFireAt ?? definition.UpdatedAt;
             var next = cached.Cron.GetNextOccurrence(lastFire, cached.TimeZone);
             if (next is null || next.Value > now)
+            {
+                continue;
+            }
+
+            // Atomically claim the fire-time occurrence so replicas and restarts can never
+            // create duplicate runs for the same cron firing. Move this replica's cursor past
+            // the occurrence regardless of who won the claim.
+            var claimed = await definitionStore.TryClaimScheduleFireAsync(
+                definition.WorkflowId,
+                next.Value,
+                ScheduleClaimRetention,
+                cancellationToken).ConfigureAwait(false);
+
+            _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+
+            if (!claimed)
             {
                 continue;
             }
@@ -110,7 +137,6 @@ internal sealed class WorkflowSchedulerBackgroundService(
                     cancellationToken).ConfigureAwait(false);
 
                 OrchestrationLog.SchedulerTriggered(logger, definition.WorkflowId, next.Value);
-                _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
             }
             catch (WorkflowDefinitionValidationException ex)
             {
@@ -127,7 +153,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
             var timeZoneId = definition.Trigger.TimeZone ?? TimeZoneInfo.Utc.Id;
             var timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
             var cron = CronExpression.Parse(expression);
-            return new CachedCron(expression, timeZoneId, cron, timeZone, null);
+            return new CachedCron(expression, timeZoneId, cron, timeZone, null, false);
         }
         catch (Exception)
         {
@@ -136,7 +162,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 definition.Trigger?.TimeZone ?? TimeZoneInfo.Utc.Id,
                 null,
                 null,
-                null);
+                null,
+                false);
         }
     }
 
@@ -145,5 +172,6 @@ internal sealed class WorkflowSchedulerBackgroundService(
         string TimeZoneId,
         CronExpression? Cron,
         TimeZoneInfo? TimeZone,
-        DateTimeOffset? LastFireAt);
+        DateTimeOffset? LastFireAt,
+        bool InvalidLogged);
 }

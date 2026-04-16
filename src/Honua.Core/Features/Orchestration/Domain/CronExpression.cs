@@ -17,14 +17,26 @@ public sealed class CronExpression
     private readonly bool[] _daysOfMonth;
     private readonly bool[] _months;
     private readonly bool[] _daysOfWeek;
+    private readonly bool _dayOfMonthRestricted;
+    private readonly bool _dayOfWeekRestricted;
 
-    private CronExpression(bool[] minutes, bool[] hours, bool[] daysOfMonth, bool[] months, bool[] daysOfWeek, string expression)
+    private CronExpression(
+        bool[] minutes,
+        bool[] hours,
+        bool[] daysOfMonth,
+        bool[] months,
+        bool[] daysOfWeek,
+        bool dayOfMonthRestricted,
+        bool dayOfWeekRestricted,
+        string expression)
     {
         _minutes = minutes;
         _hours = hours;
         _daysOfMonth = daysOfMonth;
         _months = months;
         _daysOfWeek = daysOfWeek;
+        _dayOfMonthRestricted = dayOfMonthRestricted;
+        _dayOfWeekRestricted = dayOfWeekRestricted;
         Expression = expression;
     }
 
@@ -60,8 +72,26 @@ public sealed class CronExpression
         var compact = new bool[7];
         Array.Copy(daysOfWeek, 0, compact, 0, 7);
 
-        return new CronExpression(minutes, hours, daysOfMonth, months, compact, expression);
+        var dayOfMonthRestricted = !IsUnrestrictedField(fields[2]);
+        var dayOfWeekRestricted = !IsUnrestrictedField(fields[4]);
+
+        return new CronExpression(
+            minutes,
+            hours,
+            daysOfMonth,
+            months,
+            compact,
+            dayOfMonthRestricted,
+            dayOfWeekRestricted,
+            expression);
     }
+
+    // A DOM or DOW field is "unrestricted" when it was written as the bare wildcard `*`.
+    // POSIX/Vixie cron uses this to decide whether DOM and DOW combine with AND or OR
+    // semantics: when both are restricted, either match is enough to fire; otherwise the
+    // unrestricted side is ignored.
+    private static bool IsUnrestrictedField(string field)
+        => field.Trim() == "*";
 
     /// <summary>
     /// Returns the next fire time strictly greater than <paramref name="after"/> in the
@@ -91,7 +121,7 @@ public sealed class CronExpression
                 continue;
             }
 
-            if (!_daysOfMonth[candidate.Day] || !_daysOfWeek[(int)candidate.DayOfWeek])
+            if (!DayMatches(candidate))
             {
                 candidate = candidate.Date.AddDays(1);
                 continue;
@@ -114,6 +144,22 @@ public sealed class CronExpression
         }
 
         return null;
+    }
+
+    private bool DayMatches(DateTime candidate)
+    {
+        var domMatch = _daysOfMonth[candidate.Day];
+        var dowMatch = _daysOfWeek[(int)candidate.DayOfWeek];
+
+        // POSIX cron: if both DOM and DOW are restricted (neither is `*`), either match fires.
+        // Otherwise fall back to intersection so a bare `*` on one side does not force firings
+        // through the restricted side.
+        if (_dayOfMonthRestricted && _dayOfWeekRestricted)
+        {
+            return domMatch || dowMatch;
+        }
+
+        return domMatch && dowMatch;
     }
 
     private static bool[] ParseField(string field, int min, int max)
