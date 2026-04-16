@@ -54,7 +54,8 @@ def extract_linked_issues(body: str, title: str) -> List[Dict[str, Any]]:
     issue_patterns = [
         r'(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)',  # Closes #123
         r'(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+(?:https://github\.com/[^/]+/[^/]+/)?issues/(\d+)',  # Full URL
-        r'#(\d+)',  # Simple #123 reference
+        r'(?:related to|refs?)\s+#(\d+)',  # Related to #123
+        r'(?:related to|refs?)\s+(?:https://github\.com/[^/]+/[^/]+/)?issues/(\d+)',  # Related full URL
     ]
 
     text = f"{title} {body}".lower()
@@ -89,6 +90,16 @@ def get_issue_details(issue_number: str) -> Optional[Dict[str, Any]]:
         with urllib.request.urlopen(req) as response:
             issue_data = json.loads(response.read().decode())
 
+        if 'pull_request' in issue_data:
+            return {
+                "number": issue_number,
+                "title": issue_data.get('title', ''),
+                "body": issue_data.get('body', ''),
+                "acceptance_criteria": [],
+                "labels": [label['name'] for label in issue_data.get('labels', [])],
+                "is_pull_request": True
+            }
+
         # Extract acceptance criteria
         acceptance_criteria = extract_acceptance_criteria(issue_data.get('body', ''))
 
@@ -97,7 +108,8 @@ def get_issue_details(issue_number: str) -> Optional[Dict[str, Any]]:
             "title": issue_data.get('title', ''),
             "body": issue_data.get('body', ''),
             "acceptance_criteria": acceptance_criteria,
-            "labels": [label['name'] for label in issue_data.get('labels', [])]
+            "labels": [label['name'] for label in issue_data.get('labels', [])],
+            "is_pull_request": False
         }
     except Exception as e:
         return {"error": f"Failed to fetch issue {issue_number}: {str(e)}"}
@@ -465,6 +477,11 @@ def main():
         for issue in pr_info['linked_issues']:
             if 'error' in issue:
                 process_warnings.append(f"Issue #{issue.get('number', '?')}: {issue['error']}")
+                continue
+            if issue.get('is_pull_request'):
+                process_warnings.append(
+                    f"Reference #{issue.get('number', '?')} is a pull request, not an issue; skipping acceptance criteria enforcement."
+                )
                 continue
             if len(issue.get('acceptance_criteria', [])) == 0:
                 process_issues.append(f"Issue #{issue.get('number', '?')} is missing acceptance criteria.")
