@@ -206,6 +206,33 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryClusters)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
+    public async Task QueryClusters_OutStatisticsNonStringField_ReturnsBadRequest()
+    {
+        // JSON is syntactically valid but statisticType is a number token — the
+        // parser must report it as a 400 "outStatistics" validation error
+        // instead of letting JsonElement.GetString() escape as a 500.
+        var payload = JsonSerializer.Serialize(new
+        {
+            algorithm = "dbscan",
+            eps = 50000,
+            minPoints = 1,
+            returnHullPerCluster = true,
+            outStatistics = "[{\"statisticType\":1,\"onStatisticField\":\"pop\",\"outStatisticFieldName\":\"x\"}]",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("outStatistics");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryClusters)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters")]
     public async Task QueryClusters_PerFeatureWithOutStatistics_ReturnsBadRequest()
     {
         // outStatistics only make sense in hull-per-cluster mode (the GROUP BY branch

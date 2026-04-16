@@ -249,7 +249,17 @@ internal static class ProcessPlanValidator
         List<GeoprocessingValidationFailure> violations)
     {
         ValidateObjectIds(step, violations);
-        ValidateSpatialRel(step, violations);
+
+        // AnalyticsFeatureQueryFactory only inspects spatialRel inside its
+        // geometry branch: if no `geometry` input is supplied, spatialRel is
+        // never consulted and distance-based variants do not fail the request.
+        // Gate the validator on the same signal so plans without geometry are
+        // not rejected here for a value the handler would ignore.
+        if (step.Inputs.TryGetValue("geometry", out var geometryRaw)
+            && !string.IsNullOrWhiteSpace(geometryRaw))
+        {
+            ValidateSpatialRel(step, violations);
+        }
     }
 
     private static void ValidateClusterSemantics(
@@ -566,15 +576,18 @@ internal static class ProcessPlanValidator
                     return false;
                 }
 
-                var statisticType = element.TryGetProperty("statisticType", out var typeElement)
-                    ? typeElement.GetString()
-                    : null;
-                var onField = element.TryGetProperty("onStatisticField", out var fieldElement)
-                    ? fieldElement.GetString()
-                    : null;
-                var outFieldName = element.TryGetProperty("outStatisticFieldName", out var outElement)
-                    ? outElement.GetString()
-                    : null;
+                // Each field must be a JSON string — JsonElement.GetString()
+                // throws InvalidOperationException for numeric/boolean/object
+                // tokens, so syntactically valid JSON with the wrong value kind
+                // would otherwise escape as an unhandled exception (500) rather
+                // than surface as INVALID_PARAMETER_VALUE.
+                if (!TryReadStringProperty(element, "statisticType", out var statisticType)
+                    || !TryReadStringProperty(element, "onStatisticField", out var onField)
+                    || !TryReadStringProperty(element, "outStatisticFieldName", out var outFieldName))
+                {
+                    error = "each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName";
+                    return false;
+                }
 
                 if (string.IsNullOrWhiteSpace(statisticType)
                     || string.IsNullOrWhiteSpace(onField)
@@ -598,6 +611,34 @@ internal static class ProcessPlanValidator
             error = $"outStatistics is not valid JSON: {ex.Message}";
             return false;
         }
+    }
+
+    // Treats absent properties as null and non-string value kinds (numbers,
+    // booleans, objects, arrays, null literal) as a validation failure so the
+    // caller reports INVALID_PARAMETER_VALUE instead of propagating
+    // JsonElement.GetString()'s InvalidOperationException.
+    private static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            value = null;
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.Null)
+        {
+            value = null;
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            value = null;
+            return false;
+        }
+
+        value = property.GetString();
+        return true;
     }
 
     private static DistanceUnit ResolveBufferDistanceUnit(string unitLabel) => unitLabel.ToLowerInvariant() switch

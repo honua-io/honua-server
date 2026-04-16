@@ -171,15 +171,17 @@ internal static partial class SpatialAnalyticsRequestHandlers
                     return false;
                 }
 
-                var statisticType = element.TryGetProperty("statisticType", out var typeElement)
-                    ? typeElement.GetString()
-                    : null;
-                var onField = element.TryGetProperty("onStatisticField", out var fieldElement)
-                    ? fieldElement.GetString()
-                    : null;
-                var outFieldName = element.TryGetProperty("outStatisticFieldName", out var outElement)
-                    ? outElement.GetString()
-                    : null;
+                // Fields must be JSON strings — JsonElement.GetString() throws
+                // InvalidOperationException for numeric/boolean/object tokens,
+                // so syntactically valid JSON with the wrong value kind would
+                // otherwise surface as a 500 instead of a 400.
+                if (!TryReadStringProperty(element, "statisticType", out var statisticType) ||
+                    !TryReadStringProperty(element, "onStatisticField", out var onField) ||
+                    !TryReadStringProperty(element, "outStatisticFieldName", out var outFieldName))
+                {
+                    error = "Each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName.";
+                    return false;
+                }
 
                 if (string.IsNullOrWhiteSpace(statisticType) ||
                     string.IsNullOrWhiteSpace(onField) ||
@@ -211,6 +213,34 @@ internal static partial class SpatialAnalyticsRequestHandlers
             error = "outStatistics is not valid JSON.";
             return false;
         }
+    }
+
+    // Treats absent properties and JSON null as null, and non-string value
+    // kinds (numbers, booleans, objects, arrays) as a validation failure so
+    // the caller reports a 400 instead of propagating GetString()'s
+    // InvalidOperationException.
+    private static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            value = null;
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.Null)
+        {
+            value = null;
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            value = null;
+            return false;
+        }
+
+        value = property.GetString();
+        return true;
     }
 
     private static bool TryParseStatisticType(string type, out StatisticType result)
