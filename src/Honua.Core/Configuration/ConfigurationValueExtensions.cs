@@ -1,6 +1,5 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
-
-using System.ComponentModel;
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Configuration;
@@ -78,24 +77,31 @@ public static class ConfigurationValueExtensions
             return (T)(object)value;
         }
 
-        var converter = TypeDescriptor.GetConverter(targetType);
-        if (!converter.CanConvertFrom(typeof(string)))
-        {
-            throw new InvalidOperationException(
-                $"Configuration value '{key}' cannot be converted to {targetType.Name}.");
-        }
-
         try
         {
-            var converted = converter.ConvertFromInvariantString(value);
-            if (converted is T typedValue)
+            var converted = targetType switch
             {
-                return typedValue;
-            }
+                Type type when type == typeof(bool) => bool.Parse(value),
+                Type type when type == typeof(byte) => byte.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                Type type when type == typeof(short) => short.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                Type type when type == typeof(int) => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                Type type when type == typeof(long) => long.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                Type type when type == typeof(float) => float.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture),
+                Type type when type == typeof(double) => double.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture),
+                Type type when type == typeof(decimal) => decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture),
+                Type type when type == typeof(Guid) => Guid.Parse(value),
+                Type type when type == typeof(TimeSpan) => TimeSpan.Parse(value, CultureInfo.InvariantCulture),
+                Type type when type == typeof(DateTime) => DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                Type type when type == typeof(DateTimeOffset) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                Type type when type == typeof(Uri) => new Uri(value, UriKind.RelativeOrAbsolute),
+                _ when targetType.IsEnum => Enum.Parse(targetType, value, ignoreCase: true),
+                _ => throw new InvalidOperationException(
+                    $"Configuration value '{key}' cannot be converted to {targetType.Name}.")
+            };
 
-            return (T)converted!;
+            return (T)converted;
         }
-        catch (Exception ex) when (ex is FormatException or NotSupportedException or ArgumentException)
+        catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException or UriFormatException)
         {
             throw new InvalidOperationException(
                 $"Configuration value '{key}' is not a valid {targetType.Name}: '{value}'.",

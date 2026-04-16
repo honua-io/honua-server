@@ -15,10 +15,6 @@ namespace Honua.Server.Features.FileStorage;
 /// </summary>
 public static class FileStorageServiceExtensions
 {
-    private const string GcsNotSupportedAsFileStorageMessage =
-        "Google Cloud Storage is not yet supported as a primary file storage provider. " +
-        "It is available for cloud COG range-read serving. Supported file storage providers: Local, AwsS3, AzureBlob.";
-
     /// <summary>
     /// Adds cloud file storage services to the dependency injection container
     /// </summary>
@@ -83,9 +79,6 @@ public static class FileStorageServiceExtensions
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
                 break;
 
-            case CloudStorageProvider.GoogleCloudStorage:
-                throw new InvalidOperationException(GcsNotSupportedAsFileStorageMessage);
-
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {providerName}");
         }
@@ -145,9 +138,6 @@ public static class FileStorageServiceExtensions
             case CloudStorageProvider.AzureBlob:
                 services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
                 break;
-
-            case CloudStorageProvider.GoogleCloudStorage:
-                throw new InvalidOperationException(GcsNotSupportedAsFileStorageMessage);
 
             default:
                 throw new InvalidOperationException($"Unknown storage provider: {options.Provider}");

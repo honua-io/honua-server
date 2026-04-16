@@ -18,7 +18,6 @@ internal static class AlertsServiceCollectionExtensions
         services
             .AddOptions<AlertOptions>()
             .Bind(configuration.GetSection(AlertOptions.SectionName))
-            .ValidateDataAnnotations()
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();

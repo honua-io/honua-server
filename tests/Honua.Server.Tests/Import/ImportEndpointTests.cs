@@ -34,6 +34,24 @@ public class ImportEndpointTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    private static bool TryGetAllowValues(HttpResponseMessage response, out IEnumerable<string> values)
+    {
+        if (response.Headers.TryGetValues("Allow", out var headerValues))
+        {
+            values = headerValues;
+            return true;
+        }
+
+        if (response.Content.Headers.TryGetValues("Allow", out var contentHeaderValues))
+        {
+            values = contentHeaderValues;
+            return true;
+        }
+
+        values = Array.Empty<string>();
+        return false;
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/formats")]
     public async Task GetSupportedFormats_V1_ReturnsAllSupportedExtensions()
@@ -148,6 +166,186 @@ public class ImportEndpointTests : IAsyncLifetime
                 new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview"));
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/upload-url")]
+    [Endpoint("PUT /api/v1/admin/import/upload-url")]
+    [Endpoint("DELETE /api/v1/admin/import/upload-url")]
+    [Endpoint("PATCH /api/v1/admin/import/upload-url")]
+    public async Task ImportFileFromUrl_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload-url"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/limits")]
+    [Endpoint("PUT /api/v1/admin/import/limits")]
+    [Endpoint("DELETE /api/v1/admin/import/limits")]
+    [Endpoint("PATCH /api/v1/admin/import/limits")]
+    public async Task GetImportLimits_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/limits"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/preview-url")]
+    [Endpoint("PUT /api/v1/admin/import/preview-url")]
+    [Endpoint("DELETE /api/v1/admin/import/preview-url")]
+    [Endpoint("PATCH /api/v1/admin/import/preview-url")]
+    public async Task PreviewFileFromUrl_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview-url"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/upload")]
+    [Endpoint("PUT /api/v1/admin/import/upload")]
+    [Endpoint("DELETE /api/v1/admin/import/upload")]
+    [Endpoint("PATCH /api/v1/admin/import/upload")]
+    public async Task ImportFile_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/uploads/{uploadId}/progress")]
+    [Endpoint("PUT /api/v1/admin/import/uploads/{uploadId}/progress")]
+    [Endpoint("DELETE /api/v1/admin/import/uploads/{uploadId}/progress")]
+    [Endpoint("PATCH /api/v1/admin/import/uploads/{uploadId}/progress")]
+    public async Task GetUploadProgress_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads/test-upload/progress"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/uploads/{uploadId}/cancel")]
+    [Endpoint("PUT /api/v1/admin/import/uploads/{uploadId}/cancel")]
+    [Endpoint("DELETE /api/v1/admin/import/uploads/{uploadId}/cancel")]
+    [Endpoint("PATCH /api/v1/admin/import/uploads/{uploadId}/cancel")]
+    public async Task CancelUpload_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads/test-upload/cancel"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/uploads")]
+    [Endpoint("PUT /api/v1/admin/import/uploads")]
+    [Endpoint("DELETE /api/v1/admin/import/uploads")]
+    [Endpoint("PATCH /api/v1/admin/import/uploads")]
+    public async Task GetActiveUploads_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/jobs")]
+    [Endpoint("PUT /api/v1/admin/import/jobs")]
+    [Endpoint("DELETE /api/v1/admin/import/jobs")]
+    [Endpoint("PATCH /api/v1/admin/import/jobs")]
+    public async Task GetActiveJobs_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/jobs/{jobId}")]
+    [Endpoint("PUT /api/v1/admin/import/jobs/{jobId}")]
+    [Endpoint("DELETE /api/v1/admin/import/jobs/{jobId}")]
+    [Endpoint("PATCH /api/v1/admin/import/jobs/{jobId}")]
+    public async Task GetImportJobStatus_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs/test-job"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}/cancel")]
+    [Endpoint("PUT /api/v1/admin/import/jobs/{jobId}/cancel")]
+    [Endpoint("DELETE /api/v1/admin/import/jobs/{jobId}/cancel")]
+    [Endpoint("PATCH /api/v1/admin/import/jobs/{jobId}/cancel")]
+    public async Task CancelImportJob_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs/test-job/cancel"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("POST");
         }
     }
 

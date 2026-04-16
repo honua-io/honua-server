@@ -289,8 +289,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     protocol,
                     requestId,
                     geometryChanged ? "1" : "0",
-                    changedAttributes == null ? string.Empty : JsonSerializer.Serialize(changedAttributes),
-                    geometryEnvelope == null ? string.Empty : JsonSerializer.Serialize(geometryEnvelope),
+                    changedAttributes == null ? string.Empty : JsonSerializer.Serialize(changedAttributes, FeatureChangeEventsJsonContext.Default.DictionaryStringObject),
+                    geometryEnvelope == null ? string.Empty : JsonSerializer.Serialize(geometryEnvelope, FeatureChangeEventsJsonContext.Default.DoubleArray),
                     propertiesJson ?? string.Empty,
                     EventKeyPrefix,
                     (long)Retention.TotalSeconds

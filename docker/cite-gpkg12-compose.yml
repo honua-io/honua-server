@@ -95,7 +95,7 @@ services:
           echo 'Fetching GeoPackage from server...'
           mkdir -p /data
           curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors \
-            -H 'X-API-Key: cite-admin-password' \
+            -H 'X-API-Key: CiteAdminPassword123!' \
             'http://honua-server:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg' \
             -o /data/export.gpkg
           echo 'GeoPackage fetched successfully'

@@ -12,12 +12,7 @@ This section is for people **building or extending** Honua (core contributors, a
 ## Architecture
 
 - [Architecture Overview](ARCHITECTURE.md) — system design and component interaction
-- [AI-First Operator Architecture](AI_OPERATOR_ARCHITECTURE.md) — forward-looking analyst/operator architecture for MCP, gRPC, and result packaging
-- [AI Operator Technical Plan](AI_OPERATOR_TECHNICAL_PLAN.md) — detailed semantics, repo boundaries, and chunked implementation plan
-- [AI Operator Agent Handoff](AI_OPERATOR_AGENT_HANDOFF.md) — ordered cross-repo execution plan for agentic implementation systems
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
-- [Esri Migration Platform Plan](ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
-- [Pilot Evidence Kit](migration/README.md) — Scorecards, checklists, and readout templates for lighthouse migration pilots
 - [ADRs](adr/README.md) — architectural decisions and rationale
 - [Architecture Review Criteria](architecture-criteria.md) — PR review quality gates
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
@@ -25,7 +20,6 @@ This section is for people **building or extending** Honua (core contributors, a
 ## Design Patterns
 
 - [Code Model Optimization](CODE_MODEL_OPTIMIZATION.md) — shared model classes across protocols
-- [GIS Crosscutting Concerns](GIS_CROSSCUTTING_CONCERNS.md) — spatial data handling patterns
 - [Adaptive Sampling](ADAPTIVE_SAMPLING.md) — dynamic trace sampling
 
 ## Testing
@@ -36,8 +30,6 @@ This section is for people **building or extending** Honua (core contributors, a
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
 - [Benchmarks](benchmarks.md) — BenchmarkDotNet performance tests
-- [Production Audit Playbook](PRODUCTION_AUDIT_PLAYBOOK.md) — phased production-readiness audit execution
-- [OData Test Parity](ODATA_TEST_PARITY.md) — OData v4 specification compliance
 - [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
 - [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance
 - [OGC API Maps Conformance](ogc-maps-conformance-testing.md) — OGC API Maps conformance gate
@@ -50,7 +42,6 @@ This section is for people **building or extending** Honua (core contributors, a
 - [CI Gate Model](../ci/gate-model.md) — five-tier quality gate definitions and governing rules
 - [CI Workflow Inventory](../ci/workflow-inventory.md) — every workflow, its tier, triggers, and merge-blocking status
 - [CI Config Conventions](../ci/config-conventions.md) — env vars, cache keys, artifact naming, and composite actions
-- [CI Monitoring](CI_MONITORING.md) — CI health and alert monitoring
 - [CI Quality Gates](CI_QUALITY_GATES.md) — automated quality enforcement
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [CodeCov Setup](CODECOV_SETUP.md) — code coverage monitoring

@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests;
 
@@ -145,6 +146,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         sectionNames.Should().Contain("Cache");
         sectionNames.Should().Contain("Limits.Query");
         sectionNames.Should().Contain("Security");
+        sectionNames.Should().Contain("TemporaryFiles");
+        sectionNames.Should().Contain("FeatureChangeEvents");
+        sectionNames.Should().Contain("FeatureStreaming");
+        sectionNames.Should().Contain("ManifestApproval");
+        sectionNames.Should().Contain("GitOpsWatch");
         sectionNames.Should().Contain("Geoprocessing:Workspace");
     }
 
@@ -185,7 +191,48 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         envVars.Should().Contain(e => e.Name == "ConnectionStrings__DefaultConnection");
         envVars.Should().Contain(e => e.Name == "HONUA_ADMIN_UI");
         envVars.Should().Contain(e => e.Name == "Cache__Enabled");
+        envVars.Should().Contain(e => e.Name == "HONUA_ENABLE_BASIC_AUTH_COMPAT");
+        envVars.Should().Contain(e => e.Name == "HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__MINSAMPLINGRATE");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__MAXSAMPLINGRATE");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__LOAD__ACTIVEREQUESTTHRESHOLD");
         envVars.Should().Contain(e => e.Name == "Geoprocessing__Workspace__CleanupInterval");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/admin/config")]
+    public async Task GetConfiguration_WhenPublicBaseUrlProvidedViaAlias_UsesEnvironmentSourceAndCurrentValue()
+    {
+        var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+                builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+                    configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["PUBLIC_BASE_URL"] = "https://api.public.example.test"
+                    })));
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var response = await isolatedFixture.Client.GetAsync("/api/v1/admin/config");
+            var content = await response.Content.ReadAsStringAsync();
+            var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+                content,
+                ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+            var networkingSection = configDoc!.Sections.Single(section => section.Name == "Networking");
+            var baseUrlProperty = networkingSection.Properties.Single(property => property.Path == "Public:BaseUrl");
+
+            baseUrlProperty.CurrentValue?.ToString().Should().Be("https://api.public.example.test");
+            baseUrlProperty.Source.Should().Be("Environment");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -309,6 +356,27 @@ public sealed class AdminEndpointTests : IAsyncLifetime
                 new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/config"));
 
             response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /api/v1/admin/openapi.json")]
+    [Endpoint("PUT /api/v1/admin/openapi.json")]
+    [Endpoint("DELETE /api/v1/admin/openapi.json")]
+    [Endpoint("PATCH /api/v1/admin/openapi.json")]
+    public async Task GetAdminOpenApiSpec_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _fixture.Client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/openapi.json"));
+
+            response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+            (response.Headers.TryGetValues("Allow", out var allowedValues) ||
+             response.Content.Headers.TryGetValues("Allow", out allowedValues))
+                .Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
         }
     }
 }

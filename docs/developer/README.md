@@ -4,7 +4,7 @@ Build applications and integrations with Honua APIs and SDKs.
 
 ## API Reference
 
-- [API Examples](API_EXAMPLES.md) — Request/response examples for all protocols
+- [API Examples](API_EXAMPLES.md) — Request/response examples for major Honua protocols
 - [Integration Patterns](INTEGRATION_PATTERNS.md) — Common integration approaches with code samples
 - [OpenAPI Specs](api-specs/) — Machine-readable API definitions
   - [Admin API](api-specs/admin-api.json) (curated subset; use `/api/v1/admin/config` for full discovery)
@@ -16,8 +16,6 @@ Build applications and integrations with Honua APIs and SDKs.
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md) — Server/SDK version support
 - [SDK Metadata Format](SDK_COMPATIBILITY_METADATA.md) — Compatibility metadata schema
 - [MCP Server](MCP_SERVER.md) — Model Context Protocol integration for AI agents
-- [AI Operator Contract](AI_OPERATOR_CONTRACT.md) — draft canonical MCP/gRPC contract for analyst and builder workflows
-- [Deterministic Operator Workflow Results](DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md) — draft stage model and result envelope for AI-first execution
 
 ## Internal Architecture
 

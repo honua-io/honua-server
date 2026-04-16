@@ -1,5 +1,7 @@
 # GIS Crosscutting Concerns List
 
+Archived historical audit notes and follow-up backlog for GIS/protocol issues that were tracked during earlier hardening passes. This file is retained for traceability only and is not a current design-pattern guide.
+
 This list tracks GIS-specific issues, assumptions, and follow-up priorities for Honua Server.
 Coordinate transformation is primarily handled in PostGIS (ST_Transform). For collection spatial extents, `OgcExtentTransformer.TryTransformToCrs84()` provides in-memory transforms for WGS 84 and WebMercator variants across OGC Features, OGC Tiles, and WFS 2.0.
 

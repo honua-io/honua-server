@@ -79,7 +79,7 @@ Instead of embedding query logic in client code (`sqlQuery: "SELECT ... FROM sen
 
 ### Direction 1: HonuaMapSpec — MapLibre Style Spec Extension
 
-**What:** A set of Honua-specific source types and metadata extensions to the [MapLibre Style Spec v8](adr/0002-maplibre-canonical-style.md), which is already the canonical style format per ADR-0002. HonuaMapSpec adds protocol-aware sources (Feature Service, OGC Features, MapServer) that MapLibre's built-in source types (`vector`, `raster`, `geojson`) do not cover.
+**What:** A set of Honua-specific source types and metadata extensions to the [MapLibre Style Spec v8](../../contributor/adr/0002-maplibre-canonical-style.md), which is already the canonical style format per ADR-0002. HonuaMapSpec adds protocol-aware sources (Feature Service, OGC Features, MapServer) that MapLibre's built-in source types (`vector`, `raster`, `geojson`) do not cover.
 
 **Why:** Enables version-controlled map configurations, no-code authoring tools, server-side rendering, and hot-swap at runtime. Decouples map design from application code. Building on MapLibre Style Spec (not inventing a new format) means existing MapLibre ecosystem tools (Maputnik editor, `@maplibre/maplibre-gl-style-spec` validator) work out of the box.
 

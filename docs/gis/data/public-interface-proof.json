@@ -648,9 +648,12 @@
         "/ogc/features"
       ],
       "endpointExactMatches": [
-        "/openapi.json"
+        "/openapi.json",
+        "/ogc/features/api"
       ],
-      "endpointContains": [],
+      "endpointContains": [
+        "/h3"
+      ],
       "operationKeys": [],
       "proofs": [
         {

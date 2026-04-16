@@ -366,6 +366,6 @@ Non-promoted artifacts in expired workspaces are deleted during the sweep.
 
 - [AI Operator Contract](AI_OPERATOR_CONTRACT.md)
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md)
-- [ADR-0029: Geoprocess Canonical Model Mappings](../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
-- [Geoprocess Framework Analysis](../gis/geoprocess-framework-analysis.md)
-- [MCP Server](MCP_SERVER.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](../../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
+- [Geoprocess Framework Analysis](../../gis/geoprocess-framework-analysis.md)
+- [MCP Server](../../developer/MCP_SERVER.md)

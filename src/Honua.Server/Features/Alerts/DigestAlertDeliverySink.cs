@@ -130,28 +130,31 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             return;
         }
 
-        var payload = JsonSerializer.Serialize(batchItems.Select(static item => new
-        {
-            item.Event.DedupeKey,
-            item.Event.RuleId,
-            item.Event.ZoneId,
-            item.Event.ServiceId,
-            item.Event.LayerId,
-            item.Event.ObjectId,
-            TriggerType = item.Event.TriggerType.ToString(),
-            Severity = item.Event.Severity.ToString(),
-            IncidentStatus = item.Event.IncidentStatus.ToString(),
-            item.Event.IncidentDurationMs,
-            item.Event.OccurredAt,
-            Payload = item.Event.PayloadJson
-        }));
+        var payload = JsonSerializer.Serialize(
+            batchItems.Select(static item => new DigestAlertPayloadItem
+            {
+                DedupeKey = item.Event.DedupeKey,
+                RuleId = item.Event.RuleId,
+                ZoneId = item.Event.ZoneId,
+                ServiceId = item.Event.ServiceId,
+                LayerId = item.Event.LayerId,
+                ObjectId = item.Event.ObjectId,
+                TriggerType = item.Event.TriggerType.ToString(),
+                Severity = item.Event.Severity.ToString(),
+                IncidentStatus = item.Event.IncidentStatus.ToString(),
+                IncidentDurationMs = item.Event.IncidentDurationMs,
+                OccurredAt = item.Event.OccurredAt,
+                Payload = item.Event.PayloadJson
+            }).ToArray(),
+            AlertDeliveryJsonContext.Default.DigestAlertPayloadItemArray);
 
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
             {
-                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                Content = new StringContent(payload, Encoding.UTF8)
             };
+            request.Content.Headers.ContentType = new("application/json");
             var timestamp = now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
             var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.Digest.WebhookSecret, timestamp, payload);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Digest-Count", batchItems.Count.ToString(CultureInfo.InvariantCulture));

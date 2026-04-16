@@ -77,13 +77,16 @@ Production Kubernetes rollouts should use the chart defaults added for `#388`:
 Recommended flow:
 
 ```bash
+# Use the chart from the separate honua-helm repository:
+# https://github.com/honua-io/honua-helm
+#
 # Review the rendered upgrade
-helm upgrade --install honua ./infrastructure/helm/honua \
+helm upgrade --install honua <chart-from-honua-helm> \
   --namespace honua \
   --dry-run
 
 # Apply the upgrade
-helm upgrade --install honua ./infrastructure/helm/honua \
+helm upgrade --install honua <chart-from-honua-helm> \
   --namespace honua
 
 # Watch rollout progress

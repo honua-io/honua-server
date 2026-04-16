@@ -94,7 +94,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             {
                 try
                 {
-                    await _redisSubscriber.SubscribeAsync(RedisInvalidationChannel, OnInvalidationReceived);
+                    await _redisSubscriber.SubscribeAsync(RedisChannel.Literal(RedisInvalidationChannel), OnInvalidationReceived);
                     Log.InvalidationSubscriptionStarted(_logger);
                 }
                 catch (Exception ex)
@@ -147,7 +147,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         try
         {
-            await _redisSubscriber.PublishAsync(RedisInvalidationChannel, key);
+            await _redisSubscriber.PublishAsync(RedisChannel.Literal(RedisInvalidationChannel), key);
             Log.ClusterInvalidationSent(_logger, key);
         }
         catch (Exception ex)

@@ -101,17 +101,11 @@ internal static class LayoutComposer
     {
         var rect = ScaleSlot(slot, dpiScale);
 
-        using var paint = new SKPaint
-        {
-            Color = SKColors.Black,
-            TextSize = TitleFontSize * dpiScale,
-            IsAntialias = true,
-            TextAlign = SKTextAlign.Center,
-            Typeface = SKTypeface.Default
-        };
+        using var paint = CreateTextPaint(SKColors.Black);
+        using var font = CreateFont(TitleFontSize * dpiScale);
 
-        var textY = rect.MidY + paint.TextSize / 3f;
-        canvas.DrawText(titleText, rect.MidX, textY, paint);
+        var textY = rect.MidY + font.Size / 3f;
+        canvas.DrawText(titleText, rect.MidX, textY, SKTextAlign.Center, font, paint);
     }
 
     private static void DrawLegend(SKCanvas canvas, LayoutSlot slot, IReadOnlyList<LegendSwatchEntry> entries, float dpiScale)
@@ -123,23 +117,12 @@ internal static class LayoutComposer
         var lineHeight = swatchSize + spacing;
 
         // Legend header
-        using var headerPaint = new SKPaint
-        {
-            Color = SKColors.Black,
-            TextSize = DefaultFontSize * dpiScale,
-            IsAntialias = true,
-            FakeBoldText = true,
-            Typeface = SKTypeface.Default
-        };
-        canvas.DrawText("Legend", rect.Left + spacing, rect.Top + headerPaint.TextSize + spacing, headerPaint);
+        using var headerPaint = CreateTextPaint(SKColors.Black);
+        using var headerFont = CreateFont(DefaultFontSize * dpiScale, bold: true);
+        canvas.DrawText("Legend", rect.Left + spacing, rect.Top + headerFont.Size + spacing, SKTextAlign.Left, headerFont, headerPaint);
 
-        using var labelPaint = new SKPaint
-        {
-            Color = SKColors.Black,
-            TextSize = (DefaultFontSize - 1f) * dpiScale,
-            IsAntialias = true,
-            Typeface = SKTypeface.Default
-        };
+        using var labelPaint = CreateTextPaint(SKColors.Black);
+        using var labelFont = CreateFont((DefaultFontSize - 1f) * dpiScale);
 
         var currentY = rect.Top + lineHeight + spacing * 2;
 
@@ -163,8 +146,8 @@ internal static class LayoutComposer
             }
 
             // Draw label
-            var labelY = currentY + swatchSize / 2f + labelPaint.TextSize / 3f;
-            canvas.DrawText(entry.Label ?? "", rect.Left + textOffset + spacing * 2, labelY, labelPaint);
+            var labelY = currentY + swatchSize / 2f + labelFont.Size / 3f;
+            canvas.DrawText(entry.Label ?? "", rect.Left + textOffset + spacing * 2, labelY, SKTextAlign.Left, labelFont, labelPaint);
 
             currentY += lineHeight;
         }
@@ -246,17 +229,12 @@ internal static class LayoutComposer
         canvas.DrawRect(rect.Left, barY - barHeight / 2, barLength, barHeight, borderPaint);
 
         // Draw distance label
-        using var textPaint = new SKPaint
-        {
-            Color = SKColors.Black,
-            TextSize = AttributionFontSize * dpiScale,
-            IsAntialias = true,
-            Typeface = SKTypeface.Default
-        };
+        using var textPaint = CreateTextPaint(SKColors.Black);
+        using var textFont = CreateFont(AttributionFontSize * dpiScale);
 
         var label = $"{displayDistance:G} {unit}";
-        canvas.DrawText("0", rect.Left, barY - barHeight / 2 - 2 * dpiScale, textPaint);
-        canvas.DrawText(label, rect.Left + barLength + 2 * dpiScale, barY + textPaint.TextSize / 3f, textPaint);
+        canvas.DrawText("0", rect.Left, barY - barHeight / 2 - 2 * dpiScale, SKTextAlign.Left, textFont, textPaint);
+        canvas.DrawText(label, rect.Left + barLength + 2 * dpiScale, barY + textFont.Size / 3f, SKTextAlign.Left, textFont, textPaint);
     }
 
     private static void DrawNorthArrow(SKCanvas canvas, LayoutSlot slot, float dpiScale)
@@ -307,37 +285,38 @@ internal static class LayoutComposer
         canvas.DrawPath(rightPath, strokePaint);
 
         // "N" label
-        using var textPaint = new SKPaint
-        {
-            Color = SKColors.Black,
-            TextSize = 10f * dpiScale,
-            IsAntialias = true,
-            TextAlign = SKTextAlign.Center,
-            FakeBoldText = true,
-            Typeface = SKTypeface.Default
-        };
-        canvas.DrawText("N", cx, cy - size - 2 * dpiScale, textPaint);
+        using var textPaint = CreateTextPaint(SKColors.Black);
+        using var textFont = CreateFont(10f * dpiScale, bold: true);
+        canvas.DrawText("N", cx, cy - size - 2 * dpiScale, SKTextAlign.Center, textFont, textPaint);
     }
 
     private static void DrawAttribution(SKCanvas canvas, LayoutSlot slot, string text, float dpiScale)
     {
         var rect = ScaleSlot(slot, dpiScale);
 
-        using var paint = new SKPaint
-        {
-            Color = new SKColor(100, 100, 100),
-            TextSize = AttributionFontSize * dpiScale,
-            IsAntialias = true,
-            Typeface = SKTypeface.Default
-        };
+        using var paint = CreateTextPaint(new SKColor(100, 100, 100));
+        using var font = CreateFont(AttributionFontSize * dpiScale);
 
-        var textY = rect.MidY + paint.TextSize / 3f;
-        canvas.DrawText(text, rect.Left, textY, paint);
+        var textY = rect.MidY + font.Size / 3f;
+        canvas.DrawText(text, rect.Left, textY, SKTextAlign.Left, font, paint);
     }
 
     private static SKRect ScaleSlot(LayoutSlot slot, float dpiScale) =>
         new(slot.X * dpiScale, slot.Y * dpiScale,
             (slot.X + slot.Width) * dpiScale, (slot.Y + slot.Height) * dpiScale);
+
+    private static SKPaint CreateTextPaint(SKColor color) =>
+        new()
+        {
+            Color = color,
+            IsAntialias = true
+        };
+
+    private static SKFont CreateFont(float size, bool bold = false) =>
+        new(SKTypeface.Default, size)
+        {
+            Embolden = bold
+        };
 
     /// <summary>
     /// Returns the largest value in {1, 2, 5} × 10^n that does not exceed <paramref name="value"/>.

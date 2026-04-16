@@ -84,7 +84,7 @@ The DuckDB provider serves pre-built `.duckdb` files containing data prepared of
 ## Key Capabilities
 
 ### Multi-Protocol Query
-Every published layer is automatically available through all protocols. A single dataset published from PostGIS is simultaneously queryable via FeatureServer REST, OGC API Features, OData, WFS, and vector tiles.
+Every published layer is automatically available through the layer-scoped protocols that the service enables. A single dataset published from PostGIS can be exposed simultaneously via FeatureServer REST, OGC API Features, OData, WFS, and vector tiles, while service-scoped families such as WMS, WMTS, and OGC API Maps remain service-level surfaces.
 
 ### Feature Editing
 Full CRUD support across protocols:

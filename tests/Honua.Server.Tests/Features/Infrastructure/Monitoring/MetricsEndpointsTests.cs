@@ -3,10 +3,12 @@
 
 using System.Net;
 using System.Text.Json;
+using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -57,6 +59,39 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         Assert.NotNull(healthMetrics.Migration);
         Assert.True(healthMetrics.Migration.IsReady, "Migration state should be ready in the test environment");
         Assert.False(healthMetrics.Migration.IsFailed, "Migration state should not be failed in the test environment");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /api/v1/metrics/health")]
+    public async Task GetHealthMetrics_WhenMigrationFails_DoesNotExposeRawFailureText()
+    {
+        var isolatedFixture = new WebAppFixture();
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+            isolatedFixture.Services.GetRequiredService<MigrationState>()
+                .MarkFailed("Password=secret;Host=prod-db;PostGIS missing");
+
+            using var client = isolatedFixture.CreateAdminClient();
+            var response = await client.GetAsync("/api/v1/metrics/health");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var content = await response.Content.ReadAsStringAsync();
+            content.Should().NotContain("Password=secret");
+            content.Should().NotContain("prod-db");
+            content.Should().Contain("Database migrations failed.");
+            var healthMetrics = JsonSerializer.Deserialize<HealthMetrics>(content, _jsonOptions);
+            healthMetrics.Should().NotBeNull();
+            healthMetrics!.Status.Should().Be("unhealthy");
+            healthMetrics.Migration.Status.Should().Be("failed");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

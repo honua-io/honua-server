@@ -48,6 +48,7 @@ internal sealed partial class TileOperationJobService(
     ILogger<TileOperationJobService> logger,
     IConnectionMultiplexer? redis = null) : ITileOperationJobService
 {
+    private const string MissingRequestFailureMessage = "Tile operation request metadata is no longer available.";
     private readonly IUniversalProgressStore _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
     private readonly IDistributedCache? _requestCache = requestCache;
     private readonly OutputCacheInvalidationService _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
@@ -205,6 +206,9 @@ internal sealed partial class TileOperationJobService(
         var cachedRequest = await TryGetActiveJobRequestAsync(jobId, processingToken).ConfigureAwait(false);
         if (cachedRequest == null)
         {
+            var missingRequestProgress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
+            await MarkMissingRequestAsync(jobId, missingRequestProgress, CancellationToken.None).ConfigureAwait(false);
+
             if (renewalCts != null)
             {
                 renewalCts.Cancel();
@@ -852,7 +856,9 @@ internal sealed partial class TileOperationJobService(
     {
         try
         {
-            var persistedRequest = JsonSerializer.Deserialize<PersistedTileOperationRequest>(json);
+            var persistedRequest = JsonSerializer.Deserialize(
+                json,
+                TileOperationsJsonContext.Default.PersistedTileOperationRequest);
             if (persistedRequest is { Request: not null })
             {
                 return persistedRequest;
@@ -865,7 +871,9 @@ internal sealed partial class TileOperationJobService(
 
         try
         {
-            var legacyRequest = JsonSerializer.Deserialize<TileOperationStartRequest>(json);
+            var legacyRequest = JsonSerializer.Deserialize(
+                json,
+                TileOperationsJsonContext.Default.TileOperationStartRequest);
             if (legacyRequest != null)
             {
                 return new PersistedTileOperationRequest
@@ -915,11 +923,13 @@ internal sealed partial class TileOperationJobService(
             return;
         }
 
-        var json = JsonSerializer.Serialize(new PersistedTileOperationRequest
-        {
-            Request = request,
-            SchemaName = schemaName
-        });
+        var json = JsonSerializer.Serialize(
+            new PersistedTileOperationRequest
+            {
+                Request = request,
+                SchemaName = schemaName
+            },
+            TileOperationsJsonContext.Default.PersistedTileOperationRequest);
         await _requestCache.SetStringAsync(
                 GetRequestCacheKey(jobId),
                 json,
@@ -959,11 +969,17 @@ internal sealed partial class TileOperationJobService(
             var request = await TryGetActiveJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
             if (request == null)
             {
+                await MarkMissingRequestAsync(jobId, progress, CancellationToken.None).ConfigureAwait(false);
                 continue;
             }
 
             if (progress.Status == OperationStatus.Processing)
             {
+                if (!await ShouldRecoverProcessingJobAsync(jobId).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
                 progress = progress with
                 {
                     Status = OperationStatus.Queued,
@@ -978,7 +994,61 @@ internal sealed partial class TileOperationJobService(
         return recovered;
     }
 
+    private async Task MarkMissingRequestAsync(
+        string jobId,
+        TileOperationProgress? progress,
+        CancellationToken cancellationToken)
+    {
+        if (progress is not null && progress.Status is (OperationStatus.Queued or OperationStatus.Processing))
+        {
+            try
+            {
+                var failed = progress with
+                {
+                    Status = OperationStatus.Failed,
+                    ErrorMessage = MissingRequestFailureMessage,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Tile operation failed"
+                };
+                await _progressStore.SetProgressAsync(jobId, failed, _jobRequestRetention, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to persist missing-request status for tile operation job {JobId}.",
+                    jobId);
+            }
+        }
+
+        _jobRequests.TryRemove(jobId, out _);
+        await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+    }
+
     private static string GetRequestCacheKey(string jobId) => $"{RequestCacheKeyPrefix}{jobId}";
+
+    private async Task<bool> ShouldRecoverProcessingJobAsync(string jobId)
+    {
+        if (_redis == null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var claimValue = await _redis.GetDatabase()
+                .StringGetAsync($"{ClaimKeyPrefix}{jobId}")
+                .ConfigureAwait(false);
+            return claimValue.IsNullOrEmpty;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Skipping tile-operation recovery for job {JobId} because the Redis claim key could not be inspected.",
+                jobId);
+            return false;
+        }
+    }
 
     private Task<RedisLeaseCoordinator?> TryAcquireJobLeaseAsync(string jobId)
     {
@@ -1016,14 +1086,14 @@ internal sealed partial class TileOperationJobService(
 
     private readonly record struct TileCoordinate(int Z, int X, int Y);
     private readonly record struct CachedTileOperationRequest(TileOperationStartRequest Request, string? SchemaName, DateTimeOffset ExpiresAtUtc);
-    private sealed record PersistedTileOperationRequest
-    {
-        public required TileOperationStartRequest Request { get; init; }
-        public string? SchemaName { get; init; }
-    }
-
     [LoggerMessage(EventId = 9200, Level = LogLevel.Warning, Message = "Tile job {JobId} failed during {Operation}.")]
     private static partial void LogJobFailed(ILogger logger, string jobId, string operation, Exception exception);
+}
+
+internal sealed record PersistedTileOperationRequest
+{
+    public required TileOperationStartRequest Request { get; init; }
+    public string? SchemaName { get; init; }
 }
 
 internal sealed record TileOperationStartRequest

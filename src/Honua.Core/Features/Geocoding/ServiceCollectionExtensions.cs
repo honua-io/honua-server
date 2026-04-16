@@ -7,6 +7,7 @@ using Honua.Core.Features.Geocoding.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Geocoding;
 
@@ -49,7 +50,8 @@ public static class ServiceCollectionExtensions
     /// <param name="providerName">Name of the provider</param>
     /// <param name="lifetime">Service lifetime</param>
     /// <returns>Service collection for chaining</returns>
-    public static IServiceCollection AddGeocodeProvider<TProvider>(
+    public static IServiceCollection AddGeocodeProvider<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(
         this IServiceCollection services,
         string providerName,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
@@ -71,7 +73,8 @@ public static class ServiceCollectionExtensions
     /// <param name="factory">Factory function</param>
     /// <param name="lifetime">Service lifetime</param>
     /// <returns>Service collection for chaining</returns>
-    public static IServiceCollection AddGeocodeProvider<TProvider>(
+    public static IServiceCollection AddGeocodeProvider<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(
         this IServiceCollection services,
         string providerName,
         Func<IServiceProvider, TProvider> factory,

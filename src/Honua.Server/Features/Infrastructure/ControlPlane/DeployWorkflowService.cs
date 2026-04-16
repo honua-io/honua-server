@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Infrastructure.ControlPlane;
@@ -486,21 +487,27 @@ internal sealed class DeployWorkflowService
         IReadOnlyDictionary<string, string>? parameterOverrides)
     {
         var normalizedParameters = parameterOverrides == null
-            ? Array.Empty<KeyValuePair<string, string>>()
+            ? Array.Empty<DeployRequestFingerprintParameter>()
             : parameterOverrides
                 .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
-                .Select(static pair => new KeyValuePair<string, string>(pair.Key, pair.Value))
+                .Select(static pair => new DeployRequestFingerprintParameter
+                {
+                    Key = pair.Key,
+                    Value = pair.Value
+                })
                 .ToArray();
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            targetId = targetId.Trim(),
-            desiredRevision = desiredRevision.Trim(),
-            currentRevision = currentRevision?.Trim(),
-            priority = priority.ToString(),
-            submitImmediately,
-            parameters = normalizedParameters
-        });
+        var payload = JsonSerializer.Serialize(
+            new DeployRequestFingerprintPayload
+            {
+                TargetId = targetId.Trim(),
+                DesiredRevision = desiredRevision.Trim(),
+                CurrentRevision = currentRevision?.Trim(),
+                Priority = priority.ToString(),
+                SubmitImmediately = submitImmediately,
+                Parameters = normalizedParameters
+            },
+            DeployControlJsonContext.Default.DeployRequestFingerprintPayload);
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
@@ -591,6 +598,22 @@ internal sealed class DeployWorkflowService
             throw new InvalidOperationException("Deploy workflow operations require Redis-backed durable storage.");
         }
     }
+}
+
+internal sealed record DeployRequestFingerprintPayload
+{
+    public required string TargetId { get; init; }
+    public required string DesiredRevision { get; init; }
+    public string? CurrentRevision { get; init; }
+    public required string Priority { get; init; }
+    public required bool SubmitImmediately { get; init; }
+    public required DeployRequestFingerprintParameter[] Parameters { get; init; }
+}
+
+internal sealed record DeployRequestFingerprintParameter
+{
+    public required string Key { get; init; }
+    public required string Value { get; init; }
 }
 
 /// <summary>

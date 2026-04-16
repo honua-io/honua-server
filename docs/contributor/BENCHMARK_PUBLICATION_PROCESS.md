@@ -1,6 +1,6 @@
 # Benchmark Publication Process
 
-This document describes how to refresh the public proof pack ([Benchmark Results](../user/BENCHMARK_RESULTS.md)) so published numbers stay current with each release.
+This document describes how to refresh the public proof pack ([Benchmark Results](../operator/BENCHMARK_RESULTS.md)) so published numbers stay current with each release.
 
 ## When to Refresh
 
@@ -34,7 +34,7 @@ Alternatively, run locally on release-candidate hardware:
 ./scripts/capture-bench-environment.sh > /tmp/bench-env.md
 ```
 
-Review the output and paste it into the environment disclosure section of `docs/user/BENCHMARK_RESULTS.md`.
+Review the output and paste it into the environment disclosure section of `docs/operator/BENCHMARK_RESULTS.md`.
 
 ### 3. Update the Performance Baseline
 
@@ -48,7 +48,7 @@ Verify the file format matches the existing schema (`Version`, `Created`, `GitSH
 
 ### 4. Update Published Results
 
-Edit `docs/user/BENCHMARK_RESULTS.md`:
+Edit `docs/operator/BENCHMARK_RESULTS.md`:
 
 - Update the **Environment Disclosure** table with values from step 2
 - Update the **Query Latency** table with new numbers from the baseline JSON
@@ -73,7 +73,7 @@ Review any warnings or regressions. If critical regressions are detected, invest
 - Commit with a conventional commit message:
 
 ```bash
-git add performance-baseline.json docs/user/BENCHMARK_RESULTS.md
+git add performance-baseline.json docs/operator/BENCHMARK_RESULTS.md
 git commit -m "docs: refresh benchmark proof pack for <version>"
 ```
 
@@ -87,9 +87,9 @@ The proof pack refresh is owned by the maintainer running the [Release Checklist
 
 | File | Owner |
 | --- | --- |
-| `docs/user/BENCHMARK_RESULTS.md` | This process (`#542`) |
-| `docs/user/BENCHMARK_REPRODUCTION.md` | This process (`#542`) |
-| `docs/user/BENCHMARK_METHODOLOGY.md` | This process (`#542`) |
+| `docs/operator/BENCHMARK_RESULTS.md` | This process (`#542`) |
+| `docs/operator/BENCHMARK_REPRODUCTION.md` | This process (`#542`) |
+| `docs/operator/BENCHMARK_METHODOLOGY.md` | This process (`#542`) |
 | `performance-baseline.json` | Benchmark infrastructure (`#335`) — updated by this process |
 | `benchmarks/run-benchmarks.sh` | Benchmark infrastructure (`#335`) |
 | `scripts/check-perf-regression.py` | Benchmark infrastructure (`#335`) |
@@ -98,7 +98,7 @@ The proof pack refresh is owned by the maintainer running the [Release Checklist
 
 ## References
 
-- [Benchmark Results](../user/BENCHMARK_RESULTS.md) — public-facing proof pack
-- [Benchmark Methodology](../user/BENCHMARK_METHODOLOGY.md) — measurement methodology and scope
+- [Benchmark Results](../operator/BENCHMARK_RESULTS.md) — public-facing proof pack
+- [Benchmark Methodology](../operator/BENCHMARK_METHODOLOGY.md) — measurement methodology and scope
 - [Contributor Benchmarks Guide](benchmarks.md) — development-oriented benchmark documentation
 - [Release Checklist](RELEASE_CHECKLIST.md) — release process including proof pack step

@@ -22,11 +22,11 @@ Load these documents first:
 - [AI-First Operator Architecture](AI_OPERATOR_ARCHITECTURE.md)
 - [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)
 - [Deterministic Operator Workflow Results](../developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
-- [ADR-0026](adr/0026-ai-first-operator-contract.md)
-- [ADR-0027](adr/0027-deterministic-intent-clarification-workflow.md)
-- [ADR-0028](adr/0028-ai-data-editing-not-allowed.md)
+- [ADR-0026](../../contributor/adr/0026-ai-first-operator-contract.md)
+- [ADR-0027](../../contributor/adr/0027-deterministic-intent-clarification-workflow.md)
+- [ADR-0028](../../contributor/adr/0028-ai-data-editing-not-allowed.md)
 
-For `honua-io/honua-server`, the repo root [AGENTS.md](../../AGENTS.md)
+For `honua-io/honua-server`, the repo root [AGENTS.md](../../../AGENTS.md)
 is mandatory reading before implementation. It defines architecture and quality
 gates that are easy for agents to violate accidentally:
 

@@ -18,9 +18,9 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Services;
 
@@ -276,30 +276,24 @@ public sealed class ConfigurationDiscoveryService
 
         try
         {
-            // Try to get from IOptions if registered
-            var optionsType = typeof(IOptions<>).MakeGenericType(type);
-            var options = _serviceProvider.GetService(optionsType);
+            var registration = _serviceProvider
+                .GetServices<IConfigurationOptionsRegistration>()
+                .FirstOrDefault(candidate => candidate.Metadata.OptionsType == type);
 
-            if (options != null)
+            if (registration?.GetConfiguredOptions(_serviceProvider) is { } instance)
             {
-                var valueProperty = optionsType.GetProperty("Value");
-                var instance = valueProperty?.GetValue(options);
-
-                if (instance != null)
+                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                 {
-                    foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                    if (prop.CanRead && prop.GetIndexParameters().Length == 0)
                     {
-                        if (prop.CanRead && prop.GetIndexParameters().Length == 0)
+                        try
                         {
-                            try
-                            {
-                                var value = prop.GetValue(instance);
-                                values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
-                            }
-                            catch
-                            {
-                                values[prop.Name] = null;
-                            }
+                            var value = prop.GetValue(instance);
+                            values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
+                        }
+                        catch
+                        {
+                            values[prop.Name] = null;
                         }
                     }
                 }

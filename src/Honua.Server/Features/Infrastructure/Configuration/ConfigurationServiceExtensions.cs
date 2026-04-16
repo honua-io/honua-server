@@ -160,6 +160,11 @@ public static class ConfigurationServiceExtensions
     /// <param name="isRequired">Whether this configuration is required for startup</param>
     /// <param name="enableSecretResolution">Whether to enable automatic secret resolution</param>
     /// <returns>The service collection for chaining</returns>
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "SYSLIB1104",
+        Justification = "This generic helper is retained for non-AOT/test usage. NativeAOT startup uses concrete registrations in AddStandardConfiguration.")]
+    [RequiresUnreferencedCode("Generic configuration binding helper is not trim-safe. Use AddStandardConfiguration or concrete option registrations in NativeAOT-critical paths.")]
     public static IServiceCollection ConfigureWithValidation<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         this IServiceCollection services,
@@ -172,48 +177,22 @@ public static class ConfigurationServiceExtensions
         // Secret provider options must bind directly. Resolving them through
         // ISecretProvider would require constructing the provider to configure
         // the options the provider itself consumes, creating a DI cycle.
-        var shouldEnableSecretResolution =
-            enableSecretResolution && typeof(TOptions) != typeof(SecretProviderOptions);
-
-        // Register for validation
-        services.AddSingleton<IConfigureOptions<TOptions>>(sp =>
-        {
-            var validator = sp.GetRequiredService<IConfigurationValidator>();
-            validator.RegisterOptionsType<TOptions>(sectionName, isRequired);
-            return new ConfigureNamedOptions<TOptions>(Options.DefaultName, options =>
+        return RegisterConfiguredOptions<TOptions>(
+            services,
+            configuration,
+            sectionName,
+            isRequired,
+            enableSecretResolution,
+            static (collection, config, name) =>
             {
-                var method = typeof(ConfigurationBinder).GetMethod(nameof(ConfigurationBinder.Bind), new[] { typeof(IConfiguration), typeof(object) });
-                method?.Invoke(null, new object[] { configuration.GetSection(sectionName), options! });
+                collection.Configure<TOptions>(options =>
+                {
+                    var bindMethod = typeof(ConfigurationBinder).GetMethod(
+                        nameof(ConfigurationBinder.Bind),
+                        new[] { typeof(IConfiguration), typeof(object) });
+                    bindMethod?.Invoke(null, new object[] { config.GetSection(name), options! });
+                });
             });
-        });
-
-        // Configure options with secret resolution if enabled
-        if (shouldEnableSecretResolution)
-        {
-            services.Configure<TOptions>(options =>
-            {
-                var section = configuration.GetSection(sectionName);
-                var method = typeof(ConfigurationBinder).GetMethod(nameof(ConfigurationBinder.Bind), new[] { typeof(IConfiguration), typeof(object) });
-                method?.Invoke(null, new object[] { section, options! });
-
-                // Secret resolution will be handled by a post-configuration service
-            });
-
-            services.AddSingleton<IPostConfigureOptions<TOptions>, SecretResolutionPostConfigureOptions<TOptions>>();
-        }
-        else
-        {
-            services.Configure<TOptions>(options =>
-            {
-                var method = typeof(ConfigurationBinder).GetMethod(nameof(ConfigurationBinder.Bind), new[] { typeof(IConfiguration), typeof(object) });
-                method?.Invoke(null, new object[] { configuration.GetSection(sectionName), options! });
-            });
-        }
-
-        // Add validation for startup
-        services.AddSingleton<IValidateOptions<TOptions>, DataAnnotationValidateOptions<TOptions>>();
-
-        return services;
     }
 
     /// <summary>
@@ -233,18 +212,67 @@ public static class ConfigurationServiceExtensions
         services.AddConfigurationValidation(configuration);
 
         // Register standard configuration types
-        services.ConfigureWithValidation<StandardTtlOptions>(configuration, StandardTtlOptions.SectionName);
-        services.ConfigureWithValidation<SecretProviderOptions>(
+        RegisterConfiguredOptions<StandardTtlOptions>(
+            services,
+            configuration,
+            StandardTtlOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: true,
+            static (collection, config, name) => collection.Configure<StandardTtlOptions>(config.GetSection(name)));
+        RegisterConfiguredOptions<SecretProviderOptions>(
+            services,
             configuration,
             SecretProviderOptions.SectionName,
-            enableSecretResolution: false);
-        services.ConfigureWithValidation<SecureConfigurationOptions>(configuration, SecureConfigurationOptions.SectionName);
-
-        // Register cache options with enhanced validation
-        services.ConfigureWithValidation<Core.Features.Caching.CacheOptions>(
+            isRequired: true,
+            enableSecretResolution: false,
+            static (collection, config, name) => collection.Configure<SecretProviderOptions>(config.GetSection(name)));
+        RegisterConfiguredOptions<SecureConfigurationOptions>(
+            services,
             configuration,
-            Core.Features.Caching.CacheOptions.SectionName);
+            SecureConfigurationOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: true,
+            static (collection, config, name) => collection.Configure<SecureConfigurationOptions>(config.GetSection(name)));
+        RegisterConfiguredOptions<Core.Features.Caching.CacheOptions>(
+            services,
+            configuration,
+            Core.Features.Caching.CacheOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: true,
+            static (collection, config, name) => collection.Configure<Core.Features.Caching.CacheOptions>(config.GetSection(name)));
 
+        return services;
+    }
+
+    private static IServiceCollection RegisterConfiguredOptions<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        IServiceCollection services,
+        IConfiguration configuration,
+        string sectionName,
+        bool isRequired,
+        bool enableSecretResolution,
+        Action<IServiceCollection, IConfiguration, string> bindOptions)
+        where TOptions : class
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sectionName);
+        ArgumentNullException.ThrowIfNull(bindOptions);
+
+        var shouldEnableSecretResolution =
+            enableSecretResolution && typeof(TOptions) != typeof(SecretProviderOptions);
+
+        services.AddSingleton<IConfigurationOptionsRegistration>(
+            new ConfigurationOptionsRegistration<TOptions>(sectionName, isRequired));
+
+        bindOptions(services, configuration, sectionName);
+
+        if (shouldEnableSecretResolution)
+        {
+            services.AddSingleton<IPostConfigureOptions<TOptions>, SecretResolutionPostConfigureOptions<TOptions>>();
+        }
+
+        services.AddSingleton<IValidateOptions<TOptions>, DataAnnotationValidateOptions<TOptions>>();
         return services;
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -24,6 +25,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(DeployPlanTargetResponse))]
 [JsonSerializable(typeof(DeployBackendCapabilitiesResponse))]
 [JsonSerializable(typeof(DeployOperationResponse))]
+[JsonSerializable(typeof(DeployRequestFingerprintPayload))]
 internal sealed partial class DeployControlJsonContext : JsonSerializerContext
 {
 }

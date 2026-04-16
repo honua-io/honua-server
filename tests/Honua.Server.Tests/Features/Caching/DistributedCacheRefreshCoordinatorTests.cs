@@ -121,6 +121,17 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public void TryEnqueueRefresh_FallbackMode_DifferentKeys_BothSucceed()
+    {
+        var first = _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
+        var second = _coordinator.TryEnqueueRefresh("layer:2", _ => Task.CompletedTask);
+
+        first.Should().BeTrue();
+        second.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public void NotifyInvalidation_FallbackMode_MarksKeyInvalidated()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
@@ -358,5 +369,88 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         coordinator.FailureCount.Should().Be(1);
 
         coordinator.Dispose();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task ProcessRefresh_FallbackMode_FailedRefresh_TemporarilyBacksOffRetry()
+    {
+        var refreshAttempted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ =>
+        {
+            refreshAttempted.SetResult(true);
+            throw new InvalidOperationException("simulated failure");
+        });
+
+        _ = _coordinator.StartAsync(_cts.Token);
+
+        var attempted = await Task.WhenAny(refreshAttempted.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        attempted.Should().Be(refreshAttempted.Task, "the initial refresh should have run");
+
+        for (int i = 0; i < 100 && (_coordinator.FailureCount < 1 || _coordinator.QueueDepth > 0); i++)
+        {
+            await Task.Delay(10);
+        }
+
+        _coordinator.FailureCount.Should().Be(1);
+        _coordinator.QueueDepth.Should().Be(0);
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask)
+            .Should().BeFalse("recent failures should back off immediate retries");
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1200));
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask)
+            .Should().BeTrue("the retry backoff should eventually expire");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task ProcessRefresh_FallbackMode_AfterRefreshCompletes_KeyCanBeReenqueued()
+    {
+        var callCount = 0;
+        var firstRefreshDone = new TaskCompletionSource<bool>();
+        var secondRefreshDone = new TaskCompletionSource<bool>();
+
+        _ = _coordinator.StartAsync(_cts.Token);
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ =>
+        {
+            Interlocked.Increment(ref callCount);
+            firstRefreshDone.SetResult(true);
+            return Task.CompletedTask;
+        });
+
+        var completed = await Task.WhenAny(firstRefreshDone.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        completed.Should().Be(firstRefreshDone.Task, "the first refresh should have completed");
+
+        for (int i = 0; i < 100 && _coordinator.QueueDepth > 0; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        var result = _coordinator.TryEnqueueRefresh("layer:1", _ =>
+        {
+            Interlocked.Increment(ref callCount);
+            secondRefreshDone.SetResult(true);
+            return Task.CompletedTask;
+        });
+
+        result.Should().BeTrue();
+
+        var completed2 = await Task.WhenAny(secondRefreshDone.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        completed2.Should().Be(secondRefreshDone.Task, "the second refresh should have completed");
+        callCount.Should().Be(2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public void QueueDepth_InitiallyZero()
+    {
+        _coordinator.QueueDepth.Should().Be(0);
+        _coordinator.SuccessCount.Should().Be(0);
+        _coordinator.FailureCount.Should().Be(0);
+        _coordinator.SkippedCount.Should().Be(0);
     }
 }

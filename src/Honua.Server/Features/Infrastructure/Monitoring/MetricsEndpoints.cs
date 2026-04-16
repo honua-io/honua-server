@@ -88,6 +88,8 @@ public static class MetricsEndpoints
             {
                 Status = readiness.IsReady
                     ? "healthy"
+                    : migrationState.IsFailed
+                        ? "unhealthy"
                     : migrationState.IsRunning || !migrationState.IsReady
                         ? "initializing"
                         : "unhealthy",
@@ -121,6 +123,11 @@ public static class MetricsEndpoints
 
     private static string? GetMigrationStatusMessage(MigrationState migrationState)
     {
+        if (migrationState.Status == MigrationLifecycleStatus.Failed)
+        {
+            return "Database migrations failed.";
+        }
+
         if (!string.IsNullOrWhiteSpace(migrationState.StatusMessage))
         {
             return migrationState.StatusMessage;

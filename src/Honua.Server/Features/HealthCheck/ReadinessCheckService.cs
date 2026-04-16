@@ -6,6 +6,7 @@ using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Logging;
+using System.Diagnostics;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -41,6 +42,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     /// <returns>Readiness check result</returns>
     public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
+        var currentCheckName = "Database";
         try
         {
             if (_migrationState.IsFailed)
@@ -59,25 +61,30 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             }
 
             // Check database health
+            var databaseStopwatch = Stopwatch.StartNew();
             bool isDatabaseHealthy = await _databaseHealthChecker.IsDatabaseHealthyAsync(cancellationToken);
+            databaseStopwatch.Stop();
 
             if (!isDatabaseHealthy)
             {
                 // Log unhealthy database without exception
-                Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Unhealthy", 0.0);
+                Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Unhealthy", databaseStopwatch.Elapsed.TotalMilliseconds);
                 return ReadinessResult.NotReady("Database unavailable");
             }
 
-            Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", 0.0);
+            Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", databaseStopwatch.Elapsed.TotalMilliseconds);
 
             // Check cache health (optional - cache unavailability doesn't make system not ready)
             if (_cacheHealthChecker != null)
             {
+                currentCheckName = "Cache";
+                var cacheStopwatch = Stopwatch.StartNew();
                 bool isCacheHealthy = await _cacheHealthChecker.IsCacheHealthyAsync(cancellationToken);
+                cacheStopwatch.Stop();
                 string cacheStatus = isCacheHealthy
                     ? (_cacheHealthChecker.IsUsingFallback ? "Healthy (fallback)" : "Healthy")
                     : "Unhealthy";
-                Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, 0.0);
+                Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, cacheStopwatch.Elapsed.TotalMilliseconds);
 
                 if (!isCacheHealthy)
                 {
@@ -85,10 +92,22 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                 }
             }
 
-            if (_featureChangeEventStoreHealth is { CanPersistEvents: false })
+            if (_featureChangeEventStoreHealth is not null)
             {
-                Log.HealthCheckExecuted(_logger, "FeatureChangeEventStore", "Unhealthy", 0.0);
-                return ReadinessResult.NotReady("Feature-change event storage unavailable");
+                currentCheckName = "Feature-change event storage";
+                var featureChangeStoreStopwatch = Stopwatch.StartNew();
+                var canPersistEvents = _featureChangeEventStoreHealth.CanPersistEvents;
+                featureChangeStoreStopwatch.Stop();
+
+                if (!canPersistEvents)
+                {
+                    Log.HealthCheckExecuted(
+                        _logger,
+                        "FeatureChangeEventStore",
+                        "Unhealthy",
+                        featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
+                    return ReadinessResult.NotReady("Feature-change event storage unavailable");
+                }
             }
 
             return ReadinessResult.Ready();
@@ -101,8 +120,9 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         catch (Exception ex)
         {
             // Log the error for debugging but don't expose details in response
-            Log.DatabaseConnectionFailed(_logger, ex.Message, ex);
-            return ReadinessResult.NotReady("Database unavailable", ex);
+            var failureMessage = $"{currentCheckName} health check failed";
+            Log.DatabaseConnectionFailed(_logger, $"{failureMessage}: {ex.Message}", ex);
+            return ReadinessResult.NotReady(failureMessage, ex);
         }
     }
 }

@@ -112,6 +112,37 @@ public static class ValidationErrorHelpers
             });
     }
 
+    /// <summary>
+    /// Writes an admin-formatted method not allowed response with an Allow header.
+    /// </summary>
+    /// <param name="context">HTTP context for the current request.</param>
+    /// <param name="allowedMethods">Set of allowed HTTP methods.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task WriteAdminMethodNotAllowedAsync(
+        HttpContext context,
+        ISet<string> allowedMethods,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(allowedMethods);
+
+        var allowHeader = string.Join(", ", allowedMethods);
+        var problemDetails = ProblemDetailsHelpers.CreateAdminProblemDetails(
+            context,
+            StatusCodes.Status405MethodNotAllowed,
+            $"Allowed methods: {allowHeader}");
+
+        context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+        context.Response.ContentType = ProblemDetailsHelpers.ContentType;
+        context.Response.Headers["Allow"] = allowHeader;
+
+        await JsonSerializer.SerializeAsync(
+            context.Response.Body,
+            problemDetails,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            cancellationToken);
+    }
+
     private sealed class MethodNotAllowedWithAllowHeaderResult(ISet<string> allowedMethods) : IResult
     {
         private readonly string _allowHeader = string.Join(", ", allowedMethods);

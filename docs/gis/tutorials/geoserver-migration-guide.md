@@ -223,6 +223,6 @@ After migrating server configuration, update client applications:
 ## Next Steps
 
 - Explore the [Interactive API Explorer](http://localhost:8080/docs) to test migrated endpoints
-- Review the [API Examples](../API_EXAMPLES.md) for protocol-specific request patterns
+- Review the [API Examples](../../developer/API_EXAMPLES.md) for protocol-specific request patterns
 - See the [Protocols Overview](../STANDARDS_APIS.md) for choosing the right protocol per client
-- Check the [Admin API Reference](../CONTROL_PLANE_API.md) for connection and layer management
+- Check the [Admin API Reference](../../operator/CONTROL_PLANE_API.md) for connection and layer management

@@ -1,7 +1,7 @@
 # Migration Parity Checklist
 
 Workflow-oriented human checklist that complements the CI-automated parity scorecard
-([`parity-scorecard-baseline.json`](../../../tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json)
+([`parity-scorecard-baseline.json`](../../../../tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json)
 with 10 service cases x 12 checks). The automated scorecard runs in CI nightly; this
 checklist adds pilot-context verification that CI cannot cover.
 
@@ -13,14 +13,14 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 
 | Protocol | Coverage Matrix | In-Scope Operations | Status |
 |----------|----------------|---------------------|--------|
-| GeoServices REST parity landing page | [geoservices-rest-parity.md](../../gis/geoservices-rest-parity.md) | Pilot-critical Esri operations across FeatureServer, MapServer, ImageServer, and Geometry Service | |
-| GeoServices REST parity data | [geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json) | Machine-readable review of operation status, parameter support, and evidence links | |
-| FeatureServer | [feature-server-matrix.md](../../gis/feature-server-matrix.md) | | |
-| MapServer | [map-server-matrix.md](../../gis/map-server-matrix.md) | | |
-| ImageServer | [image-server-matrix.md](../../gis/image-server-matrix.md) | | |
-| Geometry Service | [geometry-service-matrix.md](../../gis/geometry-service-matrix.md) | | |
-| OGC API Features | [ogc-api-features-coverage.md](../../gis/specifications/ogc-api-features-coverage.md) | | |
-| OData v4 | [odata-v4-coverage.md](../../gis/specifications/odata-v4-coverage.md) | | |
+| GeoServices REST parity landing page | [geoservices-rest-parity.md](../../../gis/geoservices-rest-parity.md) | Pilot-critical Esri operations across FeatureServer, MapServer, ImageServer, and Geometry Service | |
+| GeoServices REST parity data | [geoservices-rest-parity.json](../../../gis/data/geoservices-rest-parity.json) | Machine-readable review of operation status, parameter support, and evidence links | |
+| FeatureServer | [feature-server-matrix.md](../../../gis/feature-server-matrix.md) | | |
+| MapServer | [map-server-matrix.md](../../../gis/map-server-matrix.md) | | |
+| ImageServer | [image-server-matrix.md](../../../gis/image-server-matrix.md) | | |
+| Geometry Service | [geometry-service-matrix.md](../../../gis/geometry-service-matrix.md) | | |
+| OGC API Features | [ogc-api-features-coverage.md](../../../gis/specifications/ogc-api-features-coverage.md) | | |
+| OData v4 | [odata-v4-coverage.md](../../../gis/specifications/odata-v4-coverage.md) | | |
 
 ## Automated Scorecard Status
 

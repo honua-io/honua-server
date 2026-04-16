@@ -2,7 +2,7 @@
 
 This policy applies only to Honua control-plane/admin endpoints (`/api/v*/admin/*`).
 It does not apply to standards APIs (FeatureServer, OGC, OData, WMS/WMTS).
-For standards API versioning, see [STANDARDS_APIS.md](STANDARDS_APIS.md#versioning-and-compatibility-policy).
+For standards API versioning, see [STANDARDS_APIS.md](../gis/STANDARDS_APIS.md#versioning-and-compatibility-policy).
 
 ## Compatibility Contract
 
@@ -54,7 +54,7 @@ When a major version is designated as LTS:
 
 ### 2. Grace period
 - Maintain deprecated behavior for at least **2 minor releases** or **90 calendar days**, whichever is longer.
-- Keep examples and caveats up to date in `docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md`.
+- Keep examples and caveats up to date in `docs/developer/CONTROL_PLANE_MIGRATION_GUIDE.md`.
 - Deprecated endpoints return a `Sunset` response header ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)) indicating the planned removal date.
 - Deprecated endpoints emit a `Deprecation` response header linking to the migration guide.
 
@@ -73,7 +73,7 @@ The authoritative OpenAPI specification is maintained at `docs/developer/api-spe
 - `openapi-contract-governance.yml` validates OpenAPI shape and compares the admin contract against the baseline ref on every PR.
 - Potential breakages fail CI by default.
 - Intentional breakages must be explicitly approved by setting `OPENAPI_ALLOW_BREAKING_CHANGES=true` in CI.
-- PRs that set `OPENAPI_ALLOW_BREAKING_CHANGES=true` must update `docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md` in the same PR.
+- PRs that set `OPENAPI_ALLOW_BREAKING_CHANGES=true` must update `docs/developer/CONTROL_PLANE_MIGRATION_GUIDE.md` in the same PR.
 
 ## Governance in CI
 
@@ -109,8 +109,8 @@ Schema migrations follow these constraints to preserve rollback safety and multi
 
 ## Required Docs for Breaking PRs
 
-- Update migration guidance in `docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md`
-- Update control-plane reference in `docs/user/CONTROL_PLANE_API.md`
+- Update migration guidance in `docs/developer/CONTROL_PLANE_MIGRATION_GUIDE.md`
+- Update control-plane reference in `docs/operator/CONTROL_PLANE_API.md`
 - Include breaking-change notes in release checklist
 
 ---

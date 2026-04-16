@@ -93,9 +93,9 @@ OPENAPI_BASE_REF=origin/trunk ./scripts/validate-openapi-contracts.sh
 ```
 
 2. If breakage is intentional, update:
-- `docs/user/SDK_COMPATIBILITY_MATRIX.md`
-- `docs/user/CONTROL_PLANE_VERSIONING_POLICY.md`
-- `docs/user/CONTROL_PLANE_API.md`
+- `docs/developer/SDK_COMPATIBILITY_MATRIX.md`
+- `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`
+- `docs/operator/CONTROL_PLANE_API.md`
 - release checklist compatibility notes
 
 3. Regenerate SDK artifacts and update client integrations.
@@ -104,7 +104,7 @@ OPENAPI_BASE_REF=origin/trunk ./scripts/validate-openapi-contracts.sh
 
 ## Deprecation Rules
 
-Deprecations must follow `docs/user/CONTROL_PLANE_VERSIONING_POLICY.md`:
+Deprecations must follow `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`:
 - announce and document replacements
 - preserve deprecated operations during grace period
 - remove only in next major path (except emergency security cases)

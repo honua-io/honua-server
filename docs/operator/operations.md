@@ -507,8 +507,7 @@ workspace does not block subsequent workspaces. If any artifact in a workspace
 fails to delete, the workspace itself is skipped for that sweep to prevent
 orphaned artifact records.
 
-For full lifecycle semantics, see the
-[AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
+The lifecycle rules described in this section are the current workspace contract for expiration, grace-period promotion, and cleanup behavior.
 
 ### GPServer Job Lifecycle
 

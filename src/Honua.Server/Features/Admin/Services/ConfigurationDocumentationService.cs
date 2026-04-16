@@ -71,6 +71,14 @@ public sealed class ConfigurationDocumentationService
             BuildLimitsImportsSection(),
             BuildNetworkingSection(),
             BuildTileOptionsSection(),
+            BuildTemporaryFilesSection(),
+            BuildFileUploadSecuritySection(),
+            BuildFeatureStreamingSection(),
+            BuildFeatureChangeEventsSection(),
+            BuildFeatureChangeWebhookSection(),
+            BuildManifestApprovalSection(),
+            BuildManifestApprovalWebhookSection(),
+            BuildGitOpsWatchSection(),
             BuildSecuritySection(),
             BuildTracingSection(),
             BuildAdaptiveSamplingSection()
@@ -81,7 +89,7 @@ public sealed class ConfigurationDocumentationService
             sections.AddRange(contributor.GetSections());
         }
 
-        var envVars = BuildEnvironmentVariableQuickReference();
+        var envVars = BuildEnvironmentVariableQuickReference(sections);
         var version = typeof(ConfigurationDocumentationService).Assembly.GetName().Version?.ToString() ?? "unknown";
 
         return new ConfigurationDocumentation
@@ -465,6 +473,168 @@ public sealed class ConfigurationDocumentationService
         };
     }
 
+    private ConfigurationSection BuildTemporaryFilesSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "TemporaryFiles",
+            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require Redis coordination so quotas remain correct across replicas.",
+            Properties =
+            [
+                BuildProperty("TemporaryFiles:StorageDirectory", "TemporaryFiles__StorageDirectory", "string",
+                    "Base directory for temporary file storage", Path.Combine(Path.GetTempPath(), "honua-temp")),
+                BuildProperty("TemporaryFiles:DefaultExpiration", "TemporaryFiles__DefaultExpiration", "timespan",
+                    "Default expiration time for temporary files", TimeSpan.FromHours(1)),
+                BuildProperty("TemporaryFiles:MaxFileSizeBytes", "TemporaryFiles__MaxFileSizeBytes", "integer",
+                    "Maximum temporary file size in bytes", 50L * 1024 * 1024),
+                BuildProperty("TemporaryFiles:MaxTotalStorageBytes", "TemporaryFiles__MaxTotalStorageBytes", "integer",
+                    "Maximum aggregate temporary storage in bytes", 500L * 1024 * 1024),
+                BuildProperty("TemporaryFiles:MaxFileCount", "TemporaryFiles__MaxFileCount", "integer",
+                    "Maximum number of active temporary files", 5000),
+                BuildProperty("TemporaryFiles:StorageFullRetryAfterSeconds", "TemporaryFiles__StorageFullRetryAfterSeconds", "integer",
+                    "Retry-After hint when temporary storage is saturated", 60),
+                BuildProperty("TemporaryFiles:BaseUrl", "TemporaryFiles__BaseUrl", "string",
+                    "Optional absolute base URL used when serving temporary files", null)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildFileUploadSecuritySection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "FileUploadSecurity",
+            Description = "Security scanning limits for uploaded files",
+            Properties =
+            [
+                BuildProperty("FileUploadSecurity:MaxSecurityScanSizeBytes", "FileUploadSecurity__MaxSecurityScanSizeBytes", "integer",
+                    "Maximum number of bytes to scan for malicious content", 10 * 1024 * 1024)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildFeatureStreamingSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "FeatureStreaming",
+            Description = "Real-time feature-change streaming transport configuration",
+            Properties =
+            [
+                BuildProperty("FeatureStreaming:HeartbeatInterval", "FeatureStreaming__HeartbeatInterval", "timespan",
+                    "Interval between heartbeat frames sent to connected clients", TimeSpan.FromSeconds(30)),
+                BuildProperty("FeatureStreaming:MaxBufferPerConnection", "FeatureStreaming__MaxBufferPerConnection", "integer",
+                    "Maximum queued messages per connection before a slow consumer is disconnected", 256),
+                BuildProperty("FeatureStreaming:MaxConcurrentSessions", "FeatureStreaming__MaxConcurrentSessions", "integer",
+                    "Maximum number of concurrently connected feature-stream sessions", 256),
+                BuildProperty("FeatureStreaming:ReplayBatchSize", "FeatureStreaming__ReplayBatchSize", "integer",
+                    "Number of events fetched per batch during cursor replay", 200),
+                BuildProperty("FeatureStreaming:CrossNodeSyncInterval", "FeatureStreaming__CrossNodeSyncInterval", "timespan",
+                    "Interval between shared-store sweeps for cross-node event pickup", TimeSpan.FromSeconds(1))
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildFeatureChangeEventsSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "FeatureChangeEvents",
+            Description = "Feature-change event retention and replay configuration",
+            Properties =
+            [
+                BuildProperty("FeatureChangeEvents:MaxRetainedEvents", "FeatureChangeEvents__MaxRetainedEvents", "integer",
+                    "Maximum number of retained events for replay", 20_000)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildFeatureChangeWebhookSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "FeatureChangeEvents.Webhook",
+            Description = "Outbound webhook delivery for feature-change events",
+            Properties =
+            [
+                BuildProperty("FeatureChangeEvents:Webhook:Enabled", "FeatureChangeEvents__Webhook__Enabled", "boolean",
+                    "Enable outbound webhook delivery for feature-change events", false),
+                BuildProperty("FeatureChangeEvents:Webhook:Url", "FeatureChangeEvents__Webhook__Url", "string",
+                    "Absolute HTTPS webhook URL", null),
+                BuildProperty("FeatureChangeEvents:Webhook:Secret", "FeatureChangeEvents__Webhook__Secret", "string",
+                    "Shared HMAC secret for webhook signatures", null, isSensitive: true),
+                BuildProperty("FeatureChangeEvents:Webhook:MaxAttempts", "FeatureChangeEvents__Webhook__MaxAttempts", "integer",
+                    "Maximum delivery attempts per event", 5),
+                BuildProperty("FeatureChangeEvents:Webhook:InitialBackoffMs", "FeatureChangeEvents__Webhook__InitialBackoffMs", "integer",
+                    "Initial webhook retry backoff in milliseconds", 500),
+                BuildProperty("FeatureChangeEvents:Webhook:MaxBackoffMs", "FeatureChangeEvents__Webhook__MaxBackoffMs", "integer",
+                    "Maximum webhook retry backoff in milliseconds", 30_000),
+                BuildProperty("FeatureChangeEvents:Webhook:RequestTimeoutSeconds", "FeatureChangeEvents__Webhook__RequestTimeoutSeconds", "integer",
+                    "Per-request webhook timeout in seconds", 15)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildManifestApprovalSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "ManifestApproval",
+            Description = "Approval workflow configuration for control-plane manifest changes",
+            Properties =
+            [
+                BuildProperty("ManifestApproval:Enabled", "ManifestApproval__Enabled", "boolean",
+                    "Enable manifest approval workflows", false),
+                BuildProperty("ManifestApproval:DefaultTimeoutMinutes", "ManifestApproval__DefaultTimeoutMinutes", "integer",
+                    "Default approval timeout in minutes", 1440),
+                BuildProperty("ManifestApproval:ExpiryScanIntervalSeconds", "ManifestApproval__ExpiryScanIntervalSeconds", "integer",
+                    "Background scan interval for expiring pending approvals", 60)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildManifestApprovalWebhookSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "ManifestApproval.Webhook",
+            Description = "Outbound webhook delivery for manifest approval events",
+            Properties =
+            [
+                BuildProperty("ManifestApproval:Webhook:Enabled", "ManifestApproval__Webhook__Enabled", "boolean",
+                    "Enable outbound webhook delivery for approval events", false),
+                BuildProperty("ManifestApproval:Webhook:Url", "ManifestApproval__Webhook__Url", "string",
+                    "Absolute HTTPS webhook URL", null),
+                BuildProperty("ManifestApproval:Webhook:Secret", "ManifestApproval__Webhook__Secret", "string",
+                    "Shared HMAC secret for webhook signatures", null, isSensitive: true),
+                BuildProperty("ManifestApproval:Webhook:MaxAttempts", "ManifestApproval__Webhook__MaxAttempts", "integer",
+                    "Maximum delivery attempts per event", 5),
+                BuildProperty("ManifestApproval:Webhook:InitialBackoffMs", "ManifestApproval__Webhook__InitialBackoffMs", "integer",
+                    "Initial webhook retry backoff in milliseconds", 500),
+                BuildProperty("ManifestApproval:Webhook:MaxBackoffMs", "ManifestApproval__Webhook__MaxBackoffMs", "integer",
+                    "Maximum webhook retry backoff in milliseconds", 30_000),
+                BuildProperty("ManifestApproval:Webhook:RequestTimeoutSeconds", "ManifestApproval__Webhook__RequestTimeoutSeconds", "integer",
+                    "Per-request webhook timeout in seconds", 15)
+            ]
+        };
+    }
+
+    private ConfigurationSection BuildGitOpsWatchSection()
+    {
+        return new ConfigurationSection
+        {
+            Name = "GitOpsWatch",
+            Description = "GitOps repository watch configuration",
+            Properties =
+            [
+                BuildProperty("GitOpsWatch:Enabled", "GitOpsWatch__Enabled", "boolean",
+                    "Enable GitOps repository watch functionality", false),
+                BuildProperty("GitOpsWatch:MinPollIntervalSeconds", "GitOpsWatch__MinPollIntervalSeconds", "integer",
+                    "Minimum allowed poll interval in seconds", 30)
+            ]
+        };
+    }
+
     private ConfigurationSection BuildSecuritySection()
     {
         return new ConfigurationSection
@@ -477,6 +647,10 @@ public sealed class ConfigurationDocumentationService
                     "Admin API password", null, isSensitive: true),
                 BuildProperty("HONUA_ADMIN_UI_CORS_ORIGINS", "HONUA_ADMIN_UI_CORS_ORIGINS", "string",
                     "Comma-separated allowed origins for standalone Admin UI", null),
+                BuildProperty("Authentication:BasicCompatibility:Enabled", "HONUA_ENABLE_BASIC_AUTH_COMPAT", "boolean",
+                    "Enable HTTP Basic authentication compatibility mode", false),
+                BuildProperty("Authentication:BasicCompatibility:RequireHttps", "HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "boolean",
+                    "Require HTTPS when HTTP Basic authentication compatibility is enabled", true),
                 BuildProperty("Cors:AllowedOrigins:0", "Cors__AllowedOrigins__0", "string",
                     "First allowed CORS origin", null),
                 BuildProperty("Cors:AllowCredentials", "Cors__AllowCredentials", "boolean",
@@ -527,11 +701,11 @@ public sealed class ConfigurationDocumentationService
             [
                 BuildProperty("AdaptiveSampling:Enabled", "HONUA__ADAPTIVESAMPLING__ENABLED", "boolean",
                     "Enable adaptive sampling (when disabled, uses static Tracing:SamplingRatio)", options.Enabled),
-                BuildProperty("AdaptiveSampling:BaseSamplingRate", "HONUA__ADAPTIVESAMPLING__BASESAMPLRATE", "decimal",
+                BuildProperty("AdaptiveSampling:BaseSamplingRate", "HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE", "decimal",
                     "Base sampling rate used as starting point (0.001 to 1.0)", options.BaseSamplingRate),
-                BuildProperty("AdaptiveSampling:MinSamplingRate", "HONUA__ADAPTIVESAMPLING__MINSAMPLRATE", "decimal",
+                BuildProperty("AdaptiveSampling:MinSamplingRate", "HONUA__ADAPTIVESAMPLING__MINSAMPLINGRATE", "decimal",
                     "Minimum sampling rate under high load (0.001 to 0.5)", options.MinSamplingRate),
-                BuildProperty("AdaptiveSampling:MaxSamplingRate", "HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE", "decimal",
+                BuildProperty("AdaptiveSampling:MaxSamplingRate", "HONUA__ADAPTIVESAMPLING__MAXSAMPLINGRATE", "decimal",
                     "Maximum sampling rate during errors/low load (0.1 to 1.0)", options.MaxSamplingRate),
                 BuildProperty("AdaptiveSampling:EvaluationWindow", "HONUA__ADAPTIVESAMPLING__EVALUATIONWINDOW", "timespan",
                     "How often to adjust sampling rates (format: hh:mm:ss)", options.EvaluationWindow.ToString()),
@@ -566,8 +740,8 @@ public sealed class ConfigurationDocumentationService
     private ConfigurationProperty BuildProperty(string path, string envVar, string type, string description,
         object? defaultValue, bool isRequired = false, bool isSensitive = false, string? validation = null)
     {
-        var currentValue = GetCurrentValue(path, isSensitive);
-        var source = DetermineSource(path);
+        var currentValue = GetCurrentValue(path, envVar, isSensitive);
+        var source = DetermineSource(path, envVar);
 
         return new ConfigurationProperty
         {
@@ -588,7 +762,7 @@ public sealed class ConfigurationDocumentationService
     private ConfigurationProperty BuildPropertyWithCurrent(string path, string envVar, string type, string description,
         object? defaultValue, object? currentValue, string? validation = null, bool isSensitive = false)
     {
-        var source = DetermineSource(path);
+        var source = DetermineSource(path, envVar);
         var displayValue = isSensitive && currentValue != null ? "***" : currentValue;
 
         return new ConfigurationProperty
@@ -607,9 +781,9 @@ public sealed class ConfigurationDocumentationService
         };
     }
 
-    private string? GetCurrentValue(string path, bool isSensitive)
+    private string? GetCurrentValue(string path, string envVar, bool isSensitive)
     {
-        var value = _configuration[path];
+        var value = GetResolvedValue(path, envVar);
         if (value == null)
         {
             return null;
@@ -623,16 +797,21 @@ public sealed class ConfigurationDocumentationService
         return value;
     }
 
-    private string DetermineSource(string path)
+    private string DetermineSource(string path, string envVar)
     {
-        // Check if environment variable is set
-        var envVarName = path.Replace(":", "__");
-        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(envVarName)))
+        if (!string.IsNullOrEmpty(_configuration[envVar]) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(envVar)))
         {
             return "Environment";
         }
 
-        // Check if value exists in configuration
+        var normalizedEnvVarName = path.Replace(":", "__");
+        if (!string.IsNullOrEmpty(_configuration[normalizedEnvVarName]) ||
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(normalizedEnvVarName)))
+        {
+            return "Environment";
+        }
+
         if (_configuration[path] != null)
         {
             return "appsettings.json";
@@ -641,7 +820,12 @@ public sealed class ConfigurationDocumentationService
         return "Default";
     }
 
-    private List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
+    private string? GetResolvedValue(string path, string envVar) =>
+        _configuration[envVar]
+        ?? _configuration[path.Replace(":", "__")]
+        ?? _configuration[path];
+
+    private List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference(IEnumerable<ConfigurationSection> sections)
     {
         var envVars = new List<EnvironmentVariableInfo>
         {
@@ -725,22 +909,65 @@ public sealed class ConfigurationDocumentationService
 
             // Adaptive Sampling
             new() { Name = "HONUA__ADAPTIVESAMPLING__ENABLED", ConfigPath = "AdaptiveSampling", Description = "Enable adaptive sampling", Default = "true", Example = "false" },
-            new() { Name = "HONUA__ADAPTIVESAMPLING__BASESAMPLRATE", ConfigPath = "AdaptiveSampling", Description = "Base sampling rate", Default = "0.1", Example = "0.05" },
-            new() { Name = "HONUA__ADAPTIVESAMPLING__MINSAMPLRATE", ConfigPath = "AdaptiveSampling", Description = "Minimum sampling rate", Default = "0.01", Example = "0.005" },
-            new() { Name = "HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE", ConfigPath = "AdaptiveSampling", Description = "Maximum sampling rate", Default = "0.5", Example = "0.8" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE", ConfigPath = "AdaptiveSampling", Description = "Base sampling rate", Default = "0.1 in shipped appsettings.json; 0.01 if the section is absent", Example = "0.05" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__MINSAMPLINGRATE", ConfigPath = "AdaptiveSampling", Description = "Minimum sampling rate", Default = "0.01 in shipped appsettings.json; 0.001 if the section is absent", Example = "0.005" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__MAXSAMPLINGRATE", ConfigPath = "AdaptiveSampling", Description = "Maximum sampling rate", Default = "0.5 in shipped appsettings.json; 1.0 if the section is absent", Example = "0.8" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__LOAD__CPUTHRESHOLD", ConfigPath = "AdaptiveSampling.Load", Description = "CPU threshold for load reduction", Default = "70", Example = "80" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__LOAD__MEMORYTHRESHOLD", ConfigPath = "AdaptiveSampling.Load", Description = "Memory threshold for load reduction", Default = "80", Example = "90" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__LOAD__ACTIVEREQUESTTHRESHOLD", ConfigPath = "AdaptiveSampling.Load", Description = "Active request threshold for load reduction", Default = "50 in shipped appsettings.json; 100 if the section is absent", Example = "100" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORRATETHRESHOLD", ConfigPath = "AdaptiveSampling.Error", Description = "Error rate % that increases sampling", Default = "5.0", Example = "10.0" },
-            new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER", ConfigPath = "AdaptiveSampling.Error", Description = "Sampling multiplier during errors", Default = "3.0", Example = "5.0" },
+            new() { Name = "HONUA__ADAPTIVESAMPLING__ERROR__ERRORMULTIPLIER", ConfigPath = "AdaptiveSampling.Error", Description = "Sampling multiplier during errors", Default = "3.0 in shipped appsettings.json; 2.0 if the section is absent", Example = "5.0" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__CRITICALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Critical operation sampling rate", Default = "1.0", Example = "0.8" },
             new() { Name = "HONUA__ADAPTIVESAMPLING__OPERATIONS__NORMALRATE", ConfigPath = "AdaptiveSampling.Operations", Description = "Normal operation sampling rate", Default = "0.1", Example = "0.05" }
         };
 
+        var seenNames = new HashSet<string>(envVars.Select(static envVar => envVar.Name), StringComparer.Ordinal);
+
         foreach (var contributor in _configurationDocumentationContributors)
         {
-            envVars.AddRange(contributor.GetEnvironmentVariables());
+            foreach (var envVar in contributor.GetEnvironmentVariables())
+            {
+                if (seenNames.Add(envVar.Name))
+                {
+                    envVars.Add(envVar);
+                }
+            }
+        }
+
+        foreach (var (section, property) in EnumerateProperties(sections))
+        {
+            if (string.IsNullOrWhiteSpace(property.EnvironmentVariable) ||
+                !seenNames.Add(property.EnvironmentVariable))
+            {
+                continue;
+            }
+
+            envVars.Add(new EnvironmentVariableInfo
+            {
+                Name = property.EnvironmentVariable,
+                ConfigPath = section.Name,
+                Description = property.Description,
+                Default = property.DefaultValue?.ToString()
+            });
         }
 
         return envVars;
+    }
+
+    private static IEnumerable<(ConfigurationSection Section, ConfigurationProperty Property)> EnumerateProperties(
+        IEnumerable<ConfigurationSection> sections)
+    {
+        foreach (var section in sections)
+        {
+            foreach (var property in section.Properties)
+            {
+                yield return (section, property);
+            }
+
+            foreach (var nested in EnumerateProperties(section.SubSections))
+            {
+                yield return nested;
+            }
+        }
     }
 }
