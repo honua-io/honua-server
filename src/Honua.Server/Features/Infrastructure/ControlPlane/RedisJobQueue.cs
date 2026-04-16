@@ -178,8 +178,9 @@ internal sealed partial class RedisJobQueue(
                     new HashEntry("claimedAt", now.ToUnixTimeMilliseconds().ToString())
                 ]).ConfigureAwait(false);
 
-                // Persist claim metadata to the job store. If this fails, roll back the
-                // Redis claim so the job returns to the pending queue.
+                // Persist claim metadata to the job store. Use CAS so a concurrent
+                // cancel or terminal transition cannot be overwritten by the claim.
+                // If the store write fails, repair the Redis claim state.
                 var claimed = job with
                 {
                     Status = ExecutionJobStatus.Provisioning,
@@ -194,7 +195,20 @@ internal sealed partial class RedisJobQueue(
 
                 try
                 {
-                    await jobStore.SetAsync(claimed, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    if (!await jobStore.TrySetAsync(claimed, cancellationToken: cancellationToken).ConfigureAwait(false))
+                    {
+                        var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                        if (conflict == null || IsTerminal(conflict.Status))
+                        {
+                            await ClearClaimAsync(operationId).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await RollBackClaimAsync(operationId, conflict.Priority).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
                 }
                 catch
                 {
@@ -358,6 +372,20 @@ internal sealed partial class RedisJobQueue(
                 [(RedisValue)operationId, score, RedisValue.EmptyString])
                 .ConfigureAwait(false);
             Log.ClaimRolledBack(logger, operationId);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort; stale-claim reconciliation is the safety net.
+            Log.ClaimRollbackFailed(logger, operationId, ex);
+        }
+    }
+
+    private async Task ClearClaimAsync(string operationId)
+    {
+        try
+        {
+            await _database.SortedSetRemoveAsync(ClaimedSetKey, operationId).ConfigureAwait(false);
+            await _database.KeyDeleteAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

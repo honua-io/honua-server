@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -238,6 +239,77 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenProgressAlreadyCancelledAndDurableJobClaimed_PersistsSignalWithoutRemovingClaim()
+    {
+        var fixture = new WebAppFixture();
+        var jobQueue = Substitute.For<IJobQueue>();
+        fixture.ReplaceService<IJobQueue>(jobQueue);
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var jobStore = fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            await fixture.DisposeAsync();
+            return;
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now.AddMinutes(-1),
+                UpdatedAt = now,
+                ClaimedBy = "worker-remote",
+                ClaimedAt = now.AddSeconds(-30),
+                LastHeartbeatAt = now.AddSeconds(-5),
+                CurrentPhase = "Running",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "test-admin-reconcile-claimed-cancel"
+                }
+            };
+
+            await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "already-cancelled-running") with
+            {
+                WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+                CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+                CompletedAt = now
+            };
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var updatedJob = await jobStore.GetAsync(operationId);
+            updatedJob.Should().NotBeNull();
+            updatedJob!.Status.Should().Be(ExecutionJobStatus.Running);
+            updatedJob.CancellationRequestedAt.Should().NotBeNull();
+
+            await jobQueue.DidNotReceive().RemoveAsync(operationId, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

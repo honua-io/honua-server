@@ -772,7 +772,7 @@ internal sealed partial class JobExecutionContext(
                 UpdatedAt = DateTimeOffset.UtcNow,
                 LastHeartbeatAt = DateTimeOffset.UtcNow
             };
-            await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -826,7 +826,7 @@ internal sealed partial class JobExecutionContext(
                 UpdatedAt = DateTimeOffset.UtcNow,
                 LastHeartbeatAt = DateTimeOffset.UtcNow
             };
-            await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -883,7 +883,7 @@ internal sealed partial class JobExecutionContext(
                         LastHeartbeatAt = DateTimeOffset.UtcNow,
                         UpdatedAt = DateTimeOffset.UtcNow
                     };
-                    await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
                 }
                 finally
                 {

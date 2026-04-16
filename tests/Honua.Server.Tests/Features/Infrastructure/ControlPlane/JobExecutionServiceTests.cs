@@ -214,7 +214,7 @@ public sealed class JobExecutionServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await context.RunHeartbeatPumpAsync(cts.Token);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -248,7 +248,7 @@ public sealed class JobExecutionServiceTests
 
         await context.ReportProgressAsync(50, "Processing", CancellationToken.None);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -282,8 +282,78 @@ public sealed class JobExecutionServiceTests
 
         await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: a progress update racing with a terminal or cancellation write
+    /// must skip the stale write instead of clobbering the newer durable state.
+    /// </summary>
+    [UnitTest]
+    public async Task ReportProgress_Skips_WhenTrySetConflicts()
+    {
+        var running = CreateProvisioningJob() with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(running);
+        jobStore.TrySetAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        using var context = new JobExecutionContext(
+            running.OperationId, running.ClaimedBy!, jobStore, null,
+            JobHeartbeatPolicy.Default,
+            null, NullLogger.Instance);
+
+        await context.ReportProgressAsync(50, "Processing", CancellationToken.None);
+
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Running),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Regression: artifact publication racing with a terminal or cancellation
+    /// write must skip the stale durable update instead of reviving the old claim.
+    /// </summary>
+    [UnitTest]
+    public async Task PublishArtifact_Skips_WhenTrySetConflicts()
+    {
+        var running = CreateProvisioningJob() with
+        {
+            Status = ExecutionJobStatus.Running
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
+            .Returns(running);
+        jobStore.TrySetAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        using var context = new JobExecutionContext(
+            running.OperationId, running.ClaimedBy!, jobStore, null,
+            JobHeartbeatPolicy.Default,
+            null, NullLogger.Instance);
+
+        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.Status == ExecutionJobStatus.Running
+                && job.ArtifactReferences.Contains("s3://bucket/artifact.zip")),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
@@ -1042,7 +1112,7 @@ public sealed class JobExecutionServiceTests
         await context.RunHeartbeatPumpAsync(cts.Token);
 
         // The pump continued past the transient failure and wrote at least one heartbeat.
-        await jobStore.Received().SetAsync(
+        await jobStore.Received().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());

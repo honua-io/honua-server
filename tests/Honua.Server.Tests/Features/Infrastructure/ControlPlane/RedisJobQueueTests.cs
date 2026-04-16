@@ -110,8 +110,8 @@ public sealed class RedisJobQueueTests
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: operationId, priority: OperationPriority.Critical));
-        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(storeFailure));
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(storeFailure));
 
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 
@@ -123,6 +123,56 @@ public sealed class RedisJobQueueTests
         Assert.False(HasCall(database, nameof(IDatabase.SortedSetRemoveAsync), (RedisKey)ClaimedSetKey, (RedisValue)operationId));
         Assert.False(HasCall(database, nameof(IDatabase.SortedSetAddAsync), (RedisKey)QueueKey, (RedisValue)operationId));
         Assert.False(HasCall(database, nameof(IDatabase.KeyDeleteAsync), (RedisKey)GetClaimMetaKey(operationId)));
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_WhenStoreCasConflictAndJobTerminal_ClearsClaimAndReturnsNull()
+    {
+        const string operationId = "job-terminal-conflict";
+
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(new RedisValue[] { operationId }));
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(Array.Empty<HashEntry>()));
+        database.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<HashEntry[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.CompletedTask);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)"1")));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var queued = CreateQueuedJob(operationId: operationId, priority: OperationPriority.High);
+        var cancelled = queued with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+            .Returns(queued, cancelled);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var result = await queue.TryClaimAsync("worker-1");
+
+        Assert.Null(result);
+        await database.Received(1).SortedSetRemoveAsync((RedisKey)ClaimedSetKey, (RedisValue)operationId);
+        await database.Received(1).KeyDeleteAsync((RedisKey)GetClaimMetaKey(operationId));
+        Assert.False(HasCall(database, nameof(IDatabase.SortedSetAddAsync), (RedisKey)QueueKey, (RedisValue)operationId));
     }
 
     [UnitTest]
@@ -212,8 +262,8 @@ public sealed class RedisJobQueueTests
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId));
-        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 
@@ -279,8 +329,8 @@ public sealed class RedisJobQueueTests
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId));
-        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 
@@ -355,8 +405,8 @@ public sealed class RedisJobQueueTests
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId));
-        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 
@@ -422,8 +472,8 @@ public sealed class RedisJobQueueTests
             });
         jobStore.GetAsync(readyJobId, Arg.Any<CancellationToken>())
             .Returns(CreateQueuedJob(operationId: readyJobId, kind: ExecutionJobKind.ExtractTransformLoad));
-        jobStore.SetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
 

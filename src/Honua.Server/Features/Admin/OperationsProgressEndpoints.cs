@@ -156,17 +156,51 @@ internal static class OperationsProgressEndpoints
             return;
         }
 
-        if (!IsExecutionJobTerminal(executionJob.Status))
+        if (executionJob.Status is ExecutionJobStatus.Cancelled)
         {
-            var now = DateTimeOffset.UtcNow;
-            var cancelled = executionJob with
+            await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (IsExecutionJobTerminal(executionJob.Status))
+        {
+            return;
+        }
+
+        if (executionJob.ClaimedBy != null)
+        {
+            if (!executionJob.CancellationRequestedAt.HasValue)
             {
-                Status = ExecutionJobStatus.Cancelled,
-                UpdatedAt = now,
-                CompletedAt = now,
-                CurrentPhase = "Cancelled"
-            };
-            await jobStore.SetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+                var now = DateTimeOffset.UtcNow;
+                var requested = executionJob with
+                {
+                    CancellationRequestedAt = now,
+                    UpdatedAt = now
+                };
+
+                await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var cancelledNow = DateTimeOffset.UtcNow;
+        var cancelled = executionJob with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            UpdatedAt = cancelledNow,
+            CompletedAt = cancelledNow,
+            CurrentPhase = "Cancelled"
+        };
+
+        var wroteCancelled = await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!wroteCancelled)
+        {
+            var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (conflict?.Status is not ExecutionJobStatus.Cancelled)
+            {
+                return;
+            }
         }
 
         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
