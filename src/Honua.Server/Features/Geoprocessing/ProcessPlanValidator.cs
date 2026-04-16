@@ -49,6 +49,21 @@ internal static class ProcessPlanValidator
         "miles", "mile", "mi"
     };
 
+    // Mirrors SpatialAnalyticsRequestHandlers.TryParseStatisticType so the
+    // validator rejects the same statisticType values the handler would reject.
+    private static readonly HashSet<string> StatisticTypeValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "count", "sum", "min", "max", "avg", "stddev", "var"
+    };
+
+    // Mirrors AnalyticsFeatureQueryFactory.IsDistanceBasedSpatialRelationship so
+    // the validator rejects the same distance-based spatialRel values the
+    // handler rejects (the analytics endpoints already overload `distance`).
+    private static readonly HashSet<string> RejectedSpatialRelValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "esriSpatialRelWithinDistance", "esriSpatialRelBeyondDistance"
+    };
+
     /// <summary>
     /// Validates all <see cref="AnalysisPlanStepKind.Geoprocess"/> steps in the plan
     /// against the catalog, returning any violations and warnings found. Uses the
@@ -208,17 +223,33 @@ internal static class ProcessPlanValidator
         {
             case "analytics.cluster":
                 ValidateClusterSemantics(step, analyticsLimits, violations);
+                ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
             case "analytics.spatial-join":
                 ValidateSpatialJoinSemantics(step, analyticsLimits, violations);
+                ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
             case "analytics.density":
                 ValidateDensitySemantics(step, analyticsLimits, violations);
+                ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
             case "analytics.buffer-aggregate":
                 ValidateBufferAggregateSemantics(step, analyticsLimits, violations);
+                ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
         }
+    }
+
+    // Validates the structured Text inputs every analytics handler honors via
+    // AnalyticsFeatureQueryFactory. Each parser is dependency-free so the
+    // validator can apply the same rejections the handler would apply at
+    // execution time, without needing IFilterExpressionService or layer metadata.
+    private static void ApplySharedAnalyticsFilterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateObjectIds(step, violations);
+        ValidateSpatialRel(step, violations);
     }
 
     private static void ValidateClusterSemantics(
@@ -264,6 +295,25 @@ internal static class ProcessPlanValidator
 
         // k — handler rejects < MinK (1) or > MaxKMeansK.
         RequireIntInRange(step, "k", ClusterQuery.MinK, analyticsLimits.MaxKMeansK, violations);
+
+        // outStatistics JSON syntax (handler parses via TryParseOutStatisticsJson).
+        ValidateOutStatistics(step, violations);
+
+        // Cluster handler rejects outStatistics unless returnHullPerCluster=true:
+        // per-feature output cannot carry GROUP BY aggregates. Mirror here so the
+        // validator does not admit plans the handler will 400.
+        var hasOutStatistics = step.Inputs.TryGetValue("outStatistics", out var clusterStats)
+            && !string.IsNullOrWhiteSpace(clusterStats);
+        var returnHull = step.Inputs.TryGetValue("returnHullPerCluster", out var hullRaw)
+            && !string.IsNullOrWhiteSpace(hullRaw)
+            && bool.TryParse(hullRaw, out var parsedHull)
+            && parsedHull;
+        if (hasOutStatistics && !returnHull)
+        {
+            AddRangeViolationIfNew(step, "outStatistics",
+                "outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate statistics",
+                violations);
+        }
     }
 
     private static void ValidateSpatialJoinSemantics(
@@ -293,6 +343,40 @@ internal static class ProcessPlanValidator
             maximum: analyticsLimits.MaxDWithinDistanceMeters,
             maximumUnit: "meters",
             violations);
+
+        // Self-join guard: handler rejects joinLayerId == layerId because the SQL
+        // builder cannot meaningfully self-join. Only fires when both ids parse
+        // as ints; non-numeric ids are caught by the LayerId type validator.
+        ValidateSpatialJoinJoinLayerId(step, violations);
+
+        // outStatistics JSON syntax (handler parses via TryParseOutStatisticsJson).
+        ValidateOutStatistics(step, violations);
+    }
+
+    private static void ValidateSpatialJoinJoinLayerId(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("joinLayerId", out var joinRaw)
+            || string.IsNullOrWhiteSpace(joinRaw)
+            || !int.TryParse(joinRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var joinId))
+        {
+            return;
+        }
+
+        if (!step.Inputs.TryGetValue("layerId", out var layerRaw)
+            || string.IsNullOrWhiteSpace(layerRaw)
+            || !int.TryParse(layerRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+        {
+            return;
+        }
+
+        if (joinId == layerId)
+        {
+            AddRangeViolationIfNew(step, "joinLayerId",
+                "joinLayerId must differ from the target layerId (self-join is not supported)",
+                violations);
+        }
     }
 
     private static void ValidateDensitySemantics(
@@ -357,6 +441,162 @@ internal static class ProcessPlanValidator
             AddRangeViolationIfNew(step, "distance",
                 $"distance must not exceed {analyticsLimits.MaxBufferDistanceMeters.ToString(CultureInfo.InvariantCulture)} meters (in the supplied unit), got '{distanceRaw}'",
                 violations);
+        }
+
+        // outStatistics JSON syntax (handler parses via TryParseOutStatisticsJson).
+        ValidateOutStatistics(step, violations);
+
+        // Buffer-aggregate handler rejects outStatistics unless dissolve=true:
+        // per-feature output cannot carry GROUP BY aggregates. Mirror here so
+        // the validator does not admit plans the handler will 400.
+        var hasOutStatistics = step.Inputs.TryGetValue("outStatistics", out var bufferStats)
+            && !string.IsNullOrWhiteSpace(bufferStats);
+        // dissolve defaults to true; unparseable strings keep the default so
+        // the type validator's INVALID_PARAMETER_VALUE for the bad flag is the
+        // only error surfaced (no spurious cross-field violation here).
+        var dissolve = true;
+        if (step.Inputs.TryGetValue("dissolve", out var dissolveRaw)
+            && !string.IsNullOrWhiteSpace(dissolveRaw)
+            && bool.TryParse(dissolveRaw, out var parsedDissolve))
+        {
+            dissolve = parsedDissolve;
+        }
+        if (hasOutStatistics && !dissolve)
+        {
+            AddRangeViolationIfNew(step, "outStatistics",
+                "outStatistics requires dissolve=true; per-feature buffers cannot carry aggregate statistics",
+                violations);
+        }
+    }
+
+    // Mirrors AnalyticsFeatureQueryFactory.TryParseObjectIds — comma-separated
+    // longs with empty entries skipped. Catches non-numeric inputs the handler
+    // would 400 on, before they reach the SQL builder.
+    private static void ValidateObjectIds(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("objectIds", out var raw)
+            || string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            if (!long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                AddRangeViolationIfNew(step, "objectIds",
+                    $"expected comma-separated integer feature identifiers, got '{raw}'",
+                    violations);
+                return;
+            }
+        }
+    }
+
+    // Mirrors AnalyticsFeatureQueryFactory.IsDistanceBasedSpatialRelationship —
+    // distance-based spatialRel values would collide with the operation-specific
+    // `distance` parameter, so the handler 400s and the validator must too.
+    private static void ValidateSpatialRel(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("spatialRel", out var raw)
+            || string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        if (RejectedSpatialRelValues.Contains(raw.Trim()))
+        {
+            AddRangeViolationIfNew(step, "spatialRel",
+                $"distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead, got '{raw}'",
+                violations);
+        }
+    }
+
+    // Mirrors SpatialAnalyticsRequestHandlers.TryParseOutStatisticsJson — accepts
+    // either a JSON array or a single object that the handler wraps into an
+    // array, and enforces statisticType ∈ supported set + non-empty field names.
+    private static void ValidateOutStatistics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("outStatistics", out var raw)
+            || string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        var fieldPath = $"steps[{step.StepId}].inputs.outStatistics";
+        if (violations.Any(v => v.FieldPath == fieldPath))
+        {
+            return;
+        }
+
+        if (!TryValidateOutStatisticsJson(raw, out var error))
+        {
+            AddRangeViolationIfNew(step, "outStatistics", error, violations);
+        }
+    }
+
+    private static bool TryValidateOutStatisticsJson(string raw, out string error)
+    {
+        error = "";
+        // The handler wraps a single JSON object into a single-element array
+        // before parsing, so the validator must accept the same shape.
+        var json = raw.TrimStart().StartsWith('[') ? raw : $"[{raw}]";
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Array)
+            {
+                error = "outStatistics must be a JSON array";
+                return false;
+            }
+
+            foreach (var element in root.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    error = "each outStatistics entry must be a JSON object";
+                    return false;
+                }
+
+                var statisticType = element.TryGetProperty("statisticType", out var typeElement)
+                    ? typeElement.GetString()
+                    : null;
+                var onField = element.TryGetProperty("onStatisticField", out var fieldElement)
+                    ? fieldElement.GetString()
+                    : null;
+                var outFieldName = element.TryGetProperty("outStatisticFieldName", out var outElement)
+                    ? outElement.GetString()
+                    : null;
+
+                if (string.IsNullOrWhiteSpace(statisticType)
+                    || string.IsNullOrWhiteSpace(onField)
+                    || string.IsNullOrWhiteSpace(outFieldName))
+                {
+                    error = "each outStatistics entry requires statisticType, onStatisticField, and outStatisticFieldName";
+                    return false;
+                }
+
+                if (!StatisticTypeValues.Contains(statisticType))
+                {
+                    error = $"unsupported statisticType '{statisticType}' (allowed: count, sum, min, max, avg, stddev, var)";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = $"outStatistics is not valid JSON: {ex.Message}";
+            return false;
         }
     }
 
@@ -603,9 +843,14 @@ internal static class ProcessPlanValidator
                 return true;
 
             case ProcessParameterValueType.LayerId:
-                if (string.IsNullOrWhiteSpace(value))
+                // Spatial analytics REST routes constrain {layerId:int} and the
+                // handler joinLayerId path uses int.TryParse, so non-integer ids
+                // are 400'd at execution. Validate the same shape here so plans
+                // with opaque-string ids do not slip through the catalog gate.
+                if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
+                    || layerId <= 0)
                 {
-                    errorDetail = "expected non-empty layer identifier";
+                    errorDetail = $"expected positive integer layer identifier, got '{value}'";
                     return false;
                 }
                 return true;

@@ -55,16 +55,20 @@ Geoprocess steps are validated against the built-in `IProcessCatalog` (14 seeded
 | `UNKNOWN_PARAMETER` | Step supplied a parameter name not declared on the process |
 | `INVALID_PARAMETER_VALUE` | Value failed type, enum, or range validation |
 
-Typed parameter validation runs against `ProcessParameterValueType` (`Text`, `WholeNumber`, `FloatingPoint`, `Flag`, `Wkb`, `WkbArray`, `Srid`, `LayerId`); WKB inputs must be base64-encoded bytes and `WkbArray` expects a JSON array of base64 strings with at least one element. Blank (whitespace-only) values for optional or conditional parameters are treated as "not supplied" to match the handler's `IsNullOrWhiteSpace` gate — so blank conditional inputs surface as `MISSING_REQUIRED_PARAMETER`, not `INVALID_PARAMETER_VALUE`.
+Typed parameter validation runs against `ProcessParameterValueType` (`Text`, `WholeNumber`, `FloatingPoint`, `Flag`, `Wkb`, `WkbArray`, `Srid`, `LayerId`); WKB inputs must be base64-encoded bytes, `WkbArray` expects a JSON array of base64 strings with at least one element, and `LayerId` requires a positive integer to match the handler `int.TryParse` gate (the spatial analytics REST routes constrain `{layerId:int}`). Blank (whitespace-only) values for optional or conditional parameters are treated as "not supplied" to match the handler's `IsNullOrWhiteSpace` gate — so blank conditional inputs surface as `MISSING_REQUIRED_PARAMETER`, not `INVALID_PARAMETER_VALUE`.
 
 Per-process semantic rules mirror the live request handlers so plans accepted here are also accepted at execution time. Upper bounds read from `Limits:Analytics` (`MaxDbscanEpsMeters`, `MaxKMeansK`, `MaxDWithinDistanceMeters`, `MaxBufferDistanceMeters`, `MinDensityCellSizeMeters`, `MaxDensityCellSizeMeters`) are applied here too, so callers see the same rejection boundaries the handlers apply at execution time:
 
-| Process | Enum parameters (allowed values) | Conditional requiredness | Numeric ranges |
-|---|---|---|---|
-| `analytics.cluster` | `algorithm` ∈ {`dbscan`, `kmeans`} | `eps`+`minPoints` when `algorithm=dbscan` (default); `k` when `algorithm=kmeans` | `0 < eps ≤ MaxDbscanEpsMeters`; `minPoints ≥ 1`; `1 ≤ k ≤ MaxKMeansK` |
-| `analytics.spatial-join` | `predicate` ∈ {`intersects`, `contains`, `within`, `dwithin`} | `distance` when `predicate=dwithin` | `0 < distance ≤ MaxDWithinDistanceMeters` |
-| `analytics.density` | `mode` ∈ {`hex`, `square`} | — | `MinDensityCellSizeMeters ≤ cellSize ≤ MaxDensityCellSizeMeters` |
-| `analytics.buffer-aggregate` | `unit` ∈ {`meters`, `kilometers`, `feet`, `miles`} | — | `distance ≥ 0`; cap of `MaxBufferDistanceMeters` applied after converting `distance` to meters so alternate units cannot bypass the limit |
+| Process | Enum parameters (allowed values) | Conditional requiredness | Numeric ranges | Cross-field invariants |
+|---|---|---|---|---|
+| `analytics.cluster` | `algorithm` ∈ {`dbscan`, `kmeans`} | `eps`+`minPoints` when `algorithm=dbscan` (default); `k` when `algorithm=kmeans` | `0 < eps ≤ MaxDbscanEpsMeters`; `minPoints ≥ 1`; `1 ≤ k ≤ MaxKMeansK` | `outStatistics` requires `returnHullPerCluster=true` (per-feature output cannot carry GROUP BY aggregates) |
+| `analytics.spatial-join` | `predicate` ∈ {`intersects`, `contains`, `within`, `dwithin`} | `distance` when `predicate=dwithin` | `0 < distance ≤ MaxDWithinDistanceMeters` | `joinLayerId` must differ from `layerId` (no self-join) |
+| `analytics.density` | `mode` ∈ {`hex`, `square`} | — | `MinDensityCellSizeMeters ≤ cellSize ≤ MaxDensityCellSizeMeters` | — |
+| `analytics.buffer-aggregate` | `unit` ∈ {`meters`, `kilometers`, `feet`, `miles`} | — | `distance ≥ 0`; cap of `MaxBufferDistanceMeters` applied after converting `distance` to meters so alternate units cannot bypass the limit | `outStatistics` requires `dissolve=true` (per-feature buffers cannot carry GROUP BY aggregates) |
+
+Structured Text-typed inputs that the handlers parse without runtime services are validated here too: `outStatistics` is parsed as JSON (single object or array) and each entry must carry `statisticType` ∈ {`count`, `sum`, `min`, `max`, `avg`, `stddev`, `var`}, `onStatisticField`, and `outStatisticFieldName`; `objectIds` must be comma-separated integer feature identifiers; and `spatialRel` rejects the distance-based variants (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) since the analytics endpoints already overload the operation-specific `distance` parameter.
+
+The remaining Text-typed inputs on the shared analytics filter bundle (`where`, `geometry`, `geometryType`, `inSR`, `time`, `timeRelation`) are accepted at this gate as opaque strings and validated at execution time by the handler-side filter pipeline (`AnalyticsFeatureQueryFactory`) because they require runtime services (filter expression service, geometry parser, SRID resolver, layer field metadata) not available at catalog-validation time.
 
 ## Configuration
 

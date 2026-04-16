@@ -394,7 +394,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels"
+                        ["layerId"] = "100"
                     }
                 }
             ]
@@ -430,7 +430,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "dbscan",
                         ["eps"] = "25",
                         ["minPoints"] = "5"
@@ -462,7 +462,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "kmeans"
                     }
                 }
@@ -494,7 +494,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "hierarchical"
                     }
                 }
@@ -526,7 +526,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "dbscan",
                         ["eps"] = "0",
                         ["minPoints"] = "5"
@@ -560,7 +560,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "kmeans",
                         ["k"] = "0"
                     }
@@ -593,8 +593,8 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.spatial-join",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
-                        ["joinLayerId"] = "zoning"
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200"
                     }
                 }
             ]
@@ -624,8 +624,8 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.spatial-join",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
-                        ["joinLayerId"] = "zoning",
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200",
                         ["predicate"] = "dwithin",
                         ["distance"] = "250"
                     }
@@ -657,8 +657,8 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.spatial-join",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
-                        ["joinLayerId"] = "zoning",
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200",
                         ["predicate"] = "dwithin"
                     }
                 }
@@ -690,8 +690,8 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.spatial-join",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
-                        ["joinLayerId"] = "zoning",
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200",
                         ["predicate"] = "touches"
                     }
                 }
@@ -723,8 +723,8 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.spatial-join",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
-                        ["joinLayerId"] = "zoning",
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200",
                         ["predicate"] = "dwithin",
                         ["distance"] = "-1"
                     }
@@ -757,7 +757,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.density",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["cellSize"] = "500"
                     }
                 }
@@ -788,7 +788,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.density",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["cellSizeMeters"] = "500"
                     }
                 }
@@ -821,7 +821,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.density",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["mode"] = "triangle",
                         ["cellSize"] = "500"
                     }
@@ -854,7 +854,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.density",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["cellSize"] = "0"
                     }
                 }
@@ -886,7 +886,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.buffer-aggregate",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["distance"] = "100",
                         ["unit"] = "leagues"
                     }
@@ -919,7 +919,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.buffer-aggregate",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["distance"] = "5",
                         ["unit"] = "km"
                     }
@@ -1151,7 +1151,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "dbscan",
                         ["eps"] = "",
                         ["minPoints"] = "5"
@@ -1188,7 +1188,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "dbscan",
                         ["eps"] = "500000",
                         ["minPoints"] = "5"
@@ -1224,7 +1224,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["algorithm"] = "kmeans",
                         ["k"] = "5000"
                     }
@@ -1258,8 +1258,8 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.spatial-join",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
-                        ["joinLayerId"] = "zoning",
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200",
                         ["predicate"] = "dwithin",
                         ["distance"] = "250000"
                     }
@@ -1293,7 +1293,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.density",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["cellSize"] = "5"
                     }
                 }
@@ -1326,7 +1326,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.density",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["cellSize"] = "500000"
                     }
                 }
@@ -1360,7 +1360,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.buffer-aggregate",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["distance"] = "0"
                     }
                 }
@@ -1391,7 +1391,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.buffer-aggregate",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["distance"] = "-1"
                     }
                 }
@@ -1424,7 +1424,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.buffer-aggregate",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["distance"] = "200000",
                         ["unit"] = "meters"
                     }
@@ -1460,7 +1460,7 @@ public sealed class ProcessCatalogTests
                     ProcessId = "analytics.buffer-aggregate",
                     Inputs = new Dictionary<string, string>
                     {
-                        ["layerId"] = "parcels",
+                        ["layerId"] = "100",
                         ["distance"] = "200",
                         ["unit"] = "km"
                     }
@@ -1473,6 +1473,315 @@ public sealed class ProcessCatalogTests
         violations.Should().ContainSingle(v =>
             v.Code == "INVALID_PARAMETER_VALUE" &&
             v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    // -----------------------------------------------------------------------
+    // Validator — handler-parity guards (joinLayerId, outStatistics, shared filters)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_NonIntegerJoinLayerId_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "zoning"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.joinLayerId");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_SelfJoin_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "100"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.joinLayerId");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_OutStatisticsWithoutHull_ProducesInvariantViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5",
+                        ["returnHullPerCluster"] = "false",
+                        ["outStatistics"] = "{\"statisticType\":\"sum\",\"onStatisticField\":\"pop\",\"outStatisticFieldName\":\"pop_total\"}"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.outStatistics");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_MalformedOutStatisticsJson_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5",
+                        ["returnHullPerCluster"] = "true",
+                        ["outStatistics"] = "{not-json"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.outStatistics");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_OutStatisticsUnsupportedStatisticType_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["joinLayerId"] = "200",
+                        ["outStatistics"] = "[{\"statisticType\":\"median\",\"onStatisticField\":\"pop\",\"outStatisticFieldName\":\"pop_median\"}]"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.outStatistics");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_OutStatisticsWithoutDissolve_ProducesInvariantViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["distance"] = "100",
+                        ["dissolve"] = "false",
+                        ["outStatistics"] = "[{\"statisticType\":\"count\",\"onStatisticField\":\"id\",\"outStatisticFieldName\":\"feature_count\"}]"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.outStatistics");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_NonNumericObjectIds_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5",
+                        ["objectIds"] = "1,abc,3"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.objectIds");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_DistanceBasedSpatialRel_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["cellSize"] = "100",
+                        ["spatialRel"] = "esriSpatialRelWithinDistance"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.spatialRel");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_NonIntegerLayerId_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.layerId");
     }
 
     // -----------------------------------------------------------------------
