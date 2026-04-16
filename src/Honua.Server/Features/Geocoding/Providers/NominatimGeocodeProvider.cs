@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 

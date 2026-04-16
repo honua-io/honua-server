@@ -13,7 +13,9 @@ public sealed class GeocodingOptionsValidatorTests
     [UnitTest]
     public void Validate_WithPublicHttpsBaseUrl_ReturnsSuccess()
     {
-        var options = CreateOptions("https://nominatim.example");
+        // Literal public IP avoids depending on DNS in the unit-test process.
+        // OutboundHttpUrlValidatorTests cover the DNS resolution path independently.
+        var options = CreateOptions("https://8.8.8.8/nominatim");
 
         var result = _validator.Validate(null, options);
 

@@ -3,9 +3,8 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
-using System.Net;
-using System.Net.Sockets;
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
@@ -154,7 +153,9 @@ public abstract class ConfigurationValidator<
     }
 
     /// <summary>
-    /// Helper to validate outbound HTTP URLs.
+    /// Helper to validate outbound HTTPS URLs via <see cref="OutboundHttpUrlValidator.ValidateConfiguration(string)"/>,
+    /// which performs the same DNS-aware reservation checks as the runtime path so configuration-time
+    /// validation does not silently accept hostnames that the runtime would later reject.
     /// </summary>
     protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> errors)
     {
@@ -164,33 +165,10 @@ public abstract class ConfigurationValidator<
             return;
         }
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        var result = OutboundHttpUrlValidator.ValidateConfiguration(url);
+        if (!result.IsValid)
         {
-            errors.Add($"{propertyName} must be a valid absolute URL, but was '{url}'.");
-            return;
-        }
-
-        if (uri.Scheme != Uri.UriSchemeHttps)
-        {
-            errors.Add($"{propertyName} must use HTTPS scheme, but was '{uri.Scheme}'.");
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
-        {
-            errors.Add($"{propertyName} must not include embedded credentials.");
-            return;
-        }
-
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
-        {
-            errors.Add($"{propertyName} must not target a private or loopback address.");
-            return;
-        }
-
-        if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
-        {
-            errors.Add($"{propertyName} must not target a private or loopback address.");
+            errors.Add($"{propertyName} {result.ErrorMessage}");
         }
     }
 
@@ -371,54 +349,6 @@ public abstract class ConfigurationValidator<
         {
             errors.Add($"{propertyName} is not a valid path: {ex.Message}");
         }
-    }
-
-    private static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-            return bytes[0] == 0 ||
-                   bytes[0] == 10 ||
-                   (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-                   bytes[0] == 127 ||
-                   (bytes[0] == 169 && bytes[1] == 254) ||
-                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
-                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
-                   (bytes[0] == 192 && bytes[1] == 168) ||
-                   (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-                   (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
-                   (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
-                   bytes[0] >= 224;
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-            return address.Equals(IPAddress.IPv6None) ||
-                   address.Equals(IPAddress.IPv6Loopback) ||
-                   (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
-                   (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
-                   (bytes[0] & 0xfe) == 0xfc ||
-                   (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8);
-        }
-
-        return false;
     }
 
     [UnconditionalSuppressMessage(

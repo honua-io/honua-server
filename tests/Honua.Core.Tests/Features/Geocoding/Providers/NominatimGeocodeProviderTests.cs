@@ -70,10 +70,97 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal("101", result.ProviderId);
     }
 
+    [Fact]
+    public async Task ForwardGeocodeAsync_WithLoopbackHostname_ThrowsBeforeSending()
+    {
+        var handler = new StubHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://localhost/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://localhost",
+                UserAgent = "Honua.Tests/1.0",
+                TimeoutSeconds = 10,
+                MaxResults = 10,
+                MaxSuggestions = 5
+            },
+            httpClient);
+
+        var exception = await Assert.ThrowsAsync<GeocodeProviderException>(() => provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("10 Downing St", 5, 4326, null),
+            CancellationToken.None));
+
+        Assert.Equal(GeocodeErrorCodes.InvalidConfiguration, exception.ErrorCode);
+        Assert.Equal(0, handler.SendCount);
+    }
+
+    [Fact]
+    public async Task ForwardGeocodeAsync_WithPrivateLiteralAddress_ThrowsBeforeSending()
+    {
+        var handler = new StubHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://10.0.0.5/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://10.0.0.5",
+                UserAgent = "Honua.Tests/1.0",
+                TimeoutSeconds = 10,
+                MaxResults = 10,
+                MaxSuggestions = 5
+            },
+            httpClient);
+
+        var exception = await Assert.ThrowsAsync<GeocodeProviderException>(() => provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("10 Downing St", 5, 4326, null),
+            CancellationToken.None));
+
+        Assert.Equal(GeocodeErrorCodes.InvalidConfiguration, exception.ErrorCode);
+        Assert.Equal(0, handler.SendCount);
+    }
+
+    [Fact]
+    public async Task ReverseGeocodeAsync_WithLoopbackHostname_ThrowsBeforeSending()
+    {
+        var handler = new StubHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://localhost/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://localhost",
+                UserAgent = "Honua.Tests/1.0",
+                TimeoutSeconds = 10,
+                MaxResults = 10,
+                MaxSuggestions = 5
+            },
+            httpClient);
+
+        var exception = await Assert.ThrowsAsync<GeocodeProviderException>(() => provider.ReverseGeocodeAsync(
+            new ReverseGeocodeRequest(-0.1276, 51.5034, 4326, null),
+            CancellationToken.None));
+
+        Assert.Equal(GeocodeErrorCodes.InvalidConfiguration, exception.ErrorCode);
+        Assert.Equal(0, handler.SendCount);
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
+        public int SendCount { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            SendCount++;
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(

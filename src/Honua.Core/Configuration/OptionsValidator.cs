@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Configuration;
 
@@ -49,7 +50,9 @@ public abstract class OptionsValidator<
     }
 
     /// <summary>
-    /// Validates an outbound HTTP or HTTPS URL.
+    /// Validates an outbound HTTPS URL via <see cref="OutboundHttpUrlValidator.ValidateConfiguration(string)"/>,
+    /// which performs the same DNS-aware reservation checks as the runtime path so configuration-time
+    /// validation does not silently accept hostnames that the runtime would later reject.
     /// </summary>
     protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> failures)
     {
@@ -59,15 +62,10 @@ public abstract class OptionsValidator<
             return;
         }
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        var result = OutboundHttpUrlValidator.ValidateConfiguration(url);
+        if (!result.IsValid)
         {
-            failures.Add($"{propertyName} must be a valid absolute URL.");
-            return;
-        }
-
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-        {
-            failures.Add($"{propertyName} must use HTTP or HTTPS.");
+            failures.Add($"{propertyName} {result.ErrorMessage}");
         }
     }
 
