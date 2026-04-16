@@ -928,6 +928,13 @@ internal static partial class MapServerEndpoints
                string.Equals(exceptionsValue, "application/vnd.ogc.se_xml", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string GetWmsExceptionMimeType(string? exceptionsValue)
+    {
+        return string.Equals(exceptionsValue, "application/vnd.ogc.se_xml", StringComparison.OrdinalIgnoreCase)
+            ? "application/vnd.ogc.se_xml"
+            : WmsXmlExceptionMimeType;
+    }
+
     private static bool TryParseWmsTransparent(string? value, out bool transparent)
     {
         transparent = false;
@@ -1201,7 +1208,8 @@ internal static partial class MapServerEndpoints
         }
 
         var xml = BuildWmsServiceExceptionReport(code, message);
-        return Results.Content(xml, WmsXmlExceptionMimeType, Encoding.UTF8, statusCode);
+        var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"));
+        return Results.Content(xml, contentType, Encoding.UTF8, statusCode);
     }
 
     private static string BuildWmsServiceExceptionReport(string code, string message)

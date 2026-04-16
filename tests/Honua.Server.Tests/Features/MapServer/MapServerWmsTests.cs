@@ -236,6 +236,21 @@ public sealed class MapServerWmsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_InvalidLayer_WithSeXmlExceptions_ReturnsRequestedExceptionContentType()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&CRS=CRS:84&FORMAT=image/png&LAYERS=NonExistant&STYLES=&EXCEPTIONS=application/vnd.ogc.se_xml");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("LayerNotDefined");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_Crs84MinXGreaterThanMaxX_ReturnsXmlServiceException()
     {
         var response = await _fixture.Client.GetAsync(

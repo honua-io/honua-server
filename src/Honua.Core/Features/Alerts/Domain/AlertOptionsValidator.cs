@@ -22,6 +22,20 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
         ValidateDataAnnotations(options.Evaluation, errors, nameof(AlertOptions.Evaluation));
         ValidateDataAnnotations(options.Dispatch, errors, nameof(AlertOptions.Dispatch));
 
+        ValidateStringLength(
+            options.Evaluation.WorkerName,
+            minLength: 1,
+            maxLength: 64,
+            $"{nameof(AlertOptions.Evaluation)}.{nameof(AlertEvaluationOptions.WorkerName)}",
+            errors);
+
+        ValidateStringLength(
+            options.Evaluation.LeaderElectionMode,
+            minLength: 1,
+            maxLength: 32,
+            $"{nameof(AlertOptions.Evaluation)}.{nameof(AlertEvaluationOptions.LeaderElectionMode)}",
+            errors);
+
         ValidateTimeSpan(
             options.Evaluation.DwellSweepInterval,
             TimeSpan.FromSeconds(5),
@@ -103,5 +117,24 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
             TimeSpan.FromHours(24),
             $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.FlushInterval)}",
             errors);
+    }
+
+    private static void ValidateStringLength(
+        string? value,
+        int minLength,
+        int maxLength,
+        string propertyName,
+        List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            errors.Add($"{propertyName} is required and cannot be empty.");
+            return;
+        }
+
+        if (value.Length < minLength || value.Length > maxLength)
+        {
+            errors.Add($"{propertyName} must be between {minLength} and {maxLength} characters.");
+        }
     }
 }

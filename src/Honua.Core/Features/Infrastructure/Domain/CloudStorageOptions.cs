@@ -44,11 +44,6 @@ public sealed record CloudStorageOptions
     public AzureBlobOptions? AzureBlob { get; set; }
 
     /// <summary>
-    /// Options specific to Google Cloud Storage
-    /// </summary>
-    public GoogleCloudStorageOptions? GoogleCloudStorage { get; set; }
-
-    /// <summary>
     /// Lifetime for pre-signed download/upload URLs.
     /// Default: 15 minutes.
     /// </summary>
@@ -146,30 +141,4 @@ public sealed record AzureBlobOptions
     /// Optional blob prefix for all stored files
     /// </summary>
     public string? BlobPrefix { get; set; }
-}
-
-/// <summary>
-/// Configuration options for Google Cloud Storage
-/// </summary>
-public sealed record GoogleCloudStorageOptions
-{
-    /// <summary>
-    /// GCS bucket name
-    /// </summary>
-    public string BucketName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Google Cloud project ID
-    /// </summary>
-    public string? ProjectId { get; set; }
-
-    /// <summary>
-    /// Path to service account credential JSON file (if not using default credentials)
-    /// </summary>
-    public string? CredentialPath { get; set; }
-
-    /// <summary>
-    /// Optional key prefix for all stored files
-    /// </summary>
-    public string? KeyPrefix { get; set; }
 }

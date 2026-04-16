@@ -127,7 +127,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
-The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests run via Vitest but do not produce `.cert.json` evidence files until `wfs20` is formally added to the valid protocol set. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
+The JS lane covers FeatureServer, OGC API Features, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). WFS 2.0 tests also run via Vitest, but the JS lane does not yet emit WFS `.cert.json` evidence files. The Esri Leaflet sub-lane adds Playwright-generated `*-js-featureserver.cert.json` and `*-js-mapserver.cert.json` evidence (written to `tests/js-browser/evidence/`, not this curated directory). Additional protocols (OData) will produce evidence files once automated suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, OData, and Admin API evidence files. The OData envelope (`*-cli-odata.cert.json`) is produced automatically by `tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs` (Microsoft.OData.Client 8.4.3) on every `test-all` run; FeatureServer and OGC API Features files will follow once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added to those suites; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 

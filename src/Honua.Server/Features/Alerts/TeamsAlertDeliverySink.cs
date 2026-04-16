@@ -68,31 +68,33 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
             };
 
             // Use Office 365 Connector card format (MessageCard) for broad compatibility.
-            var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
-            {
-                ["@type"] = "MessageCard",
-                ["@context"] = "https://schema.org/extensions",
-                ["themeColor"] = themeColor,
-                ["summary"] = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
-                ["sections"] = new[]
+            var payload = JsonSerializer.Serialize(
+                new TeamsAlertPayload
                 {
-                    new
-                    {
-                        activityTitle = $"Honua Alert: {alertEvent.TriggerType}",
-                        activitySubtitle = $"Incident {alertEvent.IncidentStatus}",
-                        facts = new[]
+                    Type = "MessageCard",
+                    Context = "https://schema.org/extensions",
+                    ThemeColor = themeColor,
+                    Summary = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
+                    Sections =
+                    [
+                        new TeamsAlertSection
                         {
-                            new { name = "Severity", value = alertEvent.Severity.ToString() },
-                            new { name = "Status", value = alertEvent.IncidentStatus.ToString() },
-                            new { name = "Rule ID", value = alertEvent.RuleId.ToString() },
-                            new { name = "Layer", value = alertEvent.LayerId.ToString() },
-                            new { name = "Feature", value = alertEvent.ObjectId.ToString() },
-                            new { name = "Occurred At", value = alertEvent.OccurredAt.ToString("O") }
-                        },
-                        markdown = true
-                    }
-                }
-            });
+                            ActivityTitle = $"Honua Alert: {alertEvent.TriggerType}",
+                            ActivitySubtitle = $"Incident {alertEvent.IncidentStatus}",
+                            Facts =
+                            [
+                                new TeamsAlertFact { Name = "Severity", Value = alertEvent.Severity.ToString() },
+                                new TeamsAlertFact { Name = "Status", Value = alertEvent.IncidentStatus.ToString() },
+                                new TeamsAlertFact { Name = "Rule ID", Value = alertEvent.RuleId.ToString() },
+                                new TeamsAlertFact { Name = "Layer", Value = alertEvent.LayerId.ToString() },
+                                new TeamsAlertFact { Name = "Feature", Value = alertEvent.ObjectId.ToString() },
+                                new TeamsAlertFact { Name = "Occurred At", Value = alertEvent.OccurredAt.ToString("O") }
+                            ],
+                            Markdown = true
+                        }
+                    ]
+                },
+                AlertDeliveryJsonContext.Default.TeamsAlertPayload);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
             {

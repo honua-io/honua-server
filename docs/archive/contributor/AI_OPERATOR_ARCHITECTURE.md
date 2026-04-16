@@ -19,7 +19,7 @@ gather requirements, plan analysis, execute geoprocessing, produce maps, and
 compose applications.
 
 AI-driven source-data editing is not allowed in the primary operator contract.
-See [ADR-0028: AI-Driven Data Editing Is Not Allowed](adr/0028-ai-data-editing-not-allowed.md).
+See [ADR-0028: AI-Driven Data Editing Is Not Allowed](../../contributor/adr/0028-ai-data-editing-not-allowed.md).
 
 ## Problem Statement
 
@@ -511,12 +511,12 @@ Those are downstream design tasks.
 
 ## Related Documents
 
-- [ADR-0002: MapLibre as Canonical Style Format](adr/0002-maplibre-canonical-style.md)
-- [ADR-0009: Shared Filter AST for Multi-Protocol Support](adr/0009-shared-filter-ast.md)
-- [ADR-0025: Multi-Provider Operation Architecture](adr/0025-multi-provider-operation-architecture.md)
-- [ADR-0026: AI-First Operator Contract as Primary Public Contract](adr/0026-ai-first-operator-contract.md)
-- [ADR-0027: Deterministic Intent, Clarification, and Plan Validation Workflow](adr/0027-deterministic-intent-clarification-workflow.md)
-- [ADR-0029: Geoprocess Canonical Model Mappings](adr/0029-geoprocess-canonical-model-mappings.md)
+- [ADR-0002: MapLibre as Canonical Style Format](../../contributor/adr/0002-maplibre-canonical-style.md)
+- [ADR-0009: Shared Filter AST for Multi-Protocol Support](../../contributor/adr/0009-shared-filter-ast.md)
+- [ADR-0025: Multi-Provider Operation Architecture](../../contributor/adr/0025-multi-provider-operation-architecture.md)
+- [ADR-0026: AI-First Operator Contract as Primary Public Contract](../../contributor/adr/0026-ai-first-operator-contract.md)
+- [ADR-0027: Deterministic Intent, Clarification, and Plan Validation Workflow](../../contributor/adr/0027-deterministic-intent-clarification-workflow.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](../../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
 - [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)
 - [Deterministic Operator Workflow Results](../developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
-- [Geoprocess Framework Analysis](../gis/geoprocess-framework-analysis.md)
+- [Geoprocess Framework Analysis](../../gis/geoprocess-framework-analysis.md)

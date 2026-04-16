@@ -100,5 +100,4 @@ For deployment architecture and infrastructure details, see:
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md)
 - [Platform Overview](../PLATFORM.md)
 
-For the forward-looking AI-first analyst and builder direction, see:
-- [AI-First Operator Architecture](AI_OPERATOR_ARCHITECTURE.md)
+Historical AI-operator design notes are archived and are not part of the current contributor entrypoints.

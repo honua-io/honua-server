@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net.Sockets;
 using Honua.TestKit.Seeding;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -28,6 +29,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private const string SeedProfileEnv = "HONUA_TEST_DB_SEED_PROFILE";
     private const int DropSchemaCommandTimeoutSeconds = 30;
     private const int DropSchemaMaxAttempts = 3;
+    private const int InitializationMaxAttempts = 5;
     private string? _connectionString;
 
     public PostgresFixture()
@@ -45,32 +47,43 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             if (!_sharedInitialized)
             {
-                var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
-                if (string.IsNullOrWhiteSpace(externalConnectionString))
+                try
                 {
-                    _sharedContainer = new PostgreSqlBuilder()
-                        .WithImage("postgis/postgis:18-3.6")
-                        .WithDatabase("honua_test")
-                        .WithUsername("test")
-                        .WithPassword("test")
-                        .WithCommand("-c", "max_connections=200")
-                        .Build();
-                    await _sharedContainer.StartAsync();
-                    _sharedConnectionString = _sharedContainer.GetConnectionString();
+                    var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
+                    if (string.IsNullOrWhiteSpace(externalConnectionString))
+                    {
+                        _sharedContainer = new PostgreSqlBuilder()
+                            .WithImage("postgis/postgis:18-3.6")
+                            .WithDatabase("honua_test")
+                            .WithUsername("test")
+                            .WithPassword("test")
+                            .WithCommand("-c", "max_connections=200")
+                            .Build();
+                        await _sharedContainer.StartAsync();
+                        _sharedConnectionString = _sharedContainer.GetConnectionString();
+                    }
+                    else
+                    {
+                        _sharedConnectionString = externalConnectionString;
+                    }
+
+                    _sharedDataSource = NpgsqlDataSource.Create(_sharedConnectionString);
+
+                    await ExecuteWithInitializationRetryAsync(async () =>
+                    {
+                        await using var conn = await _sharedDataSource.OpenConnectionAsync().ConfigureAwait(false);
+                        await using var cmd = conn.CreateCommand();
+                        cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+
+                    _sharedInitialized = true;
                 }
-                else
+                catch
                 {
-                    _sharedConnectionString = externalConnectionString;
+                    await ResetSharedStateAsync().ConfigureAwait(false);
+                    throw;
                 }
-
-                _sharedDataSource = NpgsqlDataSource.Create(_sharedConnectionString);
-
-                await using var conn = await _sharedDataSource.OpenConnectionAsync();
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
-                await cmd.ExecuteNonQueryAsync();
-
-                _sharedInitialized = true;
             }
 
             _sharedRefCount++;
@@ -95,20 +108,7 @@ public sealed class PostgresFixture : IAsyncLifetime
 
             if (_sharedRefCount == 0 && _sharedInitialized)
             {
-                if (_sharedDataSource is not null)
-                {
-                    await _sharedDataSource.DisposeAsync();
-                }
-
-                if (_sharedContainer is not null)
-                {
-                    await _sharedContainer.DisposeAsync();
-                }
-
-                _sharedDataSource = null;
-                _sharedContainer = null;
-                _sharedConnectionString = null;
-                _sharedInitialized = false;
+                await ResetSharedStateAsync().ConfigureAwait(false);
             }
         }
         finally
@@ -242,5 +242,62 @@ public sealed class PostgresFixture : IAsyncLifetime
     private static bool IsTransientDropSchemaFailure(Exception ex)
     {
         return ex is TimeoutException or TaskCanceledException or NpgsqlException;
+    }
+
+    internal static async Task ExecuteWithInitializationRetryAsync(
+        Func<Task> operation,
+        int maxAttempts = InitializationMaxAttempts,
+        TimeSpan? baseDelay = null)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        var delay = baseDelay ?? TimeSpan.FromMilliseconds(250);
+        Exception? lastTransient = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await operation().ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsTransientInitializationFailure(ex))
+            {
+                lastTransient = ex;
+                if (attempt == maxAttempts)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(delay.TotalMilliseconds * attempt)).ConfigureAwait(false);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to initialize PostgreSQL fixture after {maxAttempts} attempts.",
+            lastTransient);
+    }
+
+    private static async Task ResetSharedStateAsync()
+    {
+        if (_sharedDataSource is not null)
+        {
+            await _sharedDataSource.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_sharedContainer is not null)
+        {
+            await _sharedContainer.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _sharedDataSource = null;
+        _sharedContainer = null;
+        _sharedConnectionString = null;
+        _sharedInitialized = false;
+    }
+
+    private static bool IsTransientInitializationFailure(Exception ex)
+    {
+        return ex is TimeoutException or TaskCanceledException or NpgsqlException or SocketException;
     }
 }

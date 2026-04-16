@@ -13,6 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -52,6 +54,140 @@ public sealed class ConfigurationServiceExtensionsTests
         provider.GetRequiredService<ISecretProvider>().Should().NotBeNull();
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ConfigureWithValidation_BindsRegisteredOptions_AndValidatesSuccessfully()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{TestValidationOptions.SectionName}:{nameof(TestValidationOptions.RequiredValue)}"] = "configured"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
+        services.AddSingleton(Substitute.For<ISecretProvider>());
+        services.AddLogging();
+        services.AddConfigurationValidation(configuration);
+        services.ConfigureWithValidation<TestValidationOptions>(configuration, TestValidationOptions.SectionName);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var options = provider.GetRequiredService<IOptions<TestValidationOptions>>().Value;
+        options.RequiredValue.Should().Be("configured");
+
+        var validator = provider.GetRequiredService<IConfigurationValidator>();
+        var summary = await validator.ValidateAllAsync().ConfigureAwait(false);
+
+        summary.IsValid.Should().BeTrue();
+        summary.Results.Should().ContainSingle(result => result.SectionName == TestValidationOptions.SectionName);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ValidateAllAsync_WithMissingRequiredOption_ReportsBindingErrors()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
+        services.AddSingleton(Substitute.For<ISecretProvider>());
+        services.AddLogging();
+        services.AddConfigurationValidation(configuration);
+        services.ConfigureWithValidation<TestValidationOptions>(configuration, TestValidationOptions.SectionName);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var validator = provider.GetRequiredService<IConfigurationValidator>();
+        var summary = await validator.ValidateAllAsync().ConfigureAwait(false);
+
+        summary.IsValid.Should().BeFalse();
+        summary.Results.Should().ContainSingle(result => result.SectionName == TestValidationOptions.SectionName);
+        summary.AllErrors.Should().Contain(error =>
+            error.Contains(nameof(TestValidationOptions.RequiredValue), StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ValidateAllAsync_DoesNotRequireOptionsResolutionToRegisterConfiguredType()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{TestValidationOptions.SectionName}:{nameof(TestValidationOptions.RequiredValue)}"] = "configured"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
+        services.AddSingleton(Substitute.For<ISecretProvider>());
+        services.AddLogging();
+        services.AddConfigurationValidation(configuration);
+        services.ConfigureWithValidation<TestValidationOptions>(configuration, TestValidationOptions.SectionName);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var validator = provider.GetRequiredService<IConfigurationValidator>();
+        var summary = await validator.ValidateAllAsync().ConfigureAwait(false);
+
+        summary.IsValid.Should().BeTrue();
+        summary.Results.Should().ContainSingle(result =>
+            result.SectionName == TestValidationOptions.SectionName &&
+            result.OptionsTypeName == nameof(TestValidationOptions));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task RegisterOptionsType_WithoutOptionsService_BindsFromConfiguration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{TestValidationOptions.SectionName}:{nameof(TestValidationOptions.RequiredValue)}"] = "configured"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
+        services.AddLogging();
+        services.AddConfigurationValidation(configuration);
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var validator = provider.GetRequiredService<IConfigurationValidator>();
+        validator.RegisterOptionsType<TestValidationOptions>(TestValidationOptions.SectionName);
+
+        var summary = await validator.ValidateAllAsync().ConfigureAwait(false);
+
+        summary.IsValid.Should().BeTrue();
+        summary.Results.Should().ContainSingle(result =>
+            result.SectionName == TestValidationOptions.SectionName &&
+            result.OptionsTypeName == nameof(TestValidationOptions));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;
@@ -61,5 +197,13 @@ public sealed class ConfigurationServiceExtensionsTests
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
 
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class TestValidationOptions
+    {
+        public const string SectionName = "TestValidation";
+
+        [Required]
+        public string? RequiredValue { get; set; }
     }
 }

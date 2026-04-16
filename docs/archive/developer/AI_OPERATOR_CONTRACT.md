@@ -9,7 +9,7 @@ operator architecture.
 
 It complements:
 
-- [MCP Server](MCP_SERVER.md), which documents the current open-core MCP data
+- [MCP Server](../../developer/MCP_SERVER.md), which documents the current open-core MCP data
   access surface
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md),
   which describes the high-level system design
@@ -27,7 +27,7 @@ The contract must support:
 - transport projection through MCP and gRPC
 
 Direct AI-driven source-data editing is explicitly excluded from this contract
-scope. See [ADR-0028](../contributor/adr/0028-ai-data-editing-not-allowed.md).
+scope. See [ADR-0028](../../contributor/adr/0028-ai-data-editing-not-allowed.md).
 
 ## Contract Design Rules
 
@@ -1004,7 +1004,7 @@ The deterministic system must own:
 ## Related Documents
 
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md)
-- [ADR-0029: Geoprocess Canonical Model Mappings](../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
-- [Geoprocess Framework Analysis](../gis/geoprocess-framework-analysis.md)
+- [ADR-0029: Geoprocess Canonical Model Mappings](../../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
+- [Geoprocess Framework Analysis](../../gis/geoprocess-framework-analysis.md)
 - [Deterministic Operator Workflow Results](DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
-- [MCP Server](MCP_SERVER.md)
+- [MCP Server](../../developer/MCP_SERVER.md)

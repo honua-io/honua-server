@@ -16,12 +16,13 @@ Legend:
 | --- | --- | --- | --- | --- | --- |
 | Landing page | `/ogc/features` | GET | Implemented | `GET /ogc/features` | Supports `f=json|html` and Accept negotiation. |
 | Conformance | `/ogc/features/conformance` | GET | Implemented | `GET /ogc/features/conformance` | Supports `f=json|html`. |
-| OpenAPI definition | `/api` (spec) | GET | Implemented | `GET /openapi.json` | Service-wide OpenAPI document (includes OGC Features). |
+| OpenAPI definition | `/api` (spec) | GET | Implemented | `GET /openapi.json`, `GET /ogc/features/api` | Service-wide OpenAPI document; `/ogc/features/api` is the OGC-friendly alias. |
 | Collections list | `/ogc/features/collections` | GET | Implemented | `GET /ogc/features/collections` | Supports `f=json|html`. |
 | Collection metadata | `/ogc/features/collections/{collectionId}` | GET | Implemented | `GET /ogc/features/collections/{collectionId}` | Supports `f=json|html`. |
 | Queryables | `/ogc/features/collections/{collectionId}/queryables` | GET | Implemented | `GET /ogc/features/collections/{collectionId}/queryables` | Supports `f=json|html`. |
 | Items (features) | `/ogc/features/collections/{collectionId}/items` | GET | Implemented | `GET /ogc/features/collections/{collectionId}/items` | Filtering + CRS + paging supported (see parameter matrix). |
 | Single item | `/ogc/features/collections/{collectionId}/items/{featureId}` | GET | Implemented | `GET /ogc/features/collections/{collectionId}/items/{featureId}` | Supports `f` + `crs`. |
+| H3 aggregation (extension) | N/A | GET | Implemented | `GET /ogc/features/collections/{collectionId}/h3` | Honua extension. Requires `resolution` and returns GeoJSON features for H3 cells. |
 | Create item | `/ogc/features/collections/{collectionId}/items` | POST | Implemented | `POST /ogc/features/collections/{collectionId}/items` | GeoJSON request body only. |
 | Replace item | `/ogc/features/collections/{collectionId}/items/{featureId}` | PUT | Implemented | `PUT /ogc/features/collections/{collectionId}/items/{featureId}` | GeoJSON request body only; upsert behavior. |
 | Patch item | `/ogc/features/collections/{collectionId}/items/{featureId}` | PATCH | Implemented | `PATCH /ogc/features/collections/{collectionId}/items/{featureId}` | Merge-style partial updates for `properties` and/or `geometry`. |
@@ -42,7 +43,7 @@ Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.
 
 | Parameter | Status | Notes |
 | --- | --- | --- |
-| `f` | Implemented | `geojson`, `json`, `gml`, `html` for feature content. GML SF0 is advertised as a conformance class and CITE-validated at format level. |
+| `f` | Implemented | `geojson`, `json`, `gml`, `csv`, `html` for feature content. GML SF0 is advertised as a conformance class and CITE-validated at format level. |
 | `limit` | Implemented | Validated and normalized by server limits. |
 | `offset` | Implemented | Standard offset paging. |
 | `ids` | Implemented | Comma-separated feature IDs. |

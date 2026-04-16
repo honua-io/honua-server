@@ -42,7 +42,7 @@ A breaking wire change is any modification that causes existing serialized data 
 
 Breaking wire changes require:
 1. Explicit reviewer approval.
-2. Documentation in `docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md`.
+2. Documentation in `docs/developer/CONTROL_PLANE_MIGRATION_GUIDE.md`.
 3. A documented migration and rollout plan for affected consumers.
 4. Setting `BUF_ALLOW_BREAKING_CHANGES=true` in CI to bypass the `proto-wire-governance.yml` gate.
 

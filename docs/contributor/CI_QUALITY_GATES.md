@@ -100,7 +100,7 @@ The CI quality gates enforce two distinct categories of API stability. They are 
 
 ### Admin/Control-Plane Contract Governance
 
-These workflows enforce the control-plane versioning policy defined in `docs/user/CONTROL_PLANE_VERSIONING_POLICY.md`:
+These workflows enforce the control-plane versioning policy defined in `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`:
 
 | Workflow | What it checks |
 |---|---|
@@ -133,4 +133,4 @@ Standards compatibility policy is documented in `docs/gis/STANDARDS_APIS.md`.
 
 Image publishing is handled by `deploy.yml` and related workflows. These build and publish container images but do not deploy to any environment.
 
-For the current protocol parity and OGC CITE automation audit, see `docs/contributor/PROTOCOL_PARITY_305_310_AUDIT.md`.
+For current protocol compatibility and conformance setup, use `docs/gis/MVP_COMPATIBILITY_CONTRACT.md` together with the contributor CITE guides linked above.

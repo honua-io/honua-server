@@ -51,9 +51,11 @@ internal static class AdminEndpoints
             .WithDisplayName("Get Configuration Documentation Method Not Allowed");
 
         // Runtime OpenAPI endpoint for admin/control-plane contract.
-        _ = adminGroup.Map("/openapi.json", HandleGetOpenApiSpec)
+        _ = adminGroup.MapMethods("/openapi.json", [HttpMethods.Get], HandleGetOpenApiSpec)
             .WithDisplayName("Get Admin OpenAPI Specification")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = adminGroup.MapMethods("/openapi.json", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
+            .WithDisplayName("Get Admin OpenAPI Specification Method Not Allowed");
 
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
         _ = adminGroup.MapMethods("/connections/{id}/tables", [HttpMethods.Get], HandleGetConnectionTables)
@@ -250,6 +252,6 @@ internal static class AdminEndpoints
     private static Task HandleGetOnlyMethodNotAllowed(HttpContext context)
     {
         var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { HttpMethods.Get };
-        return ValidationErrorHelpers.CreateMethodNotAllowed(allowedMethods).ExecuteAsync(context);
+        return ValidationErrorHelpers.WriteAdminMethodNotAllowedAsync(context, allowedMethods, context.RequestAborted);
     }
 }

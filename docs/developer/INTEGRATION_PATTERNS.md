@@ -216,6 +216,6 @@ class FeaturesResolver {
 ## **Related Documentation**
 
 - [Geospatial API Examples](API_EXAMPLES.md)
-- [Protocols Overview](STANDARDS_APIS.md)
-- [Admin API Reference](CONTROL_PLANE_API.md)
-- [User Journeys](USER_JOURNEYS.md)
+- [Protocols Overview](../gis/STANDARDS_APIS.md)
+- [Admin API Reference](../operator/CONTROL_PLANE_API.md)
+- [Platform Overview](../PLATFORM.md)

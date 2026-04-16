@@ -38,4 +38,4 @@ dotnet test --collect:"XPlat Code Coverage"
 
 1. Add coverage upload steps to CI workflow(s).
 2. Enable status rules in `codecov.yml`.
-3. Update this document and `docs/contributor/ci-workflows.md` in the same PR.
+3. Update this document and `docs/ci/workflow-inventory.md` in the same PR.

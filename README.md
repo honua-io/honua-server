@@ -41,10 +41,10 @@ docker run -p 8080:8080 \
 **Kubernetes**:
 
 ```bash
-helm dependency update infrastructure/helm/honua
-helm install honua infrastructure/helm/honua \
-  --set secret.env.ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=honua;Password=honua" \
-  --set secret.env.HONUA_ADMIN_PASSWORD="change-me"
+# Helm charts live in the separate honua-helm repository:
+# https://github.com/honua-io/honua-helm
+#
+# Follow that repository's chart README for the current chart path and values.
 ```
 
 **.NET Aspire** (local dev with dashboard for traces, logs, metrics):

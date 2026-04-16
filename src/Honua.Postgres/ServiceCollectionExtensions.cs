@@ -37,7 +37,6 @@ using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Transforms;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure.Styling;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -220,8 +219,8 @@ internal static class ServiceCollectionExtensions
         // Register CRS warmup service with leader election for distributed deployments
         services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
         {
-            // Use no-op implementation for single-instance deployments
-            // TODO: Replace with Redis implementation when Server project is available
+            // Use the no-op implementation here; distributed leader election is only enabled
+            // when the Server composition root supplies a real coordinator.
             return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
                 "honua:leader:crs-warmup");
         });

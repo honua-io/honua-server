@@ -146,7 +146,7 @@ public static class FeatureCatalog
 
         // Raster — Pro (COG import/export are Community-tier and ungated)
         new("raster.cloud-cog-serving", "Cloud COG Serving", Categories.Raster,
-            HonuaEdition.Pro, "Serve COG files directly from S3/Azure/GCS via HTTP range requests."),
+            HonuaEdition.Pro, "Serve COG files directly from S3/Azure via HTTP range requests."),
         new("raster.cloud-storage-config", "Cloud Storage Configuration", Categories.Raster,
             HonuaEdition.Pro, "Configure cloud storage connections for direct raster serving."),
 

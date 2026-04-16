@@ -389,8 +389,9 @@ builder.Services.AddStyleSuggestionCore();
 // Configure temporary file service for image exports
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions.SectionName));
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
-    Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
+    Honua.Server.Features.Infrastructure.Services.CloudBackedTemporaryFileService>();
 builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.TemporaryFileCleanupService>();
 
 // Register shared validation services
@@ -1233,7 +1234,7 @@ async Task RunDatabaseMigrationsAsync()
             var errorMessage = result.ErrorMessage ?? "Database migration failed.";
             var error = result.Error ?? new InvalidOperationException(errorMessage);
             Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, errorMessage, error);
-            migrationState.MarkFailed(errorMessage);
+            migrationState.MarkFailed("Database migrations failed.");
 
             // In non-Development environments, re-throw so the app fails to start
             // (gives a clear CrashLoopBackOff signal in Kubernetes).
@@ -1266,7 +1267,7 @@ async Task RunDatabaseMigrationsAsync()
     catch (Exception ex)
     {
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-        migrationState.MarkFailed(ex.Message);
+        migrationState.MarkFailed("Database migrations failed.");
 
         // In non-Development environments, re-throw so the app fails to start
         // (gives a clear CrashLoopBackOff signal in Kubernetes).

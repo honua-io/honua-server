@@ -67,6 +67,58 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_WithEquivalentParameterOverridesInDifferentOrder_DeduplicatesRequest()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new BlockingDeployBackend();
+        var service = CreateService(store, backend);
+        var firstOverrides = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["featureFlag"] = "on",
+            ["region"] = "us-west-2"
+        };
+        var secondOverrides = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["region"] = "us-west-2",
+            ["featureFlag"] = "on"
+        };
+
+        var firstCreate = service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Initial submit",
+            "release-2026-04-15",
+            "corr-1",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: firstOverrides);
+
+        await backend.StartEntered.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var secondCreate = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Duplicate submit",
+            "release-2026-04-15",
+            "corr-2",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: secondOverrides);
+
+        backend.AllowStart();
+        var firstResult = await firstCreate;
+
+        secondCreate.Should().NotBeNull();
+        firstResult.Should().NotBeNull();
+        secondCreate!.OperationId.Should().Be(firstResult!.OperationId);
+        backend.StartCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task CreateAsync_WhenStoreRejectsCreate_DoesNotStartBackend()
     {
         var store = new TestWorkflowOperationStore

@@ -2,12 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Alerts.Domain;
 
 /// <summary>
 /// Top-level alerting feature configuration.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
 public sealed class AlertOptions
 {
     /// <summary>
@@ -39,14 +41,13 @@ public sealed class AlertOptions
 /// <summary>
 /// Settings for durable alert evaluation.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
 public sealed class AlertEvaluationOptions
 {
     /// <summary>
     /// Worker name used for checkpoint persistence.
     /// </summary>
     [Required]
-    [MinLength(1)]
-    [MaxLength(64)]
     public string WorkerName { get; init; } = "evaluator";
 
     /// <summary>
@@ -74,14 +75,13 @@ public sealed class AlertEvaluationOptions
     /// Leader election strategy identifier.
     /// </summary>
     [Required]
-    [MinLength(1)]
-    [MaxLength(32)]
     public string LeaderElectionMode { get; init; } = "postgres-advisory-lock";
 }
 
 /// <summary>
 /// Settings for alert outbox dispatch processing.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
 public sealed class AlertDispatchOptions
 {
     /// <summary>
@@ -124,6 +124,7 @@ public sealed class AlertDispatchOptions
 /// <summary>
 /// Settings for batched digest alert delivery.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
 public sealed class DigestAlertOptions
 {
     /// <summary>

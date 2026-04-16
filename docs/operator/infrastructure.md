@@ -7,7 +7,7 @@ All deployment options require a PostGIS-enabled PostgreSQL database. Redis is o
 | Scenario | Option | Guide |
 |----------|--------|-------|
 | **Local dev / single-server** | Docker Compose | [Docker Compose Sample](docker-compose.md) |
-| **Kubernetes** | Helm chart | `infrastructure/helm/honua/README.md` |
+| **Kubernetes** | Helm chart | Use the separate [`honua-helm`](https://github.com/honua-io/honua-helm) repository |
 | **AWS / Azure (managed cloud)** | Terraform (separate repo) | Use the dedicated `honua-terraform` repository |
 
 If you just want to try Honua locally, the root `docker-compose.yml` in the repo root is the fastest option — see the Quick Start in the main README.
@@ -51,7 +51,8 @@ See `.env.example` in the repo root for every available setting.
 
 - **Honua Server** is a stateless container. Scale horizontally by adding replicas.
 - **PostGIS** is the only required dependency. All protocols read from and write to the same database.
-- **Redis** is optional for caching (Honua falls back to in-memory caching for single-node). However, Redis is **required** when running job orchestration workloads (geoprocessing, ETL, tile-cache jobs) because the durable job queue, execution log store, and reconciliation state use Redis-backed storage. Enable Redis persistence (AOF recommended, or RDB with a short save interval) so that queued and in-flight job state survives Redis restarts; without persistence, a Redis restart loses all pending jobs and forces reconciliation recovery for any claimed work. See [Operations — Job Orchestration](operations.md#job-orchestration).
+<<<<<<< HEAD
+- **Redis** is optional for caching in single-node deployments (Honua falls back to in-memory caching there). Redis is required when running job orchestration workloads (geoprocessing, ETL, tile-cache jobs) because the durable job queue, execution log store, and reconciliation state use Redis-backed storage. Redis is also required when you use shared cloud-backed temporary files (`FileStorage=AwsS3` or `AzureBlob`) so temporary-file quotas stay correct across replicas. Enable Redis persistence (AOF recommended, or RDB with a short save interval) so that queued and in-flight job state survives Redis restarts; without persistence, a Redis restart loses all pending jobs and forces reconciliation recovery for any claimed work. See [Operations — Job Orchestration](operations.md#job-orchestration).
 - **Object storage** (S3/MinIO) is optional, used only for file import workflows.
 - **TLS and rate limiting** are handled at the edge (ALB, API Gateway, Ingress Controller). Honua does not terminate TLS.
 

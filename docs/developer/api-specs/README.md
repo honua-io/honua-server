@@ -149,7 +149,7 @@ Control-plane SDK governance and contract diff checks:
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
-- [**API Examples**](../API_EXAMPLES.md) - Code examples for all protocols
+- [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols
 - [**Integration Patterns**](../INTEGRATION_PATTERNS.md) - Common integration approaches
 
 ---

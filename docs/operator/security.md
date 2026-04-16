@@ -67,7 +67,7 @@ Honua does not include application-level rate limiting. Enforce limits at the ed
 | Platform | Template | Purpose |
 |---|---|---|
 | AWS | Use your IaC stack template (WAFv2 Web ACL + ALB association) | ALB + WAFv2 rate-limit rules |
-| Azure | `docs/devops/examples/azure-application-gateway-waf-rate-limit-policy.json` | Application Gateway WAF custom rules |
+| Azure | `examples/azure-application-gateway-waf-rate-limit-policy.json` | Application Gateway WAF custom rules |
 
 ### Recommended Starting Limits
 
@@ -94,7 +94,7 @@ If you use Honua-maintained Terraform, use the separate `honua-terraform` reposi
 
 ### Azure (Application Gateway + WAF)
 
-1. Use `docs/devops/examples/azure-application-gateway-waf-rate-limit-policy.json` as the WAF policy payload.
+1. Use `examples/azure-application-gateway-waf-rate-limit-policy.json` as the WAF policy payload.
 2. Create or update an Application Gateway WAF policy with those custom rules.
 3. Associate the WAF policy to the Application Gateway that fronts Honua.
 

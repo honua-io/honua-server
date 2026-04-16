@@ -8,8 +8,7 @@ Accepted
 
 Honua needs to support both Esri GeoServices GPServer and OGC API Processes as
 compatibility adapters projected from a single canonical process model (see
-[ADR-0026](0026-ai-first-operator-contract.md) and the
-[AI Operator Architecture](../AI_OPERATOR_ARCHITECTURE.md)).
+[ADR-0026](0026-ai-first-operator-contract.md)).
 
 The existing canonical model — `AnalysisPlan`, `ExecutionJobRecord`,
 `AnalysisResultPackage`, `Workspace`, `Artifact`, and supporting types — was

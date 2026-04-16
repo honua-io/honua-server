@@ -51,3 +51,35 @@ def test_extract_acceptance_criteria_accepts_legacy_acceptance_heading() -> None
         "Retention behavior is deterministic and testable",
         "Publishing and packaging tickets are unblocked",
     ]
+
+
+def test_extract_linked_issues_ignores_follow_up_pr_references(monkeypatch) -> None:
+    def fake_get_issue_details(issue_number: str):
+        if issue_number == "683":
+            return {
+                "number": "683",
+                "title": "Real linked issue",
+                "body": "## Acceptance Criteria\n- Ship safely",
+                "acceptance_criteria": ["Ship safely"],
+                "labels": [],
+                "is_pull_request": False,
+            }
+        raise AssertionError(f"Unexpected issue lookup: {issue_number}")
+
+    monkeypatch.setattr(ARCHITECTURE_REVIEW, "get_issue_details", fake_get_issue_details)
+
+    linked = ARCHITECTURE_REVIEW.extract_linked_issues(
+        "Follow-up to #761\nRelated to #683",
+        "fix: continue release hardening follow-up",
+    )
+
+    assert linked == [
+        {
+            "number": "683",
+            "title": "Real linked issue",
+            "body": "## Acceptance Criteria\n- Ship safely",
+            "acceptance_criteria": ["Ship safely"],
+            "labels": [],
+            "is_pull_request": False,
+        }
+    ]

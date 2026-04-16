@@ -1,6 +1,6 @@
 # Honua Data Modeling Guide
 
-This guide covers Honua-specific requirements for designing database schemas that work optimally across all supported protocols (FeatureServer, MapServer, OGC API Features/Tiles, OData v4, Vector Tiles).
+This guide covers Honua-specific requirements for designing database schemas that work well across Honua's core multi-protocol surfaces, especially FeatureServer, MapServer, OGC API Features/Tiles, OData v4, and vector tiles.
 
 ## Honua-Specific Requirements
 
@@ -271,9 +271,9 @@ CREATE INDEX idx_ready_for_honua_geom ON ready_for_honua USING GIST (geom);
 
 ## Next Steps
 
-1. **[Admin UI](admin-ui.md)** - Connect to PostGIS and publish layers through the Admin UI
+1. **[Control Plane API](../operator/CONTROL_PLANE_API.md)** - Connect to PostGIS and publish layers through the control-plane surface
 3. **[Geospatial Data APIs](STANDARDS_APIS.md)** - Understand how your data is exposed through different protocols
-4. **[API Examples](API_EXAMPLES.md)** - See your data in action through code examples
+4. **[API Examples](../developer/API_EXAMPLES.md)** - See your data in action through code examples
 
 ---
 *This guide focuses specifically on Honua Server requirements. For general PostGIS optimization, consult the [official PostGIS documentation](https://postgis.net/docs/).*

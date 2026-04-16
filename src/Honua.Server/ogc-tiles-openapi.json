@@ -141,7 +141,10 @@
             "name": "collectionId",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           {
             "name": "f",
@@ -163,6 +166,22 @@
               },
               "text/html": {
                 "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid collection metadata query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
               }
             }
           },
@@ -195,6 +214,22 @@
               },
               "text/html": {
                 "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid tilesets query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
               }
             }
           }
@@ -247,6 +282,22 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid tileset query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -284,10 +335,10 @@
             "name": "f",
             "in": "query",
             "required": false,
-            "description": "Tile format (mvt)",
+            "description": "Tile format (mvt or png)",
             "schema": {
               "type": "string",
-              "enum": ["mvt"]
+              "enum": ["mvt", "png"]
             }
           },
           {
@@ -329,15 +380,41 @@
         ],
         "responses": {
           "200": {
-            "description": "Vector tile",
+            "description": "Vector or raster tile",
             "content": {
               "application/vnd.mapbox-vector-tile": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "image/png": {
                 "schema": { "type": "string", "format": "binary" }
               }
             }
           },
           "204": { "description": "No content" },
-          "404": { "description": "Not found" }
+          "400": {
+            "description": "Invalid tile matrix, tile coordinates, or query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Tile matrix set or requested collections not found",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested tile format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
         }
       }
     },
@@ -350,7 +427,10 @@
             "name": "collectionId",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           {
             "name": "f",
@@ -375,6 +455,22 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid collection tilesets query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -388,7 +484,10 @@
             "name": "collectionId",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           {
             "name": "tileMatrixSetId",
@@ -419,6 +518,22 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid collection tileset query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
           "404": { "description": "Not found" }
         }
       }
@@ -432,7 +547,10 @@
             "name": "collectionId",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           {
             "name": "tileMatrixSetId",
@@ -462,10 +580,10 @@
             "name": "f",
             "in": "query",
             "required": false,
-            "description": "Tile format (mvt)",
+            "description": "Tile format (mvt or png)",
             "schema": {
               "type": "string",
-              "enum": ["mvt"]
+              "enum": ["mvt", "png"]
             }
           },
           {
@@ -495,15 +613,41 @@
         ],
         "responses": {
           "200": {
-            "description": "Vector tile",
+            "description": "Vector or raster tile",
             "content": {
               "application/vnd.mapbox-vector-tile": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "image/png": {
                 "schema": { "type": "string", "format": "binary" }
               }
             }
           },
           "204": { "description": "No content" },
-          "404": { "description": "Not found" }
+          "400": {
+            "description": "Invalid tile matrix, tile coordinates, or query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection or tile matrix set not found",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested tile format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
         }
       }
     },
@@ -532,6 +676,22 @@
               },
               "text/html": {
                 "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid tile matrix sets query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
               }
             }
           }
@@ -569,6 +729,22 @@
               },
               "text/html": {
                 "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid tile matrix set query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "406": {
+            "description": "Requested metadata format is not acceptable",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
               }
             }
           },
@@ -615,6 +791,17 @@
             "type": "array",
             "items": { "$ref": "#/components/schemas/Link" }
           }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "required": ["type", "title", "status", "detail"],
+        "properties": {
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" }
         }
       },
       "Collections": {

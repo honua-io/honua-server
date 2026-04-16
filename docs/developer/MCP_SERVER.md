@@ -10,11 +10,7 @@ standard. The SDK MCP package may proxy or federate that server-owned surface
 later, but it is not the semantic source of truth for operator workflows.
 
 This document covers the public/open-core MCP data-access surface. It does **not** describe Honua's private operator tooling or AI DevOps rollout automation layer.
-
-For the forward-looking AI-first analyst and builder contract, see:
-
-- [AI Operator Contract](AI_OPERATOR_CONTRACT.md)
-- [Deterministic Operator Workflow Results](DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
+Forward-looking operator-workflow design notes are maintained as historical design material and are intentionally excluded from the current developer contract index.
 
 ## Capabilities
 

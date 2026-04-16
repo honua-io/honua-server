@@ -23,5 +23,5 @@ Use this page to keep CI stable and predictable.
 
 ## Related Docs
 
-- [CI Quality Gates](../contributor/CI_QUALITY_GATES.md)
-- [Testing Strategy](../contributor/adr/0011-testing-strategy.md)
+- [CI Quality Gates](../../contributor/CI_QUALITY_GATES.md)
+- [Testing Strategy](../../contributor/adr/0011-testing-strategy.md)

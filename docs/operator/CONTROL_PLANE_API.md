@@ -96,13 +96,13 @@ Additional metrics endpoints:
 - `.github/workflows/control-plane-sdk-governance.yml`
 
 - Versioning/deprecation policy:
-- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 
 - Migration and upgrade guidance:
-- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 
 - AI/agent integration:
-- [MCP Server](MCP_SERVER.md)
+- [MCP Server](../developer/MCP_SERVER.md)
 
 ---
 
@@ -214,7 +214,7 @@ file=@parcels.geojson
 
 FlatGeobuf (`.fgb`) files can be uploaded directly — no archive wrapping needed. If the `.fgb` file does not embed CRS in its header, provide `sourceSrid` on the import request; the server rejects imports when it cannot detect the source coordinate system.
 
-For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md).
+For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](../gis/FILEGDB_IMPORT_WORKFLOW.md).
 
 For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The server reads GeoParquet `geo` metadata for CRS detection and requires WKB geometry encoding. Non-WKB encodings are rejected. Nested column types (Struct, List, Map) are skipped with warnings. Rows with null geometry are skipped during both preview and import, and reported as warnings in the import response. Files with more than 100,000 rows in a single Parquet row group are rejected to maintain bounded memory usage; re-export such files with smaller row groups.
 
@@ -388,7 +388,7 @@ SDKs should call `GET /api/v1/admin/capabilities` once per authenticated session
 - `serverVersion` and `releaseChannel`: log or surface for diagnostics, rollout targeting, and support.
 
 Focused guidance and a concrete JSON example:
-- [SDK Compatibility Metadata](SDK_COMPATIBILITY_METADATA.md)
+- [SDK Compatibility Metadata](../developer/SDK_COMPATIBILITY_METADATA.md)
 
 ### **Operations and Monitoring Endpoints**
 
@@ -568,10 +568,10 @@ GET /healthz/live
 
 ## **Related Documentation**
 
-- [Admin UI](admin-ui.md)
-- [Geospatial API Examples](API_EXAMPLES.md)
-- [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md)
-- [Security](../devops/security.md)
-- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
-- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
-- [Upgrade and Rollback Runbook](../devops/runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes
+- [Operator Guide](README.md)
+- [Geospatial API Examples](../developer/API_EXAMPLES.md)
+- [FileGDB Import Workflow](../gis/FILEGDB_IMPORT_WORKFLOW.md)
+- [Security](security.md)
+- [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes

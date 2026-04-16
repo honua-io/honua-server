@@ -298,6 +298,36 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         document.RootElement.GetProperty("status").GetString().Should().Be("not_ready");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("POST /healthz/metrics")]
+    [Endpoint("PUT /healthz/metrics")]
+    [Endpoint("DELETE /healthz/metrics")]
+    [Endpoint("PATCH /healthz/metrics")]
+    public async Task PerformanceMetricsEndpoint_WithNonGetMethods_Returns405AndAllowHeader()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/metrics");
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            (response.Headers.TryGetValues("Allow", out var allowedValues) ||
+             response.Content.Headers.TryGetValues("Allow", out allowedValues))
+                .Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
+    }
+
 }
 
 /// <summary>

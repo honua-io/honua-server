@@ -24,11 +24,11 @@ Standardized scorecards, checklists, and readout templates for lighthouse migrat
 | Resource | Purpose |
 |----------|---------|
 | [Esri Migration Platform Plan](../ESRI_MIGRATION_PLATFORM_PLAN.md) | Migration architecture, phase gates, success metrics |
-| [MVP Launch GTM Playbook](../../user/MVP_LAUNCH_GTM_PLAYBOOK.md) | GTM pilot stages, SOW structure |
-| [Client Template Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md) | Client verification procedures |
-| [Enterprise Procurement Readiness](../../user/ENTERPRISE_PROCUREMENT_READINESS.md) | Procurement packet |
-| [DevOps Runbooks](../../devops/runbooks/README.md) | Deployment and infrastructure |
-| [Release Checklist](../RELEASE_CHECKLIST.md) | Release gate integration |
-| [`parity-scorecard-governance.yml`](../../../.github/workflows/parity-scorecard-governance.yml) | Parity scorecard CI governance |
-| [`geoservices-parity-nightly.yml`](../../../.github/workflows/geoservices-parity-nightly.yml) | Nightly geoservices parity runs |
-| [`parity-scorecard-baseline.json`](../../../tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json) | Existing parity baseline data |
+| Historical GTM pilot playbooks | Removed from the live repo; not maintained in the archive tree |
+| [Client Template Runbook](../../../gis/CLIENT_TEMPLATE_RUNBOOK.md) | Current client verification procedures |
+| Historical procurement readiness materials | Removed from the live repo; not maintained in the archive tree |
+| [Operator Runbooks](../../../operator/runbooks/README.md) | Current deployment and infrastructure procedures |
+| [Release Checklist](../../../contributor/RELEASE_CHECKLIST.md) | Current release gate integration |
+| [`parity-scorecard-governance.yml`](../../../../.github/workflows/parity-scorecard-governance.yml) | Parity scorecard CI governance |
+| [`geoservices-parity-nightly.yml`](../../../../.github/workflows/geoservices-parity-nightly.yml) | Nightly geoservices parity runs |
+| [`parity-scorecard-baseline.json`](../../../../tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json) | Existing parity baseline data |

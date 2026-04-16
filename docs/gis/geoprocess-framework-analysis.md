@@ -432,6 +432,4 @@ be derived from this proto definition.
 
 - [ADR-0029: Geoprocess Canonical Model Mappings](../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
 - [ADR-0026: AI-First Operator Contract](../contributor/adr/0026-ai-first-operator-contract.md)
-- [AI Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md)
-- [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)
 - [GeoServices REST Parity](geoservices-rest-parity.md)

@@ -1,6 +1,6 @@
 # Geospatial Data APIs (Standards-Based)
 
-Honua exposes multiple industry-standard geospatial APIs. This page helps you choose the right protocol and understand the shape of each API at a high level.
+Honua exposes multiple industry-standard geospatial APIs. This page highlights the major protocol families and helps you choose the right surface at a high level. For the exhaustive launch support matrix and caveats, use [MVP Compatibility and Limitations](MVP_COMPATIBILITY_CONTRACT.md).
 
 ## **Quick Protocol Selection**
 

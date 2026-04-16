@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Threading.Channels;
+using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
@@ -12,6 +13,8 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
@@ -179,6 +182,42 @@ public sealed class FeatureChangeRetryQueueTests : IDisposable
         (await cache.GetStringAsync($"featurechange:retry:{pendingId}")).Should().BeNull();
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProcessQueuedAsync_WhenPendingLookupThrows_ReleasesRedisLease()
+    {
+        var cache = new ThrowOnGetRetryCache();
+        var enqueueQueue = new FeatureChangeRetryQueue(
+            cache,
+            Channel.CreateUnbounded<PendingFeatureChangeSignal>(),
+            new RecordingFeatureChangeEventStore(),
+            _sessionManager,
+            NullLogger<FeatureChangeRetryQueue>.Instance);
+        var pendingId = await enqueueQueue.EnqueueAsync(CreateRequest("req-lease-release"));
+
+        var database = Substitute.For<IDatabase>();
+        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        cache.ThrowOnGet = true;
+        var retryQueue = new FeatureChangeRetryQueue(
+            cache,
+            Channel.CreateUnbounded<PendingFeatureChangeSignal>(),
+            new RecordingFeatureChangeEventStore(),
+            _sessionManager,
+            NullLogger<FeatureChangeRetryQueue>.Instance,
+            redis);
+
+        await FluentActions.Invoking(() => retryQueue.ProcessQueuedAsync(pendingId))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("pending cache read failed");
+
+        database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockReleaseAsync))
+            .Should().Be(1);
+    }
+
     private static FeatureChangeEventRequest CreateRequest(string requestId)
         => new()
         {
@@ -323,6 +362,51 @@ public sealed class FeatureChangeRetryQueueTests : IDisposable
             }
 
             _inner.Set(key, value, options);
+        }
+    }
+
+    private sealed class ThrowOnGetRetryCache : IDistributedCache
+    {
+        private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
+
+        public bool ThrowOnGet { get; set; }
+
+        public byte[]? Get(string key)
+        {
+            ThrowIfConfigured(key);
+            return _inner.Get(key);
+        }
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        {
+            ThrowIfConfigured(key);
+            return _inner.GetAsync(key, token);
+        }
+
+        public void Refresh(string key) => _inner.Refresh(key);
+
+        public Task RefreshAsync(string key, CancellationToken token = default)
+            => _inner.RefreshAsync(key, token);
+
+        public void Remove(string key) => _inner.Remove(key);
+
+        public Task RemoveAsync(string key, CancellationToken token = default)
+            => _inner.RemoveAsync(key, token);
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+            => _inner.Set(key, value, options);
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+            => _inner.SetAsync(key, value, options, token);
+
+        private void ThrowIfConfigured(string key)
+        {
+            if (ThrowOnGet
+                && !string.Equals(key, "featurechange:retry:ids", StringComparison.Ordinal)
+                && key.StartsWith("featurechange:retry:", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("pending cache read failed");
+            }
         }
     }
 }

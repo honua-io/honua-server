@@ -1,164 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Sockets;
 using System.ComponentModel.DataAnnotations;
-using System.Globalization;
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 /// <summary>
-/// Common validation patterns and configuration parsing helpers.
-/// </summary>
-public static class ValidationPatterns
-{
-    /// <summary>
-    /// Register configuration options with fluent validation and startup validation.
-    /// </summary>
-    public static IServiceCollection AddValidatedConfiguration<TOptions, TValidator>(
-        this IServiceCollection services,
-        IConfigurationSection configurationSection)
-        where TOptions : class
-        where TValidator : class, IValidateOptions<TOptions>
-    {
-        services.AddOptions<TOptions>()
-            .Bind(configurationSection)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddSingleton<IValidateOptions<TOptions>, TValidator>();
-
-        return services;
-    }
-
-    /// <summary>
-    /// Register configuration options with data annotations validation only.
-    /// </summary>
-    public static IServiceCollection AddValidatedConfiguration<TOptions>(
-        this IServiceCollection services,
-        IConfigurationSection configurationSection)
-        where TOptions : class
-    {
-        services.AddOptions<TOptions>()
-            .Bind(configurationSection)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        return services;
-    }
-
-    /// <summary>
-    /// Register configuration options with custom validation predicate.
-    /// </summary>
-    public static IServiceCollection AddValidatedConfiguration<TOptions>(
-        this IServiceCollection services,
-        IConfigurationSection configurationSection,
-        Func<TOptions, bool> validator,
-        string failureMessage)
-        where TOptions : class
-    {
-        services.AddOptions<TOptions>()
-            .Bind(configurationSection)
-            .Validate(validator, failureMessage)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        return services;
-    }
-
-    /// <summary>
-    /// Common configuration parsing methods to eliminate duplication.
-    /// </summary>
-    public static class ConfigurationParsing
-    {
-        public static int ParsePositiveIntOrDefault(string? value, int defaultValue)
-        {
-            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
-                ? parsed
-                : defaultValue;
-        }
-
-        public static int ParseNonNegativeIntOrDefault(string? value, int defaultValue)
-        {
-            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0
-                ? parsed
-                : defaultValue;
-        }
-
-        public static long ParsePositiveLongOrDefault(string? value, long defaultValue)
-        {
-            return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
-                ? parsed
-                : defaultValue;
-        }
-
-        public static double ParsePositiveDoubleOrDefault(string? value, double defaultValue)
-        {
-            return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
-                ? parsed
-                : defaultValue;
-        }
-
-        public static bool ParseBoolOrDefault(string? value, bool defaultValue)
-        {
-            return bool.TryParse(value, out var parsed) ? parsed : defaultValue;
-        }
-
-        public static string ParseStringOrDefault(string? value, string defaultValue)
-        {
-            return string.IsNullOrWhiteSpace(value) ? defaultValue : value.Trim();
-        }
-
-        public static TimeSpan ParseTimeSpanOrDefault(string? value, TimeSpan defaultValue)
-        {
-            return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var parsed) ? parsed : defaultValue;
-        }
-
-        /// <summary>
-        /// Parse a configuration section into a strongly-typed object with validation.
-        /// </summary>
-        public static TOptions ParseConfigurationSection<TOptions>(
-            IConfigurationSection section,
-            TOptions defaultOptions,
-            Action<TOptions, IConfigurationSection>? customParser = null)
-            where TOptions : class, new()
-        {
-            if (!section.Exists())
-            {
-                return defaultOptions;
-            }
-
-            var options = new TOptions();
-
-            // Bind standard properties
-            section.Bind(options);
-
-            // Apply custom parsing if provided
-            customParser?.Invoke(options, section);
-
-            // Validate using data annotations
-            var validationResults = new List<ValidationResult>();
-            var validationContext = new ValidationContext(options);
-
-            if (!Validator.TryValidateObject(options, validationContext, validationResults, true))
-            {
-                var errors = string.Join("; ", validationResults.Select(r => r.ErrorMessage));
-                throw new InvalidOperationException($"Configuration validation failed for {typeof(TOptions).Name}: {errors}");
-            }
-
-            return options;
-        }
-    }
-}
-
-/// <summary>
 /// Base class for configuration validators with common patterns.
 /// </summary>
-public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptions>
+public abstract class ConfigurationValidator<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IValidateOptions<TOptions>
     where TOptions : class
 {
     public ValidateOptionsResult Validate(string? name, TOptions options)
@@ -186,9 +41,9 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
     {
         // Validate using data annotations
         var validationResults = new List<ValidationResult>();
-        var validationContext = new ValidationContext(options);
+        var validationContext = CreateValidationContext(options, typeof(TOptions).Name);
 
-        if (!Validator.TryValidateObject(options, validationContext, validationResults, true))
+        if (!TryValidateObject(options, validationContext, validationResults))
         {
             errors.AddRange(validationResults.Select(r => r.ErrorMessage ?? "Unknown validation error"));
         }
@@ -342,15 +197,20 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
     /// <summary>
     /// Helper to validate data annotations on nested objects.
     /// </summary>
-    protected static void ValidateDataAnnotations(object? obj, List<string> errors, string propertyName)
+    protected static void ValidateDataAnnotations<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TObject>(
+        TObject? obj,
+        List<string> errors,
+        string propertyName)
+        where TObject : class
     {
         if (obj == null)
             return;
 
         var validationResults = new List<ValidationResult>();
-        var validationContext = new ValidationContext(obj);
+        var validationContext = CreateValidationContext(obj, propertyName);
 
-        if (!Validator.TryValidateObject(obj, validationContext, validationResults, true))
+        if (!TryValidateObject(obj, validationContext, validationResults))
         {
             foreach (var result in validationResults)
             {
@@ -559,5 +419,31 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
         }
 
         return false;
+    }
+
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "DisplayName is assigned explicitly to avoid trim-unsafe display-name reflection during validation.")]
+    private static ValidationContext CreateValidationContext(object instance, string displayName)
+    {
+        var validationContext = new ValidationContext(instance)
+        {
+            DisplayName = displayName
+        };
+
+        return validationContext;
+    }
+
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "Validation context is created with an explicit display name, avoiding trim-unsafe display-name reflection.")]
+    private static bool TryValidateObject(
+        object instance,
+        ValidationContext validationContext,
+        ICollection<ValidationResult> validationResults)
+    {
+        return Validator.TryValidateObject(instance, validationContext, validationResults, validateAllProperties: true);
     }
 }

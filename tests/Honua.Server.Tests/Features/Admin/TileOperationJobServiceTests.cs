@@ -20,6 +20,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -132,10 +133,113 @@ public sealed class TileOperationJobServiceTests
         enumerator.Current.Should().Be(jobId);
     }
 
+    [Fact]
+    public async Task ProcessQueuedJobAsync_WhenRequestMetadataIsMissing_FailsJobAndCleansUpRequest()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "seed",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad"
+        });
+
+        RemoveCachedRequest(sut, jobId);
+        await cache.RemoveAsync($"tile:request:{jobId}");
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Be("Tile operation request metadata is no longer available.");
+        ContainsCachedRequest(sut, jobId).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ReadQueuedJobIdsAsync_WhenRecoveredJobRequestMetadataIsMissing_FailsJob()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
+        const string jobId = "missing-request-job";
+
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, "seed", null, 1, "WebMercatorQuad"));
+
+        var recoverQueuedJobIds = typeof(TileOperationJobService)
+            .GetMethod("RecoverQueuedJobIdsAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("RecoverQueuedJobIdsAsync method was not found.");
+        var recoveryTask = (Task<IReadOnlyList<string>>)recoverQueuedJobIds.Invoke(sut, [CancellationToken.None])!;
+        var recoveredJobIds = await recoveryTask;
+
+        recoveredJobIds.Should().BeEmpty();
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Be("Tile operation request metadata is no longer available.");
+    }
+
+    [Fact]
+    public async Task RecoverQueuedJobIdsAsync_WithActiveRedisClaim_DoesNotRequeueProcessingJob()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var database = Substitute.For<IDatabase>();
+        database.StringGetAsync("tile:job:claim:claimed-tile-job", Arg.Any<CommandFlags>())
+            .Returns(new RedisValue("owner-1"));
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        redis.GetDatabase().Returns(database);
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache, redis);
+        const string jobId = "claimed-tile-job";
+
+        await cache.SetStringAsync(
+            $"tile:request:{jobId}",
+            JsonSerializer.Serialize(new PersistedTileOperationRequest
+            {
+                Request = new TileOperationStartRequest
+                {
+                    Operation = "seed",
+                    LayerId = 1,
+                    TileMatrixSetId = "WebMercatorQuad"
+                }
+            }));
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, "seed", null, 1, "WebMercatorQuad") with
+            {
+                Status = OperationStatus.Processing,
+                CurrentPhase = "Processing tiles"
+            });
+
+        var recoverQueuedJobIds = typeof(TileOperationJobService)
+            .GetMethod("RecoverQueuedJobIdsAsync", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("RecoverQueuedJobIdsAsync method was not found.");
+        var recoveryTask = (Task<IReadOnlyList<string>>)recoverQueuedJobIds.Invoke(sut, [CancellationToken.None])!;
+        var recoveredJobIds = await recoveryTask;
+
+        recoveredJobIds.Should().BeEmpty();
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Processing);
+        progress.CurrentPhase.Should().Be("Processing tiles");
+    }
+
     private static TileOperationJobService CreateSut(
         IUniversalProgressStore progressStore,
         IServiceScopeFactory serviceScopeFactory,
-        IDistributedCache? requestCache = null)
+        IDistributedCache? requestCache = null,
+        IConnectionMultiplexer? redis = null)
     {
         var cacheInvalidationService = new OutputCacheInvalidationService(
             cacheStore: null,
@@ -152,7 +256,8 @@ public sealed class TileOperationJobServiceTests
             serviceScopeFactory,
             Options.Create(new TileOptions()),
             Options.Create(new LimitsOptions()),
-            NullLogger<TileOperationJobService>.Instance);
+            NullLogger<TileOperationJobService>.Instance,
+            redis);
     }
 
     private static ServiceProvider CreateServiceProvider()
@@ -172,6 +277,29 @@ public sealed class TileOperationJobServiceTests
             ?? throw new InvalidOperationException("ContainsKey method was not found.");
 
         return (bool)containsKey.Invoke(dictionary, new object?[] { jobId })!;
+    }
+
+    private static void RemoveCachedRequest(TileOperationJobService sut, string jobId)
+    {
+        var field = typeof(TileOperationJobService).GetField("_jobRequests", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Unable to access _jobRequests field.");
+        var dictionary = field.GetValue(sut) ?? throw new InvalidOperationException("_jobRequests was null.");
+        var remove = dictionary.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .FirstOrDefault(method =>
+            {
+                if (!string.Equals(method.Name, "TryRemove", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                var parameters = method.GetParameters();
+                return parameters.Length == 2
+                    && parameters[0].ParameterType == typeof(string)
+                    && parameters[1].IsOut;
+            })
+            ?? throw new InvalidOperationException("TryRemove method was not found.");
+        var args = new object?[] { jobId, null };
+        _ = remove.Invoke(dictionary, args);
     }
 
     private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
