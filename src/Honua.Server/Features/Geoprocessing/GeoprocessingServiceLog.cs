@@ -89,7 +89,7 @@ internal static partial class GeoprocessingServiceLog
     public static partial void CancelRejectedApprovalRequired(
         ILogger logger,
         string policyRef);
-    
+
     [LoggerMessage(8015, LogLevel.Warning, "Queue cleanup failed for cancelled job {JobId}; stale-claim reconciler will repair")]
     public static partial void QueueRemovalFailed(
         ILogger logger,

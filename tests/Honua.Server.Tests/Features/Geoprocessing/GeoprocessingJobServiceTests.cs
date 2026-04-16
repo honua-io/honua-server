@@ -402,6 +402,7 @@ public sealed class GeoprocessingJobServiceTests
             [firstNotifier, secondNotifier],
             _authEvaluator,
             _approvalEvaluator,
+            new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
             _jobStore,
             _jobQueue);
@@ -738,11 +739,12 @@ public sealed class GeoprocessingJobServiceTests
         _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("Redis unavailable"));
 
+        var validPlan = CreateValidPlan();
         var plan = new AnalysisPlan
         {
             PlanId = "plan-rollback",
-            IntentId = "intent-1",
-            Steps = [new AnalysisPlanStep { StepId = "s1", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "buf" }]
+            IntentId = validPlan.IntentId,
+            Steps = validPlan.Steps
         };
 
         var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());

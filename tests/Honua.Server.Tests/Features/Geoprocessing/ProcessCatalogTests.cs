@@ -655,7 +655,7 @@ public sealed class ProcessCatalogTests
 
         var jobService = new GeoprocessingJobService(
             Substitute.For<IUniversalProgressStore>(),
-            Substitute.For<IJobCancellationNotifier>(),
+            [Substitute.For<IJobCancellationNotifier>()],
             authEval,
             approvalEval,
             _catalog,
