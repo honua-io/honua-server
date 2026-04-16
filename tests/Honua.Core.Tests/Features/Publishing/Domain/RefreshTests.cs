@@ -36,6 +36,24 @@ public class RefreshPolicyTests
     }
 
     [UnitTest]
+    public void Scheduled_WithZeroInterval_ShouldThrow()
+    {
+        var act = () => RefreshPolicy.Scheduled(TimeSpan.Zero);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("interval");
+    }
+
+    [UnitTest]
+    public void Scheduled_WithNegativeInterval_ShouldThrow()
+    {
+        var act = () => RefreshPolicy.Scheduled(TimeSpan.FromSeconds(-1));
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("interval");
+    }
+
+    [UnitTest]
     public void WithRefreshCompleted_Manual_ShouldUpdateLastRefreshWithoutNext()
     {
         var policy = RefreshPolicy.Manual();

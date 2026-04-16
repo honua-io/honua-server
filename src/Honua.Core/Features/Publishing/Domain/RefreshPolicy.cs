@@ -39,8 +39,18 @@ public sealed record RefreshPolicy
     /// <summary>
     /// Creates a scheduled refresh policy with the specified interval.
     /// </summary>
+    /// <param name="interval">Positive interval between refreshes.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="interval"/> is zero or negative.</exception>
     public static RefreshPolicy Scheduled(TimeSpan interval)
     {
+        if (interval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(interval),
+                interval,
+                "Scheduled refresh interval must be positive.");
+        }
+
         var now = DateTimeOffset.UtcNow;
         return new RefreshPolicy
         {
@@ -54,9 +64,10 @@ public sealed record RefreshPolicy
     /// Returns an updated policy reflecting a completed refresh, advancing the next refresh time
     /// when the policy is scheduled.
     /// </summary>
-    public RefreshPolicy WithRefreshCompleted()
+    /// <param name="completedAt">Optional completion timestamp; defaults to <see cref="DateTimeOffset.UtcNow"/>.</param>
+    public RefreshPolicy WithRefreshCompleted(DateTimeOffset? completedAt = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = completedAt ?? DateTimeOffset.UtcNow;
         return this with
         {
             LastRefreshAt = now,

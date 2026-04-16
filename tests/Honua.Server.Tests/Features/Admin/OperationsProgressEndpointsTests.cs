@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Server.Tests.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -603,6 +604,63 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         GetPropertyCaseInsensitive(op, "currentStageStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
         GetPropertyCaseInsensitive(op, "stepsCompleted").GetInt32().Should().Be(0);
         CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_PublishingType_ReturnsWorkflowFields()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var intentId = Guid.NewGuid().ToString("N");
+        var progress = PublishingProgress.CreateExecuting(operationId, intentId) with
+        {
+            ServiceId = "svc-" + Guid.NewGuid().ToString("N")
+        };
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Publishing");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+
+        var op = operations[0];
+        GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(op, "intentId").GetString().Should().Be(intentId);
+        GetPropertyCaseInsensitive(op, "serviceId").GetString().Should().Be(progress.ServiceId);
+        GetPropertyCaseInsensitive(op, "intentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
+    public async Task GetOperationStatus_PublishingType_ReturnsWorkflowFields()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var intentId = Guid.NewGuid().ToString("N");
+        var progress = PublishingProgress.CreateExecuting(operationId, intentId) with
+        {
+            ServiceId = "svc-" + Guid.NewGuid().ToString("N")
+        };
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(json.RootElement, "intentId").GetString().Should().Be(intentId);
+        GetPropertyCaseInsensitive(json.RootElement, "serviceId").GetString().Should().Be(progress.ServiceId);
+        GetPropertyCaseInsensitive(json.RootElement, "intentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
     }
 
     [IntegrationTest]

@@ -114,6 +114,67 @@ public class PublishedServiceRecordTests
     }
 
     [UnitTest]
+    public void WithRefreshed_ShouldAdvanceScheduledRefreshPolicy()
+    {
+        var interval = TimeSpan.FromHours(6);
+        var intent = PublishIntent.CreateDraft(
+            "pi-sched",
+            PublishSourceKind.ResultPackage,
+            "rp-sched",
+            PublishTargetKind.FeatureService);
+        var policy = RefreshPolicy.Scheduled(interval);
+        var originalNextRefreshAt = policy.NextRefreshAt;
+
+        var service = PublishedServiceRecord.CreateFromIntent(
+            "svc-sched", intent, refreshPolicy: policy).WithActive();
+
+        var refreshed = service.WithRefreshed();
+
+        refreshed.RefreshPolicy.Should().NotBeNull();
+        refreshed.RefreshPolicy!.Mode.Should().Be(RefreshMode.Scheduled);
+        refreshed.RefreshPolicy.Interval.Should().Be(interval);
+        refreshed.RefreshPolicy.LastRefreshAt.Should().NotBeNull();
+        refreshed.RefreshPolicy.LastRefreshAt.Should().Be(refreshed.LastRefreshedAt);
+        refreshed.RefreshPolicy.NextRefreshAt.Should().NotBeNull();
+        refreshed.RefreshPolicy.NextRefreshAt.Should().BeAfter(originalNextRefreshAt!.Value);
+        refreshed.RefreshPolicy.NextRefreshAt.Should().BeCloseTo(
+            refreshed.LastRefreshedAt!.Value + interval,
+            TimeSpan.FromSeconds(2));
+    }
+
+    [UnitTest]
+    public void WithRefreshed_ShouldUpdateManualRefreshPolicyLastRefreshAt()
+    {
+        var intent = PublishIntent.CreateDraft(
+            "pi-manual",
+            PublishSourceKind.ResultPackage,
+            "rp-manual",
+            PublishTargetKind.FeatureService);
+        var policy = RefreshPolicy.Manual();
+
+        var service = PublishedServiceRecord.CreateFromIntent(
+            "svc-manual", intent, refreshPolicy: policy).WithActive();
+
+        var refreshed = service.WithRefreshed();
+
+        refreshed.RefreshPolicy.Should().NotBeNull();
+        refreshed.RefreshPolicy!.Mode.Should().Be(RefreshMode.Manual);
+        refreshed.RefreshPolicy.LastRefreshAt.Should().Be(refreshed.LastRefreshedAt);
+        refreshed.RefreshPolicy.NextRefreshAt.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithRefreshed_WithoutRefreshPolicy_ShouldLeavePolicyNull()
+    {
+        var service = CreateTestService().WithActive();
+
+        var refreshed = service.WithRefreshed();
+
+        refreshed.RefreshPolicy.Should().BeNull();
+        refreshed.LastRefreshedAt.Should().NotBeNull();
+    }
+
+    [UnitTest]
     public void WithRefreshed_WithoutUpdatedArtifacts_ShouldPreserveExisting()
     {
         var artifacts = new[]

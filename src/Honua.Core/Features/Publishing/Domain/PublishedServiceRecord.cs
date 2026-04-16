@@ -137,6 +137,7 @@ public sealed record PublishedServiceRecord
         {
             Status = PublishedServiceStatus.Active,
             Artifacts = updatedArtifacts ?? Artifacts,
+            RefreshPolicy = RefreshPolicy?.WithRefreshCompleted(now),
             LastRefreshedAt = now,
             UpdatedAt = now
         };
