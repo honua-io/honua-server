@@ -486,6 +486,11 @@ dependents according to each step's `FailurePolicy`.
   correlate step executions to their parent run. When the step definition
   sets a positive `TimeoutSeconds`, the value is also stamped as
   `orchestration.timeoutSeconds`.
+- When a completed step's artifact retrieval fails and any downstream step
+  binds artifacts from it, the step is marked `Failed` with a descriptive
+  error rather than succeeding with null artifacts. This prevents the
+  workflow from silently producing a null-artifact success and ensures
+  operators see the real cause (event `8120`).
 - All state is persisted through `IWorkflowRunStore` before side effects.
   After a crash the reconciler rehydrates state from Redis and resumes from
   the same DAG position; no in-memory workflow state is required.
@@ -582,7 +587,9 @@ events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
 `8102 WorkflowStepSubmitted`, `8104 WorkflowStepRetrying`,
 `8105 WorkflowStepSkipped`, `8107 InputBindingFailed`,
 `8108 SchedulerTriggered`, `8110 ReconciliationFailed`,
-`8116 SchedulerDefinitionInvalid`, and `8117 WorkflowStepCancelJobFailed`.
+`8116 SchedulerDefinitionInvalid`, `8117 WorkflowStepCancelJobFailed`,
+`8119 WorkflowCancelLeaseContention`, and
+`8120 WorkflowStepArtifactsUnavailableForBoundDependents`.
 
 The engine contributes activities
 (`honua.orchestration.reconcile_run`, `honua.orchestration.execute_step`,
