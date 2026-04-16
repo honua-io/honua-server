@@ -325,7 +325,10 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
             callback.IsCompleted.Should().BeFalse();
 
-            var queueDepth = await harness.Queue.GetQueueDepthAsync();
+            var queueDepth = await WaitForQueueDepthAsync(
+                harness.Queue,
+                depth => depth == 1,
+                TimeSpan.FromSeconds(5));
             queueDepth.Should().Be(1);
 
             var reclaimed = await harness.Queue.TryClaimAsync(
@@ -386,6 +389,26 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         }
 
         throw new TimeoutException($"Timed out waiting for job '{operationId}' to reach the expected state.");
+    }
+
+    private static async Task<long> WaitForQueueDepthAsync(
+        RedisJobQueue queue,
+        Func<long, bool> predicate,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var depth = await queue.GetQueueDepthAsync();
+            if (predicate(depth))
+            {
+                return depth;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new TimeoutException("Timed out waiting for the Redis queue to reach the expected depth.");
     }
 
     private static string GetLogKey(string operationId) => $"controlplane:job:log:{operationId}";
