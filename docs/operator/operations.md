@@ -423,6 +423,150 @@ that still have retry budget.
 
 ---
 
+## Workflow Orchestration
+
+The workflow orchestration layer composes canonical `AnalysisPlan` jobs into
+declarative multi-step DAG runs. A `WorkflowDefinition` specifies steps,
+dependencies, artifact-to-input bindings, per-step retry policy, failure
+policy, and an optional cron trigger. Runs are reconciled by a lease-based
+engine on top of the durable job orchestration substrate; every step is
+submitted through `IWorkflowJobExecutor` (backed by the geoprocessing job
+service) so workflow steps reuse the same claim, heartbeat, retry, and
+cancellation semantics described in [Job Orchestration](#job-orchestration).
+
+> **Deployment note:** Orchestration stores (`IWorkflowDefinitionStore`,
+> `IWorkflowRunStore`) only register when an `IConnectionMultiplexer` is
+> available. Redis-less deployments do not host the orchestration engine or
+> its background services; the admin cancel endpoint returns `503` for
+> `Orchestration` operations in that configuration.
+
+### Run Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Pending | Run created; reconciliation has not yet started |
+| Running | Engine is reconciling steps |
+| Succeeded | All required steps reached a successful terminal state |
+| Failed | A required step exhausted retries under `Fail` policy or a workflow invariant broke |
+| Cancelled | Cancellation was requested; cascade cancellation finishes on the next tick |
+
+Per-step states are `Pending`, `Queued`, `Running`, `Succeeded`, `Failed`,
+`Cancelled`, and `Skipped`. The engine maps the underlying execution-job
+status onto the step status, and cascades failure/skip decisions across
+dependents according to each step's `FailurePolicy`.
+
+### Step Wiring
+
+- `DependsOn` — structural order; a step enters `Pending` eligibility only when
+  every listed dependency is terminal.
+- `InputBindings` — artifact-to-input wiring. `SourceArtifactSelector` accepts
+  `artifact:{index}` or `artifact:{label}` and resolves against the upstream
+  step's `AnalysisResultPackage.Artifacts` (label match is case-insensitive).
+  The resolved reference is string-substituted into the downstream
+  `AnalysisPlanStep.Inputs` dictionary without extending the canonical model.
+- `RetryPolicy` — optional. Computes exponential backoff as
+  `min(InitialDelaySeconds * BackoffMultiplier^(attempt-1), MaxDelaySeconds)`.
+  A null policy means a single attempt with no retry.
+- `FailurePolicy` — `Fail` propagates run failure and cancels non-terminal
+  dependents; `Skip` marks the step `Skipped` and cascades `Skipped` only to
+  dependents that bind artifacts from this step (structural-only dependents
+  still proceed).
+- `TimeoutSeconds` — optional per-step wall-clock bound surfaced to the
+  underlying job substrate.
+
+### Idempotency and Crash Safety
+
+- Each submission uses the idempotency key `{runId}:{stepId}:{attemptCount}`,
+  so retries and crash recovery never enqueue duplicate jobs.
+- Protocol metadata `orchestration.runId`, `orchestration.workflowId`,
+  `orchestration.stepId`, and `orchestration.attempt` is stamped on each
+  submitted job so downstream rate/cost controls and audit surfaces can
+  correlate step executions to their parent run.
+- All state is persisted through `IWorkflowRunStore` before side effects.
+  After a crash the reconciler rehydrates state from Redis and resumes from
+  the same DAG position; no in-memory workflow state is required.
+- `IWorkflowRunStore` extends `IOperationStore`, so reconciliation uses the
+  canonical lease pattern with a 30-second lease renewed every 10 seconds.
+
+### Scheduler
+
+A separate background service evaluates cron-triggered definitions once per
+tick (30-second interval). For each definition, the scheduler:
+
+1. Compiles the trigger's 5-field cron expression with the declared IANA
+   time zone (default UTC) and caches the compiled expression.
+2. Seeds its in-memory cursor from the durable per-workflow cursor so
+   restarts never rewind into previously-fired occurrences.
+3. Claims the fire-time occurrence via `TryClaimScheduleFireAsync` so only
+   one replica creates a run per (workflow, fire-time) pair.
+4. Advances the durable cursor after the claim so the window is monotonic.
+
+Invalid cron expressions or unknown time zones are skipped and logged at
+`Warning` with event `8116`; the workflow stops firing until the definition
+is corrected.
+
+### Cancellation
+
+Cancellation on an `Orchestration` operation flows through
+`/api/v1/admin/operations/{runId}/cancel` to the
+`WorkflowOrchestrationEngine`, which marks the run `Cancelled` on the durable
+record. The next reconcile tick inspects every step:
+
+- `Pending` steps transition to `Cancelled` immediately.
+- `Queued` or `Running` steps are cancelled through `CancelJobAsync` on the
+  job executor before the step moves to `Cancelled`. Best-effort cancel
+  failures are recorded as run warnings but do not block terminal transition.
+- Already-terminal steps are left as-is.
+
+The engine swallows `GeoprocessingNotFoundException` and
+`GeoprocessingPreconditionFailedException` from the cascade so partially
+pruned or already-terminal child jobs stay idempotent.
+
+### Policy Defaults and Tuning
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Reconcile poll interval | 5 s | `WorkflowOrchestrationBackgroundService` poll cadence |
+| Reconcile lease duration | 30 s | Matches the deploy reconciler lease pattern |
+| Reconcile lease renewal | 10 s | Background renewal while a run is being reconciled |
+| Scheduler tick interval | 30 s | `WorkflowSchedulerBackgroundService` cadence |
+| Scheduler claim retention | 24 h | Window during which a `(workflow, fire-time)` claim is honoured |
+| Run progress retention | 7 d | TTL applied to the `WorkflowProgress` projection in `IUniversalProgressStore` |
+
+### Persistence
+
+| Store | Key pattern | TTL | Index sets |
+|-------|-------------|-----|------------|
+| `RedisWorkflowDefinitionStore` | `orchestration:def:{workflowId}` | none | `orchestration:def:all` |
+| `RedisWorkflowRunStore` | `orchestration:run:{runId}` | 7 d | `orchestration:run:active`, `orchestration:run:wf:{workflowId}` |
+| Run leases | `orchestration:run:lease:{runId}` | 30 s | — |
+| Schedule claims/cursors | `orchestration:schedule:*` | claim retention / unbounded cursor | — |
+
+All serialization uses the source-generated `OrchestrationJsonContext`;
+orchestration does not introduce reflection or runtime JSON discovery.
+
+### Observability
+
+`WorkflowOrchestrationEngine`, the reconciler loop, and the scheduler emit
+structured logs in the `8100-8199` event-id band (`OrchestrationLog`). Notable
+events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
+`8102 WorkflowStepSubmitted`, `8104 WorkflowStepRetrying`,
+`8105 WorkflowStepSkipped`, `8107 InputBindingFailed`,
+`8108 SchedulerTriggered`, `8110 ReconciliationFailed`,
+`8116 SchedulerDefinitionInvalid`, and `8117 WorkflowStepCancelJobFailed`.
+
+The engine contributes activities
+(`honua.orchestration.reconcile_run`, `honua.orchestration.execute_step`,
+`honua.orchestration.resolve_bindings`, `honua.orchestration.scheduler_tick`)
+and metrics (`honua.orchestration.runs_created_total`,
+`honua.orchestration.runs_completed_total`,
+`honua.orchestration.steps_completed_total`,
+`honua.orchestration.steps_retried_total`,
+`honua.orchestration.run_duration_ms`,
+`honua.orchestration.step_duration_ms`).
+
+---
+
 ## OGC API Processes
 
 The OGC API Processes adapter is always registered and serves routes under

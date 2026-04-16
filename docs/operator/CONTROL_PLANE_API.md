@@ -400,7 +400,8 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/operations/type/{operationType}` | GET | List operations by type |
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`,
-`TileCache`, `PMTilesArchive`, `Export`, `RasterImport`, `Print`, `Geoprocessing`.
+`TileCache`, `PMTilesArchive`, `Export`, `RasterImport`, `Print`, `Geoprocessing`,
+`Publishing`, `Orchestration`.
 
 Geoprocessing operations report workflow-specific progress including the current
 deterministic stage and plan step counts. Cancellation is supported through the
@@ -418,6 +419,19 @@ structured execution logs are stored via `IExecutionLogStore` and are not yet
 exposed through a public API endpoint. See
 [Operations — Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
+
+Workflow runs produced by the declarative orchestration layer surface through
+the same endpoints using the `Orchestration` operation type. The progress
+payload is a `WorkflowProgress` record keyed by the workflow run identifier
+(`wf-<guid>`) and reports `runStatus`, `workflowId`, `stepsCompleted`, and
+`totalSteps`. Cancellation on an `Orchestration` operation is routed to the
+`WorkflowOrchestrationEngine`, which records the cancellation on the durable
+workflow run. The next reconcile tick cascades `CancelJobAsync` to any queued
+or running child jobs; callers should poll the same endpoint for the terminal
+status. When the engine is not registered (e.g., Redis-less deployments) the
+endpoint returns `503`. See
+[Operations — Workflow Orchestration](operations.md#workflow-orchestration)
+for run lifecycle, scheduler semantics, and tuning details.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
