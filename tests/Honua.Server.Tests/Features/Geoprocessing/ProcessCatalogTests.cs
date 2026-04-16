@@ -1862,6 +1862,110 @@ public sealed class ProcessCatalogTests
             v.FieldPath == "steps[s1].inputs.layerId");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_ZeroLayerId_IsAccepted()
+    {
+        // RouteParameterValidator.ValidateLayerId accepts 0 (see
+        // WebAppFixture.TestLayerId), so the catalog gate must not reject
+        // zero-based layer ids the runtime would accept.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "0",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().NotContain(v =>
+            v.FieldPath == "steps[s1].inputs.layerId");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_NegativeLayerId_ProducesInvalidValueViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "-1",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.layerId");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_ZeroJoinLayerId_IsAccepted()
+    {
+        // Both target and join ids use the same LayerId value type; zero-based
+        // join layer ids must clear the catalog gate so plans the analytics
+        // handler would accept are not blocked here.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "1",
+                        ["joinLayerId"] = "0"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().NotContain(v =>
+            v.FieldPath == "steps[s1].inputs.joinLayerId");
+    }
+
     // -----------------------------------------------------------------------
     // Catalog — immutability contract
     // -----------------------------------------------------------------------

@@ -886,12 +886,14 @@ internal static class ProcessPlanValidator
             case ProcessParameterValueType.LayerId:
                 // Spatial analytics REST routes constrain {layerId:int} and the
                 // handler joinLayerId path uses int.TryParse, so non-integer ids
-                // are 400'd at execution. Validate the same shape here so plans
-                // with opaque-string ids do not slip through the catalog gate.
+                // are 400'd at execution. Match the live RouteParameterValidator
+                // contract (layer id >= 0) — the shared test fixture uses 0 as a
+                // valid layer id, so rejecting zero here would block plans the
+                // runtime accepts.
                 if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
-                    || layerId <= 0)
+                    || layerId < 0)
                 {
-                    errorDetail = $"expected positive integer layer identifier, got '{value}'";
+                    errorDetail = $"expected non-negative integer layer identifier, got '{value}'";
                     return false;
                 }
                 return true;
