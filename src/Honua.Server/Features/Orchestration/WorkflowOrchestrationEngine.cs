@@ -227,51 +227,51 @@ internal sealed class WorkflowOrchestrationEngine
             switch (state.Status)
             {
                 case WorkflowStepStatus.Pending:
-                {
-                    if (!AreDependenciesSatisfied(definitionStep, definitionById, states, out var cascadePolicy))
                     {
-                        if (cascadePolicy is { } cascadeReason)
+                        if (!AreDependenciesSatisfied(definitionStep, definitionById, states, out var cascadePolicy))
                         {
-                            states[state.StepId] = state with
+                            if (cascadePolicy is { } cascadeReason)
                             {
-                                Status = cascadeReason.Status,
-                                CompletedAt = now,
-                                ErrorMessage = cascadeReason.Reason
-                            };
-                            OrchestrationLog.WorkflowStepSkipped(_logger, run.RunId, state.StepId, cascadeReason.Reason);
+                                states[state.StepId] = state with
+                                {
+                                    Status = cascadeReason.Status,
+                                    CompletedAt = now,
+                                    ErrorMessage = cascadeReason.Reason
+                                };
+                                OrchestrationLog.WorkflowStepSkipped(_logger, run.RunId, state.StepId, cascadeReason.Reason);
+                                changed = true;
+                            }
+
+                            continue;
+                        }
+
+                        if (state.NextAttemptAt is { } nextAttempt && nextAttempt > now)
+                        {
+                            continue;
+                        }
+
+                        var submission = await SubmitStepAsync(run, definition, definitionStep, state, states, warnings, cancellationToken).ConfigureAwait(false);
+                        if (submission.NewState is not null)
+                        {
+                            states[state.StepId] = submission.NewState;
                             changed = true;
                         }
 
-                        continue;
+                        break;
                     }
-
-                    if (state.NextAttemptAt is { } nextAttempt && nextAttempt > now)
-                    {
-                        continue;
-                    }
-
-                    var submission = await SubmitStepAsync(run, definition, definitionStep, state, states, warnings, cancellationToken).ConfigureAwait(false);
-                    if (submission.NewState is not null)
-                    {
-                        states[state.StepId] = submission.NewState;
-                        changed = true;
-                    }
-
-                    break;
-                }
 
                 case WorkflowStepStatus.Queued:
                 case WorkflowStepStatus.Running:
-                {
-                    var observation = await ObserveStepAsync(run, definitionStep, state, cancellationToken).ConfigureAwait(false);
-                    if (observation is not null)
                     {
-                        states[state.StepId] = observation;
-                        changed = true;
-                    }
+                        var observation = await ObserveStepAsync(run, definitionStep, state, cancellationToken).ConfigureAwait(false);
+                        if (observation is not null)
+                        {
+                            states[state.StepId] = observation;
+                            changed = true;
+                        }
 
-                    break;
-                }
+                        break;
+                    }
             }
         }
 
@@ -451,82 +451,82 @@ internal sealed class WorkflowOrchestrationEngine
         switch (job.Status)
         {
             case ExecutionJobStatus.Succeeded:
-            {
-                IReadOnlyList<ArtifactRef>? artifacts = null;
-                try
                 {
-                    var results = await _jobService.GetJobResultsAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
-                    artifacts = results.Artifacts;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    OrchestrationLog.InputBindingFailed(_logger, run.RunId, state.StepId, "<results>", ex.Message);
-                }
+                    IReadOnlyList<ArtifactRef>? artifacts = null;
+                    try
+                    {
+                        var results = await _jobService.GetJobResultsAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
+                        artifacts = results.Artifacts;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        OrchestrationLog.InputBindingFailed(_logger, run.RunId, state.StepId, "<results>", ex.Message);
+                    }
 
-                var duration = (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds;
-                OrchestrationTelemetry.StepDuration.Record(
-                    duration,
-                    new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Succeeded.ToString()));
-                OrchestrationTelemetry.StepsCompleted.Add(
-                    1,
-                    new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Succeeded.ToString()));
-                OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, WorkflowStepStatus.Succeeded.ToString());
-                return state with
-                {
-                    Status = WorkflowStepStatus.Succeeded,
-                    CompletedAt = now,
-                    OutputArtifacts = artifacts,
-                    ErrorMessage = null
-                };
-            }
-
-            case ExecutionJobStatus.Failed:
-            {
-                var reason = job.ErrorMessage ?? "job failed";
-                OrchestrationLog.WorkflowStepFailed(_logger, run.RunId, state.StepId, reason);
-                var (newStatus, scheduledAt) = ComputeFailureDisposition(stepDefinition, state, state.AttemptCount, now);
-
-                if (newStatus == WorkflowStepStatus.Pending)
-                {
-                    OrchestrationTelemetry.StepsRetried.Add(1);
-                    OrchestrationLog.WorkflowStepRetrying(_logger, run.RunId, state.StepId, state.AttemptCount + 1, scheduledAt ?? now);
+                    var duration = (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds;
+                    OrchestrationTelemetry.StepDuration.Record(
+                        duration,
+                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Succeeded.ToString()));
+                    OrchestrationTelemetry.StepsCompleted.Add(
+                        1,
+                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Succeeded.ToString()));
+                    OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, WorkflowStepStatus.Succeeded.ToString());
                     return state with
                     {
-                        Status = WorkflowStepStatus.Pending,
-                        NextAttemptAt = scheduledAt,
-                        ErrorMessage = reason,
-                        CompletedAt = null
+                        Status = WorkflowStepStatus.Succeeded,
+                        CompletedAt = now,
+                        OutputArtifacts = artifacts,
+                        ErrorMessage = null
                     };
                 }
 
-                OrchestrationTelemetry.StepDuration.Record(
-                    (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds,
-                    new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
-                OrchestrationTelemetry.StepsCompleted.Add(
-                    1,
-                    new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
-                OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, newStatus.ToString());
-                return state with
+            case ExecutionJobStatus.Failed:
                 {
-                    Status = newStatus,
-                    CompletedAt = now,
-                    ErrorMessage = reason
-                };
-            }
+                    var reason = job.ErrorMessage ?? "job failed";
+                    OrchestrationLog.WorkflowStepFailed(_logger, run.RunId, state.StepId, reason);
+                    var (newStatus, scheduledAt) = ComputeFailureDisposition(stepDefinition, state, state.AttemptCount, now);
+
+                    if (newStatus == WorkflowStepStatus.Pending)
+                    {
+                        OrchestrationTelemetry.StepsRetried.Add(1);
+                        OrchestrationLog.WorkflowStepRetrying(_logger, run.RunId, state.StepId, state.AttemptCount + 1, scheduledAt ?? now);
+                        return state with
+                        {
+                            Status = WorkflowStepStatus.Pending,
+                            NextAttemptAt = scheduledAt,
+                            ErrorMessage = reason,
+                            CompletedAt = null
+                        };
+                    }
+
+                    OrchestrationTelemetry.StepDuration.Record(
+                        (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds,
+                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
+                    OrchestrationTelemetry.StepsCompleted.Add(
+                        1,
+                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
+                    OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, newStatus.ToString());
+                    return state with
+                    {
+                        Status = newStatus,
+                        CompletedAt = now,
+                        ErrorMessage = reason
+                    };
+                }
 
             case ExecutionJobStatus.Cancelled:
-            {
-                OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, WorkflowStepStatus.Cancelled.ToString());
-                OrchestrationTelemetry.StepsCompleted.Add(
-                    1,
-                    new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Cancelled.ToString()));
-                return state with
                 {
-                    Status = WorkflowStepStatus.Cancelled,
-                    CompletedAt = now,
-                    ErrorMessage = job.ErrorMessage
-                };
-            }
+                    OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, WorkflowStepStatus.Cancelled.ToString());
+                    OrchestrationTelemetry.StepsCompleted.Add(
+                        1,
+                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, WorkflowStepStatus.Cancelled.ToString()));
+                    return state with
+                    {
+                        Status = WorkflowStepStatus.Cancelled,
+                        CompletedAt = now,
+                        ErrorMessage = job.ErrorMessage
+                    };
+                }
 
             default:
                 return state with { Status = newStepStatus };
