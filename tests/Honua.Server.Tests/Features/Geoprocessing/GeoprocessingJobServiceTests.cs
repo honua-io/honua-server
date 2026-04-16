@@ -624,6 +624,105 @@ public sealed class GeoprocessingJobServiceTests
         await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedCasConflict_JobBecomeClaimed_SwitchesToDurableSignal()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var claimedRecord = record with
+        {
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow,
+            Status = ExecutionJobStatus.Running,
+            LastHeartbeatAt = DateTimeOffset.UtcNow
+        };
+
+        // Initial reads return unclaimed; CAS fails; re-read shows claimed.
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, claimedRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        // Must have written CancellationRequestedAt, not terminal Cancelled.
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.CancellationRequestedAt.HasValue &&
+                j.Status != ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Queue should NOT have been cleaned up — worker owns the terminal state.
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_EnqueueFails_RollsBackJobToFailed()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("Redis unavailable"));
+
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-rollback",
+            IntentId = "intent-1",
+            Steps = [new AnalysisPlanStep { StepId = "s1", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "buf" }]
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // The job record must have been rolled back to Failed.
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed &&
+                j.ErrorMessage!.Contains("progress or queue persistence")),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_IdempotentRetryAfterSubmissionRollback_ThrowsInsteadOfReturningFailedRecord()
+    {
+        var plan = CreateValidPlan();
+        var idempotencyKey = "retry-submission-rollback";
+        var jobId = GeoprocessingJobService.CreateJobId(idempotencyKey);
+        var requestFingerprint = GeoprocessingJobService.CreateRequestFingerprint(plan);
+
+        var failedSubmission = CreateJobRecord(jobId, ExecutionJobStatus.Failed) with
+        {
+            CurrentPhase = "Failed (submission)",
+            ErrorMessage = "Submission failed: progress or queue persistence error.",
+            Audit = new OperationAuditInfo
+            {
+                IdempotencyKey = idempotencyKey,
+                RequestFingerprint = requestFingerprint
+            }
+        };
+
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _jobStore.GetAsync(jobId, Arg.Any<CancellationToken>())
+            .Returns(failedSubmission);
+
+        var act = async () => await _sut.SubmitJobAsync(plan, idempotencyKey, CreatePrincipal());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*previously failed before queueing*");
+    }
+
     // -----------------------------------------------------------------------
     // ProcessId disambiguation
     // -----------------------------------------------------------------------

@@ -355,13 +355,39 @@ internal static class ProcessEndpoints
 
         await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.RequestAborted).ConfigureAwait(false);
 
-        var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, planId);
-        await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
-            .ConfigureAwait(false);
-
-        if (jobQueue != null)
+        try
         {
-            await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, planId);
+            await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
+                .ConfigureAwait(false);
+
+            if (jobQueue != null)
+            {
+                await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+            }
+        }
+        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
+        {
+            // Rollback the just-created job to prevent stranded Queued records
+            // that no reconciler will repair (reconciler skips Queued status).
+            try
+            {
+                var failedJob = jobRecord with
+                {
+                    Status = ExecutionJobStatus.Failed,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = "Submission failed: progress or queue persistence error.",
+                    CurrentPhase = "Failed (submission)"
+                };
+                await jobStore.TrySetAsync(failedJob, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort rollback; job TTL or manual intervention will repair.
+            }
+
+            throw;
         }
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);

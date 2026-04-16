@@ -641,6 +641,72 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// Regression: when both shutdown and timeout fire concurrently, the
+    /// timed-out job must fail terminally instead of being force-requeued.
+    /// ADR-0031 says timed-out jobs are not retried.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_ShutdownAndTimeout_FailsTerminallyInsteadOfRequeue()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            TimeoutPolicy = new JobTimeoutPolicy { MaxDuration = TimeSpan.FromMilliseconds(50) },
+            RetryPolicy = JobRetryPolicy.None
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var stoppingCts = new CancellationTokenSource();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                // Wait for the timeout to fire, then also trigger shutdown.
+                await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None).ConfigureAwait(false);
+                await stoppingCts.CancelAsync().ConfigureAwait(false);
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return JobExecutionResult.Succeeded(); // Unreachable.
+            });
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId,
+            provisioning.ClaimedBy!, stoppingCts.Token);
+
+        // The job must be terminally failed (timeout), not requeued.
+        await jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Must NOT have been requeued.
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Queued &&
+                j.ClaimedBy == null),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(),
+            Arg.Any<OperationPriority>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
     /// Regression: a stale worker's log append must be silently dropped
     /// when ownership has moved to another worker, preventing log pollution
     /// into the next attempt's or terminal state's log stream.

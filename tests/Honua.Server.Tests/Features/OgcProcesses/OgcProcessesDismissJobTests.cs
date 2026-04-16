@@ -192,6 +192,59 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_UnclaimedCasConflict_JobBecomesClaimed_SwitchesToDurableSignal()
+    {
+        var queuedJob = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        var claimedJob = queuedJob with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow,
+            LastHeartbeatAt = DateTimeOffset.UtcNow
+        };
+
+        // Initial reads return unclaimed; CAS fails; re-read reveals claimed.
+        _jobStore.GetAsync(JobId, Arg.Any<CancellationToken>())
+            .Returns(queuedJob, queuedJob, claimedJob);
+
+        // First CAS fails (direct cancel), second succeeds (durable signal)
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Must have written CancellationRequestedAt, not terminal Cancelled.
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == JobId &&
+                j.CancellationRequestedAt.HasValue &&
+                j.Status != ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Queue should NOT have been cleaned up — worker owns terminal state.
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_ReReadFindsDeleted_Returns404WithoutRecreatingJob()
     {
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");

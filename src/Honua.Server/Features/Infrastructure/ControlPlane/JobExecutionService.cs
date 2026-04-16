@@ -242,12 +242,25 @@ internal sealed partial class JobExecutionService(
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
-            // Worker is shutting down; always requeue regardless of retry budget
-            // because this is an infrastructure event, not an execution failure.
-            // Use CancellationToken.None so store/queue cleanup can complete
-            // after the host stopping signal has fired.
-            await AbandonJobAsync(running, workerId, "Worker shutdown.",
-                CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+
+            // Timeout takes precedence over shutdown: a timed-out job must
+            // fail terminally per ADR-0031, even when shutdown also fired.
+            if (timeoutCts.IsCancellationRequested)
+            {
+                Log.JobTimedOut(logger, operationId, timeoutPolicy.MaxDuration);
+                await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                    $"Execution timed out after {timeoutPolicy.MaxDuration}.", CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                // Worker is shutting down; always requeue regardless of retry budget
+                // because this is an infrastructure event, not an execution failure.
+                // Use CancellationToken.None so store/queue cleanup can complete
+                // after the host stopping signal has fired.
+                await AbandonJobAsync(running, workerId, "Worker shutdown.",
+                    CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
