@@ -6,10 +6,23 @@ using System.Net.Sockets;
 
 namespace Honua.Core.Features.Infrastructure.Validation;
 
+/// <summary>
+/// Outcome of an <see cref="OutboundHttpUrlValidator"/> check, exposing the parsed URI on success
+/// or a human-readable error suffix on failure.
+/// </summary>
+/// <param name="IsValid">Whether the URL passed all validation rules.</param>
+/// <param name="Uri">The parsed URI when <paramref name="IsValid"/> is <see langword="true"/>; otherwise <see langword="null"/>.</param>
+/// <param name="ErrorMessage">A short, sentence-fragment error suffix (e.g., "must be a valid HTTPS URL.") suitable for appending to a property name.</param>
 public readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
 {
+    /// <summary>
+    /// Creates a successful validation result for the supplied parsed URI.
+    /// </summary>
     public static OutboundHttpUrlValidationResult Success(Uri uri) => new(true, uri, null);
 
+    /// <summary>
+    /// Creates a failed validation result with the supplied error message.
+    /// </summary>
     public static OutboundHttpUrlValidationResult Failure(string message) => new(false, null, message);
 }
 
@@ -23,25 +36,23 @@ public static class OutboundHttpUrlValidator
     private const string DisallowedAddressMessage =
         "resolves to a private, loopback, or unresolvable network address, which is not allowed.";
 
+    /// <summary>
+    /// Asynchronously validates an outbound HTTPS URL, resolving the host and rejecting any
+    /// addresses in private, loopback, link-local, multicast, or otherwise reserved ranges.
+    /// </summary>
     public static Task<OutboundHttpUrlValidationResult> ValidateAsync(
         string url,
         CancellationToken cancellationToken = default)
         => ValidateAsync(url, ResolveHostAddressesAsync, cancellationToken);
 
+    /// <summary>
+    /// Synchronously validates an outbound HTTPS URL using a blocking DNS lookup, rejecting
+    /// hostnames that resolve to private, loopback, or otherwise reserved addresses. Use this
+    /// from synchronous configuration validators where <see cref="ValidateAsync(string, CancellationToken)"/>
+    /// is not available.
+    /// </summary>
     public static OutboundHttpUrlValidationResult ValidateConfiguration(string url)
-    {
-        if (!TryValidateBaseUri(url, out var failure, out var uri))
-        {
-            return failure;
-        }
-
-        if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
-        {
-            return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
-        }
-
-        return OutboundHttpUrlValidationResult.Success(uri);
-    }
+        => ValidateConfiguration(url, ResolveHostAddresses);
 
     internal static async Task<OutboundHttpUrlValidationResult> ValidateAsync(
         string url,
@@ -54,6 +65,23 @@ public static class OutboundHttpUrlValidator
         }
 
         if (await IsPrivateOrUnresolvableAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
+        {
+            return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+        }
+
+        return OutboundHttpUrlValidationResult.Success(uri);
+    }
+
+    internal static OutboundHttpUrlValidationResult ValidateConfiguration(
+        string url,
+        Func<string, IPAddress[]> hostAddressResolver)
+    {
+        if (!TryValidateBaseUri(url, out var failure, out var uri))
+        {
+            return failure;
+        }
+
+        if (IsPrivateOrUnresolvableAddress(uri, hostAddressResolver))
         {
             return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
         }
@@ -92,6 +120,9 @@ public static class OutboundHttpUrlValidator
     private static Task<IPAddress[]> ResolveHostAddressesAsync(string host, CancellationToken cancellationToken)
         => Dns.GetHostAddressesAsync(host, cancellationToken);
 
+    private static IPAddress[] ResolveHostAddresses(string host)
+        => Dns.GetHostAddresses(host);
+
     private static async Task<bool> IsPrivateOrUnresolvableAddressAsync(
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
@@ -116,6 +147,37 @@ public static class OutboundHttpUrlValidator
             return true;
         }
 
+        return ContainsPrivateOrReservedAddress(addresses);
+    }
+
+    private static bool IsPrivateOrUnresolvableAddress(
+        Uri uri,
+        Func<string, IPAddress[]> hostAddressResolver)
+    {
+        if (IPAddress.TryParse(uri.Host, out var literalAddress))
+        {
+            return IsPrivateOrReservedAddress(literalAddress);
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = hostAddressResolver(uri.DnsSafeHost);
+        }
+        catch (SocketException)
+        {
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return true;
+        }
+
+        return ContainsPrivateOrReservedAddress(addresses);
+    }
+
+    private static bool ContainsPrivateOrReservedAddress(IPAddress[] addresses)
+    {
         if (addresses.Length == 0)
         {
             return true;

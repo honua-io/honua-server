@@ -74,7 +74,8 @@ public sealed record PublishIntent
     public string? FailureReason { get; init; }
 
     /// <summary>
-    /// Identifier of the published service created upon successful completion.
+    /// Identifier of the published service created upon successful completion, when
+    /// <see cref="Status"/> is <see cref="PublishIntentStatus.Completed"/>. Null in all other states.
     /// </summary>
     public string? PublishedServiceId { get; init; }
 
@@ -110,47 +111,78 @@ public sealed record PublishIntent
     /// Transitions the intent to validated status.
     /// </summary>
     public PublishIntent WithValidated()
-        => this with { Status = PublishIntentStatus.Validated, UpdatedAt = DateTimeOffset.UtcNow };
+        => WithStatus(PublishIntentStatus.Validated);
 
     /// <summary>
     /// Transitions the intent to awaiting-approval status.
     /// </summary>
     public PublishIntent WithAwaitingApproval()
-        => this with { Status = PublishIntentStatus.AwaitingApproval, UpdatedAt = DateTimeOffset.UtcNow };
+        => WithStatus(PublishIntentStatus.AwaitingApproval);
 
     /// <summary>
     /// Transitions the intent to approved status.
     /// </summary>
     public PublishIntent WithApproved()
-        => this with { Status = PublishIntentStatus.Approved, UpdatedAt = DateTimeOffset.UtcNow };
+        => WithStatus(PublishIntentStatus.Approved);
 
     /// <summary>
     /// Transitions the intent to executing status.
     /// </summary>
     public PublishIntent WithExecuting()
-        => this with { Status = PublishIntentStatus.Executing, UpdatedAt = DateTimeOffset.UtcNow };
+        => WithStatus(PublishIntentStatus.Executing);
 
     /// <summary>
     /// Transitions the intent to completed status with the resulting service identifier.
     /// </summary>
     public PublishIntent WithCompleted(string publishedServiceId)
-        => this with { Status = PublishIntentStatus.Completed, PublishedServiceId = publishedServiceId, UpdatedAt = DateTimeOffset.UtcNow };
+        => this with
+        {
+            Status = PublishIntentStatus.Completed,
+            PublishedServiceId = publishedServiceId,
+            RejectionReason = null,
+            FailureReason = null,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
 
     /// <summary>
     /// Transitions the intent to rejected status with a reason.
     /// </summary>
     public PublishIntent WithRejected(string reason)
-        => this with { Status = PublishIntentStatus.Rejected, RejectionReason = reason, UpdatedAt = DateTimeOffset.UtcNow };
+        => this with
+        {
+            Status = PublishIntentStatus.Rejected,
+            RejectionReason = reason,
+            FailureReason = null,
+            PublishedServiceId = null,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
 
     /// <summary>
     /// Transitions the intent to failed status, recording the pipeline failure reason.
     /// </summary>
     public PublishIntent WithFailed(string? reason = null)
-        => this with { Status = PublishIntentStatus.Failed, FailureReason = reason, UpdatedAt = DateTimeOffset.UtcNow };
+        => this with
+        {
+            Status = PublishIntentStatus.Failed,
+            FailureReason = reason,
+            RejectionReason = null,
+            PublishedServiceId = null,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
 
     /// <summary>
     /// Transitions the intent to cancelled status.
     /// </summary>
     public PublishIntent WithCancelled()
-        => this with { Status = PublishIntentStatus.Cancelled, UpdatedAt = DateTimeOffset.UtcNow };
+        => WithStatus(PublishIntentStatus.Cancelled);
+
+    private PublishIntent WithStatus(PublishIntentStatus status)
+        => this with
+        {
+            Status = status,
+            RejectionReason = null,
+            FailureReason = null,
+            PublishedServiceId = null,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
 }

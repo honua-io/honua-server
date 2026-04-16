@@ -193,6 +193,84 @@ public class PublishIntentTests
         completed.CreatedAt.Should().Be(intent.CreatedAt);
     }
 
+    [UnitTest]
+    public void WithApproved_AfterRejected_ShouldClearRejectionReason()
+    {
+        var rejected = CreateTestDraft().WithValidated().WithAwaitingApproval().WithRejected("Insufficient permissions");
+
+        var approved = rejected.WithApproved();
+
+        approved.Status.Should().Be(PublishIntentStatus.Approved);
+        approved.RejectionReason.Should().BeNull();
+        approved.FailureReason.Should().BeNull();
+        approved.PublishedServiceId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithCompleted_AfterFailed_ShouldClearFailureReason()
+    {
+        var failed = CreateTestDraft().WithValidated().WithApproved().WithExecuting().WithFailed("Target unavailable");
+
+        var completed = failed.WithCompleted("svc-recovered");
+
+        completed.Status.Should().Be(PublishIntentStatus.Completed);
+        completed.PublishedServiceId.Should().Be("svc-recovered");
+        completed.FailureReason.Should().BeNull();
+        completed.RejectionReason.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithCancelled_AfterCompleted_ShouldClearPublishedServiceId()
+    {
+        var completed = CreateTestDraft().WithValidated().WithApproved().WithExecuting().WithCompleted("svc-001");
+
+        var cancelled = completed.WithCancelled();
+
+        cancelled.Status.Should().Be(PublishIntentStatus.Cancelled);
+        cancelled.PublishedServiceId.Should().BeNull();
+        cancelled.RejectionReason.Should().BeNull();
+        cancelled.FailureReason.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithFailed_AfterRejected_ShouldClearRejectionReasonAndSetFailureReason()
+    {
+        var rejected = CreateTestDraft().WithValidated().WithAwaitingApproval().WithRejected("Insufficient permissions");
+
+        var failed = rejected.WithFailed("Pipeline crashed");
+
+        failed.Status.Should().Be(PublishIntentStatus.Failed);
+        failed.FailureReason.Should().Be("Pipeline crashed");
+        failed.RejectionReason.Should().BeNull();
+        failed.PublishedServiceId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithRejected_AfterFailed_ShouldClearFailureReasonAndSetRejectionReason()
+    {
+        var failed = CreateTestDraft().WithValidated().WithApproved().WithExecuting().WithFailed("Target unavailable");
+
+        var rejected = failed.WithRejected("Operator denied retry");
+
+        rejected.Status.Should().Be(PublishIntentStatus.Rejected);
+        rejected.RejectionReason.Should().Be("Operator denied retry");
+        rejected.FailureReason.Should().BeNull();
+        rejected.PublishedServiceId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithValidated_AfterCompleted_ShouldClearPublishedServiceId()
+    {
+        var completed = CreateTestDraft().WithValidated().WithApproved().WithExecuting().WithCompleted("svc-001");
+
+        var revalidated = completed.WithValidated();
+
+        revalidated.Status.Should().Be(PublishIntentStatus.Validated);
+        revalidated.PublishedServiceId.Should().BeNull();
+        revalidated.RejectionReason.Should().BeNull();
+        revalidated.FailureReason.Should().BeNull();
+    }
+
     private static PublishIntent CreateTestDraft()
         => PublishIntent.CreateDraft(
             "pi-test",

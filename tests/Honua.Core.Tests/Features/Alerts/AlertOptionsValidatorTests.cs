@@ -13,11 +13,13 @@ public sealed class AlertOptionsValidatorTests
     [UnitTest]
     public void Validate_WithPublicHttpsDefaultWebhookUrl_ReturnsSuccess()
     {
+        // Literal public IP avoids depending on DNS in the unit-test process.
+        // OutboundHttpUrlValidatorTests cover the DNS resolution path independently.
         var options = new AlertOptions
         {
             Dispatch = new AlertDispatchOptions
             {
-                DefaultWebhookUrl = "https://hooks.example.com/alerts",
+                DefaultWebhookUrl = "https://8.8.8.8/alerts",
                 DefaultWebhookSecret = "signing-secret"
             }
         };
