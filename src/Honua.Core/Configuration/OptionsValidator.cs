@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Options;
+using System.Net;
+using System.Net.Sockets;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 
@@ -65,9 +67,27 @@ public abstract class OptionsValidator<
             return;
         }
 
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        if (uri.Scheme != Uri.UriSchemeHttps)
         {
-            failures.Add($"{propertyName} must use HTTP or HTTPS.");
+            failures.Add($"{propertyName} must use HTTPS.");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            failures.Add($"{propertyName} must not include embedded credentials.");
+            return;
+        }
+
+        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        {
+            failures.Add($"{propertyName} must not target a private or loopback address.");
+            return;
+        }
+
+        if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
+        {
+            failures.Add($"{propertyName} must not target a private or loopback address.");
         }
     }
 
@@ -161,5 +181,53 @@ public abstract class OptionsValidator<
         ICollection<ValidationResult> validationResults)
     {
         return Validator.TryValidateObject(instance, validationContext, validationResults, validateAllProperties: true);
+    }
+
+    private static bool IsLocalhostHostName(string host)
+        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPrivateOrReservedAddress(IPAddress address)
+    {
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+            return bytes[0] == 0 ||
+                   bytes[0] == 10 ||
+                   (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
+                   bytes[0] == 127 ||
+                   (bytes[0] == 169 && bytes[1] == 254) ||
+                   (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
+                   (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
+                   (bytes[0] == 192 && bytes[1] == 168) ||
+                   (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
+                   (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
+                   (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
+                   bytes[0] >= 224;
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var bytes = address.GetAddressBytes();
+            return address.Equals(IPAddress.IPv6None) ||
+                   address.Equals(IPAddress.IPv6Loopback) ||
+                   (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
+                   (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
+                   (bytes[0] & 0xfe) == 0xfc ||
+                   (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8);
+        }
+
+        return false;
     }
 }
