@@ -184,7 +184,8 @@ internal static class ProcessEndpoints
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null,
+        [FromServices] IJobQueue? jobQueue = null)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -357,6 +358,11 @@ internal static class ProcessEndpoints
         var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, planId);
         await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
             .ConfigureAwait(false);
+
+        if (jobQueue != null)
+        {
+            await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+        }
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);
 

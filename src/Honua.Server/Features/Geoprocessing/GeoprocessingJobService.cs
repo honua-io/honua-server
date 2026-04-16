@@ -187,8 +187,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
             .ConfigureAwait(false);
 
+        if (_jobQueue != null)
+        {
+            await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
         GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
-        GeoprocessingServiceLog.JobSubmittedStubbed(_logger, jobId);
 
         return jobRecord;
     }
@@ -378,19 +382,40 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         if (latest.ClaimedBy != null)
         {
             var reqNow = DateTimeOffset.UtcNow;
-            var requested = latest with
+            var current = latest;
+            var cancelSignalConfirmed = current.CancellationRequestedAt.HasValue;
+
+            for (var casAttempt = 0; !cancelSignalConfirmed && casAttempt < 3; casAttempt++)
             {
-                CancellationRequestedAt = reqNow,
-                UpdatedAt = reqNow
-            };
-            if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
-            {
-                var conflict = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-                if (conflict != null && IsTerminal(conflict.Status) && conflict.Status != ExecutionJobStatus.Cancelled)
+                var requested = current with
+                {
+                    CancellationRequestedAt = reqNow,
+                    UpdatedAt = reqNow
+                };
+                if (await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    cancelSignalConfirmed = true;
+                    break;
+                }
+
+                current = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
+                    ?? throw new GeoprocessingNotFoundException(
+                        $"Job '{jobId}' was deleted during cancellation.");
+
+                if (current.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
                 {
                     throw new GeoprocessingPreconditionFailedException(
-                        $"Job '{jobId}' reached terminal state '{conflict.Status}' before cancellation could be applied.");
+                        $"Job '{jobId}' reached terminal state '{current.Status}' before cancellation could be applied.");
                 }
+
+                cancelSignalConfirmed = current.CancellationRequestedAt.HasValue
+                    || current.Status == ExecutionJobStatus.Cancelled;
+            }
+
+            if (!cancelSignalConfirmed)
+            {
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' cancellation signal could not be confirmed after retries.");
             }
 
             GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
@@ -398,21 +423,47 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var cancelled = latest with
         {
-            Status = ExecutionJobStatus.Cancelled,
-            UpdatedAt = now,
-            CompletedAt = now,
-            CurrentPhase = "Cancelled"
-        };
+            var current = latest;
+            var cancelConfirmed = false;
 
-        if (!await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            var conflict = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (conflict != null && IsTerminal(conflict.Status) && conflict.Status != ExecutionJobStatus.Cancelled)
+            for (var casAttempt = 0; casAttempt < 3; casAttempt++)
+            {
+                var cancelled = current with
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    UpdatedAt = now,
+                    CompletedAt = now,
+                    CurrentPhase = "Cancelled"
+                };
+
+                if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    cancelConfirmed = true;
+                    break;
+                }
+
+                current = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
+                    ?? throw new GeoprocessingNotFoundException(
+                        $"Job '{jobId}' was deleted during cancellation.");
+
+                if (current.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                {
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' reached terminal state '{current.Status}' before cancellation could be applied.");
+                }
+
+                if (current.Status == ExecutionJobStatus.Cancelled)
+                {
+                    cancelConfirmed = true;
+                    break;
+                }
+            }
+
+            if (!cancelConfirmed)
             {
                 throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' reached terminal state '{conflict.Status}' before cancellation could be applied.");
+                    $"Job '{jobId}' cancellation could not be confirmed after retries.");
             }
         }
 

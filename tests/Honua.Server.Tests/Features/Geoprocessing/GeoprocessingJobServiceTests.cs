@@ -141,6 +141,23 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithValidPlan_EnqueuesJob()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var plan = CreateValidPlan();
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await _jobQueue.Received(1).EnqueueAsync(
+            job.OperationId,
+            Arg.Any<OperationPriority>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithoutJobStore_ThrowsStoreUnavailable()
     {
         var sut = new GeoprocessingJobService(
@@ -485,6 +502,126 @@ public sealed class GeoprocessingJobServiceTests
                 j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ClaimedCasConflict_RetriesUntilSignalConfirmed()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running) with
+        {
+            ClaimedBy = "worker-remote-1",
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+        var freshRecord = record with { UpdatedAt = DateTimeOffset.UtcNow };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, freshRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(2).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.CancellationRequestedAt.HasValue),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ClaimedCasConflict_ReReadShowsSignal_SucceedsWithoutRetry()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Running) with
+        {
+            ClaimedBy = "worker-remote-1"
+        };
+        var conflictRecord = record with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, conflictRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(1).TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedCasConflict_RetriesUntilCancelConfirmed()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var freshRecord = record with { UpdatedAt = DateTimeOffset.UtcNow };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, freshRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(2).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == "job-1" &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.Received(1).RemoveAsync("job-1", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_UnclaimedCasConflict_ReReadShowsSucceeded_ThrowsPrecondition()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        var succeededRecord = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, succeededRecord);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_CasExhausted_ThrowsPreconditionFailed()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Queued);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var act = async () => await _sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*could not be confirmed*");
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // -----------------------------------------------------------------------

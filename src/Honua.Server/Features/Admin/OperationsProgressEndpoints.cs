@@ -169,41 +169,75 @@ internal static class OperationsProgressEndpoints
 
         if (executionJob.ClaimedBy != null)
         {
-            if (!executionJob.CancellationRequestedAt.HasValue)
+            var current = executionJob;
+
+            for (var casAttempt = 0; casAttempt < 3; casAttempt++)
             {
+                if (current.CancellationRequestedAt.HasValue || current.Status == ExecutionJobStatus.Cancelled)
+                {
+                    break;
+                }
+
                 var now = DateTimeOffset.UtcNow;
-                var requested = executionJob with
+                var requested = current with
                 {
                     CancellationRequestedAt = now,
                     UpdatedAt = now
                 };
 
-                await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                if (current == null || IsExecutionJobTerminal(current.Status))
+                {
+                    break;
+                }
             }
 
             return;
         }
 
-        var cancelledNow = DateTimeOffset.UtcNow;
-        var cancelled = executionJob with
-        {
-            Status = ExecutionJobStatus.Cancelled,
-            UpdatedAt = cancelledNow,
-            CompletedAt = cancelledNow,
-            CurrentPhase = "Cancelled"
-        };
+        var current2 = executionJob;
+        var cancelConfirmed = false;
 
-        var wroteCancelled = await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!wroteCancelled)
+        for (var casAttempt = 0; casAttempt < 3; casAttempt++)
         {
-            var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (conflict?.Status is not ExecutionJobStatus.Cancelled)
+            if (current2.Status == ExecutionJobStatus.Cancelled)
             {
-                return;
+                cancelConfirmed = true;
+                break;
+            }
+
+            var cancelledNow = DateTimeOffset.UtcNow;
+            var cancelled = current2 with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                UpdatedAt = cancelledNow,
+                CompletedAt = cancelledNow,
+                CurrentPhase = "Cancelled"
+            };
+
+            if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                cancelConfirmed = true;
+                break;
+            }
+
+            current2 = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (current2 == null || IsExecutionJobTerminal(current2.Status))
+            {
+                cancelConfirmed = current2?.Status == ExecutionJobStatus.Cancelled;
+                break;
             }
         }
 
-        await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+        if (cancelConfirmed)
+        {
+            await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task TryRemoveJobQueueEntryAsync(
@@ -411,53 +445,88 @@ internal static class OperationsProgressEndpoints
                     if (executionJob.ClaimedBy != null)
                     {
                         var reqNow = DateTimeOffset.UtcNow;
-                        var requested = executionJob with
+                        var current = executionJob;
+                        var cancelSignalConfirmed = current.CancellationRequestedAt.HasValue;
+
+                        for (var casAttempt = 0; !cancelSignalConfirmed && casAttempt < 3; casAttempt++)
                         {
-                            CancellationRequestedAt = reqNow,
-                            UpdatedAt = reqNow
-                        };
-                        if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
-                        {
-                            var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                            if (conflict != null && IsExecutionJobTerminal(conflict.Status))
+                            var requested = current with
+                            {
+                                CancellationRequestedAt = reqNow,
+                                UpdatedAt = reqNow
+                            };
+                            if (await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                            {
+                                cancelSignalConfirmed = true;
+                                break;
+                            }
+
+                            current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                            if (current == null || current.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
                             {
                                 return ProblemDetailsHelpers.CreateAdminProblem(
                                     StatusCodes.Status409Conflict,
                                     "Conflict",
-                                    $"Operation '{operationId}' reached terminal state '{conflict.Status}' before cancellation could be applied");
+                                    $"Operation '{operationId}' reached terminal state '{current?.Status}' before cancellation could be applied");
                             }
+
+                            cancelSignalConfirmed = current.CancellationRequestedAt.HasValue
+                                || current.Status == ExecutionJobStatus.Cancelled;
                         }
 
-                        var delegated = new CancelOperationResponse
+                        if (cancelSignalConfirmed)
                         {
-                            OperationId = operationId,
-                            Message = "Operation cancellation requested",
-                            Type = progress.Type
-                        };
-                        return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                            var delegated = new CancelOperationResponse
+                            {
+                                OperationId = operationId,
+                                Message = "Operation cancellation requested",
+                                Type = progress.Type
+                            };
+                            return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                        }
                     }
 
                     var jobNow = DateTimeOffset.UtcNow;
-                    var cancelledJob = executionJob with
                     {
-                        Status = ExecutionJobStatus.Cancelled,
-                        UpdatedAt = jobNow,
-                        CompletedAt = jobNow,
-                        CurrentPhase = "Cancelled"
-                    };
-                    if (!await jobStore.TrySetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false))
-                    {
-                        var conflict = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                        if (conflict != null && IsExecutionJobTerminal(conflict.Status))
+                        var current = executionJob;
+                        var cancelConfirmed = false;
+
+                        for (var casAttempt = 0; casAttempt < 3; casAttempt++)
                         {
-                            return ProblemDetailsHelpers.CreateAdminProblem(
-                                StatusCodes.Status409Conflict,
-                                "Conflict",
-                                $"Operation '{operationId}' reached terminal state '{conflict.Status}' before cancellation could be applied");
+                            var cancelledJob = current with
+                            {
+                                Status = ExecutionJobStatus.Cancelled,
+                                UpdatedAt = jobNow,
+                                CompletedAt = jobNow,
+                                CurrentPhase = "Cancelled"
+                            };
+                            if (await jobStore.TrySetAsync(cancelledJob, cancellationToken: cancellationToken).ConfigureAwait(false))
+                            {
+                                cancelConfirmed = true;
+                                break;
+                            }
+
+                            current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                            if (current == null || current.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                            {
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' reached terminal state '{current?.Status}' before cancellation could be applied");
+                            }
+
+                            if (current.Status == ExecutionJobStatus.Cancelled)
+                            {
+                                cancelConfirmed = true;
+                                break;
+                            }
+                        }
+
+                        if (cancelConfirmed)
+                        {
+                            await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                         }
                     }
-
-                    await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 }
                 else if (executionJob.Status is ExecutionJobStatus.Cancelled)
                 {

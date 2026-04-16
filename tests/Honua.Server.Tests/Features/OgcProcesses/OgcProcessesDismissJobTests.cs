@@ -113,6 +113,85 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_UnclaimedCasConflict_RetriesAndDismisses()
+    {
+        var queuedJob = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        _jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(queuedJob);
+
+        // First CAS attempt fails (concurrent heartbeat), second succeeds
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await _jobStore.Received(2).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.OperationId == JobId &&
+                j.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await _jobQueue.Received(1).RemoveAsync(JobId, Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_CasConflictRevealsSucceeded_Returns409()
+    {
+        var queuedJob = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test-backend",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        var succeededJob = queuedJob with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+
+        // Initial reads return queued; CAS re-read reveals succeeded
+        _jobStore.GetAsync(JobId, Arg.Any<CancellationToken>())
+            .Returns(queuedJob, queuedJob, succeededJob);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_ReReadFindsDeleted_Returns404WithoutRecreatingJob()
     {
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
