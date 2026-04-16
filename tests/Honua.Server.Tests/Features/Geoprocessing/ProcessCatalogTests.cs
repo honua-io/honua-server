@@ -376,6 +376,178 @@ public sealed class ProcessCatalogTests
         violations.Should().BeEmpty("geodesic is optional and should not cause violations");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_OmittingAlgorithm_DoesNotProduceViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty(
+            "the clusters handler defaults algorithm/eps/minPoints/k when omitted, so the catalog must treat them as optional");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_OmittingPredicate_DoesNotProduceViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["joinLayerId"] = "zoning"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty(
+            "the spatial-join handler defaults predicate to intersects when omitted");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_UsesCanonicalDistanceParameter()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["joinLayerId"] = "zoning",
+                        ["predicate"] = "dwithin",
+                        ["distance"] = "250"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty(
+            "catalog must use the shared 'distance' contract name, not 'distanceMeters'");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_OmittingMode_DoesNotProduceViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["cellSize"] = "500"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty(
+            "the density handler defaults mode to hex when omitted and uses 'cellSize' (not 'cellSizeMeters')");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_RejectsDeprecatedCellSizeMeters()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["cellSizeMeters"] = "500"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.Code == "UNKNOWN_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.cellSizeMeters");
+        violations.Should().Contain(v => v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_DefaultsMatchHandler()
+    {
+        var bufferAggregate = _catalog.GetProcess("analytics.buffer-aggregate");
+
+        bufferAggregate.Should().NotBeNull();
+        var dissolve = bufferAggregate!.Parameters.Single(p => p.Name == "dissolve");
+        dissolve.DefaultValue.Should().Be(
+            "true",
+            "buffer-aggregate handler defaults dissolve to true when omitted; catalog must match");
+    }
+
     // -----------------------------------------------------------------------
     // Validator — typed value validation
     // -----------------------------------------------------------------------

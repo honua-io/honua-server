@@ -208,7 +208,7 @@ Conceptual shape:
     {
       "stepId": "buffer_schools",
       "kind": "Geoprocess",
-      "processId": "buffer",
+      "processId": "geometry.buffer",
       "inputs": {
         "source": "schools_all",
         "distance": "500",
@@ -724,7 +724,7 @@ Conceptual shape:
       "description": "City parcels dataset"
     }
   ],
-  "processDefinitions": ["buffer", "spatial_join"],
+  "processDefinitions": ["geometry.buffer", "analytics.spatial-join"],
   "assumptions": ["Used public schools dataset."],
   "clarificationsAsked": ["q_dataset"],
   "clarificationsAnswered": ["q_dataset"],
