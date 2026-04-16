@@ -83,7 +83,11 @@ public sealed record PublishedServiceRecord
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
     /// <summary>
-    /// Creates a new provisioning service record from a completed publish intent.
+    /// Creates a new service record in the <see cref="PublishedServiceStatus.Provisioning"/> state
+    /// from the given publish intent, regardless of the intent's lifecycle status.
+    /// Callers are responsible for sequencing this call with the intent lifecycle; the record is
+    /// transitioned to <see cref="PublishedServiceStatus.Active"/> via <see cref="WithActive(string?)"/>
+    /// once publishing completes.
     /// </summary>
     public static PublishedServiceRecord CreateFromIntent(
         string serviceId,
