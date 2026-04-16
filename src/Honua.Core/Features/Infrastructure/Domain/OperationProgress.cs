@@ -149,5 +149,10 @@ public enum OperationType
     /// <summary>
     /// Publishing lifecycle operation (intent validation, execution, service creation).
     /// </summary>
-    Publishing
+    Publishing,
+
+    /// <summary>
+    /// Multi-step orchestration workflow that chains canonical process steps.
+    /// </summary>
+    Orchestration
 }
