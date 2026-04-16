@@ -155,6 +155,29 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public void NotifyInvalidation_FallbackMode_WithoutPendingRefresh_IsIgnored()
+    {
+        // No pending refresh → invalidation flag must not be tracked (avoids stale markers
+        // that would permanently block a later TryEnqueueRefresh for the same key).
+        _coordinator.NotifyInvalidation("layer:1");
+
+        _coordinator.WasInvalidated("layer:1").Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public void NotifyInvalidation_FallbackMode_WithoutPendingRefresh_DoesNotBlockLaterEnqueue()
+    {
+        // Invalidation for a non-pending key must not leave state that blocks a future enqueue.
+        _coordinator.NotifyInvalidation("layer:1");
+
+        var enqueued = _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
+
+        enqueued.Should().BeTrue("invalidation without a pending refresh must not create stale markers");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task NotifyInvalidationClusterWideAsync_WithoutRedis_FallsBackToLocal()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);

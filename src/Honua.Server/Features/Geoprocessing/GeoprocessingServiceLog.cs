@@ -89,4 +89,23 @@ internal static partial class GeoprocessingServiceLog
     public static partial void CancelRejectedApprovalRequired(
         ILogger logger,
         string policyRef);
+
+    [LoggerMessage(8020, LogLevel.Information, "Map package created: MapPackageId={MapPackageId}, Status={Status}")]
+    public static partial void MapPackageCreated(
+        ILogger logger,
+        string mapPackageId,
+        string status);
+
+    [LoggerMessage(8021, LogLevel.Information, "App package created: AppPackageId={AppPackageId}, TargetSdk={TargetSdk}")]
+    public static partial void AppPackageCreated(
+        ILogger logger,
+        string appPackageId,
+        string targetSdk);
+
+    [LoggerMessage(8022, LogLevel.Information, "Package status changed: PackageId={PackageId}, OldStatus={OldStatus}, NewStatus={NewStatus}")]
+    public static partial void PackageStatusChanged(
+        ILogger logger,
+        string packageId,
+        string oldStatus,
+        string newStatus);
 }

@@ -459,6 +459,10 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     private void NotifyLocalInvalidation(string key)
     {
         // Atomically mark the key as invalidated regardless of current state.
+        // 0 → 1: marks a pending refresh as invalidated (before write-back claimed it).
+        // 2 → 1: marks a write-claimed refresh as invalidated.
+        // If the key is not present (no pending refresh), invalidation is a no-op
+        // to avoid creating stale markers that would block a later TryEnqueueRefresh.
         _localPendingKeys.TryUpdate(key, 1, 0);
         _localPendingKeys.TryUpdate(key, 1, 2);
     }
