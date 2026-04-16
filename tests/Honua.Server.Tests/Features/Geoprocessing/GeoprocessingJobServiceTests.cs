@@ -666,8 +666,15 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_EnqueueFails_RollsBackJobToFailed()
     {
+        ExecutionJobRecord? createdJob = null;
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(call =>
+            {
+                createdJob = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => createdJob == null ? null : createdJob with { Version = 1 });
         _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new InvalidOperationException("Redis unavailable"));
 
@@ -686,6 +693,7 @@ public sealed class GeoprocessingJobServiceTests
         await _jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed &&
+                j.Version == 1 &&
                 j.ErrorMessage!.Contains("progress or queue persistence")),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());

@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
@@ -368,24 +369,10 @@ internal static class ProcessEndpoints
         }
         catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
-            // Rollback the just-created job to prevent stranded Queued records
-            // that no reconciler will repair (reconciler skips Queued status).
-            try
-            {
-                var failedJob = jobRecord with
-                {
-                    Status = ExecutionJobStatus.Failed,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = "Submission failed: progress or queue persistence error.",
-                    CurrentPhase = "Failed (submission)"
-                };
-                await jobStore.TrySetAsync(failedJob, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Best-effort rollback; job TTL or manual intervention will repair.
-            }
+            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                jobStore,
+                jobId,
+                CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }

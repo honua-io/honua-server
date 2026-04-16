@@ -198,24 +198,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
-            // Rollback the just-created job to prevent stranded Queued records
-            // that no reconciler will repair (reconciler skips Queued status).
-            try
-            {
-                var failedJob = jobRecord with
-                {
-                    Status = ExecutionJobStatus.Failed,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = "Submission failed: progress or queue persistence error.",
-                    CurrentPhase = "Failed (submission)"
-                };
-                await jobStore.TrySetAsync(failedJob, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Best-effort rollback; job TTL or manual intervention will repair.
-            }
+            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                jobStore,
+                jobId,
+                CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }
@@ -601,8 +587,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private static void EnsureSubmissionDidNotRollback(ExecutionJobRecord existing)
     {
-        if (existing.Status == ExecutionJobStatus.Failed
-            && string.Equals(existing.CurrentPhase, "Failed (submission)", StringComparison.Ordinal))
+        if (ExecutionJobSubmissionHelper.IsSubmissionRollback(existing))
         {
             throw new InvalidOperationException(
                 $"Job '{existing.OperationId}' submission previously failed before queueing. Retry with a new idempotency key.");
