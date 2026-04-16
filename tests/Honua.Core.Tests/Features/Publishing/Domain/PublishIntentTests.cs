@@ -27,6 +27,7 @@ public class PublishIntentTests
         intent.ArtifactIds.Should().BeEmpty();
         intent.TargetConfig.Should().BeEmpty();
         intent.RejectionReason.Should().BeNull();
+        intent.FailureReason.Should().BeNull();
         intent.PublishedServiceId.Should().BeNull();
         intent.CreatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(2));
         intent.UpdatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(2));
@@ -121,17 +122,19 @@ public class PublishIntentTests
 
         rejected.Status.Should().Be(PublishIntentStatus.Rejected);
         rejected.RejectionReason.Should().Be("Insufficient permissions");
+        rejected.FailureReason.Should().BeNull();
     }
 
     [UnitTest]
-    public void WithFailed_ShouldTransitionToFailedStatus()
+    public void WithFailed_ShouldTransitionToFailedStatusWithFailureReason()
     {
         var intent = CreateTestDraft().WithValidated().WithApproved().WithExecuting();
 
         var failed = intent.WithFailed("Target service unavailable");
 
         failed.Status.Should().Be(PublishIntentStatus.Failed);
-        failed.RejectionReason.Should().Be("Target service unavailable");
+        failed.FailureReason.Should().Be("Target service unavailable");
+        failed.RejectionReason.Should().BeNull();
     }
 
     [UnitTest]

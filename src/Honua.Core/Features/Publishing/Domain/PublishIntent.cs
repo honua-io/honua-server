@@ -62,9 +62,16 @@ public sealed record PublishIntent
     public required DateTimeOffset UpdatedAt { get; init; }
 
     /// <summary>
-    /// Reason the intent was rejected, when applicable.
+    /// Reason the intent was rejected during approval, when <see cref="Status"/> is
+    /// <see cref="PublishIntentStatus.Rejected"/>. Null in all other states.
     /// </summary>
     public string? RejectionReason { get; init; }
+
+    /// <summary>
+    /// Reason the publishing pipeline failed, when <see cref="Status"/> is
+    /// <see cref="PublishIntentStatus.Failed"/>. Null in all other states.
+    /// </summary>
+    public string? FailureReason { get; init; }
 
     /// <summary>
     /// Identifier of the published service created upon successful completion.
@@ -136,10 +143,10 @@ public sealed record PublishIntent
         => this with { Status = PublishIntentStatus.Rejected, RejectionReason = reason, UpdatedAt = DateTimeOffset.UtcNow };
 
     /// <summary>
-    /// Transitions the intent to failed status.
+    /// Transitions the intent to failed status, recording the pipeline failure reason.
     /// </summary>
     public PublishIntent WithFailed(string? reason = null)
-        => this with { Status = PublishIntentStatus.Failed, RejectionReason = reason, UpdatedAt = DateTimeOffset.UtcNow };
+        => this with { Status = PublishIntentStatus.Failed, FailureReason = reason, UpdatedAt = DateTimeOffset.UtcNow };
 
     /// <summary>
     /// Transitions the intent to cancelled status.

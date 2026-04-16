@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Geocoding.Providers;
 
@@ -21,6 +22,8 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
 
     private readonly NominatimProviderConfiguration _configuration;
     private readonly HttpClient _httpClient;
+    private readonly JsonSerializerOptions _jsonOptions;
+    private int _validatedBaseUrl;
 
     /// <summary>
     /// Initialize a new Nominatim geocode provider
@@ -33,6 +36,13 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+
+        _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            PropertyNameCaseInsensitive = true,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString
+        };
 
         // Configure HTTP client
         _httpClient.Timeout = TimeSpan.FromSeconds(configuration.TimeoutSeconds);
@@ -85,6 +95,8 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             };
         }
 
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             var url = BuildSearchUrl(request);
@@ -102,9 +114,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var searchResults = JsonSerializer.Deserialize(
-                content,
-                NominatimProviderJsonContext.Default.NominatimSearchResultArray);
+            var searchResults = JsonSerializer.Deserialize<NominatimSearchResult[]>(content, _jsonOptions);
 
             return ConvertSearchResults(searchResults ?? [], request);
         }
@@ -141,6 +151,8 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             };
         }
 
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             var url = BuildReverseUrl(request);
@@ -158,9 +170,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var reverseResult = JsonSerializer.Deserialize(
-                content,
-                NominatimProviderJsonContext.Default.NominatimReverseResult);
+            var reverseResult = JsonSerializer.Deserialize<NominatimReverseResult>(content, _jsonOptions);
 
             return ConvertReverseResult(reverseResult, request);
         }
@@ -214,6 +224,8 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
     /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             var url = $"{_configuration.BaseUrl.TrimEnd('/')}/status.php?format=json";
@@ -236,6 +248,30 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
+    }
+
+    private async Task EnsureSafeBaseUrlAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _validatedBaseUrl) == 1)
+        {
+            return;
+        }
+
+        var validation = await OutboundHttpUrlValidator
+            .ValidateAsync(_configuration.BaseUrl, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!validation.IsValid)
+        {
+            throw new GeocodeProviderException(
+                $"Nominatim BaseUrl {validation.ErrorMessage ?? "must be a valid HTTPS URL."}")
+            {
+                ProviderName = Name,
+                ErrorCode = GeocodeErrorCodes.InvalidConfiguration
+            };
+        }
+
+        Volatile.Write(ref _validatedBaseUrl, 1);
     }
 
     private string BuildSearchUrl(ForwardGeocodeRequest request)
@@ -404,7 +440,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
     }
 
     // Nominatim API response models
-    internal sealed class NominatimSearchResult
+    private sealed class NominatimSearchResult
     {
         [JsonPropertyName("place_id")]
         public long? PlaceId { get; set; }
@@ -440,7 +476,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         public NominatimAddress? Address { get; set; }
     }
 
-    internal sealed class NominatimReverseResult
+    private sealed class NominatimReverseResult
     {
         [JsonPropertyName("place_id")]
         public long? PlaceId { get; set; }
@@ -464,7 +500,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         public string? AddressType { get; set; }
     }
 
-    internal sealed class NominatimAddress
+    private sealed class NominatimAddress
     {
         [JsonPropertyName("house_number")]
         public string? HouseNumber { get; set; }
@@ -502,15 +538,4 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         [JsonPropertyName("country_code")]
         public string? CountryCode { get; set; }
     }
-}
-
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
-    PropertyNameCaseInsensitive = true,
-    NumberHandling = JsonNumberHandling.AllowReadingFromString)]
-[JsonSerializable(typeof(NominatimGeocodeProvider.NominatimSearchResult[]))]
-[JsonSerializable(typeof(NominatimGeocodeProvider.NominatimReverseResult))]
-[JsonSerializable(typeof(NominatimGeocodeProvider.NominatimAddress))]
-internal sealed partial class NominatimProviderJsonContext : JsonSerializerContext
-{
 }

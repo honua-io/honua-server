@@ -4,9 +4,9 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Core.Features.Infrastructure.Validation;
 
-internal readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
+public readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
 {
     public static OutboundHttpUrlValidationResult Success(Uri uri) => new(true, uri, null);
 
@@ -16,7 +16,7 @@ internal readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Ur
 /// <summary>
 /// Validates outbound HTTP endpoints and blocks local or private destinations.
 /// </summary>
-internal static class OutboundHttpUrlValidator
+public static class OutboundHttpUrlValidator
 {
     private const string InvalidHttpsUrlMessage = "must be a valid HTTPS URL.";
     private const string EmbeddedCredentialsMessage = "must not include embedded credentials.";
