@@ -170,6 +170,50 @@ public sealed class GrpcProcessServiceTests
         response.EstimatedArtifacts.Should().ContainSingle(a => a == Proto.ArtifactKind.FeatureLayer);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithUnknownProcessId_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
+        plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "does.not.exist"
+        });
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("UNKNOWN_PROCESS");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithMissingRequiredParameter_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
+        plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "geometry.buffer"
+        });
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("MISSING_REQUIRED_PARAMETER");
+    }
+
     // -----------------------------------------------------------------------
     // ExecutePlan
     // -----------------------------------------------------------------------

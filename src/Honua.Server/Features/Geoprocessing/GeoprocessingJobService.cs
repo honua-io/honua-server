@@ -132,6 +132,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         ValidatePlanStructure(plan);
+        EnsurePlanCatalogValid(plan);
 
         var result = new DryRunResult
         {
