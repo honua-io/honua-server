@@ -36,7 +36,7 @@ map to and from these nouns. Adapters must not introduce new domain types into
 
 | Canonical Noun | Domain Type | Adapter Responsibility |
 | --- | --- | --- |
-| Process definition | Registered via `CatalogService` | Adapters project into protocol-specific discovery responses (GPServer task list, OGC process list) |
+| Process definition | `ProcessDefinition` registered in `IProcessCatalog` (seeded built-in catalog from honua-server#735) | Adapters project into protocol-specific discovery responses (GPServer task list, OGC process list) |
 | Analysis plan | `AnalysisPlan` | Adapters construct plans from protocol-specific execution requests |
 | Plan step | `AnalysisPlanStep` | Adapters translate protocol-specific parameters into opaque step inputs |
 | Execution job | `ExecutionJobRecord` | Adapters project job status into protocol-specific status values |
@@ -175,6 +175,11 @@ model. Must not add domain types to `Honua.Core`.
 - honua-server#529: OGC API Processes adapter — **implemented** (see [coverage](../../gis/specifications/ogc-api-processes-coverage.md))
 - geospatial-grpc#6: align the public gRPC contract with the canonical
   `process_service.proto`
-- Formalize `ProcessDefinition` as a first-class domain type when the process
-  catalog is implemented
+- Formalize `ProcessDefinition` as a first-class domain type — **implemented** in
+  honua-server#735. `ProcessDefinition`, `ProcessParameterSpec`, and
+  `ProcessParameterValueType` live in `Honua.Core.Features.Geoprocessing.Domain`,
+  and `IProcessCatalog` seeds 14 built-in geometry and analytics processes that
+  plan validation now checks `AnalysisPlanStep.ProcessId` against. Per-process
+  projection into the GPServer and OGC API Processes adapter surfaces remains
+  follow-on work
 - Consider richer parameter typing when the opaque dictionary proves insufficient

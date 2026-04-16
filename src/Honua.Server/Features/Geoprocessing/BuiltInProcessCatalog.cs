@@ -195,10 +195,10 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("algorithm", "Algorithm", "Clustering algorithm: dbscan or kmeans. Defaults to dbscan.", ProcessParameterValueType.Text),
-                Param("eps", "Epsilon", "Maximum distance between neighbors for DBSCAN (meters). Required when algorithm is dbscan.", ProcessParameterValueType.FloatingPoint),
-                Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
-                Param("k", "K", "Number of clusters for KMeans. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
+                Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan, kmeans. Defaults to dbscan.", ProcessParameterValueType.Text),
+                Param("eps", "Epsilon", "Maximum distance between neighbors for DBSCAN, in meters. Must be > 0. Required when algorithm is dbscan.", ProcessParameterValueType.FloatingPoint),
+                Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Must be ≥ 1. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
+                Param("k", "K", "Number of clusters for KMeans. Must be ≥ 1. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
                 Param("returnHullPerCluster", "Return Hull", "Return convex hull polygon per cluster instead of labeled points.", ProcessParameterValueType.Flag, defaultValue: "false"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
@@ -213,8 +213,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("layerId", "Target Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
                 Param("joinLayerId", "Join Layer", "Join layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("predicate", "Predicate", "Spatial predicate: intersects, contains, within, or dwithin. Defaults to intersects.", ProcessParameterValueType.Text),
-                Param("distance", "Distance", "Distance threshold in meters. Required when predicate is dwithin.", ProcessParameterValueType.FloatingPoint),
+                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects, contains, within, dwithin. Defaults to intersects.", ProcessParameterValueType.Text),
+                Param("distance", "Distance", "Distance threshold in meters. Must be > 0. Required when predicate is dwithin.", ProcessParameterValueType.FloatingPoint),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
         },
@@ -227,8 +227,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("distance", "Distance", "Buffer distance value.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("unit", "Unit", "Distance unit (e.g. meters, feet).", ProcessParameterValueType.Text, defaultValue: "meters"),
+                Param("distance", "Distance", "Buffer distance value in the supplied unit. Must be > 0.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("unit", "Unit", "Distance unit. Allowed values: meters, kilometers, feet, miles.", ProcessParameterValueType.Text, defaultValue: "meters"),
                 Param("dissolve", "Dissolve", "Dissolve overlapping buffers.", ProcessParameterValueType.Flag, defaultValue: "true"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -242,8 +242,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
-                Param("mode", "Bin Mode", "Binning mode: hex or square. Defaults to hex.", ProcessParameterValueType.Text),
-                Param("cellSize", "Cell Size", "Grid cell size in meters.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("mode", "Bin Mode", "Binning mode. Allowed values: hex, square. Defaults to hex.", ProcessParameterValueType.Text),
+                Param("cellSize", "Cell Size", "Grid cell size in meters. Must be > 0.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("weightField", "Weight Field", "Optional field name for weighted sums instead of counts.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]

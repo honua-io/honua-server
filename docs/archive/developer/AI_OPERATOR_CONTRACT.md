@@ -210,9 +210,10 @@ Conceptual shape:
       "kind": "Geoprocess",
       "processId": "geometry.buffer",
       "inputs": {
-        "source": "schools_all",
+        "wkb": "AQMAAAABAAAABQAAAA...",
+        "srid": "4326",
         "distance": "500",
-        "distanceUnit": "meters"
+        "geodesic": "true"
       },
       "dependsOn": []
     },

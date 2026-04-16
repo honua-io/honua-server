@@ -10,11 +10,41 @@ namespace Honua.Server.Features.Geoprocessing;
 
 /// <summary>
 /// Validates analysis plan steps against the process catalog, checking that
-/// referenced process IDs exist, required parameters are supplied, and supplied
-/// values parse cleanly against their declared <see cref="ProcessParameterValueType"/>.
+/// referenced process IDs exist, required parameters are supplied, values parse
+/// cleanly against their declared <see cref="ProcessParameterValueType"/>, and
+/// per-process semantic rules (enum values, conditional requiredness, positive
+/// numeric ranges) match the live handler contracts so plans accepted here are
+/// also accepted downstream by <c>SpatialAnalyticsRequestHandlers</c>.
 /// </summary>
 internal static class ProcessPlanValidator
 {
+    // Accepted enum values mirror the canonical spellings in the live handlers
+    // (SpatialAnalyticsRequestHandlers.Clusters/SpatialJoin/Density/BufferAggregate).
+    // Comparison is case-insensitive so validator and handler treat the same
+    // caller input the same way.
+    private static readonly HashSet<string> ClusterAlgorithmValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "dbscan", "kmeans", "k-means"
+    };
+
+    private static readonly HashSet<string> SpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "contains", "within", "dwithin"
+    };
+
+    private static readonly HashSet<string> DensityModeValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "hex", "hexgrid", "hex-grid", "square", "squaregrid", "square-grid"
+    };
+
+    private static readonly HashSet<string> BufferAggregateUnitValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "meters", "meter", "m",
+        "kilometers", "kilometer", "km",
+        "feet", "foot", "ft",
+        "miles", "mile", "mi"
+    };
+
     /// <summary>
     /// Validates all <see cref="AnalysisPlanStepKind.Geoprocess"/> steps in the plan
     /// against the catalog, returning any violations and warnings found.
@@ -99,9 +129,224 @@ internal static class ProcessPlanValidator
                     });
                 }
             }
+
+            ApplyProcessSemantics(step, violations);
         }
 
         return (violations, warnings);
+    }
+
+    /// <summary>
+    /// Applies per-process semantic rules that the live request handlers enforce
+    /// (enum value sets, conditional requiredness, positive numeric ranges).
+    /// Mirrors <c>SpatialAnalyticsRequestHandlers</c> so catalog validation does
+    /// not admit plans the handlers will reject at execution time.
+    /// </summary>
+    private static void ApplyProcessSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        switch (step.ProcessId)
+        {
+            case "analytics.cluster":
+                ValidateClusterSemantics(step, violations);
+                break;
+            case "analytics.spatial-join":
+                ValidateSpatialJoinSemantics(step, violations);
+                break;
+            case "analytics.density":
+                ValidateDensitySemantics(step, violations);
+                break;
+            case "analytics.buffer-aggregate":
+                ValidateBufferAggregateSemantics(step, violations);
+                break;
+        }
+    }
+
+    private static void ValidateClusterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // algorithm must be one of the canonical values; empty defaults to dbscan.
+        var hasAlgorithm = step.Inputs.TryGetValue("algorithm", out var algorithmRaw)
+            && !string.IsNullOrWhiteSpace(algorithmRaw);
+        var algorithm = hasAlgorithm ? algorithmRaw!.Trim() : "dbscan";
+
+        if (hasAlgorithm && !ClusterAlgorithmValues.Contains(algorithm))
+        {
+            AddEnumViolation(step, "algorithm", algorithm, "dbscan, kmeans", violations);
+            return;
+        }
+
+        var isDbscan = string.Equals(algorithm, "dbscan", StringComparison.OrdinalIgnoreCase);
+        var isKMeans = string.Equals(algorithm, "kmeans", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(algorithm, "k-means", StringComparison.OrdinalIgnoreCase);
+
+        if (isDbscan)
+        {
+            RequireConditionalParameter(step, "eps", "algorithm=dbscan", violations);
+            RequireConditionalParameter(step, "minPoints", "algorithm=dbscan", violations);
+        }
+        else if (isKMeans)
+        {
+            RequireConditionalParameter(step, "k", "algorithm=kmeans", violations);
+        }
+
+        RequirePositiveDouble(step, "eps", violations);
+        RequirePositiveInt(step, "minPoints", minimum: 1, violations);
+        RequirePositiveInt(step, "k", minimum: 1, violations);
+    }
+
+    private static void ValidateSpatialJoinSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasPredicate = step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw);
+        var predicate = hasPredicate ? predicateRaw!.Trim() : "intersects";
+
+        if (hasPredicate && !SpatialJoinPredicateValues.Contains(predicate))
+        {
+            AddEnumViolation(step, "predicate", predicate, "intersects, contains, within, dwithin", violations);
+            return;
+        }
+
+        if (string.Equals(predicate, "dwithin", StringComparison.OrdinalIgnoreCase))
+        {
+            RequireConditionalParameter(step, "distance", "predicate=dwithin", violations);
+        }
+
+        RequirePositiveDouble(step, "distance", violations);
+    }
+
+    private static void ValidateDensitySemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("mode", out var modeRaw)
+            && !string.IsNullOrWhiteSpace(modeRaw)
+            && !DensityModeValues.Contains(modeRaw.Trim()))
+        {
+            AddEnumViolation(step, "mode", modeRaw, "hex, square", violations);
+        }
+
+        RequirePositiveDouble(step, "cellSize", violations);
+    }
+
+    private static void ValidateBufferAggregateSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("unit", out var unitRaw)
+            && !string.IsNullOrWhiteSpace(unitRaw)
+            && !BufferAggregateUnitValues.Contains(unitRaw.Trim()))
+        {
+            AddEnumViolation(step, "unit", unitRaw, "meters, kilometers, feet, miles", violations);
+        }
+
+        RequirePositiveDouble(step, "distance", violations);
+    }
+
+    private static void AddEnumViolation(
+        AnalysisPlanStep step,
+        string parameter,
+        string actualValue,
+        string allowedList,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        violations.Add(new GeoprocessingValidationFailure
+        {
+            Code = "INVALID_PARAMETER_VALUE",
+            Message = $"Step '{step.StepId}' supplies invalid value for parameter '{parameter}' of process '{step.ProcessId}': '{actualValue}' is not in the allowed set ({allowedList}).",
+            FieldPath = $"steps[{step.StepId}].inputs.{parameter}"
+        });
+    }
+
+    private static void RequireConditionalParameter(
+        AnalysisPlanStep step,
+        string parameter,
+        string condition,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue(parameter, out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        // Avoid duplicate MISSING_REQUIRED_PARAMETER if the declared-required
+        // path already reported this parameter (it cannot in current catalog
+        // since these are declared optional, but guard defensively).
+        var fieldPath = $"steps[{step.StepId}].inputs.{parameter}";
+        if (violations.Any(v => v.Code == "MISSING_REQUIRED_PARAMETER" && v.FieldPath == fieldPath))
+        {
+            return;
+        }
+
+        violations.Add(new GeoprocessingValidationFailure
+        {
+            Code = "MISSING_REQUIRED_PARAMETER",
+            Message = $"Step '{step.StepId}' is missing required parameter '{parameter}' for process '{step.ProcessId}' when {condition}.",
+            FieldPath = fieldPath
+        });
+    }
+
+    private static void RequirePositiveDouble(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.IsNaN(parsed) || double.IsInfinity(parsed)
+            || parsed <= 0d)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected positive number, got '{value}'", violations);
+        }
+    }
+
+    private static void RequirePositiveInt(
+        AnalysisPlanStep step,
+        string parameter,
+        int minimum,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue(parameter, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            || parsed < minimum)
+        {
+            AddRangeViolationIfNew(step, parameter, $"expected integer ≥ {minimum}, got '{value}'", violations);
+        }
+    }
+
+    // Range checks run after the type-validation pass, which already emits
+    // INVALID_PARAMETER_VALUE for non-numeric text. Skip duplicates so callers
+    // see one violation per field.
+    private static void AddRangeViolationIfNew(
+        AnalysisPlanStep step,
+        string parameter,
+        string detail,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var fieldPath = $"steps[{step.StepId}].inputs.{parameter}";
+        if (violations.Any(v => v.Code == "INVALID_PARAMETER_VALUE" && v.FieldPath == fieldPath))
+        {
+            return;
+        }
+
+        violations.Add(new GeoprocessingValidationFailure
+        {
+            Code = "INVALID_PARAMETER_VALUE",
+            Message = $"Step '{step.StepId}' supplies invalid value for parameter '{parameter}' of process '{step.ProcessId}': {detail}.",
+            FieldPath = fieldPath
+        });
     }
 
     private static bool IsValidForType(string? value, ProcessParameterValueType type, out string errorDetail)

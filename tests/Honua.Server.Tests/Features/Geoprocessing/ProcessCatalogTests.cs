@@ -379,7 +379,7 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Validator_AnalyticsCluster_OmittingAlgorithm_DoesNotProduceViolation()
+    public void Validator_AnalyticsCluster_OmittingAlgorithm_DefaultsToDbscanAndRequiresEpsMinPoints()
     {
         var plan = new AnalysisPlan
         {
@@ -402,8 +402,177 @@ public sealed class ProcessCatalogTests
 
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
-        violations.Should().BeEmpty(
-            "the clusters handler defaults algorithm/eps/minPoints/k when omitted, so the catalog must treat them as optional");
+        // Omitted algorithm defaults to DBSCAN in the handler, which then
+        // requires eps and minPoints — so catalog validation must match.
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.eps");
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.minPoints");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_Dbscan_WithEpsAndMinPoints_ProducesNoViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "25",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_KMeansWithoutK_ProducesConditionalRequiredViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "kmeans"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.k");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_InvalidAlgorithmValue_ProducesEnumViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "hierarchical"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.algorithm");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_NonPositiveEps_ProducesRangeViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "0",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.eps");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_KZero_ProducesRangeViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["algorithm"] = "kmeans",
+                        ["k"] = "0"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.k");
     }
 
     [UnitTest]
@@ -473,6 +642,106 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_DwithinWithoutDistance_ProducesConditionalRequiredViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["joinLayerId"] = "zoning",
+                        ["predicate"] = "dwithin"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_InvalidPredicate_ProducesEnumViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["joinLayerId"] = "zoning",
+                        ["predicate"] = "touches"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.predicate");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsSpatialJoin_NonPositiveDistance_ProducesRangeViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.spatial-join",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["joinLayerId"] = "zoning",
+                        ["predicate"] = "dwithin",
+                        ["distance"] = "-1"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_AnalyticsDensity_OmittingMode_DoesNotProduceViolation()
     {
         var plan = new AnalysisPlan
@@ -532,6 +801,135 @@ public sealed class ProcessCatalogTests
             v.FieldPath == "steps[s1].inputs.cellSizeMeters");
         violations.Should().Contain(v => v.Code == "MISSING_REQUIRED_PARAMETER" &&
             v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_InvalidMode_ProducesEnumViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["mode"] = "triangle",
+                        ["cellSize"] = "500"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.mode");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensity_NonPositiveCellSize_ProducesRangeViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["cellSize"] = "0"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_InvalidUnit_ProducesEnumViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["distance"] = "100",
+                        ["unit"] = "leagues"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.unit");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregate_UnitAlias_IsAccepted()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "parcels",
+                        ["distance"] = "5",
+                        ["unit"] = "km"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty("handler accepts 'km' as an alias for kilometers");
     }
 
     [UnitTest]

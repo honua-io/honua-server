@@ -54,7 +54,7 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 ## V1 Limitations
 
 - **Async-only**: synchronous execution returns `501 Not Implemented` when the `Prefer: respond-async` header is absent.
-- **Single process**: the process catalog exposes one canonical process (`honua-geoprocessing`). Catalog formalization is follow-on work.
+- **Single process projection**: the OGC adapter lists one canonical process (`honua-geoprocessing`) even though the internal catalog now enumerates 14 built-in geometry and analytics processes (`geometry.*`, `analytics.*`). Per-process projection into `/processes` and `/processes/{id}` is follow-on adapter work; executions dispatch through the canonical process and are validated against the built-in catalog at the adapter boundary.
 - **Results endpoint**: V1 still stubs the `/results` endpoint — successful jobs return `404` until the execution engine populates result storage. When implemented, the planned V1 shape is a document-mode, by-value JSON response keyed by stable output identifiers. By-reference transmission remains deferred.
 - **Planned result document shape**: once result storage is populated, successful `/results` responses will contain outputs only. Job status, summary, and error state remain on job/status endpoints rather than inside `/results`.
 - **No results link in StatusInfo**: V1 StatusInfo documents do not include the `http://www.opengis.net/def/rel/ogc/1.0/results` relation because the `/results` endpoint is stubbed. The link will be emitted once result storage is populated by the execution engine.
