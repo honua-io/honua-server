@@ -314,6 +314,40 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_UnknownInputKey_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.buffer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "AAAA",
+                        ["srid"] = "4326",
+                        ["distance"] = "100",
+                        ["distnace"] = "200"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.Code == "UNKNOWN_PARAMETER");
+        violations.Single(v => v.Code == "UNKNOWN_PARAMETER")
+            .FieldPath.Should().Be("steps[s1].inputs.distnace");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_OptionalParameters_DoNotProduceViolations()
     {
         var plan = new AnalysisPlan

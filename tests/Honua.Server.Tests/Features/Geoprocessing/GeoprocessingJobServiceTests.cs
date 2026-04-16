@@ -176,6 +176,64 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_UnknownProcessId_ThrowsValidation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "intent-1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "unknown.process"
+                }
+            ]
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_MissingRequiredParameter_ThrowsValidation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-1",
+            IntentId = "intent-1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.buffer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "AAAA"
+                    }
+                }
+            ]
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ApprovalRequired_ThrowsApprovalException()
     {
         _approvalEvaluator

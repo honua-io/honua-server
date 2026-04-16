@@ -149,6 +149,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     {
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
+        EnsurePlanCatalogValid(plan);
         EnsureApproved(principal);
 
         var jobStore = RequireJobStore();
@@ -525,6 +526,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw new GeoprocessingValidationException(
                 "Plan must contain at least one step for job submission.");
         }
+    }
+
+    private void EnsurePlanCatalogValid(AnalysisPlan plan)
+    {
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _processCatalog);
+        if (violations.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var v in violations)
+        {
+            if (v.Code == "UNKNOWN_PROCESS")
+            {
+                GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
+            }
+        }
+
+        var first = violations[0];
+        throw new GeoprocessingValidationException(
+            $"Plan failed catalog validation: {first.Code} — {first.Message}");
     }
 
     internal static string CreateJobId(string? idempotencyKey)

@@ -60,7 +60,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "geometry.simplify",
             Title = "Simplify",
-            Description = "Performs topological correction on geometries, fixing self-intersections and ring orientation.",
+            Description = "Generalizes geometries by removing vertices within the given tolerance, optionally preserving topology.",
             Category = "geometry",
             Parameters =
             [
@@ -253,12 +253,12 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         ProcessParameterValueType valueType,
         bool required = false,
         string? defaultValue = null) => new()
-    {
-        Name = name,
-        DisplayName = displayName,
-        Description = description,
-        ValueType = valueType,
-        Required = required,
-        DefaultValue = defaultValue
-    };
+        {
+            Name = name,
+            DisplayName = displayName,
+            Description = description,
+            ValueType = valueType,
+            Required = required,
+            DefaultValue = defaultValue
+        };
 }

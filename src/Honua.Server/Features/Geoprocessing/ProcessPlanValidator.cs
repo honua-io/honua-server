@@ -53,6 +53,10 @@ internal static class ProcessPlanValidator
                 continue;
             }
 
+            var allowedNames = new HashSet<string>(
+                definition.Parameters.Select(p => p.Name),
+                StringComparer.Ordinal);
+
             foreach (var param in definition.Parameters)
             {
                 if (!param.Required)
@@ -69,6 +73,21 @@ internal static class ProcessPlanValidator
                         FieldPath = $"steps[{step.StepId}].inputs.{param.Name}"
                     });
                 }
+            }
+
+            foreach (var inputName in step.Inputs.Keys)
+            {
+                if (allowedNames.Contains(inputName))
+                {
+                    continue;
+                }
+
+                violations.Add(new GeoprocessingValidationFailure
+                {
+                    Code = "UNKNOWN_PARAMETER",
+                    Message = $"Step '{step.StepId}' supplies unknown parameter '{inputName}' for process '{step.ProcessId}'.",
+                    FieldPath = $"steps[{step.StepId}].inputs.{inputName}"
+                });
             }
         }
 
