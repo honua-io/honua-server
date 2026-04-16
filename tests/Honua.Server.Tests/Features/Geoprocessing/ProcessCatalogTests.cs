@@ -377,6 +377,211 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
+    // Validator — typed value validation
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryBuffer_InvalidTypedInputs_ProducesViolationPerField()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.buffer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "not-base64!!",
+                        ["srid"] = "abc",
+                        ["distance"] = "not-a-number",
+                        ["geodesic"] = "maybe"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        var invalid = violations.Where(v => v.Code == "INVALID_PARAMETER_VALUE").ToList();
+        invalid.Should().HaveCount(4, "each typed input should report its own INVALID_PARAMETER_VALUE");
+        invalid.Select(v => v.FieldPath).Should().BeEquivalentTo(
+        [
+            "steps[s1].inputs.wkb",
+            "steps[s1].inputs.srid",
+            "steps[s1].inputs.distance",
+            "steps[s1].inputs.geodesic"
+        ]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsCluster_InvalidTypedInputs_ProducesViolationPerField()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "   ",
+                        ["algorithm"] = "DbScan",
+                        ["eps"] = "NaN",
+                        ["minPoints"] = "5.5",
+                        ["returnHullPerCluster"] = "yes"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        var invalid = violations.Where(v => v.Code == "INVALID_PARAMETER_VALUE").ToList();
+        invalid.Select(v => v.FieldPath).Should().BeEquivalentTo(
+        [
+            "steps[s1].inputs.layerId",
+            "steps[s1].inputs.eps",
+            "steps[s1].inputs.minPoints",
+            "steps[s1].inputs.returnHullPerCluster"
+        ]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryBuffer_SridZero_IsRejected()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.buffer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "AAAA",
+                        ["srid"] = "0",
+                        ["distance"] = "100"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.srid");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryUnion_WkbArray_AcceptsJsonArrayOfBase64()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.union",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkbs"] = "[\"AAAA\",\"BBBB\"]",
+                        ["srid"] = "4326"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeometryUnion_MalformedWkbArray_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.union",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkbs"] = "AAAA,BBBB",
+                        ["srid"] = "4326"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.wkbs");
+    }
+
+    // -----------------------------------------------------------------------
+    // Catalog — immutability contract
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_ListProcesses_CannotBeCastToMutableArray()
+    {
+        var all = _catalog.ListProcesses();
+
+        (all is ProcessDefinition[]).Should().BeFalse(
+            "read-only catalog must not leak the underlying array through IReadOnlyList");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_GetProcessesByCategory_CannotBeCastToMutableArray()
+    {
+        var geometry = _catalog.GetProcessesByCategory("geometry");
+
+        (geometry is ProcessDefinition[]).Should().BeFalse(
+            "read-only catalog must not leak the underlying array through IReadOnlyList");
+    }
+
+    // -----------------------------------------------------------------------
     // Integration: ValidatePlan RPC with catalog validation
     // -----------------------------------------------------------------------
 

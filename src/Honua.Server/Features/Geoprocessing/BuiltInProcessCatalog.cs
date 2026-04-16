@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Collections.Immutable;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 
@@ -14,17 +15,17 @@ namespace Honua.Server.Features.Geoprocessing;
 internal sealed class BuiltInProcessCatalog : IProcessCatalog
 {
     private readonly FrozenDictionary<string, ProcessDefinition> _processes;
-    private readonly IReadOnlyList<ProcessDefinition> _all;
-    private readonly FrozenDictionary<string, IReadOnlyList<ProcessDefinition>> _byCategory;
+    private readonly ImmutableArray<ProcessDefinition> _all;
+    private readonly FrozenDictionary<string, ImmutableArray<ProcessDefinition>> _byCategory;
 
     public BuiltInProcessCatalog()
     {
         var definitions = BuildDefinitions();
-        _all = definitions;
+        _all = definitions.ToImmutableArray();
         _processes = definitions.ToFrozenDictionary(d => d.ProcessId, StringComparer.Ordinal);
         _byCategory = definitions
             .GroupBy(d => d.Category, StringComparer.Ordinal)
-            .ToFrozenDictionary(g => g.Key, g => (IReadOnlyList<ProcessDefinition>)g.ToArray(), StringComparer.Ordinal);
+            .ToFrozenDictionary(g => g.Key, g => g.ToImmutableArray(), StringComparer.Ordinal);
     }
 
     public ProcessDefinition? GetProcess(string processId)
@@ -34,7 +35,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         => _all;
 
     public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category)
-        => _byCategory.GetValueOrDefault(category) ?? [];
+        => _byCategory.TryGetValue(category, out var list) ? list : ImmutableArray<ProcessDefinition>.Empty;
 
     private static ProcessDefinition[] BuildDefinitions() =>
     [
