@@ -365,12 +365,13 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
         await harness.Scheduler.TickAsync(CancellationToken.None);
 
         Assert.Equal(2, harness.RunStore.Snapshot.Count);
-        var secondRun = harness.RunStore.Snapshot.Last();
-        var fireTime = DateTimeOffset.Parse(
-            secondRun.Metadata["scheduler.fire_time"],
-            System.Globalization.CultureInfo.InvariantCulture);
-        Assert.True(fireTime > updatedAt,
-            $"Fire time {fireTime:o} should be after UpdatedAt {updatedAt:o}");
+        var latestFireTime = harness.RunStore.Snapshot
+            .Select(r => DateTimeOffset.Parse(
+                r.Metadata["scheduler.fire_time"],
+                System.Globalization.CultureInfo.InvariantCulture))
+            .Max();
+        Assert.True(latestFireTime > updatedAt,
+            $"Fire time {latestFireTime:o} should be after UpdatedAt {updatedAt:o}");
     }
 
     [Fact]
