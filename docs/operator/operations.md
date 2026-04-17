@@ -499,6 +499,12 @@ dependents according to each step's `FailurePolicy`.
   required. When a replayed submission returns an already-terminal job,
   the engine applies the same artifact-fetch and retry-policy paths used
   during normal observation.
+- Transient job-observation failures (e.g. a Redis read error when polling
+  a step's underlying job status) are caught and logged at Warning level
+  (event `8118`). The failure is also appended as a deduplicated warning on
+  the run's `Warnings` list so operators can see degraded observation
+  through the progress API. The step is preserved in its current state and
+  retried on the next reconcile tick.
 - `IWorkflowRunStore` extends `IOperationStore`, so reconciliation uses the
   canonical lease pattern with a 30-second lease renewed every 10 seconds.
 
@@ -633,8 +639,9 @@ events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
 `8111 PollLoopFailed`, `8114 SchedulerTickFailed`,
 `8115 WorkflowStepFailed`, `8116 SchedulerDefinitionInvalid`,
 `8117 WorkflowStepCancelJobFailed`,
+`8118 WorkflowStepObservationTransientFailure`,
 `8119 WorkflowCancelLeaseContention`,
-`8120 WorkflowStepArtifactsUnavailableForBoundDependents`, and
+`8120 WorkflowStepArtifactsUnavailableForBoundDependents`,
 `8121 DefinitionStepSetMismatch`, and
 `8122 ProgressProjectionFailed`.
 
