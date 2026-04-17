@@ -2,7 +2,7 @@
 
 **Ticket:** honua-io/honua-server#360
 **Date:** 2026-04-12
-**Status:** Active reference — constrains #721, #723, #529
+**Status:** Active reference — constrains #721, #723, #529, #724
 
 This document compares Esri GPServer, GeoServer process exposure patterns, and
 OGC API Processes semantics, then maps each to the Honua canonical process model.
@@ -293,7 +293,7 @@ Adapter notes:
 | WPS XML encoding | XML transport is not supported. OGC API Processes (JSON) supersedes WPS for Honua's purposes. |
 | PPIO (Process Parameter I/O) framework | GeoServer-internal serialization concern. Not relevant to Honua's architecture. |
 | Process groups with security integration | Honua handles authorization through `IOperatorAuthorizationEvaluator` and `IOperatorApprovalEvaluator` at the service layer, not process-group-level ACLs. |
-| Process chaining (WPS) | Honua supports step composition natively through `AnalysisPlan` DAGs. WPS-style chaining where one process output feeds another inline is subsumed by plan step dependencies. |
+| Process chaining (WPS) | Honua supports step composition natively through `AnalysisPlan` DAGs. WPS-style chaining where one process output feeds another inline is subsumed by plan step dependencies. For multi-plan workflow composition (chaining separate plan executions with artifact-binding and retry/failure policies), see the declarative workflow orchestration layer ([ADR-0032](../contributor/adr/0032-workflow-orchestration-layer.md)). |
 
 ### From OGC API Processes
 
@@ -411,6 +411,32 @@ This **protocol adapter** is implemented. The adapter:
 - Does not add internal domain types or lifecycle states
 
 See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for endpoint and conformance details.
+
+### honua-server#724 — Workflow Orchestration Layer ✓
+
+**Implemented.** The declarative workflow orchestration layer composes
+canonical `AnalysisPlan` executions into multi-step, chained, scheduled, and
+DAG-style workflows:
+
+- `WorkflowDefinition` declares a step graph where each step wraps an
+  `AnalysisPlan` with optional `DependsOn`, `InputBindings` (artifact
+  selectors), `RetryPolicy`, `FailurePolicy`, and `TimeoutSeconds`
+- `WorkflowRun` tracks durable run and per-step state with lease-based
+  reconciliation over the ADR-0031 substrate
+- `GeoprocessingWorkflowJobExecutor` adapts `IWorkflowJobExecutor` to the
+  canonical `ProcessService`, stamping idempotency keys and protocol metadata
+  on every child-job submission
+- Cron-based scheduling via `WorkflowTrigger` with durable per-workflow
+  cursors and atomic fire-time claims
+- Redis-gated: stores and background services only register when
+  `IConnectionMultiplexer` is available (no fallback; non-Redis deployments
+  do not host the engine)
+- Does not extend the canonical process or result-package model; workflows
+  compose plans, they do not redefine them
+
+See [ADR-0032](../contributor/adr/0032-workflow-orchestration-layer.md) for
+design rationale and [Operations — Workflow Orchestration](../operator/operations.md)
+for operator guidance.
 
 ### geospatial-grpc#6 — Public Execution Contract
 
