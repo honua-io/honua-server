@@ -573,9 +573,12 @@ terminal telemetry.
 If the workflow definition's step set is modified while a run is active (steps
 added or removed), the engine detects the mismatch on the next reconcile tick,
 cancels underlying child jobs for non-terminal steps, and fails the run with
-a descriptive error (event 8121). This prevents `KeyNotFoundException` crashes
-or silent state loss when the definition shape diverges from the run's persisted
-step states.
+a descriptive error (event 8121). If `CancelJobAsync` fails for a step, the
+step remains in its current (non-terminal) state, a warning is recorded, and
+the cancel is retried on subsequent reconcile passes — the same invariant
+enforced by the cascade-cancel and definition-missing paths. This prevents
+`KeyNotFoundException` crashes or silent state loss when the definition shape
+diverges from the run's persisted step states.
 
 ### Policy Defaults and Tuning
 
@@ -595,7 +598,9 @@ step states.
 | `RedisWorkflowDefinitionStore` | `orchestration:def:{workflowId}` | none | `orchestration:def:all` |
 | `RedisWorkflowRunStore` | `orchestration:run:{runId}` | 7 d | `orchestration:run:active`, `orchestration:run:wf:{workflowId}` |
 | Run leases | `orchestration:run:lease:{runId}` | 30 s | — |
-| Schedule claims/cursors | `orchestration:schedule:*` | claim retention / unbounded cursor | — |
+| Schedule claims | `orchestration:schedule:claim:{workflowId}:{minuteStamp}` | 24 h | — |
+| Schedule cursors | `orchestration:schedule:cursor:{workflowId}` | none | — |
+| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | 25 h | — |
 
 All serialization uses the source-generated `OrchestrationJsonContext`;
 orchestration does not introduce reflection or runtime JSON discovery.
@@ -611,8 +616,9 @@ events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
 `8111 PollLoopFailed`, `8114 SchedulerTickFailed`,
 `8115 WorkflowStepFailed`, `8116 SchedulerDefinitionInvalid`,
 `8117 WorkflowStepCancelJobFailed`,
-`8119 WorkflowCancelLeaseContention`, and
-`8120 WorkflowStepArtifactsUnavailableForBoundDependents`.
+`8119 WorkflowCancelLeaseContention`,
+`8120 WorkflowStepArtifactsUnavailableForBoundDependents`, and
+`8121 DefinitionStepSetMismatch`.
 
 The engine contributes activities
 (`honua.orchestration.reconcile_run`, `honua.orchestration.execute_step`,

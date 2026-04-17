@@ -115,9 +115,12 @@ opaque-string-dict contract remains unchanged.
   that **bind** artifacts from this step cascade `Skipped`; dependents that
   only declare structural `DependsOn` proceed.
 - Run cancellation: `Pending` steps become `Cancelled`; `Queued`/`Running`
-  steps are cancelled through `IWorkflowJobExecutor.CancelJobAsync`, and the
-  step then transitions to `Cancelled`. Cascade-cancel errors are swallowed
-  for already-terminal child jobs and recorded as run warnings otherwise.
+  steps are cancelled through `IWorkflowJobExecutor.CancelJobAsync`. If
+  `CancelJobAsync` succeeds, the step transitions to `Cancelled`. If it
+  fails, the step remains non-terminal and the reconcile loop retries on
+  a subsequent tick. Already-terminal child jobs are swallowed; transient
+  failures are recorded as run warnings. The run stays in the active
+  reconcile set until every step reaches a terminal state.
 
 ### Scheduler
 
@@ -126,7 +129,10 @@ once per 30-second tick. Compiled expressions are cached per workflow and
 recompiled when the cron expression or time zone changes. A durable per-
 workflow cursor (`GetScheduleCursorAsync` / `AdvanceScheduleCursorAsync`)
 protects against re-firing occurrences after restart. A per-fire-time claim
-(`TryClaimScheduleFireAsync`) deduplicates fires across replicas.
+(`TryClaimScheduleFireAsync`) deduplicates fires across replicas. After a
+run is created, a pending-cursor marker (`SetPendingScheduleCursorAsync`,
+25 h TTL) is persisted so a crash between run creation and cursor advancement
+cannot replay the occurrence after the per-firing claim expires.
 
 ### Persistence
 
@@ -137,7 +143,9 @@ Redis is the coordination layer, consistent with ADR-0021 and ADR-0025:
 | `RedisWorkflowDefinitionStore` | `orchestration:def:{workflowId}` | none |
 | `RedisWorkflowRunStore` | `orchestration:run:{runId}` | 7 days |
 | Run leases | `orchestration:run:lease:{runId}` | 30 s |
-| Schedule claims/cursors | `orchestration:schedule:*` | claim retention / unbounded cursor |
+| Schedule claims | `orchestration:schedule:claim:{workflowId}:{minuteStamp}` | 24 h |
+| Schedule cursors | `orchestration:schedule:cursor:{workflowId}` | none |
+| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | 25 h |
 
 Stores only register when `IConnectionMultiplexer` is present; otherwise
 orchestration services are not registered and the admin cancel endpoint for

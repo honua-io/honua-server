@@ -125,4 +125,28 @@ public sealed class CronExpressionTests
         Assert.NotNull(next);
         Assert.Equal(new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero), next);
     }
+
+    [Fact]
+    public void GetNextOccurrence_FindsLeapDayScheduleAcrossMultiYearGap()
+    {
+        var cron = CronExpression.Parse("0 0 29 2 *");
+        var start = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var next = cron.GetNextOccurrence(start, TimeZoneInfo.Utc);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2028, 2, 29, 0, 0, 0, TimeSpan.Zero), next);
+    }
+
+    [Fact]
+    public void GetNextOccurrence_FindsLeapDayScheduleFromLeapYear()
+    {
+        var cron = CronExpression.Parse("0 0 29 2 *");
+        var start = new DateTimeOffset(2028, 2, 28, 0, 0, 0, TimeSpan.Zero);
+
+        var next = cron.GetNextOccurrence(start, TimeZoneInfo.Utc);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2028, 2, 29, 0, 0, 0, TimeSpan.Zero), next);
+    }
 }

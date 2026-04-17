@@ -225,6 +225,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             }
 
             activity?.SetTag(OrchestrationTelemetry.Tags.WorkflowId, run.WorkflowId);
+            activity?.SetTag("honua.orchestration.step_count", run.StepStates.Count);
 
             var definition = await _definitionStore.GetAsync(run.WorkflowId, reconciliationCancellation.Token).ConfigureAwait(false);
             if (definition is null)
@@ -340,13 +341,13 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             OrchestrationLog.DefinitionStepSetMismatch(_logger, run.RunId, run.WorkflowId, detail);
 
             var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
-            var finalisedSteps = new WorkflowStepState[run.StepStates.Count];
-            for (var i = 0; i < run.StepStates.Count; i++)
+            var mismatchWarnings = new List<string>(run.Warnings);
+            var finalisedSteps = run.StepStates.ToArray();
+            for (var i = 0; i < finalisedSteps.Length; i++)
             {
-                var s = run.StepStates[i];
+                var s = finalisedSteps[i];
                 if (IsStepTerminal(s.Status))
                 {
-                    finalisedSteps[i] = s;
                     continue;
                 }
 
@@ -358,7 +359,12 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                         await _jobService.CancelJobAsync(s.JobId!, principal, cancellationToken).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                    catch (Exception) { }
+                    catch (Exception ex)
+                    {
+                        OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
+                        AddOrReplaceCancelWarning(mismatchWarnings, s.StepId, s.JobId!, ex.Message);
+                        continue;
+                    }
                 }
 
                 finalisedSteps[i] = s with
@@ -369,14 +375,23 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 };
             }
 
-            var mismatchStatus = IsRunTerminal(run.Status) ? run.Status : WorkflowRunStatus.Failed;
+            var mismatchAllTerminal = finalisedSteps.All(s => IsStepTerminal(s.Status));
+            var mismatchStatus = IsRunTerminal(run.Status) ? run.Status
+                : mismatchAllTerminal ? WorkflowRunStatus.Failed
+                : run.Status;
+            var mismatchError = IsRunTerminal(run.Status)
+                ? run.ErrorMessage
+                : mismatchAllTerminal
+                    ? $"Workflow definition '{run.WorkflowId}' step-set changed since run was created. {detail}"
+                    : run.ErrorMessage;
             return run with
             {
                 Status = mismatchStatus,
                 StepStates = finalisedSteps,
                 UpdatedAt = now,
-                CompletedAt = run.CompletedAt ?? now,
-                ErrorMessage = $"Workflow definition '{run.WorkflowId}' step-set changed since run was created. {detail}"
+                CompletedAt = mismatchAllTerminal ? (run.CompletedAt ?? now) : run.CompletedAt,
+                ErrorMessage = mismatchError,
+                Warnings = mismatchWarnings
             };
         }
 
@@ -586,14 +601,17 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             OrchestrationLog.WorkflowStepFailed(_logger, run.RunId, state.StepId, ex.Message);
             var (newStatus, scheduledAt) = ComputeFailureDisposition(stepDefinition, state, attemptNumber, now);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            OrchestrationTelemetry.StepsCompleted.Add(
-                1,
-                new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
 
             if (newStatus == WorkflowStepStatus.Pending)
             {
                 OrchestrationTelemetry.StepsRetried.Add(1);
                 OrchestrationLog.WorkflowStepRetrying(_logger, run.RunId, state.StepId, attemptNumber + 1, scheduledAt ?? now);
+            }
+            else
+            {
+                OrchestrationTelemetry.StepsCompleted.Add(
+                    1,
+                    new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
             }
 
             return (state with

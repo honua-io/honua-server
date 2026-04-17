@@ -95,7 +95,7 @@ public sealed class CronExpression
 
     /// <summary>
     /// Returns the next fire time strictly greater than <paramref name="after"/> in the
-    /// supplied time zone, or null if no matching occurrence exists within 366 days.
+    /// supplied time zone, or null if no matching occurrence exists within four years.
     /// </summary>
     public DateTimeOffset? GetNextOccurrence(DateTimeOffset after, TimeZoneInfo timeZone)
     {
@@ -112,7 +112,7 @@ public sealed class CronExpression
             0,
             DateTimeKind.Unspecified).AddMinutes(1);
 
-        var limit = candidate.AddDays(366);
+        var limit = candidate.AddDays(1462);
         while (candidate < limit)
         {
             if (!_months[candidate.Month])

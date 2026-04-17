@@ -927,6 +927,57 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
+    public async Task ReconcileWorkflowRun_KeepsStepNonTerminal_WhenStepSetMismatchAndCancelFails()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Queued, submitted!.StepStates[0].Status);
+
+        var mutated = definition with
+        {
+            Steps = definition.Steps.Concat(new[]
+            {
+                new WorkflowStepDefinition
+                {
+                    StepId = "b",
+                    Plan = BuildPlan("plan-b"),
+                    DependsOn = ["a"]
+                }
+            }).ToArray(),
+            UpdatedAt = harness.Clock.GetUtcNow()
+        };
+        await harness.Definitions.SetAsync(mutated);
+
+        harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterFailedCancel = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Queued, afterFailedCancel!.StepStates[0].Status);
+        Assert.Null(afterFailedCancel.StepStates[0].CompletedAt);
+        Assert.Contains(afterFailedCancel.Warnings, w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase));
+
+        var active = await harness.RunStore.ListActiveAsync();
+        Assert.Contains(active, r => r.RunId == run.RunId);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Failed, final!.Status);
+        Assert.All(final.StepStates, s => Assert.True(
+            s.Status is WorkflowStepStatus.Succeeded
+                or WorkflowStepStatus.Failed
+                or WorkflowStepStatus.Cancelled
+                or WorkflowStepStatus.Skipped,
+            $"Step {s.StepId} left in non-terminal state {s.Status}."));
+        Assert.Contains("step-set changed", final.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ReconcileWorkflowRun_DoesNotStampCompletedAt_UntilAllStepsTerminal_DuringCancellation()
     {
         var harness = new OrchestrationTestHarness();
