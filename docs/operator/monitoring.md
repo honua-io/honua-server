@@ -113,6 +113,7 @@ reconciler loop, and the cron scheduler emit structured logs in the
 | 8117 | WorkflowStepCancelJobFailed | Warning | Best-effort cascade cancel of a child job failed |
 | 8119 | WorkflowCancelLeaseContention | Information | Cancel request could not acquire reconcile lease (409 returned) |
 | 8120 | WorkflowStepArtifactsUnavailableForBoundDependents | Warning | Step artifact retrieval failed; bound dependents marked Failed |
+| 8121 | DefinitionStepSetMismatch | Error | Definition step-set changed during active run; run failed deterministically |
 
 **Activities and metrics** (under `honua.orchestration.*`):
 
@@ -138,6 +139,7 @@ reconciler loop, and the cron scheduler emit structured logs in the
 | Artifact binding failures | Any occurrence | `OrchestrationLog` Warning (8107) / Warning (8120) |
 | Scheduler definition invalid | Any occurrence | `OrchestrationLog` Warning (8116) |
 | Cancel lease contention | > 2 in 5 min | `OrchestrationLog` Information (8119) |
+| Definition step-set mismatch | Any occurrence | `OrchestrationLog` Error (8121) |
 
 For lifecycle details, scheduler semantics, and policy tuning, see
 [Operations — Workflow Orchestration](operations.md#workflow-orchestration).

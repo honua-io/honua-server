@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -831,6 +832,103 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.Equal(WorkflowStepStatus.Pending, replayedStep.Status);
         Assert.NotNull(replayedStep.NextAttemptAt);
         Assert.Null(replayedStep.CompletedAt);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_FailsRunDeterministically_WhenDefinitionStepSetChangedSinceCreation()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowStepStatus.Queued, submitted!.StepStates[0].Status);
+        var jobId = submitted.StepStates[0].JobId;
+
+        var mutated = definition with
+        {
+            Steps = definition.Steps.Concat(new[]
+            {
+                new WorkflowStepDefinition
+                {
+                    StepId = "b",
+                    Plan = BuildPlan("plan-b"),
+                    DependsOn = ["a"]
+                }
+            }).ToArray(),
+            UpdatedAt = harness.Clock.GetUtcNow()
+        };
+        await harness.Definitions.SetAsync(mutated);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Failed, final!.Status);
+        Assert.Contains("step-set changed", final.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(final.CompletedAt);
+        Assert.All(final.StepStates, s => Assert.True(
+            s.Status is WorkflowStepStatus.Succeeded
+                or WorkflowStepStatus.Failed
+                or WorkflowStepStatus.Cancelled
+                or WorkflowStepStatus.Skipped,
+            $"Step {s.StepId} left in non-terminal state {s.Status}."));
+        Assert.Contains(jobId!, harness.JobService.Cancelled);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_DoesNotStampCompletedAt_UntilAllStepsTerminal_DuringCancellation()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        await harness.Engine.CancelRunAsync(run.RunId);
+
+        harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterPartialCleanup = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, afterPartialCleanup!.Status);
+        Assert.Equal(WorkflowStepStatus.Queued, afterPartialCleanup.StepStates[0].Status);
+        Assert.Null(afterPartialCleanup.CompletedAt);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, final!.Status);
+        Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates[0].Status);
+        Assert.NotNull(final.CompletedAt);
+    }
+
+    [Fact]
+    public async Task PersistRun_ProjectsCancellingPhase_WhenCancelCleanupInProgress()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        await harness.Engine.CancelRunAsync(run.RunId);
+
+        harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var progress = await harness.Progress.GetProgressAsync<WorkflowProgress>(run.RunId);
+        Assert.NotNull(progress);
+        Assert.Equal(OperationStatus.Processing, progress.Status);
+        Assert.Equal("Cancelling", progress.CurrentPhase);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var finalProgress = await harness.Progress.GetProgressAsync<WorkflowProgress>(run.RunId);
+        Assert.NotNull(finalProgress);
+        Assert.Equal(OperationStatus.Cancelled, finalProgress.Status);
+        Assert.Equal("Cancelled", finalProgress.CurrentPhase);
     }
 
     private static WorkflowDefinition BuildChainedDefinition(DateTimeOffset now)

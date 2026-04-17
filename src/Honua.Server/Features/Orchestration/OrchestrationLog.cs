@@ -138,4 +138,11 @@ internal static partial class OrchestrationLog
         string runId,
         string stepId,
         Exception exception);
+
+    [LoggerMessage(8121, LogLevel.Error, "Workflow run {RunId} step-set does not match definition {WorkflowId}: {MismatchDetail}. Run will be failed deterministically.")]
+    public static partial void DefinitionStepSetMismatch(
+        ILogger logger,
+        string runId,
+        string workflowId,
+        string mismatchDetail);
 }

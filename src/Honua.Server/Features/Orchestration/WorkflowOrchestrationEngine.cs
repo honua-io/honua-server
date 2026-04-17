@@ -331,6 +331,55 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         var definitionById = definition.Steps.ToDictionary(step => step.StepId, StringComparer.Ordinal);
         var states = run.StepStates.ToDictionary(state => state.StepId, StringComparer.Ordinal);
         var now = _clock.GetUtcNow();
+
+        if (states.Count != definitionById.Count || states.Keys.Any(k => !definitionById.ContainsKey(k)))
+        {
+            var runStepIds = new HashSet<string>(states.Keys, StringComparer.Ordinal);
+            var defStepIds = new HashSet<string>(definitionById.Keys, StringComparer.Ordinal);
+            var detail = $"Added: [{string.Join(", ", defStepIds.Except(runStepIds))}], Removed: [{string.Join(", ", runStepIds.Except(defStepIds))}]";
+            OrchestrationLog.DefinitionStepSetMismatch(_logger, run.RunId, run.WorkflowId, detail);
+
+            var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+            var finalisedSteps = new WorkflowStepState[run.StepStates.Count];
+            for (var i = 0; i < run.StepStates.Count; i++)
+            {
+                var s = run.StepStates[i];
+                if (IsStepTerminal(s.Status))
+                {
+                    finalisedSteps[i] = s;
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(s.JobId) &&
+                    s.Status is WorkflowStepStatus.Queued or WorkflowStepStatus.Running)
+                {
+                    try
+                    {
+                        await _jobService.CancelJobAsync(s.JobId!, principal, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch (Exception) { }
+                }
+
+                finalisedSteps[i] = s with
+                {
+                    Status = WorkflowStepStatus.Cancelled,
+                    CompletedAt = now,
+                    ErrorMessage = s.ErrorMessage ?? "Definition step-set changed since run creation."
+                };
+            }
+
+            var mismatchStatus = IsRunTerminal(run.Status) ? run.Status : WorkflowRunStatus.Failed;
+            return run with
+            {
+                Status = mismatchStatus,
+                StepStates = finalisedSteps,
+                UpdatedAt = now,
+                CompletedAt = run.CompletedAt ?? now,
+                ErrorMessage = $"Workflow definition '{run.WorkflowId}' step-set changed since run was created. {detail}"
+            };
+        }
+
         var warnings = new List<string>(run.Warnings);
         var changed = false;
 
@@ -440,7 +489,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             .ToArray();
 
         var runStatus = DeriveRunStatus(stepStatesOrdered, run.Status);
-        var completedAt = IsRunTerminal(runStatus) && run.CompletedAt is null ? now : run.CompletedAt;
+        var allStepsTerminal = stepStatesOrdered.All(s => IsStepTerminal(s.Status));
+        var completedAt = IsRunTerminal(runStatus) && allStepsTerminal && run.CompletedAt is null ? now : run.CompletedAt;
         string? errorMessage = run.ErrorMessage;
         if (runStatus == WorkflowRunStatus.Failed && string.IsNullOrWhiteSpace(errorMessage))
         {
@@ -892,18 +942,20 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         var startedAt = run.CreatedAt;
         var totalSteps = run.StepStates.Count;
         var completed = run.StepStates.Count(s => s.Status is WorkflowStepStatus.Succeeded or WorkflowStepStatus.Skipped);
+        var cancelCleanupInProgress = run.Status == WorkflowRunStatus.Cancelled &&
+            !run.StepStates.All(s => IsStepTerminal(s.Status));
         var progress = new WorkflowProgress
         {
             OperationId = run.RunId,
             WorkflowId = run.WorkflowId,
-            RunStatus = run.Status,
+            RunStatus = cancelCleanupInProgress ? WorkflowRunStatus.Running : run.Status,
             StepsCompleted = completed,
             TotalSteps = totalSteps,
             StartedAt = startedAt,
             CompletedAt = run.CompletedAt,
             ErrorMessage = run.ErrorMessage,
             Warnings = run.Warnings,
-            CurrentPhase = run.Status.ToString()
+            CurrentPhase = cancelCleanupInProgress ? "Cancelling" : run.Status.ToString()
         };
         await _progressStore.SetProgressAsync(run.RunId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
 

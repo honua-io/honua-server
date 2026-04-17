@@ -448,7 +448,7 @@ cancellation semantics described in [Job Orchestration](#job-orchestration).
 | Running | Engine is reconciling steps |
 | Succeeded | All required steps reached a successful terminal state |
 | Failed | A required step exhausted retries under `Fail` policy or a workflow invariant broke |
-| Cancelled | Cancellation was requested; cascade cancellation finishes on the next tick |
+| Cancelled | Cancellation was requested; cascade cancellation finishes on the next tick. During cleanup the progress API projects this as `Processing` / `Cancelling` so the run remains visible in active-operations queries until every step is terminal. |
 
 Per-step states are `Pending`, `Queued`, `Running`, `Succeeded`, `Failed`,
 `Cancelled`, and `Skipped`. The engine maps the underlying execution-job
@@ -562,6 +562,13 @@ that was already in a terminal state (e.g. `Cancelled`) keeps that status;
 otherwise the run transitions to `Failed` with a descriptive error. This
 guarantees the run leaves the active reconcile set exactly once and emits
 terminal telemetry.
+
+If the workflow definition's step set is modified while a run is active (steps
+added or removed), the engine detects the mismatch on the next reconcile tick,
+cancels underlying child jobs for non-terminal steps, and fails the run with
+a descriptive error (event 8121). This prevents `KeyNotFoundException` crashes
+or silent state loss when the definition shape diverges from the run's persisted
+step states.
 
 ### Policy Defaults and Tuning
 
