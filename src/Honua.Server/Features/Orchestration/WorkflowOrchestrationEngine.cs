@@ -332,11 +332,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     }
                     catch (Exception ex)
                     {
-                        // Cascade cancel is best-effort — the substrate may be unreachable or the
-                        // job may already be terminal. Record the failure and keep finalising
-                        // the workflow step so the run still reaches a terminal state.
                         OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, state.StepId, state.JobId!, ex);
                         warnings.Add($"{state.StepId}: failed to cancel underlying job '{state.JobId}': {ex.Message}");
+                        changed = true;
+                        continue;
                     }
                 }
 

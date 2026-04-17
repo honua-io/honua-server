@@ -282,7 +282,6 @@ if (connectedRedis != null)
     if (!isTestEnvironment)
     {
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
-        builder.Services.AddOrchestrationBackgroundServices();
     }
 }
 
@@ -401,6 +400,11 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+if (!isTestEnvironment)
+{
+    builder.Services.AddOrchestrationBackgroundServices();
+}
+
 builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(sp =>
     new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),

@@ -23,7 +23,8 @@ internal static class OrchestrationSystemPrincipal
             new[]
             {
                 new Claim(ClaimTypes.Name, name),
-                new Claim(ClaimTypes.Role, "orchestrator")
+                new Claim(ClaimTypes.Role, "orchestrator"),
+                new Claim(ClaimTypes.Role, "admin")
             },
             AuthenticationType);
         return new ClaimsPrincipal(identity);

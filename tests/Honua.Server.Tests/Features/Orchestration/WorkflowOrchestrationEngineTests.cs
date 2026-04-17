@@ -588,8 +588,9 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_RecordsWarningWhenCascadeCancelThrows()
     {
-        // Cascade cancel is best-effort: substrate errors must not block the run from reaching
-        // a terminal Cancelled state. The run records a warning so operators can investigate.
+        // When the substrate rejects the cascade cancel, the step must NOT be marked Cancelled
+        // because the underlying job may still be running. The next reconcile tick retries the
+        // cancel; only once it succeeds does the step transition to Cancelled.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);
@@ -600,10 +601,17 @@ public sealed class WorkflowOrchestrationEngineTests
         harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
         await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
 
+        var afterFailedCancel = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, afterFailedCancel!.Status);
+        Assert.Equal(WorkflowStepStatus.Queued, afterFailedCancel.StepStates[0].Status);
+        Assert.Contains(afterFailedCancel.Warnings, w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase));
+
+        // Retry: cancel succeeds; step transitions to Cancelled.
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
         var final = await harness.RunStore.GetAsync(run.RunId);
         Assert.Equal(WorkflowRunStatus.Cancelled, final!.Status);
         Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates[0].Status);
-        Assert.Contains(final.Warnings, w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -633,6 +641,25 @@ public sealed class WorkflowOrchestrationEngineTests
             $"Step {s.StepId} left in non-terminal state {s.Status}."));
         var active = await harness.RunStore.ListActiveAsync();
         Assert.DoesNotContain(active, r => r.RunId == run.RunId);
+    }
+
+    [Fact]
+    public void OrchestrationSystemPrincipal_IncludesAdminRole()
+    {
+        // The orchestration engine is a trusted internal component. Its synthetic principal
+        // must carry the admin role so child-job cancel bypasses per-job approval gates that
+        // protect interactive callers.
+        var principal = OrchestrationSystemPrincipal.Create("some-operator");
+        Assert.True(principal.IsInRole("admin"));
+        Assert.True(principal.IsInRole("orchestrator"));
+    }
+
+    [Fact]
+    public void OrchestrationSystemPrincipal_FallsBackToSystemIdentityWhenRequestedByIsNull()
+    {
+        var principal = OrchestrationSystemPrincipal.Create(null);
+        Assert.Equal(OrchestrationSystemPrincipal.SystemIdentityName, principal.Identity!.Name);
+        Assert.True(principal.IsInRole("admin"));
     }
 
     [Fact]
