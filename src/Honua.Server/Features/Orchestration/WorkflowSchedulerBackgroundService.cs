@@ -140,7 +140,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                     .ConfigureAwait(false);
                 if (durableCursor.HasValue && durableCursor.Value >= next.Value)
                 {
-                    _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+                    _compiled[definition.WorkflowId] = cached with { LastFireAt = durableCursor.Value };
                 }
 
                 continue;

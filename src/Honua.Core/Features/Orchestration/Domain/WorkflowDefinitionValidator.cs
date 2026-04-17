@@ -87,6 +87,10 @@ public static class WorkflowDefinitionValidator
                 {
                     failures.Add($"Step '{step.StepId}' binding references unknown source step '{binding.SourceStepId}'.");
                 }
+                else if (!step.DependsOn.Contains(binding.SourceStepId, StringComparer.Ordinal))
+                {
+                    failures.Add($"Step '{step.StepId}' binding references source step '{binding.SourceStepId}' which is not declared in DependsOn. Binding sources must be explicit dependencies so execution ordering and cycle detection cover all data edges.");
+                }
 
                 if (string.IsNullOrWhiteSpace(binding.TargetInputKey))
                 {

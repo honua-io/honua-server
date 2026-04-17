@@ -141,6 +141,91 @@ public sealed class WorkflowDefinitionValidatorTests
         Assert.Contains(failures, f => f.Contains("unknown source step 'missing'", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Validate_RejectsBindingSource_NotInDependsOn()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", Empty));
+        var binding = new StepInputBinding
+        {
+            SourceStepId = "a",
+            SourceArtifactSelector = "artifact:0",
+            TargetInputKey = "in"
+        };
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0],
+                definition.Steps[1] with
+                {
+                    InputBindings = [binding]
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("not declared in DependsOn", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_AcceptsBinding_WhenSourceIsInDependsOn()
+    {
+        var definition = BuildDefinition(("a", Empty), ("b", DependsOnA));
+        var binding = new StepInputBinding
+        {
+            SourceStepId = "a",
+            SourceArtifactSelector = "artifact:0",
+            TargetInputKey = "in"
+        };
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0],
+                definition.Steps[1] with
+                {
+                    InputBindings = [binding]
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void Validate_DetectsCycleCreatedByBindingDependency()
+    {
+        // a depends on b, b has a binding on a (which now requires a→DependsOn).
+        // If the user adds a to b's DependsOn to satisfy the binding rule,
+        // the cycle a→b→a must be caught. This verifies that binding edges
+        // cannot bypass cycle detection.
+        var definition = BuildDefinition(("a", DependsOnB), ("b", DependsOnA));
+        var binding = new StepInputBinding
+        {
+            SourceStepId = "a",
+            SourceArtifactSelector = "artifact:0",
+            TargetInputKey = "in"
+        };
+        definition = definition with
+        {
+            Steps =
+            [
+                definition.Steps[0],
+                definition.Steps[1] with
+                {
+                    InputBindings = [binding]
+                }
+            ]
+        };
+
+        var failures = WorkflowDefinitionValidator.Validate(definition);
+
+        Assert.Contains(failures, f => f.Contains("dependency cycle", StringComparison.Ordinal));
+    }
+
     private static WorkflowDefinition BuildDefinition(params (string StepId, string[] DependsOn)[] steps)
     {
         var now = DateTimeOffset.UtcNow;

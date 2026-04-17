@@ -264,6 +264,47 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     }
 
     [Fact]
+    public async Task TickAsync_LosingReplicaJumpsToDurableCursor_WhenMultipleOccurrencesBehind()
+    {
+        // Exercises the !claimed path fix: when a replica's in-memory cursor is far behind
+        // the durable cursor, it should jump directly to the durable position instead of
+        // crawling forward one occurrence per tick.
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var definition = BuildCronDefinition(start, "* * * * *");
+        await harness.Definitions.TryCreateAsync(definition);
+
+        // Fire the first occurrence so the scheduler's in-memory cursor is initialised.
+        harness.Clock.Advance(TimeSpan.FromMinutes(2));
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+        Assert.Single(harness.RunStore.Snapshot);
+
+        // Simulate another replica having fired 12:02 through 12:05: pre-claim those
+        // fire times and advance the durable cursor as the winner would.
+        for (var m = 2; m <= 5; m++)
+        {
+            await harness.Definitions.TryClaimScheduleFireAsync(
+                definition.WorkflowId,
+                start.AddMinutes(m),
+                TimeSpan.FromHours(1));
+        }
+
+        harness.Definitions.SeedScheduleCursor(definition.WorkflowId, start.AddMinutes(5));
+        harness.Clock.Advance(TimeSpan.FromMinutes(5));
+
+        // The scheduler's in-memory cursor is still at 12:01. Without the fix, each tick
+        // would evaluate the next stale occurrence (12:02, 12:03, …), lose the claim, and
+        // advance by only one — requiring 4 ticks to catch up. With the fix, the first
+        // lost claim jumps to the durable cursor (12:05) and the second tick fires 12:06.
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Equal(2, harness.RunStore.Snapshot.Count);
+        var fireTime = start.AddMinutes(6).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains(harness.RunStore.Snapshot, r => r.Metadata["scheduler.fire_time"] == fireTime);
+    }
+
+    [Fact]
     public async Task TickAsync_LosingReplicaRevisitsOccurrence_WhenWinnerCrashesBeforeCursorAdvance()
     {
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);

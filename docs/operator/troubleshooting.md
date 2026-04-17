@@ -184,7 +184,7 @@ redis-cli -h redis SMEMBERS orchestration:run:active
 | `409 Conflict` on cancel | Reconcile lease held by concurrent tick | Retry the cancel request; this is transient |
 | Scheduled workflow not firing | Invalid cron expression or time zone | Check logs for event `8116`; correct the definition |
 | Step marked Failed with artifact error | Upstream artifact retrieval failed | Check logs for event `8120`; investigate upstream result storage |
-| Reconciliation error spikes | Redis connectivity or data corruption | Check Redis health and `OrchestrationLog` Error (8110) |
+| Reconciliation error spikes | Redis connectivity or data corruption | Check Redis health and `OrchestrationLog` Warning (8110) |
 
 The reconciler automatically resumes runs after crashes or restarts by
 rehydrating state from Redis. No operator intervention is required unless
