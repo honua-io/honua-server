@@ -83,4 +83,15 @@ public interface IWorkflowDefinitionStore
         string workflowId,
         DateTimeOffset fireTime,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Durably records that a run has been created for the given fire time but the schedule
+    /// cursor has not yet advanced past it. <see cref="GetScheduleCursorAsync"/> incorporates
+    /// this marker so a process crash between run creation and cursor advancement cannot
+    /// cause the occurrence to be replayed after the per-firing claim TTL expires.
+    /// </summary>
+    Task SetPendingScheduleCursorAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default);
 }

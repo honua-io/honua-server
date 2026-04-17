@@ -513,10 +513,14 @@ tick (30-second interval). For each definition, the scheduler:
    restarts never rewind into previously-fired occurrences.
 3. Claims the fire-time occurrence via `TryClaimScheduleFireAsync` so only
    one replica creates a run per (workflow, fire-time) pair.
-4. Advances the durable cursor only after the winning replica successfully
-   creates the run, or after the definition is deleted/permanently invalid.
-   Transient `CreateRunAsync` failures release the claim so the same
-   occurrence can be retried on a later tick without losing the fire.
+4. After the winning replica successfully creates the run, it persists a
+   durable pending-cursor marker so a process crash between run creation and
+   cursor advancement cannot cause the occurrence to be replayed after the
+   per-firing claim TTL expires.
+5. Advances the durable cursor past the fired occurrence. If the advance
+   fails, the pending cursor retries on the next tick. Transient
+   `CreateRunAsync` failures release the claim so the same occurrence can be
+   retried on a later tick without losing the fire.
 
 Invalid cron expressions or unknown time zones are skipped and logged at
 `Warning` with event `8116`; the workflow stops firing until the definition
@@ -542,8 +546,11 @@ inspects every step:
 
 - `Pending` steps transition to `Cancelled` immediately.
 - `Queued` or `Running` steps are cancelled through `CancelJobAsync` on the
-  job executor before the step moves to `Cancelled`. Best-effort cancel
-  failures are recorded as run warnings but do not block terminal transition.
+  job executor before the step moves to `Cancelled`. If `CancelJobAsync`
+  fails, the step remains in its current (non-terminal) state, a warning is
+  recorded on the run, and the cancel is retried on subsequent reconcile
+  passes. The run stays active until all child jobs are actually cancelled
+  or observed in a terminal state.
 - Already-terminal steps are left as-is.
 
 The engine swallows `GeoprocessingNotFoundException` and
@@ -601,7 +608,9 @@ events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
 `8102 WorkflowStepSubmitted`, `8104 WorkflowStepRetrying`,
 `8105 WorkflowStepSkipped`, `8107 InputBindingFailed`,
 `8108 SchedulerTriggered`, `8110 ReconciliationFailed`,
-`8116 SchedulerDefinitionInvalid`, `8117 WorkflowStepCancelJobFailed`,
+`8111 PollLoopFailed`, `8114 SchedulerTickFailed`,
+`8115 WorkflowStepFailed`, `8116 SchedulerDefinitionInvalid`,
+`8117 WorkflowStepCancelJobFailed`,
 `8119 WorkflowCancelLeaseContention`, and
 `8120 WorkflowStepArtifactsUnavailableForBoundDependents`.
 

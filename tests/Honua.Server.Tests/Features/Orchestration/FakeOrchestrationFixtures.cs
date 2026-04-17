@@ -85,6 +85,7 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
     private readonly ConcurrentDictionary<string, WorkflowDefinition> _definitions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _scheduleClaims = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _scheduleCursors = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _pendingScheduleCursors = new(StringComparer.Ordinal);
 
     public Task<WorkflowDefinition?> GetAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult(_definitions.TryGetValue(workflowId, out var d) ? d : null);
@@ -112,6 +113,7 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
     {
         var removed = _definitions.TryRemove(workflowId, out _);
         _scheduleCursors.TryRemove(workflowId, out _);
+        _pendingScheduleCursors.TryRemove(workflowId, out _);
         return Task.FromResult(removed);
     }
 
@@ -141,7 +143,23 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
     }
 
     public Task<DateTimeOffset?> GetScheduleCursorAsync(string workflowId, CancellationToken cancellationToken = default)
-        => Task.FromResult(_scheduleCursors.TryGetValue(workflowId, out var cursor) ? cursor : (DateTimeOffset?)null);
+    {
+        DateTimeOffset? result = null;
+        if (_scheduleCursors.TryGetValue(workflowId, out var cursor))
+        {
+            result = cursor;
+        }
+
+        if (_pendingScheduleCursors.TryGetValue(workflowId, out var pending))
+        {
+            if (result is null || pending > result.Value)
+            {
+                result = pending;
+            }
+        }
+
+        return Task.FromResult(result);
+    }
 
     /// <summary>
     /// When set, <see cref="AdvanceScheduleCursorAsync"/> raises this exception on the next
@@ -162,6 +180,12 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
             workflowId,
             _ => candidate,
             (_, existing) => existing >= candidate ? existing : candidate);
+        return Task.CompletedTask;
+    }
+
+    public Task SetPendingScheduleCursorAsync(string workflowId, DateTimeOffset fireTime, CancellationToken cancellationToken = default)
+    {
+        _pendingScheduleCursors[workflowId] = fireTime.ToUniversalTime();
         return Task.CompletedTask;
     }
 

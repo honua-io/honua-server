@@ -196,6 +196,21 @@ internal sealed class WorkflowSchedulerBackgroundService(
 
                 OrchestrationLog.SchedulerTriggered(logger, definition.WorkflowId, next.Value);
                 runCreated = true;
+
+                try
+                {
+                    await definitionStore
+                        .SetPendingScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    OrchestrationLog.SchedulerTickFailed(logger, ex);
+                }
             }
             catch (WorkflowDefinitionValidationException ex)
             {

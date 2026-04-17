@@ -17,6 +17,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
     private const string DefinitionIndexKey = "orchestration:def:all";
     private const string ScheduleClaimKeyPrefix = "orchestration:schedule:claim:";
     private const string ScheduleCursorKeyPrefix = "orchestration:schedule:cursor:";
+    private const string SchedulePendingCursorKeyPrefix = "orchestration:schedule:pending-cursor:";
 
     private readonly IDatabase _database = redis.GetDatabase();
 
@@ -114,12 +115,13 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         var removed = await _database.KeyDeleteAsync(GetKey(workflowId)).ConfigureAwait(false);
         await _database.SetRemoveAsync(DefinitionIndexKey, workflowId).ConfigureAwait(false);
 
-        // Clear the durable scheduler cursor so a later recreate of the same workflow id
+        // Clear the durable scheduler cursors so a later recreate of the same workflow id
         // does not inherit the deleted definition's fire history and skip the first run
         // for the replacement. Per-occurrence claim keys carry a short TTL and key off
         // the absolute fire time, so stale claims cannot suppress fresh occurrences; no
         // scan-based cleanup is required.
         await _database.KeyDeleteAsync(GetScheduleCursorKey(workflowId)).ConfigureAwait(false);
+        await _database.KeyDeleteAsync(GetSchedulePendingCursorKey(workflowId)).ConfigureAwait(false);
         return removed;
     }
 
@@ -164,19 +166,33 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
         cancellationToken.ThrowIfCancellationRequested();
 
+        DateTimeOffset? cursor = null;
         var payload = await _database.StringGetAsync(GetScheduleCursorKey(workflowId)).ConfigureAwait(false);
-        if (!payload.HasValue)
+        if (payload.HasValue &&
+            DateTimeOffset.TryParse(
+                payload.ToString(),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var parsed))
         {
-            return null;
+            cursor = parsed;
         }
 
-        return DateTimeOffset.TryParse(
-            payload.ToString(),
-            System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.RoundtripKind,
-            out var parsed)
-            ? parsed
-            : null;
+        var pendingPayload = await _database.StringGetAsync(GetSchedulePendingCursorKey(workflowId)).ConfigureAwait(false);
+        if (pendingPayload.HasValue &&
+            DateTimeOffset.TryParse(
+                pendingPayload.ToString(),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var pendingParsed))
+        {
+            if (cursor is null || pendingParsed > cursor.Value)
+            {
+                cursor = pendingParsed;
+            }
+        }
+
+        return cursor;
     }
 
     public async Task AdvanceScheduleCursorAsync(
@@ -238,6 +254,21 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         }
     }
 
+    public async Task SetPendingScheduleCursorAsync(
+        string workflowId,
+        DateTimeOffset fireTime,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var encoded = fireTime.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        await _database.StringSetAsync(
+            GetSchedulePendingCursorKey(workflowId),
+            encoded,
+            TimeSpan.FromHours(25)).ConfigureAwait(false);
+    }
+
     private static string GetKey(string workflowId) => DefinitionKeyPrefix + workflowId;
 
     private static string GetScheduleClaimKey(string workflowId, DateTimeOffset fireTime)
@@ -252,4 +283,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
 
     private static string GetScheduleCursorKey(string workflowId)
         => ScheduleCursorKeyPrefix + workflowId;
+
+    private static string GetSchedulePendingCursorKey(string workflowId)
+        => SchedulePendingCursorKeyPrefix + workflowId;
 }

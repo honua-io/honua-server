@@ -256,7 +256,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                         catch (Exception ex)
                         {
                             OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
-                            warnings.Add($"{s.StepId}: failed to cancel underlying job '{s.JobId}': {ex.Message}");
+                            AddOrReplaceCancelWarning(warnings, s.StepId, s.JobId!, ex.Message);
                             continue;
                         }
                     }
@@ -417,7 +417,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     catch (Exception ex)
                     {
                         OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, state.StepId, state.JobId!, ex);
-                        warnings.Add($"{state.StepId}: failed to cancel underlying job '{state.JobId}': {ex.Message}");
+                        AddOrReplaceCancelWarning(warnings, state.StepId, state.JobId!, ex.Message);
                         changed = true;
                         continue;
                     }
@@ -1048,4 +1048,19 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             or WorkflowStepStatus.Failed
             or WorkflowStepStatus.Cancelled
             or WorkflowStepStatus.Skipped;
+
+    private static void AddOrReplaceCancelWarning(List<string> warnings, string stepId, string jobId, string message)
+    {
+        var prefix = $"{stepId}: failed to cancel underlying job '{jobId}':";
+        for (var i = 0; i < warnings.Count; i++)
+        {
+            if (warnings[i].StartsWith(prefix, StringComparison.Ordinal))
+            {
+                warnings[i] = $"{prefix} {message}";
+                return;
+            }
+        }
+
+        warnings.Add($"{prefix} {message}");
+    }
 }

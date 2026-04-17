@@ -346,6 +346,56 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     }
 
     [Fact]
+    public async Task TickAsync_PendingCursorProtectsReplay_WhenCursorAdvanceFails()
+    {
+        // Regression: if CreateRunAsync succeeds and AdvanceScheduleCursorAsync fails (simulating
+        // a crash between the two), the durable pending cursor marker must prevent a restarted
+        // scheduler from replaying the same occurrence after the claim TTL expires.
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var definitionStore = new FakeWorkflowDefinitionStore();
+        var runStore = new FakeWorkflowRunStore();
+        var progressStore = new FakeProgressStore();
+        var clock = new TestClock(start);
+        // Hourly cron so the 2-minute advance window contains exactly one occurrence (13:00).
+        var definition = BuildCronDefinition(start, "0 * * * *");
+        await definitionStore.TryCreateAsync(definition);
+
+        var jobServiceA = new FakeWorkflowJobExecutor();
+        var engineA = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, jobServiceA, progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var schedulerA = new WorkflowSchedulerBackgroundService(
+            definitionStore, engineA, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        clock.Advance(TimeSpan.FromMinutes(65));
+
+        // Inject cursor advance failure so the durable cursor stays behind, but the
+        // pending cursor should still be set by the scheduler after run creation.
+        definitionStore.NextAdvanceCursorFailure = new InvalidOperationException("Redis down");
+        await schedulerA.TickAsync(CancellationToken.None);
+
+        Assert.Single(runStore.Snapshot);
+
+        // The pending cursor protects the occurrence even though the durable cursor
+        // was never advanced. GetScheduleCursorAsync returns max(cursor, pending).
+        var cursor = await definitionStore.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.NotNull(cursor);
+        Assert.True(cursor >= start.AddMinutes(60));
+
+        // "Restart": new scheduler seeds from durable state, which now includes the
+        // pending cursor. It must not replay the 13:00 occurrence.
+        var jobServiceB = new FakeWorkflowJobExecutor();
+        var engineB = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, jobServiceB, progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var schedulerB = new WorkflowSchedulerBackgroundService(
+            definitionStore, engineB, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        await schedulerB.TickAsync(CancellationToken.None);
+        Assert.Single(runStore.Snapshot);
+    }
+
+    [Fact]
     public async Task TickAsync_ClampsInMemoryCursorToUpdatedAt_WhenDefinitionUpdatedInPlace()
     {
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
@@ -379,22 +429,28 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     {
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var harness = BuildHarness(start);
-        var definition = BuildCronDefinition(start, "* * * * *");
+        // Hourly cron so the advance window contains exactly one occurrence.
+        var definition = BuildCronDefinition(start, "0 * * * *");
         await harness.Definitions.TryCreateAsync(definition);
 
-        harness.Clock.Advance(TimeSpan.FromMinutes(2));
+        harness.Clock.Advance(TimeSpan.FromMinutes(65));
 
         harness.Definitions.NextAdvanceCursorFailure = new InvalidOperationException("Redis down");
         await harness.Scheduler.TickAsync(CancellationToken.None);
 
         Assert.Single(harness.RunStore.Snapshot);
+        // The pending cursor provides a durable floor even though AdvanceScheduleCursorAsync
+        // failed. GetScheduleCursorAsync returns max(cursor, pending).
         var cursorAfterFailure = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
-        Assert.Null(cursorAfterFailure);
+        Assert.NotNull(cursorAfterFailure);
 
+        // The PendingCursorAt retry on the next tick should advance the actual cursor
+        // and no duplicate run should be created within the same window.
         await harness.Scheduler.TickAsync(CancellationToken.None);
 
         var cursorAfterRetry = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
         Assert.NotNull(cursorAfterRetry);
+        Assert.Single(harness.RunStore.Snapshot);
     }
 
     private static SchedulerHarness BuildHarness(DateTimeOffset start) => new(start);

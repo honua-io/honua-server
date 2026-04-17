@@ -616,6 +616,31 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
+    public async Task CancelRunAsync_DoesNotAccumulateDuplicateWarnings_AcrossReconcilePasses()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        await harness.Engine.CancelRunAsync(run.RunId);
+
+        // Fail the cancel on three consecutive reconcile ticks.
+        for (var i = 0; i < 3; i++)
+        {
+            harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
+            await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        }
+
+        var afterRepeatedFailures = await harness.RunStore.GetAsync(run.RunId);
+        var cancelWarnings = afterRepeatedFailures!.Warnings
+            .Where(w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.Single(cancelWarnings);
+    }
+
+    [Fact]
     public async Task ReconcileWorkflowRun_FinalisesLiveSteps_WhenCancelledRunDefinitionDeleted()
     {
         var harness = new OrchestrationTestHarness();
@@ -665,6 +690,30 @@ public sealed class WorkflowOrchestrationEngineTests
         var final = await harness.RunStore.GetAsync(run.RunId);
         Assert.Equal(WorkflowRunStatus.Failed, final!.Status);
         Assert.Equal(WorkflowStepStatus.Cancelled, final.StepStates[0].Status);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_DoesNotAccumulateWarnings_WhenDefinitionMissingAndCancelFailsRepeatedly()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        await harness.Definitions.DeleteAsync(definition.WorkflowId);
+
+        for (var i = 0; i < 3; i++)
+        {
+            harness.JobService.NextCancelJobFailure = new InvalidOperationException("substrate down");
+            await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        }
+
+        var afterRepeated = await harness.RunStore.GetAsync(run.RunId);
+        var cancelWarnings = afterRepeated!.Warnings
+            .Where(w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.Single(cancelWarnings);
     }
 
     [Fact]
