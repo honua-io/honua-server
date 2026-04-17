@@ -453,6 +453,81 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
         Assert.Single(harness.RunStore.Snapshot);
     }
 
+    [Fact]
+    public async Task TickAsync_DoesNotAdvanceInMemoryCursor_WhenPendingCursorAndAdvanceBothFail()
+    {
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var definition = BuildCronDefinition(start, "0 * * * *");
+        await harness.Definitions.TryCreateAsync(definition);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(65));
+
+        harness.Definitions.NextPendingCursorFailure = new InvalidOperationException("Redis blip");
+        harness.Definitions.NextAdvanceCursorFailure = new InvalidOperationException("Redis blip");
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Single(harness.RunStore.Snapshot);
+
+        // The retry tick should durably advance the cursor and no duplicate
+        // run should appear within the same cron window.
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        var cursor = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.NotNull(cursor);
+        Assert.True(cursor >= start.AddMinutes(60));
+        Assert.Single(harness.RunStore.Snapshot);
+    }
+
+    [Fact]
+    public async Task TickAsync_WritesPendingCursor_ForPermanentValidationFailure()
+    {
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var definitionStore = new FakeWorkflowDefinitionStore();
+        var runStore = new FakeWorkflowRunStore();
+        var progressStore = new FakeProgressStore();
+        var clock = new TestClock(start);
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = "wf-invalid",
+            Name = "invalid",
+            Steps = Array.Empty<WorkflowStepDefinition>(),
+            Trigger = new WorkflowTrigger
+            {
+                Kind = WorkflowTriggerKind.Cron,
+                CronExpression = "0 * * * *",
+                Enabled = true
+            },
+            CreatedAt = start,
+            UpdatedAt = start
+        };
+        await definitionStore.TryCreateAsync(definition);
+
+        var engine = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, new FakeWorkflowJobExecutor(), progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var scheduler = new WorkflowSchedulerBackgroundService(
+            definitionStore, engine, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        clock.Advance(TimeSpan.FromMinutes(65));
+        await scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Empty(runStore.Snapshot);
+        var cursor = await definitionStore.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.NotNull(cursor);
+        Assert.True(cursor >= start.AddMinutes(60));
+
+        // A fresh scheduler must not replay the permanently-invalid occurrence.
+        var engine2 = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, new FakeWorkflowJobExecutor(), progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var scheduler2 = new WorkflowSchedulerBackgroundService(
+            definitionStore, engine2, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        await scheduler2.TickAsync(CancellationToken.None);
+        Assert.Empty(runStore.Snapshot);
+    }
+
     private static SchedulerHarness BuildHarness(DateTimeOffset start) => new(start);
 
     private static WorkflowDefinition BuildCronDefinition(DateTimeOffset now, string cron)

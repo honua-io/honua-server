@@ -179,6 +179,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
             // occurrence — otherwise a one-off store outage would silently drop the run.
             var runCreated = false;
             var permanentFailure = false;
+            var durablePendingWritten = false;
             try
             {
                 var principal = OrchestrationSystemPrincipal.Create(null);
@@ -202,6 +203,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                     await definitionStore
                         .SetPendingScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
                         .ConfigureAwait(false);
+                    durablePendingWritten = true;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -214,11 +216,24 @@ internal sealed class WorkflowSchedulerBackgroundService(
             }
             catch (WorkflowDefinitionValidationException ex)
             {
-                // Permanent: the definition is structurally invalid. Advance past the
-                // occurrence so the next tick moves on instead of re-attempting the same
-                // broken firing every interval.
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
                 permanentFailure = true;
+
+                try
+                {
+                    await definitionStore
+                        .SetPendingScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
+                        .ConfigureAwait(false);
+                    durablePendingWritten = true;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception pendingEx)
+                {
+                    OrchestrationLog.SchedulerTickFailed(logger, pendingEx);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -240,19 +255,23 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 continue;
             }
 
-            var advanced = cached with { LastFireAt = next, PendingCursorAt = next };
+            // Only advance the in-memory cursor when at least one durable write
+            // (pending cursor or cursor advance) has succeeded. Without durable
+            // protection a crash would lose the in-memory LastFireAt, allowing the
+            // occurrence to replay after the claim TTL expires.
+            var advanced = cached with
+            {
+                LastFireAt = durablePendingWritten ? next : cached.LastFireAt,
+                PendingCursorAt = next
+            };
             _compiled[definition.WorkflowId] = advanced;
 
-            // Persist the cursor so the next startup (even beyond the claim TTL window)
-            // resumes after this occurrence. AdvanceScheduleCursorAsync is monotonic, so
-            // a competing replica that already advanced past this point keeps its newer
-            // cursor. A PendingCursorAt watermark ensures a subsequent tick retries on failure.
             try
             {
                 await definitionStore
                     .AdvanceScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
                     .ConfigureAwait(false);
-                _compiled[definition.WorkflowId] = advanced with { PendingCursorAt = null };
+                _compiled[definition.WorkflowId] = advanced with { PendingCursorAt = null, LastFireAt = next };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

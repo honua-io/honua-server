@@ -183,8 +183,20 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// When set, <see cref="SetPendingScheduleCursorAsync"/> raises this exception on the
+    /// next call and clears itself. Used to exercise the missing-pending-cursor durability path.
+    /// </summary>
+    public Exception? NextPendingCursorFailure { get; set; }
+
     public Task SetPendingScheduleCursorAsync(string workflowId, DateTimeOffset fireTime, CancellationToken cancellationToken = default)
     {
+        if (NextPendingCursorFailure is { } failure)
+        {
+            NextPendingCursorFailure = null;
+            throw failure;
+        }
+
         _pendingScheduleCursors[workflowId] = fireTime.ToUniversalTime();
         return Task.CompletedTask;
     }
