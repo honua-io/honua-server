@@ -345,6 +345,57 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
             runStore.Snapshot.First().Metadata["scheduler.fire_time"]);
     }
 
+    [Fact]
+    public async Task TickAsync_ClampsInMemoryCursorToUpdatedAt_WhenDefinitionUpdatedInPlace()
+    {
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var definition = BuildCronDefinition(start, "* * * * *");
+        await harness.Definitions.TryCreateAsync(definition);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(2));
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+        Assert.Single(harness.RunStore.Snapshot);
+
+        var updatedAt = harness.Clock.GetUtcNow().AddMinutes(3);
+        var updated = definition with { UpdatedAt = updatedAt };
+        await harness.Definitions.SetAsync(updated);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(5));
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Equal(2, harness.RunStore.Snapshot.Count);
+        var secondRun = harness.RunStore.Snapshot.Last();
+        var fireTime = DateTimeOffset.Parse(
+            secondRun.Metadata["scheduler.fire_time"],
+            System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(fireTime > updatedAt,
+            $"Fire time {fireTime:o} should be after UpdatedAt {updatedAt:o}");
+    }
+
+    [Fact]
+    public async Task TickAsync_RetriesPendingCursorWrite_OnSubsequentTick()
+    {
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var definition = BuildCronDefinition(start, "* * * * *");
+        await harness.Definitions.TryCreateAsync(definition);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(2));
+
+        harness.Definitions.NextAdvanceCursorFailure = new InvalidOperationException("Redis down");
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Single(harness.RunStore.Snapshot);
+        var cursorAfterFailure = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.Null(cursorAfterFailure);
+
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        var cursorAfterRetry = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.NotNull(cursorAfterRetry);
+    }
+
     private static SchedulerHarness BuildHarness(DateTimeOffset start) => new(start);
 
     private static WorkflowDefinition BuildCronDefinition(DateTimeOffset now, string cron)

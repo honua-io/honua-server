@@ -230,27 +230,62 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             if (definition is null)
             {
                 var now = _clock.GetUtcNow();
-                var finalisedSteps = run.StepStates
-                    .Select(s => IsStepTerminal(s.Status)
-                        ? s
-                        : s with
+                var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+                var warnings = new List<string>(run.Warnings);
+
+                var finalisedSteps = run.StepStates.ToArray();
+                for (var i = 0; i < finalisedSteps.Length; i++)
+                {
+                    var s = finalisedSteps[i];
+                    if (IsStepTerminal(s.Status))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(s.JobId) &&
+                        s.Status is WorkflowStepStatus.Queued or WorkflowStepStatus.Running)
+                    {
+                        try
                         {
-                            Status = WorkflowStepStatus.Cancelled,
-                            CompletedAt = now,
-                            ErrorMessage = s.ErrorMessage ?? "Workflow definition missing; step was not executed."
-                        })
-                    .ToArray();
-                var runStatus = IsRunTerminal(run.Status) ? run.Status : WorkflowRunStatus.Failed;
+                            await _jobService.CancelJobAsync(s.JobId!, principal, reconciliationCancellation.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (reconciliationCancellation.Token.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
+                            warnings.Add($"{s.StepId}: failed to cancel underlying job '{s.JobId}': {ex.Message}");
+                            continue;
+                        }
+                    }
+
+                    finalisedSteps[i] = s with
+                    {
+                        Status = WorkflowStepStatus.Cancelled,
+                        CompletedAt = now,
+                        ErrorMessage = s.ErrorMessage ?? "Workflow definition missing; step was not executed."
+                    };
+                }
+
+                var allStepsTerminal = finalisedSteps.All(s => IsStepTerminal(s.Status));
+                var runStatus = IsRunTerminal(run.Status) ? run.Status
+                    : allStepsTerminal ? WorkflowRunStatus.Failed
+                    : run.Status;
                 var errorMessage = IsRunTerminal(run.Status)
                     ? run.ErrorMessage
-                    : $"Workflow definition '{run.WorkflowId}' was not found.";
+                    : allStepsTerminal
+                        ? $"Workflow definition '{run.WorkflowId}' was not found."
+                        : run.ErrorMessage;
                 var finalised = run with
                 {
                     Status = runStatus,
                     UpdatedAt = now,
-                    CompletedAt = run.CompletedAt ?? now,
+                    CompletedAt = allStepsTerminal ? (run.CompletedAt ?? now) : run.CompletedAt,
                     ErrorMessage = errorMessage,
-                    StepStates = finalisedSteps
+                    StepStates = finalisedSteps,
+                    Warnings = warnings
                 };
                 await PersistRunAsync(finalised, reconciliationCancellation.Token).ConfigureAwait(false);
                 return;

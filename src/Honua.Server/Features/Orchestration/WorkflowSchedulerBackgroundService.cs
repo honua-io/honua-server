@@ -118,8 +118,34 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 _compiled[definition.WorkflowId] = cached;
             }
 
+            if (cached.LastFireAt < definition.UpdatedAt)
+            {
+                cached = cached with { LastFireAt = definition.UpdatedAt };
+                _compiled[definition.WorkflowId] = cached;
+            }
+
+            if (cached.PendingCursorAt is { } pendingCursor)
+            {
+                try
+                {
+                    await definitionStore
+                        .AdvanceScheduleCursorAsync(definition.WorkflowId, pendingCursor, cancellationToken)
+                        .ConfigureAwait(false);
+                    cached = cached with { PendingCursorAt = null };
+                    _compiled[definition.WorkflowId] = cached;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    OrchestrationLog.SchedulerTickFailed(logger, ex);
+                }
+            }
+
             var lastFire = cached.LastFireAt ?? definition.UpdatedAt;
-            var next = cached.Cron.GetNextOccurrence(lastFire, cached.TimeZone);
+            var next = cached.Cron!.GetNextOccurrence(lastFire, cached.TimeZone!);
             if (next is null || next.Value > now)
             {
                 continue;
@@ -199,18 +225,19 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 continue;
             }
 
-            _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+            var advanced = cached with { LastFireAt = next, PendingCursorAt = next };
+            _compiled[definition.WorkflowId] = advanced;
 
             // Persist the cursor so the next startup (even beyond the claim TTL window)
             // resumes after this occurrence. AdvanceScheduleCursorAsync is monotonic, so
             // a competing replica that already advanced past this point keeps its newer
-            // cursor. Failure to persist is best-effort: the in-memory cursor still
-            // protects this replica; the next successful tick will retry the write.
+            // cursor. A PendingCursorAt watermark ensures a subsequent tick retries on failure.
             try
             {
                 await definitionStore
                     .AdvanceScheduleCursorAsync(definition.WorkflowId, next.Value, cancellationToken)
                     .ConfigureAwait(false);
+                _compiled[definition.WorkflowId] = advanced with { PendingCursorAt = null };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -269,7 +296,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
             var timeZoneId = definition.Trigger.TimeZone ?? TimeZoneInfo.Utc.Id;
             var timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
             var cron = CronExpression.Parse(expression);
-            return new CachedCron(expression, timeZoneId, cron, timeZone, null, false);
+            return new CachedCron(expression, timeZoneId, cron, timeZone, null, false, null);
         }
         catch (Exception)
         {
@@ -279,7 +306,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 null,
                 null,
                 null,
-                false);
+                false,
+                null);
         }
     }
 
@@ -289,5 +317,6 @@ internal sealed class WorkflowSchedulerBackgroundService(
         CronExpression? Cron,
         TimeZoneInfo? TimeZone,
         DateTimeOffset? LastFireAt,
-        bool InvalidLogged);
+        bool InvalidLogged,
+        DateTimeOffset? PendingCursorAt);
 }

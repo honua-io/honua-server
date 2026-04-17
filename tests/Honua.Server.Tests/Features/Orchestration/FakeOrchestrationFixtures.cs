@@ -143,8 +143,20 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
     public Task<DateTimeOffset?> GetScheduleCursorAsync(string workflowId, CancellationToken cancellationToken = default)
         => Task.FromResult(_scheduleCursors.TryGetValue(workflowId, out var cursor) ? cursor : (DateTimeOffset?)null);
 
+    /// <summary>
+    /// When set, <see cref="AdvanceScheduleCursorAsync"/> raises this exception on the next
+    /// call and clears itself. Used to exercise the pending-cursor retry path.
+    /// </summary>
+    public Exception? NextAdvanceCursorFailure { get; set; }
+
     public Task AdvanceScheduleCursorAsync(string workflowId, DateTimeOffset fireTime, CancellationToken cancellationToken = default)
     {
+        if (NextAdvanceCursorFailure is { } failure)
+        {
+            NextAdvanceCursorFailure = null;
+            throw failure;
+        }
+
         var candidate = fireTime.ToUniversalTime();
         _scheduleCursors.AddOrUpdate(
             workflowId,
