@@ -145,4 +145,10 @@ internal static partial class OrchestrationLog
         string runId,
         string workflowId,
         string mismatchDetail);
+
+    [LoggerMessage(8122, LogLevel.Warning, "Progress projection failed for workflow run {RunId}; the authoritative run state is durable but the progress view may be stale")]
+    public static partial void ProgressProjectionFailed(
+        ILogger logger,
+        string runId,
+        Exception exception);
 }

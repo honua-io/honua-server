@@ -528,6 +528,29 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
         Assert.Empty(runStore.Snapshot);
     }
 
+    [Fact]
+    public async Task TickAsync_DoesNotCreateDuplicateRun_WhenProgressProjectionFailsInCreateRunAsync()
+    {
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var harness = BuildHarness(start);
+        var definition = BuildCronDefinition(start, "0 * * * *");
+        await harness.Definitions.TryCreateAsync(definition);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(65));
+
+        harness.Progress.NextSetProgressFailure = new InvalidOperationException("progress store down");
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Single(harness.RunStore.Snapshot);
+
+        await harness.Scheduler.TickAsync(CancellationToken.None);
+
+        Assert.Single(harness.RunStore.Snapshot);
+        var cursor = await harness.Definitions.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.NotNull(cursor);
+        Assert.True(cursor >= start.AddMinutes(60));
+    }
+
     private static SchedulerHarness BuildHarness(DateTimeOffset start) => new(start);
 
     private static WorkflowDefinition BuildCronDefinition(DateTimeOffset now, string cron)

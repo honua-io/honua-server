@@ -101,8 +101,15 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             throw new InvalidOperationException($"Failed to persist workflow run '{runId}'.");
         }
 
-        var progress = WorkflowProgress.CreateForPendingRun(runId, definition.WorkflowId, stepStates.Length, now);
-        await _progressStore.SetProgressAsync(runId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var progress = WorkflowProgress.CreateForPendingRun(runId, definition.WorkflowId, stepStates.Length, now);
+            await _progressStore.SetProgressAsync(runId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            OrchestrationLog.ProgressProjectionFailed(_logger, runId, ex);
+        }
 
         OrchestrationTelemetry.RunsCreated.Add(
             1,
@@ -957,32 +964,33 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     {
         await _runStore.SetAsync(run, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        var startedAt = run.CreatedAt;
         var totalSteps = run.StepStates.Count;
         var completed = run.StepStates.Count(s => s.Status is WorkflowStepStatus.Succeeded or WorkflowStepStatus.Skipped);
-        var cancelCleanupInProgress = run.Status == WorkflowRunStatus.Cancelled &&
-            !run.StepStates.All(s => IsStepTerminal(s.Status));
-        var progress = new WorkflowProgress
-        {
-            OperationId = run.RunId,
-            WorkflowId = run.WorkflowId,
-            RunStatus = cancelCleanupInProgress ? WorkflowRunStatus.Running : run.Status,
-            StepsCompleted = completed,
-            TotalSteps = totalSteps,
-            StartedAt = startedAt,
-            CompletedAt = run.CompletedAt,
-            ErrorMessage = run.ErrorMessage,
-            Warnings = run.Warnings,
-            CurrentPhase = cancelCleanupInProgress ? "Cancelling" : run.Status.ToString()
-        };
-        await _progressStore.SetProgressAsync(run.RunId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        // Only emit terminal run telemetry when the run has actually finished in full.
-        // CancelRunAsync flips the run status to Cancelled before cascade step cleanup has
-        // run, and a follow-up reconcile persists the run again once every step is terminal.
-        // Gating on both the run and every step being terminal keeps telemetry to one
-        // emission per run — otherwise cancelled runs would double-count in run_duration_ms,
-        // runs_completed_total, and the WorkflowRunCompleted log line.
+        try
+        {
+            var cancelCleanupInProgress = run.Status == WorkflowRunStatus.Cancelled &&
+                !run.StepStates.All(s => IsStepTerminal(s.Status));
+            var progress = new WorkflowProgress
+            {
+                OperationId = run.RunId,
+                WorkflowId = run.WorkflowId,
+                RunStatus = cancelCleanupInProgress ? WorkflowRunStatus.Running : run.Status,
+                StepsCompleted = completed,
+                TotalSteps = totalSteps,
+                StartedAt = run.CreatedAt,
+                CompletedAt = run.CompletedAt,
+                ErrorMessage = run.ErrorMessage,
+                Warnings = run.Warnings,
+                CurrentPhase = cancelCleanupInProgress ? "Cancelling" : run.Status.ToString()
+            };
+            await _progressStore.SetProgressAsync(run.RunId, progress, ProgressRetention, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            OrchestrationLog.ProgressProjectionFailed(_logger, run.RunId, ex);
+        }
+
         if (IsRunTerminal(run.Status) && run.StepStates.All(s => IsStepTerminal(s.Status)))
         {
             var duration = ((run.CompletedAt ?? _clock.GetUtcNow()) - run.CreatedAt).TotalMilliseconds;

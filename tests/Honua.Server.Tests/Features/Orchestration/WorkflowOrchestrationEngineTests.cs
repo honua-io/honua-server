@@ -1005,6 +1005,60 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
+    public async Task CreateRunAsync_ReturnsSuccessfully_WhenProgressProjectionFails()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        harness.Progress.NextSetProgressFailure = new InvalidOperationException("progress store down");
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        Assert.NotNull(run);
+        var persisted = await harness.RunStore.GetAsync(run.RunId);
+        Assert.NotNull(persisted);
+        Assert.Equal(WorkflowRunStatus.Pending, persisted.Status);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_ReturnsCancellationRequested_WhenProgressProjectionFails()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        harness.Progress.NextSetProgressFailure = new InvalidOperationException("progress store down");
+        var outcome = await harness.Engine.CancelRunAsync(run.RunId);
+
+        Assert.Equal(WorkflowCancellationOutcome.CancellationRequested, outcome);
+        var persisted = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, persisted!.Status);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_CompletesTerminalRunAndEmitsTelemetry_WhenProgressProjectionFails()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var step = (await harness.RunStore.GetAsync(run.RunId))!.StepStates[0];
+        harness.JobService.Complete(step.JobId!);
+
+        harness.Progress.NextSetProgressFailure = new InvalidOperationException("progress store down");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Succeeded, final!.Status);
+        Assert.NotNull(final.CompletedAt);
+        var active = await harness.RunStore.ListActiveAsync();
+        Assert.DoesNotContain(active, r => r.RunId == run.RunId);
+    }
+
+    [Fact]
     public async Task PersistRun_ProjectsCancellingPhase_WhenCancelCleanupInProgress()
     {
         var harness = new OrchestrationTestHarness();

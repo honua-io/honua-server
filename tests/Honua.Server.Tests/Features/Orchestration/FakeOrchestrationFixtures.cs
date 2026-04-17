@@ -215,8 +215,21 @@ internal sealed class FakeProgressStore : IUniversalProgressStore
 
     public IReadOnlyDictionary<string, IOperationProgress> Snapshot => _progress;
 
+    /// <summary>
+    /// When set, <see cref="SetProgressAsync"/> raises this exception on the next call
+    /// and clears itself. Used to verify that progress projection failures are treated
+    /// as best-effort after the authoritative run write succeeds.
+    /// </summary>
+    public Exception? NextSetProgressFailure { get; set; }
+
     public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
+        if (NextSetProgressFailure is { } failure)
+        {
+            NextSetProgressFailure = null;
+            throw failure;
+        }
+
         _progress[operationId] = progress;
         return Task.CompletedTask;
     }
