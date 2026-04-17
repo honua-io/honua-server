@@ -51,7 +51,7 @@ Workflow state is fully described by transport-neutral records in
 | `WorkflowTrigger` | `Manual` or `Cron` (5-field expression + IANA time zone + `Enabled`) |
 | `WorkflowRun` | Durable run instance (status, `StepStates`, `Audit`, `TriggerKind`, `Metadata`) |
 | `WorkflowStepState` | Per-step runtime state (`JobId`, `AttemptCount`, `ResolvedInputs`, `OutputArtifacts`) |
-| `WorkflowProgress` | `IOperationProgress` + `ICancellableOperationProgress` projection surfaced as `OperationType.Orchestration` |
+| `WorkflowProgress` | `IOperationProgress` + `ICancellableOperationProgress` projection surfaced as `OperationType.Orchestration`; best-effort — failures after the authoritative run write are logged (8122) but do not propagate |
 
 State machines:
 
@@ -126,7 +126,10 @@ opaque-string-dict contract remains unchanged.
 
 `WorkflowSchedulerBackgroundService` evaluates `Cron`-triggered definitions
 once per 30-second tick. Compiled expressions are cached per workflow and
-recompiled when the cron expression or time zone changes. A durable per-
+recompiled when the cron expression or time zone changes. `CronExpression`
+handles DST transitions: wall-clock times that fall in a spring-forward gap
+are skipped (the occurrence fires on the next valid day), and ambiguous
+fall-back times fire at the first/daylight occurrence. A durable per-
 workflow cursor (`GetScheduleCursorAsync` / `AdvanceScheduleCursorAsync`)
 protects against re-firing occurrences after restart. A per-fire-time claim
 (`TryClaimScheduleFireAsync`) deduplicates fires across replicas. After a

@@ -524,6 +524,11 @@ tick (30-second interval). For each definition, the scheduler:
    `CreateRunAsync` failures release the claim so the same occurrence can be
    retried on a later tick without losing the fire.
 
+DST transitions are handled per standard cron conventions: wall-clock times
+that fall in a spring-forward gap are skipped (the occurrence fires the
+next day), and ambiguous fall-back times fire at the first/daylight
+occurrence.
+
 Invalid cron expressions or unknown time zones are skipped and logged at
 `Warning` with event `8116`; the workflow stops firing until the definition
 is corrected.
@@ -582,6 +587,16 @@ enforced by the cascade-cancel and definition-missing paths. This prevents
 `KeyNotFoundException` crashes or silent state loss when the definition shape
 diverges from the run's persisted step states.
 
+### Progress Projection
+
+The `WorkflowProgress` projection written to `IUniversalProgressStore` is
+best-effort. After the authoritative `WorkflowRun` is durably saved, a
+progress-store failure is caught, logged (event 8122), and does not propagate
+as an unhandled exception. This prevents three failure modes: duplicate cron
+runs on partial success, terminal runs dropping out of reconciliation before
+telemetry fires, and cancel returning `500` after a durable success. The
+progress view self-heals on the next reconcile tick that succeeds in writing.
+
 ### Policy Defaults and Tuning
 
 | Parameter | Default | Notes |
@@ -620,7 +635,8 @@ events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
 `8117 WorkflowStepCancelJobFailed`,
 `8119 WorkflowCancelLeaseContention`,
 `8120 WorkflowStepArtifactsUnavailableForBoundDependents`, and
-`8121 DefinitionStepSetMismatch`.
+`8121 DefinitionStepSetMismatch`, and
+`8122 ProgressProjectionFailed`.
 
 The engine contributes activities
 (`honua.orchestration.reconcile_run`, `honua.orchestration.execute_step`,

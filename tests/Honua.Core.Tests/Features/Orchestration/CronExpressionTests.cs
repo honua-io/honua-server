@@ -149,4 +149,36 @@ public sealed class CronExpressionTests
         Assert.NotNull(next);
         Assert.Equal(new DateTimeOffset(2028, 2, 29, 0, 0, 0, TimeSpan.Zero), next);
     }
+
+    [Fact]
+    public void GetNextOccurrence_SkipsInvalidTime_DuringSpringForwardGap()
+    {
+        // America/Los_Angeles springs forward on 2026-03-08: 2:00 AM → 3:00 AM.
+        // "30 2 * * *" (daily at 02:30) on Mar 8 would land in the gap.
+        // The cron evaluator should skip Mar 8 and fire Mar 9 at 02:30 local (10:30 UTC).
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        var cron = CronExpression.Parse("30 2 * * *");
+        var start = new DateTimeOffset(2026, 3, 8, 0, 0, 0, TimeSpan.FromHours(-8));
+
+        var next = cron.GetNextOccurrence(start, tz);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2026, 3, 9, 2, 30, 0, TimeSpan.FromHours(-7)).ToUniversalTime(), next);
+    }
+
+    [Fact]
+    public void GetNextOccurrence_UsesFirstOccurrence_DuringFallBackOverlap()
+    {
+        // America/Los_Angeles falls back on 2026-11-01: 2:00 AM → 1:00 AM.
+        // "30 1 * * *" (daily at 01:30) on Nov 1 is ambiguous: 01:30 PDT (-7) and 01:30 PST (-8).
+        // Standard cron fires the first occurrence (PDT, offset -7, earlier UTC).
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        var cron = CronExpression.Parse("30 1 * * *");
+        var start = new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.FromHours(-7));
+
+        var next = cron.GetNextOccurrence(start, tz);
+
+        Assert.NotNull(next);
+        Assert.Equal(new DateTimeOffset(2026, 11, 1, 1, 30, 0, TimeSpan.FromHours(-7)).ToUniversalTime(), next);
+    }
 }

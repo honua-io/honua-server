@@ -493,10 +493,15 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 case WorkflowStepStatus.Queued:
                 case WorkflowStepStatus.Running:
                     {
-                        var observation = await ObserveStepAsync(run, definition, definitionStep, state, cancellationToken).ConfigureAwait(false);
+                        var warningsBefore = warnings.Count;
+                        var observation = await ObserveStepAsync(run, definition, definitionStep, state, warnings, cancellationToken).ConfigureAwait(false);
                         if (observation is not null)
                         {
                             states[state.StepId] = observation;
+                            changed = true;
+                        }
+                        else if (warnings.Count > warningsBefore)
+                        {
                             changed = true;
                         }
 
@@ -651,7 +656,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 ResolvedInputs = bindingResolution.ResolvedValues,
                 ErrorMessage = null
             };
-            var projection = await ObserveStepAsync(run, definition, stepDefinition, replayState, cancellationToken).ConfigureAwait(false);
+            var projection = await ObserveStepAsync(run, definition, stepDefinition, replayState, warnings, cancellationToken).ConfigureAwait(false);
             return (projection ?? replayState, true);
         }
 
@@ -672,6 +677,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         WorkflowDefinition definition,
         WorkflowStepDefinition stepDefinition,
         WorkflowStepState state,
+        List<string> warnings,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(state.JobId))
@@ -689,11 +695,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Observation transport errors (store outage, transient network failure) must not
-            // terminalise a workflow step: the underlying job may still be healthy. Leave the
-            // state untouched so the reconcile loop retries, and surface the failure via
-            // telemetry and a run-level warning for operator visibility.
             OrchestrationLog.WorkflowStepObservationTransientFailure(_logger, run.RunId, state.StepId, state.JobId!, ex);
+            AddOrReplaceObservationWarning(warnings, state.StepId, state.JobId!, ex.Message);
             return null;
         }
 
@@ -1078,6 +1081,17 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private static void AddOrReplaceCancelWarning(List<string> warnings, string stepId, string jobId, string message)
     {
         var prefix = $"{stepId}: failed to cancel underlying job '{jobId}':";
+        AddOrReplaceWarning(warnings, prefix, message);
+    }
+
+    private static void AddOrReplaceObservationWarning(List<string> warnings, string stepId, string jobId, string message)
+    {
+        var prefix = $"{stepId}: transient observation failure for job '{jobId}':";
+        AddOrReplaceWarning(warnings, prefix, message);
+    }
+
+    private static void AddOrReplaceWarning(List<string> warnings, string prefix, string message)
+    {
         for (var i = 0; i < warnings.Count; i++)
         {
             if (warnings[i].StartsWith(prefix, StringComparison.Ordinal))

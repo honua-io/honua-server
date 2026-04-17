@@ -184,8 +184,10 @@ redis-cli -h redis SMEMBERS orchestration:run:active
 | `409 Conflict` on cancel | Reconcile lease held by concurrent tick | Retry the cancel request; this is transient |
 | Scheduled workflow not firing | Invalid cron expression or time zone | Check logs for event `8116`; correct the definition |
 | Step marked Failed with artifact error | Upstream artifact retrieval failed | Check logs for event `8120`; investigate upstream result storage |
+| Step observation failures in run warnings | Transient job-observation failure (store outage, network) | Check logs for event `8118`; verify substrate health. The step is preserved and observation retries automatically |
 | Reconciliation error spikes | Redis connectivity or data corruption | Check Redis health and `OrchestrationLog` Warning (8110) |
 | Run failed with "step-set changed" | Definition steps modified while run was active | Check logs for event `8121`; avoid mutating definitions with active runs |
+| Progress view stale after run update | Progress store write failed; authoritative state is still durable | Check logs for event `8122`; verify Redis health. The run is correct — only the progress projection is delayed |
 
 The reconciler automatically resumes runs after crashes or restarts by
 rehydrating state from Redis. No operator intervention is required unless

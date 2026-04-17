@@ -114,9 +114,11 @@ reconciler loop, and the cron scheduler emit structured logs in the
 | 8115 | WorkflowStepFailed | Warning | A workflow step failed (exhausted retries or no retry policy) |
 | 8116 | SchedulerDefinitionInvalid | Warning | Scheduled workflow has an invalid cron expression or time zone |
 | 8117 | WorkflowStepCancelJobFailed | Warning | Best-effort cascade cancel of a child job failed |
+| 8118 | WorkflowStepObservationTransientFailure | Warning | Transient job-observation failure; step preserved for retry on next reconcile tick |
 | 8119 | WorkflowCancelLeaseContention | Information | Cancel request could not acquire reconcile lease (409 returned) |
 | 8120 | WorkflowStepArtifactsUnavailableForBoundDependents | Warning | Step artifact retrieval failed; bound dependents marked Failed |
 | 8121 | DefinitionStepSetMismatch | Error | Definition step-set changed during active run; run failed deterministically |
+| 8122 | ProgressProjectionFailed | Warning | Progress store write failed after authoritative run state was durable; progress view may be stale |
 
 **Activities and metrics** (under `honua.orchestration.*`):
 
@@ -143,8 +145,10 @@ reconciler loop, and the cron scheduler emit structured logs in the
 | Scheduler tick failures | Any occurrence | `OrchestrationLog` Warning (8114) |
 | Scheduler definition invalid | Any occurrence | `OrchestrationLog` Warning (8116) |
 | Workflow step failures | Sustained volume | `OrchestrationLog` Warning (8115) |
+| Observation transport failures | Sustained volume | `OrchestrationLog` Warning (8118) |
 | Cancel lease contention | > 2 in 5 min | `OrchestrationLog` Information (8119) |
 | Definition step-set mismatch | Any occurrence | `OrchestrationLog` Error (8121) |
+| Progress projection failures | Sustained volume | `OrchestrationLog` Warning (8122) |
 
 For lifecycle details, scheduler semantics, and policy tuning, see
 [Operations — Workflow Orchestration](operations.md#workflow-orchestration).

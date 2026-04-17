@@ -121,7 +121,7 @@ internal static partial class OrchestrationLog
         string jobId,
         Exception exception);
 
-    [LoggerMessage(8118, LogLevel.Debug, "Transient job-observation failure for step {RunId}:{StepId} job {JobId}; reconcile will retry")]
+    [LoggerMessage(8118, LogLevel.Warning, "Transient job-observation failure for step {RunId}:{StepId} job {JobId}; reconcile will retry")]
     public static partial void WorkflowStepObservationTransientFailure(
         ILogger logger,
         string runId,

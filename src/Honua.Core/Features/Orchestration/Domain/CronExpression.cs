@@ -139,7 +139,15 @@ public sealed class CronExpression
                 continue;
             }
 
-            var offset = timeZone.GetUtcOffset(candidate);
+            if (timeZone.IsInvalidTime(candidate))
+            {
+                candidate = candidate.AddMinutes(1);
+                continue;
+            }
+
+            var offset = timeZone.IsAmbiguousTime(candidate)
+                ? timeZone.GetAmbiguousTimeOffsets(candidate).Max()
+                : timeZone.GetUtcOffset(candidate);
             return new DateTimeOffset(candidate, offset).ToUniversalTime();
         }
 

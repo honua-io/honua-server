@@ -481,6 +481,27 @@ public sealed class WorkflowOrchestrationEngineTests
     }
 
     [Fact]
+    public async Task ReconcileWorkflowRun_AppendsWarning_WhenObservationFailsTransiently()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = (await harness.RunStore.GetAsync(run.RunId))!.StepStates[0];
+
+        harness.JobService.NextGetJobFailure = new InvalidOperationException("redis timeout");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterFailure = (await harness.RunStore.GetAsync(run.RunId))!;
+        Assert.Single(afterFailure.Warnings);
+        Assert.Contains("transient observation failure", afterFailure.Warnings[0]);
+        Assert.Contains(submitted.JobId!, afterFailure.Warnings[0]);
+        Assert.Equal(WorkflowStepStatus.Queued, afterFailure.StepStates[0].Status);
+    }
+
+    [Fact]
     public async Task CancelRunAsync_KeepsRunInActiveReconcileSetUntilStepsTerminate()
     {
         // Regression: before the fix, CancelRunAsync marked the run Cancelled which made
