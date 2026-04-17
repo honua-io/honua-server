@@ -396,6 +396,54 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     }
 
     [Fact]
+    public async Task TickAsync_PendingCursorProtectsReplay_AfterLongOutage()
+    {
+        // Verifies that replay protection is durable across arbitrarily long outages.
+        // Previously the pending cursor had a 25h TTL, so a crash lasting >25h would
+        // lose both the per-fire claim (24h) and the pending cursor, allowing replay.
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var definitionStore = new FakeWorkflowDefinitionStore();
+        var runStore = new FakeWorkflowRunStore();
+        var progressStore = new FakeProgressStore();
+        var clock = new TestClock(start);
+        var definition = BuildCronDefinition(start, "0 * * * *");
+        await definitionStore.TryCreateAsync(definition);
+
+        var jobServiceA = new FakeWorkflowJobExecutor();
+        var engineA = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, jobServiceA, progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var schedulerA = new WorkflowSchedulerBackgroundService(
+            definitionStore, engineA, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        clock.Advance(TimeSpan.FromMinutes(65));
+
+        definitionStore.NextAdvanceCursorFailure = new InvalidOperationException("Redis down");
+        await schedulerA.TickAsync(CancellationToken.None);
+        Assert.Single(runStore.Snapshot);
+
+        // Simulate a 48-hour outage — well past the old 25h TTL and the 24h claim TTL.
+        clock.Advance(TimeSpan.FromHours(48));
+
+        var jobServiceB = new FakeWorkflowJobExecutor();
+        var engineB = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, jobServiceB, progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var schedulerB = new WorkflowSchedulerBackgroundService(
+            definitionStore, engineB, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        await schedulerB.TickAsync(CancellationToken.None);
+
+        // The 13:00 occurrence must not replay. The scheduler should only fire the next
+        // eligible occurrence after the pending cursor (which is >= 13:00).
+        var fireTimes = runStore.Snapshot
+            .Select(r => r.Metadata["scheduler.fire_time"])
+            .ToList();
+        var originalFireTime = start.AddMinutes(60).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Single(fireTimes, t => t == originalFireTime);
+    }
+
+    [Fact]
     public async Task TickAsync_ClampsInMemoryCursorToUpdatedAt_WhenDefinitionUpdatedInPlace()
     {
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);

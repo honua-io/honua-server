@@ -602,7 +602,7 @@ diverges from the run's persisted step states.
 | Run leases | `orchestration:run:lease:{runId}` | 30 s | — |
 | Schedule claims | `orchestration:schedule:claim:{workflowId}:{minuteStamp}` | 24 h | — |
 | Schedule cursors | `orchestration:schedule:cursor:{workflowId}` | none | — |
-| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | 25 h | — |
+| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | none (cleared on cursor advance) | — |
 
 All serialization uses the source-generated `OrchestrationJsonContext`;
 orchestration does not introduce reflection or runtime JSON discovery.

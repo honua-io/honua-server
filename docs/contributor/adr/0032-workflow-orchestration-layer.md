@@ -130,9 +130,10 @@ recompiled when the cron expression or time zone changes. A durable per-
 workflow cursor (`GetScheduleCursorAsync` / `AdvanceScheduleCursorAsync`)
 protects against re-firing occurrences after restart. A per-fire-time claim
 (`TryClaimScheduleFireAsync`) deduplicates fires across replicas. After a
-run is created, a pending-cursor marker (`SetPendingScheduleCursorAsync`,
-25 h TTL) is persisted so a crash between run creation and cursor advancement
-cannot replay the occurrence after the per-firing claim expires.
+run is created, a pending-cursor marker (`SetPendingScheduleCursorAsync`)
+is persisted so a crash between run creation and cursor advancement
+cannot replay the occurrence after the per-firing claim expires. The marker
+has no TTL and is cleared when `AdvanceScheduleCursorAsync` succeeds.
 
 ### Persistence
 
@@ -145,7 +146,7 @@ Redis is the coordination layer, consistent with ADR-0021 and ADR-0025:
 | Run leases | `orchestration:run:lease:{runId}` | 30 s |
 | Schedule claims | `orchestration:schedule:claim:{workflowId}:{minuteStamp}` | 24 h |
 | Schedule cursors | `orchestration:schedule:cursor:{workflowId}` | none |
-| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | 25 h |
+| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | none (cleared on cursor advance) |
 
 Stores only register when `IConnectionMultiplexer` is present; otherwise
 orchestration services are not registered and the admin cancel endpoint for

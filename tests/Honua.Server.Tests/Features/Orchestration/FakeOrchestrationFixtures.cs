@@ -180,6 +180,7 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
             workflowId,
             _ => candidate,
             (_, existing) => existing >= candidate ? existing : candidate);
+        _pendingScheduleCursors.TryRemove(workflowId, out _);
         return Task.CompletedTask;
     }
 

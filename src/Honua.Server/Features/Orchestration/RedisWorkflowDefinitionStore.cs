@@ -222,7 +222,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
                     when: When.NotExists).ConfigureAwait(false);
                 if (inserted)
                 {
-                    return;
+                    break;
                 }
 
                 continue;
@@ -236,12 +236,12 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
             {
                 // Corrupt or legacy value — overwrite unconditionally with the known-good encoding.
                 await _database.StringSetAsync(key, encoded).ConfigureAwait(false);
-                return;
+                break;
             }
 
             if (existing >= candidate)
             {
-                return;
+                break;
             }
 
             var transaction = _database.CreateTransaction();
@@ -249,8 +249,21 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
             _ = transaction.StringSetAsync(key, encoded);
             if (await transaction.ExecuteAsync().ConfigureAwait(false))
             {
-                return;
+                break;
             }
+        }
+
+        // The durable cursor now protects against replay; the pending cursor marker is no
+        // longer needed. Best-effort cleanup — a failure here is harmless because
+        // GetScheduleCursorAsync returns max(cursor, pending).
+        try
+        {
+            await _database.KeyDeleteAsync(GetSchedulePendingCursorKey(workflowId)).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Stale pending key is benign: it can only point at a fire time the cursor
+            // has already moved past.
         }
     }
 
@@ -265,8 +278,7 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         var encoded = fireTime.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         await _database.StringSetAsync(
             GetSchedulePendingCursorKey(workflowId),
-            encoded,
-            TimeSpan.FromHours(25)).ConfigureAwait(false);
+            encoded).ConfigureAwait(false);
     }
 
     private static string GetKey(string workflowId) => DefinitionKeyPrefix + workflowId;
