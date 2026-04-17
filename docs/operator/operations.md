@@ -513,10 +513,12 @@ tick (30-second interval). For each definition, the scheduler:
    restarts never rewind into previously-fired occurrences.
 3. Claims the fire-time occurrence via `TryClaimScheduleFireAsync` so only
    one replica creates a run per (workflow, fire-time) pair.
-4. After the winning replica successfully creates the run, it persists a
-   durable pending-cursor marker so a process crash between run creation and
-   cursor advancement cannot cause the occurrence to be replayed after the
-   per-firing claim TTL expires.
+4. After the winning replica successfully creates the run (or determines
+   the definition is permanently invalid), it persists a durable
+   pending-cursor marker so a process crash between occurrence consumption
+   and cursor advancement cannot cause the occurrence to be replayed after
+   the per-firing claim TTL expires. The in-memory cursor only advances
+   past the occurrence once a durable write has succeeded.
 5. Advances the durable cursor past the fired occurrence. If the advance
    fails, the pending cursor retries on the next tick. Transient
    `CreateRunAsync` failures release the claim so the same occurrence can be
