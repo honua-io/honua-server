@@ -263,6 +263,47 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
             runs[0].Metadata["scheduler.fire_time"]);
     }
 
+    [Fact]
+    public async Task TickAsync_LosingReplicaRevisitsOccurrence_WhenWinnerCrashesBeforeCursorAdvance()
+    {
+        var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
+        var definitionStore = new FakeWorkflowDefinitionStore();
+        var runStore = new FakeWorkflowRunStore();
+        var progressStore = new FakeProgressStore();
+        var clock = new TestClock(start);
+        var definition = BuildCronDefinition(start, "* * * * *");
+        await definitionStore.TryCreateAsync(definition);
+
+        var jobServiceA = new FakeWorkflowJobExecutor();
+        var engineA = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, jobServiceA, progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var schedulerA = new WorkflowSchedulerBackgroundService(
+            definitionStore, engineA, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        clock.Advance(TimeSpan.FromMinutes(2));
+
+        runStore.NextTryCreateFailure = new InvalidOperationException("winner crash");
+        await schedulerA.TickAsync(CancellationToken.None);
+        Assert.Empty(runStore.Snapshot);
+
+        var cursorAfterCrash = await definitionStore.GetScheduleCursorAsync(definition.WorkflowId);
+        Assert.True(cursorAfterCrash is null || cursorAfterCrash < start.AddMinutes(1));
+
+        var jobServiceB = new FakeWorkflowJobExecutor();
+        var engineB = new WorkflowOrchestrationEngine(
+            runStore, definitionStore, jobServiceB, progressStore, clock,
+            NullLogger<WorkflowOrchestrationEngine>.Instance);
+        var schedulerB = new WorkflowSchedulerBackgroundService(
+            definitionStore, engineB, clock, NullLogger<WorkflowSchedulerBackgroundService>.Instance);
+
+        await schedulerB.TickAsync(CancellationToken.None);
+        Assert.Single(runStore.Snapshot);
+        Assert.Equal(
+            start.AddMinutes(1).ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            runStore.Snapshot.First().Metadata["scheduler.fire_time"]);
+    }
+
     private static SchedulerHarness BuildHarness(DateTimeOffset start) => new(start);
 
     private static WorkflowDefinition BuildCronDefinition(DateTimeOffset now, string cron)

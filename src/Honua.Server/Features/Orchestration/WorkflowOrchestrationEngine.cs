@@ -185,7 +185,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
         finally
         {
-            await _runStore.ReleaseLeaseAsync(runId, _ownerId, cancellationToken).ConfigureAwait(false);
+            await _runStore.ReleaseLeaseAsync(runId, _ownerId, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -229,18 +229,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             var definition = await _definitionStore.GetAsync(run.WorkflowId, reconciliationCancellation.Token).ConfigureAwait(false);
             if (definition is null)
             {
-                // If the run was already cancelled, keep that terminal status; only a
-                // still-active run should transition to Failed when its definition is missing.
-                if (IsRunTerminal(run.Status))
-                {
-                    return;
-                }
-
                 var now = _clock.GetUtcNow();
-                // Finalise any non-terminal step states alongside the run so the persist-time
-                // terminal telemetry gate (run+every step terminal) fires exactly once for this
-                // path. Without this, steps stay Pending/Queued forever and the run would never
-                // leave the active reconcile set despite its Failed status.
                 var finalisedSteps = run.StepStates
                     .Select(s => IsStepTerminal(s.Status)
                         ? s
@@ -251,15 +240,19 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                             ErrorMessage = s.ErrorMessage ?? "Workflow definition missing; step was not executed."
                         })
                     .ToArray();
-                var failed = run with
+                var runStatus = IsRunTerminal(run.Status) ? run.Status : WorkflowRunStatus.Failed;
+                var errorMessage = IsRunTerminal(run.Status)
+                    ? run.ErrorMessage
+                    : $"Workflow definition '{run.WorkflowId}' was not found.";
+                var finalised = run with
                 {
-                    Status = WorkflowRunStatus.Failed,
+                    Status = runStatus,
                     UpdatedAt = now,
-                    CompletedAt = now,
-                    ErrorMessage = $"Workflow definition '{run.WorkflowId}' was not found.",
+                    CompletedAt = run.CompletedAt ?? now,
+                    ErrorMessage = errorMessage,
                     StepStates = finalisedSteps
                 };
-                await PersistRunAsync(failed, reconciliationCancellation.Token).ConfigureAwait(false);
+                await PersistRunAsync(finalised, reconciliationCancellation.Token).ConfigureAwait(false);
                 return;
             }
 
@@ -291,7 +284,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             {
             }
 
-            await _runStore.ReleaseLeaseAsync(runId, _ownerId, cancellationToken).ConfigureAwait(false);
+            await _runStore.ReleaseLeaseAsync(runId, _ownerId, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -527,7 +520,9 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 NextAttemptAt = scheduledAt,
                 CompletedAt = IsStepTerminal(newStatus) ? now : null,
                 ErrorMessage = ex.Message,
-                ResolvedInputs = bindingResolution.ResolvedValues
+                ResolvedInputs = bindingResolution.ResolvedValues,
+                StartedAt = newStatus == WorkflowStepStatus.Pending ? null : state.StartedAt,
+                JobId = newStatus == WorkflowStepStatus.Pending ? null : state.JobId
             }, true);
         }
 
@@ -662,7 +657,9 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                             Status = WorkflowStepStatus.Pending,
                             NextAttemptAt = scheduledAt,
                             ErrorMessage = reason,
-                            CompletedAt = null
+                            CompletedAt = null,
+                            StartedAt = null,
+                            JobId = null
                         };
                     }
 

@@ -135,13 +135,14 @@ internal sealed class WorkflowSchedulerBackgroundService(
 
             if (!claimed)
             {
-                // Another replica owns this occurrence. Advance only this replica's
-                // in-memory cursor so we don't spin on the claim key, and leave the
-                // durable cursor for the winning replica to advance after it persists
-                // the run. Losers never advance the durable cursor: that would consume
-                // the occurrence even if the winner ultimately hit a transient failure
-                // and needs to retry.
-                _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+                var durableCursor = await definitionStore
+                    .GetScheduleCursorAsync(definition.WorkflowId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (durableCursor.HasValue && durableCursor.Value >= next.Value)
+                {
+                    _compiled[definition.WorkflowId] = cached with { LastFireAt = next };
+                }
+
                 continue;
             }
 

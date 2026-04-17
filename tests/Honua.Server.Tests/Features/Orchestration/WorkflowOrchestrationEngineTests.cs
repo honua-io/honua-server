@@ -606,6 +606,74 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.Contains(final.Warnings, w => w.Contains("failed to cancel underlying job", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task ReconcileWorkflowRun_FinalisesLiveSteps_WhenCancelledRunDefinitionDeleted()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var submitted = (await harness.RunStore.GetAsync(run.RunId))!;
+        Assert.Equal(WorkflowStepStatus.Queued, submitted.StepStates[0].Status);
+
+        await harness.Engine.CancelRunAsync(run.RunId);
+        await harness.Definitions.DeleteAsync(definition.WorkflowId);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var final = await harness.RunStore.GetAsync(run.RunId);
+        Assert.Equal(WorkflowRunStatus.Cancelled, final!.Status);
+        Assert.All(final.StepStates, s => Assert.True(
+            s.Status is WorkflowStepStatus.Cancelled
+                or WorkflowStepStatus.Failed
+                or WorkflowStepStatus.Succeeded
+                or WorkflowStepStatus.Skipped,
+            $"Step {s.StepId} left in non-terminal state {s.Status}."));
+        var active = await harness.RunStore.ListActiveAsync();
+        Assert.DoesNotContain(active, r => r.RunId == run.RunId);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_ClearsStartedAtOnRetry_SoNextAttemptStampsFresh()
+    {
+        var harness = new OrchestrationTestHarness();
+        var retryPolicy = new StepRetryPolicy
+        {
+            MaxAttempts = 2,
+            InitialDelaySeconds = 5,
+            BackoffMultiplier = 1.0,
+            MaxDelaySeconds = 60
+        };
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var afterSubmit = await harness.RunStore.GetAsync(run.RunId);
+        var step = afterSubmit!.StepStates[0];
+        var firstStartedAt = step.StartedAt;
+        Assert.NotNull(firstStartedAt);
+
+        harness.JobService.Fail(step.JobId!, "transient");
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterRetryScheduled = await harness.RunStore.GetAsync(run.RunId);
+        var retryStep = afterRetryScheduled!.StepStates[0];
+        Assert.Equal(WorkflowStepStatus.Pending, retryStep.Status);
+        Assert.Null(retryStep.StartedAt);
+        Assert.Null(retryStep.JobId);
+
+        harness.Clock.Advance(TimeSpan.FromSeconds(10));
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterResubmit = await harness.RunStore.GetAsync(run.RunId);
+        var resubmittedStep = afterResubmit!.StepStates[0];
+        Assert.NotNull(resubmittedStep.StartedAt);
+        Assert.NotEqual(firstStartedAt, resubmittedStep.StartedAt);
+    }
+
     private static WorkflowDefinition BuildChainedDefinition(DateTimeOffset now)
     {
         var stepA = new WorkflowStepDefinition

@@ -552,9 +552,11 @@ than a `500`. The run state has not been mutated, so callers can safely retry
 the same cancel request.
 
 If the workflow definition is deleted while a run is still active, the next
-reconcile tick fails the run with a descriptive error and finalises every
-non-terminal step state to `Cancelled`. This guarantees the run leaves the
-active reconcile set exactly once and emits terminal telemetry.
+reconcile tick finalises every non-terminal step state to `Cancelled`. A run
+that was already in a terminal state (e.g. `Cancelled`) keeps that status;
+otherwise the run transitions to `Failed` with a descriptive error. This
+guarantees the run leaves the active reconcile set exactly once and emits
+terminal telemetry.
 
 ### Policy Defaults and Tuning
 
