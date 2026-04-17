@@ -701,6 +701,88 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.NotEqual(firstStartedAt, resubmittedStep.StartedAt);
     }
 
+    [Fact]
+    public async Task ReconcileWorkflowRun_IdempotentReplay_SucceededJobFetchesArtifacts()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildChainedDefinition(harness.Clock.GetUtcNow());
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var afterSubmit = await harness.RunStore.GetAsync(run.RunId);
+        var stepA = afterSubmit!.StepStates.Single(s => s.StepId == "a");
+        Assert.Equal(WorkflowStepStatus.Queued, stepA.Status);
+
+        harness.JobService.Complete(stepA.JobId!, new[]
+        {
+            new ArtifactRef
+            {
+                ArtifactId = "art-1",
+                Kind = ArtifactKind.FeatureLayer,
+                Label = "primary",
+                Uri = "s3://bucket/a.parquet"
+            }
+        });
+
+        var crashedRun = afterSubmit with
+        {
+            StepStates = afterSubmit.StepStates
+                .Select(s => s.StepId == "a"
+                    ? s with { Status = WorkflowStepStatus.Pending, AttemptCount = 0, JobId = null, StartedAt = null }
+                    : s)
+                .ToArray()
+        };
+        await harness.RunStore.SetAsync(crashedRun);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterReplay = await harness.RunStore.GetAsync(run.RunId);
+        var replayedA = afterReplay!.StepStates.Single(s => s.StepId == "a");
+        Assert.Equal(WorkflowStepStatus.Succeeded, replayedA.Status);
+        Assert.NotNull(replayedA.CompletedAt);
+        Assert.NotNull(replayedA.OutputArtifacts);
+        Assert.Single(replayedA.OutputArtifacts!);
+    }
+
+    [Fact]
+    public async Task ReconcileWorkflowRun_IdempotentReplay_FailedJobAppliesRetryPolicy()
+    {
+        var harness = new OrchestrationTestHarness();
+        var retryPolicy = new StepRetryPolicy
+        {
+            MaxAttempts = 2,
+            InitialDelaySeconds = 10,
+            BackoffMultiplier = 1.0,
+            MaxDelaySeconds = 60
+        };
+        var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        var afterSubmit = await harness.RunStore.GetAsync(run.RunId);
+        var step = afterSubmit!.StepStates[0];
+
+        harness.JobService.Fail(step.JobId!, "transient");
+
+        var crashedRun = afterSubmit with
+        {
+            StepStates = afterSubmit.StepStates
+                .Select(s => s with { Status = WorkflowStepStatus.Pending, AttemptCount = 0, JobId = null, StartedAt = null })
+                .ToArray()
+        };
+        await harness.RunStore.SetAsync(crashedRun);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var afterReplay = await harness.RunStore.GetAsync(run.RunId);
+        var replayedStep = afterReplay!.StepStates[0];
+        Assert.Equal(WorkflowStepStatus.Pending, replayedStep.Status);
+        Assert.NotNull(replayedStep.NextAttemptAt);
+        Assert.Null(replayedStep.CompletedAt);
+    }
+
     private static WorkflowDefinition BuildChainedDefinition(DateTimeOffset now)
     {
         var stepA = new WorkflowStepDefinition

@@ -135,13 +135,15 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var ids = await _database.SetMembersAsync(GetWorkflowIndexKey(workflowId)).ConfigureAwait(false);
+        var indexKey = GetWorkflowIndexKey(workflowId);
+        var ids = await _database.SetMembersAsync(indexKey).ConfigureAwait(false);
         if (ids.Length == 0)
         {
             return Array.Empty<WorkflowRun>();
         }
 
         var runs = new List<WorkflowRun>(ids.Length);
+        var stale = new List<RedisValue>();
         foreach (var id in ids)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -151,9 +153,20 @@ internal sealed class RedisWorkflowRunStore(IConnectionMultiplexer redis) : IWor
             }
 
             var run = await GetAsync(id.ToString(), cancellationToken).ConfigureAwait(false);
-            if (run != null)
+            if (run == null)
             {
-                runs.Add(run);
+                stale.Add(id);
+                continue;
+            }
+
+            runs.Add(run);
+        }
+
+        if (stale.Count > 0)
+        {
+            foreach (var id in stale)
+            {
+                await _database.SetRemoveAsync(indexKey, id).ConfigureAwait(false);
             }
         }
 

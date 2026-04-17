@@ -113,7 +113,7 @@ internal static partial class OrchestrationLog
         string cronExpression,
         string timeZoneId);
 
-    [LoggerMessage(8117, LogLevel.Warning, "Failed to cancel underlying job {JobId} for workflow step {RunId}:{StepId}; orchestration will continue to mark the step cancelled")]
+    [LoggerMessage(8117, LogLevel.Warning, "Failed to cancel underlying job {JobId} for workflow step {RunId}:{StepId}; step remains non-terminal and reconciliation will retry cancellation on a later tick")]
     public static partial void WorkflowStepCancelJobFailed(
         ILogger logger,
         string runId,

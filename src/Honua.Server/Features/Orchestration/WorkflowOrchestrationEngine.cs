@@ -440,7 +440,6 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         List<string> warnings,
         CancellationToken cancellationToken)
     {
-        _ = definition;
         var now = _clock.GetUtcNow();
         var attemptNumber = state.AttemptCount + 1;
         using var activity = OrchestrationTelemetry.StartExecuteStepActivity(
@@ -526,9 +525,29 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
 
         OrchestrationLog.WorkflowStepSubmitted(_logger, run.RunId, state.StepId, jobRecord.OperationId, attemptNumber);
+
+        // When SubmitJobAsync returns an already-terminal record (idempotent replay after
+        // crash), route through ObserveStepAsync so replayed successes fetch artifacts,
+        // replayed failures apply retry policy, and replayed cancellations stamp CompletedAt.
+        var submittedStepStatus = MapJobStatusToStepStatus(jobRecord.Status);
+        if (IsStepTerminal(submittedStepStatus))
+        {
+            var replayState = state with
+            {
+                JobId = jobRecord.OperationId,
+                AttemptCount = attemptNumber,
+                StartedAt = state.StartedAt ?? now,
+                NextAttemptAt = null,
+                ResolvedInputs = bindingResolution.ResolvedValues,
+                ErrorMessage = null
+            };
+            var projection = await ObserveStepAsync(run, definition, stepDefinition, replayState, cancellationToken).ConfigureAwait(false);
+            return (projection ?? replayState, true);
+        }
+
         return (state with
         {
-            Status = MapJobStatusToStepStatus(jobRecord.Status),
+            Status = submittedStepStatus,
             JobId = jobRecord.OperationId,
             AttemptCount = attemptNumber,
             StartedAt = state.StartedAt ?? now,

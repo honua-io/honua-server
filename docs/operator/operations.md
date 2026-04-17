@@ -491,9 +491,14 @@ dependents according to each step's `FailurePolicy`.
   error rather than succeeding with null artifacts. This prevents the
   workflow from silently producing a null-artifact success and ensures
   operators see the real cause (event `8120`).
-- All state is persisted through `IWorkflowRunStore` before side effects.
-  After a crash the reconciler rehydrates state from Redis and resumes from
-  the same DAG position; no in-memory workflow state is required.
+- Job submission precedes the run-state write; crash safety relies on the
+  per-attempt idempotency key (`{runId}:{stepId}:{attempt}`) and the
+  reconciler's idempotent replay rather than persist-before-side-effect
+  ordering. After a crash the reconciler rehydrates state from Redis and
+  resumes from the same DAG position; no in-memory workflow state is
+  required. When a replayed submission returns an already-terminal job,
+  the engine applies the same artifact-fetch and retry-policy paths used
+  during normal observation.
 - `IWorkflowRunStore` extends `IOperationStore`, so reconciliation uses the
   canonical lease pattern with a 30-second lease renewed every 10 seconds.
 
