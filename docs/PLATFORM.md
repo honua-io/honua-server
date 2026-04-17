@@ -116,7 +116,7 @@ REST API and GitOps-ready management:
 
 ## Deployment
 
-Honua runs as a single container in combined mode. The job orchestration substrate ([ADR-0031](contributor/adr/0031-durable-job-orchestration-substrate.md)) is designed to support separate API and worker hosts for enterprise scale-out, but separate worker-mode hosting is not yet wired — it will land with the per-kind executor tickets. See [Operations — Job Orchestration](operator/operations.md#job-orchestration) and [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md#apiworker-host-separation) for details.
+Honua runs as a single container in combined mode. The job orchestration substrate ([ADR-0031](contributor/adr/0031-durable-job-orchestration-substrate.md)) is designed to support separate API and worker hosts for enterprise scale-out, but separate worker-mode hosting is not yet wired — it will land with the per-kind executor tickets. A declarative workflow orchestration layer ([ADR-0032](contributor/adr/0032-workflow-orchestration-layer.md)) composes canonical process steps into chained, scheduled, and DAG-style runs on top of the same substrate. See [Operations — Job Orchestration](operator/operations.md#job-orchestration), [Operations — Workflow Orchestration](operator/operations.md#workflow-orchestration), and [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md#apiworker-host-separation) for details.
 
 ```
   PostgreSQL (default):         DuckDB (embedded):
@@ -124,7 +124,8 @@ Honua runs as a single container in combined mode. The job orchestration substra
   1x Honua container            1x Honua container
   1x PostgreSQL/PostGIS         .duckdb file (bundled or mounted)
   Redis (optional; required     Reverse proxy (TLS)
-    for job orchestration)
+    for job and workflow
+    orchestration)
   Reverse proxy (TLS)
 ```
 

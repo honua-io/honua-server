@@ -90,6 +90,60 @@ directly until a metrics projection is added.
 
 ---
 
+## Workflow Orchestration Observability
+
+The declarative workflow engine (`WorkflowOrchestrationEngine`), its
+reconciler loop, and the cron scheduler emit structured logs in the
+`8100-8199` event-id band via `OrchestrationLog`.
+
+**Key log events:**
+
+| EventId | Name | Level | Signal |
+|---------|------|-------|--------|
+| 8100 | WorkflowRunCreated | Information | A new workflow run was created |
+| 8101 | WorkflowRunCompleted | Information | Run reached a terminal state (succeeded, failed, or cancelled) |
+| 8102 | WorkflowStepSubmitted | Information | Step job submitted to the execution substrate |
+| 8103 | WorkflowStepCompleted | Information | Step reached a terminal state |
+| 8104 | WorkflowStepRetrying | Warning | Step failed and is being retried per its retry policy |
+| 8105 | WorkflowStepSkipped | Information | Step was skipped because its dependency used a `Skip` failure policy |
+| 8107 | InputBindingFailed | Warning | Artifact-to-input binding resolution failed for a step |
+| 8108 | SchedulerTriggered | Information | Cron scheduler created a run for a scheduled workflow |
+| 8110 | ReconciliationFailed | Error | Reconciliation loop encountered an unhandled error |
+| 8116 | SchedulerDefinitionInvalid | Warning | Scheduled workflow has an invalid cron expression or time zone |
+| 8117 | WorkflowStepCancelJobFailed | Warning | Best-effort cascade cancel of a child job failed |
+| 8119 | WorkflowCancelLeaseContention | Warning | Cancel request could not acquire reconcile lease (409 returned) |
+| 8120 | WorkflowStepArtifactsUnavailableForBoundDependents | Error | Step artifact retrieval failed; bound dependents marked Failed |
+
+**Activities and metrics** (under `honua.orchestration.*`):
+
+| Type | Name |
+|------|------|
+| Activity | `honua.orchestration.reconcile_run` |
+| Activity | `honua.orchestration.execute_step` |
+| Activity | `honua.orchestration.resolve_bindings` |
+| Activity | `honua.orchestration.scheduler_tick` |
+| Metric | `honua.orchestration.runs_created_total` |
+| Metric | `honua.orchestration.runs_completed_total` |
+| Metric | `honua.orchestration.steps_completed_total` |
+| Metric | `honua.orchestration.steps_retried_total` |
+| Metric | `honua.orchestration.run_duration_ms` |
+| Metric | `honua.orchestration.step_duration_ms` |
+
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Reconciliation failures | Any occurrence | `OrchestrationLog` Error (8110) |
+| Sustained step retries | > 3 retry events in 5 min | `OrchestrationLog` Warning (8104) |
+| Artifact binding failures | Any occurrence | `OrchestrationLog` Warning (8107) / Error (8120) |
+| Scheduler definition invalid | Any occurrence | `OrchestrationLog` Warning (8116) |
+| Cancel lease contention | > 2 in 5 min | `OrchestrationLog` Warning (8119) |
+
+For lifecycle details, scheduler semantics, and policy tuning, see
+[Operations — Workflow Orchestration](operations.md#workflow-orchestration).
+
+---
+
 ## Workspace Lifecycle Observability
 
 Background cleanup and lifecycle operations emit log entries from

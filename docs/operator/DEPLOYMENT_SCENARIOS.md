@@ -55,7 +55,7 @@ curl http://localhost:8080/healthz/ready
 
 **Baseline components:**
 - Managed Postgres with backups and monitoring
-- Redis for caching (and **required** when running geoprocessing, ETL, or tile-cache job workloads — see [Operations — Job Orchestration](operations.md#job-orchestration))
+- Redis for caching (and **required** when running geoprocessing, ETL, or tile-cache job workloads and declarative workflow orchestration — see [Operations — Job Orchestration](operations.md#job-orchestration) and [Operations — Workflow Orchestration](operations.md#workflow-orchestration))
 - Container runtime (Kubernetes or managed container service)
 - Edge TLS termination and rate limiting
 

@@ -158,6 +158,43 @@ For policy tuning, see
 
 ---
 
+## Workflow Orchestration Issues
+
+**Symptom**: workflow runs stuck in Pending or Running, steps not progressing.
+
+**Quick triage**:
+```bash
+# Check reconciler and scheduler logs
+docker logs honua-server 2>&1 | grep -E "Orchestration|8100|8101|8110"
+
+# Verify Redis connectivity (workflow stores require Redis)
+redis-cli -h redis ping
+
+# Check for active workflow runs
+redis-cli -h redis SMEMBERS orchestration:run:active
+```
+
+**Common causes and fixes**:
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `503` on cancel for Orchestration operations | Redis not configured; orchestration engine not registered | Enable Redis — see [Infrastructure](infrastructure.md) |
+| Runs stuck in Pending | Reconciler background service not running | Verify `AddOrchestrationBackgroundServices()` is wired and Redis is reachable |
+| Steps not submitted | Upstream dependency not terminal | Check step `DependsOn` graph and upstream step status |
+| `409 Conflict` on cancel | Reconcile lease held by concurrent tick | Retry the cancel request; this is transient |
+| Scheduled workflow not firing | Invalid cron expression or time zone | Check logs for event `8116`; correct the definition |
+| Step marked Failed with artifact error | Upstream artifact retrieval failed | Check logs for event `8120`; investigate upstream result storage |
+| Reconciliation error spikes | Redis connectivity or data corruption | Check Redis health and `OrchestrationLog` Error (8110) |
+
+The reconciler automatically resumes runs after crashes or restarts by
+rehydrating state from Redis. No operator intervention is required unless
+the underlying Redis store is unavailable. For observability details, see
+[Monitoring — Workflow Orchestration Observability](monitoring.md#workflow-orchestration-observability).
+For policy tuning, see
+[Operations — Workflow Orchestration](operations.md#workflow-orchestration).
+
+---
+
 ## Spatial Query Problems
 
 **FeatureServer bbox query**:
