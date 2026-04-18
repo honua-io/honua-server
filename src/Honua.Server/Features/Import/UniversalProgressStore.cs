@@ -9,6 +9,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
@@ -261,6 +262,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
             nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
             nameof(PublishingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PublishingProgress),
+            nameof(WorkflowProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.WorkflowProgress),
             _ => null
         };
     }
@@ -279,6 +281,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             RasterImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.RasterImportProgress),
             GeoprocessingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoprocessingProgress),
             PublishingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PublishingProgress),
+            WorkflowProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.WorkflowProgress),
             _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
         };
 
@@ -608,6 +611,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(PrintProgress) => OperationType.Print,
             nameof(GeoprocessingProgress) => OperationType.Geoprocessing,
             nameof(PublishingProgress) => OperationType.Publishing,
+            nameof(WorkflowProgress) => OperationType.Orchestration,
             _ => null
         };
     }
@@ -644,6 +648,8 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(GeoprocessingStageStatus))]
 [JsonSerializable(typeof(PublishingProgress))]
 [JsonSerializable(typeof(PublishIntentStatus))]
+[JsonSerializable(typeof(WorkflowProgress))]
+[JsonSerializable(typeof(WorkflowRunStatus))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

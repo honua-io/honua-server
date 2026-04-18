@@ -1232,7 +1232,9 @@ jobs:
   # Add every job whose failure should block merge.
   ci-gate:
     name: CI Gate
-    if: always()
+    # When a newer run supersedes this one via workflow concurrency, avoid
+    # publishing a false failing gate from the cancelled run.
+    if: ${{ always() && !cancelled() }}
     needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, llm-architecture-review, architecture-gate]
     runs-on: ubuntu-latest
     steps:

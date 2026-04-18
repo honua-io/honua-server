@@ -423,6 +423,240 @@ that still have retry budget.
 
 ---
 
+## Workflow Orchestration
+
+The workflow orchestration layer composes canonical `AnalysisPlan` jobs into
+declarative multi-step DAG runs. A `WorkflowDefinition` specifies steps,
+dependencies, artifact-to-input bindings, per-step retry policy, failure
+policy, and an optional cron trigger. Runs are reconciled by a lease-based
+engine on top of the durable job orchestration substrate; every step is
+submitted through `IWorkflowJobExecutor` (backed by the geoprocessing job
+service) so workflow steps reuse the same claim, heartbeat, retry, and
+cancellation semantics described in [Job Orchestration](#job-orchestration).
+
+> **Deployment note:** Orchestration stores (`IWorkflowDefinitionStore`,
+> `IWorkflowRunStore`) only register when an `IConnectionMultiplexer` is
+> available. Redis-less deployments do not host the orchestration engine or
+> its background services; the admin cancel endpoint returns `503` for
+> `Orchestration` operations in that configuration.
+
+### Run Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Pending | Run created; reconciliation has not yet started |
+| Running | Engine is reconciling steps |
+| Succeeded | All required steps reached a successful terminal state |
+| Failed | A required step exhausted retries under `Fail` policy or a workflow invariant broke |
+| Cancelled | Cancellation was requested; cascade cancellation finishes on the next tick. During cleanup the progress API projects this as `Processing` / `Cancelling` so the run remains visible in active-operations queries until every step is terminal. |
+
+Per-step states are `Pending`, `Queued`, `Running`, `Succeeded`, `Failed`,
+`Cancelled`, and `Skipped`. The engine maps the underlying execution-job
+status onto the step status, and cascades failure/skip decisions across
+dependents according to each step's `FailurePolicy`.
+
+### Step Wiring
+
+- `DependsOn` — structural order; a step enters `Pending` eligibility only when
+  every listed dependency is terminal.
+- `InputBindings` — artifact-to-input wiring. `SourceArtifactSelector` accepts
+  `artifact:{index}` or `artifact:{label}` and resolves against the upstream
+  step's `AnalysisResultPackage.Artifacts` (label match is case-insensitive).
+  The resolved reference is string-substituted into the downstream
+  `AnalysisPlanStep.Inputs` dictionary without extending the canonical model.
+- `RetryPolicy` — optional. Computes exponential backoff as
+  `min(InitialDelaySeconds * BackoffMultiplier^(attempt-1), MaxDelaySeconds)`.
+  A null policy means a single attempt with no retry.
+- `FailurePolicy` — `Fail` propagates run failure and cancels non-terminal
+  dependents; `Skip` marks the step `Skipped` and cascades `Skipped` only to
+  dependents that bind artifacts from this step (structural-only dependents
+  still proceed).
+- `TimeoutSeconds` — optional per-step wall-clock bound. When set to a
+  positive value it is surfaced to the underlying job substrate via the
+  `orchestration.timeoutSeconds` protocol metadata key; null or
+  non-positive values are omitted. Substrate enforcement is executor-specific.
+
+### Idempotency and Crash Safety
+
+- Each submission uses the idempotency key `{runId}:{stepId}:{attemptCount}`,
+  so retries and crash recovery never enqueue duplicate jobs.
+- Protocol metadata `orchestration.runId`, `orchestration.workflowId`,
+  `orchestration.stepId`, and `orchestration.attempt` is stamped on each
+  submitted job so downstream rate/cost controls and audit surfaces can
+  correlate step executions to their parent run. When the step definition
+  sets a positive `TimeoutSeconds`, the value is also stamped as
+  `orchestration.timeoutSeconds`.
+- When a completed step's artifact retrieval fails and any downstream step
+  binds artifacts from it, the step is marked `Failed` with a descriptive
+  error rather than succeeding with null artifacts. This prevents the
+  workflow from silently producing a null-artifact success and ensures
+  operators see the real cause (event `8120`).
+- Job submission precedes the run-state write; crash safety relies on the
+  per-attempt idempotency key (`{runId}:{stepId}:{attempt}`) and the
+  reconciler's idempotent replay rather than persist-before-side-effect
+  ordering. After a crash the reconciler rehydrates state from Redis and
+  resumes from the same DAG position; no in-memory workflow state is
+  required. When a replayed submission returns an already-terminal job,
+  the engine applies the same artifact-fetch and retry-policy paths used
+  during normal observation.
+- Transient job-observation failures (e.g. a Redis read error when polling
+  a step's underlying job status) are caught and logged at Warning level
+  (event `8118`). The failure is also appended as a deduplicated warning on
+  the run's `Warnings` list so operators can see degraded observation
+  through the progress API. The step is preserved in its current state and
+  retried on the next reconcile tick.
+- `IWorkflowRunStore` extends `IOperationStore`, so reconciliation uses the
+  canonical lease pattern with a 30-second lease renewed every 10 seconds.
+
+### Scheduler
+
+A separate background service evaluates cron-triggered definitions once per
+tick (30-second interval). For each definition, the scheduler:
+
+1. Compiles the trigger's 5-field cron expression with the declared IANA
+   time zone (default UTC) and caches the compiled expression.
+2. Seeds its in-memory cursor from the durable per-workflow cursor so
+   restarts never rewind into previously-fired occurrences.
+3. Claims the fire-time occurrence via `TryClaimScheduleFireAsync` so only
+   one replica creates a run per (workflow, fire-time) pair.
+4. After the winning replica successfully creates the run (or determines
+   the definition is permanently invalid), it persists a durable
+   pending-cursor marker so a process crash between occurrence consumption
+   and cursor advancement cannot cause the occurrence to be replayed after
+   the per-firing claim TTL expires. The in-memory cursor only advances
+   past the occurrence once a durable write has succeeded.
+5. Advances the durable cursor past the fired occurrence. If the advance
+   fails, the pending cursor retries on the next tick. Transient
+   `CreateRunAsync` failures release the claim so the same occurrence can be
+   retried on a later tick without losing the fire.
+
+DST transitions are handled per standard cron conventions: wall-clock times
+that fall in a spring-forward gap are skipped (the occurrence fires the
+next day), and ambiguous fall-back times fire at the first/daylight
+occurrence.
+
+Invalid cron expressions or unknown time zones are skipped and logged at
+`Warning` with event `8116`; the workflow stops firing until the definition
+is corrected.
+
+Deleting a scheduled workflow clears its durable cursor so a later recreate
+of the same workflow id starts fresh; the scheduler also evicts its
+in-memory compiled-cron cache on the next tick for any workflow id that is
+no longer present, so the replacement definition never inherits the
+predecessor's fire history.
+
+### Cancellation
+
+Cancellation on an `Orchestration` operation flows through
+`/api/v1/admin/operations/{runId}/cancel` to the
+`WorkflowOrchestrationEngine`, which marks the run `Cancelled` on the durable
+record. The cancel path acquires the same per-run reconcile lease used by the
+reconciler so a concurrent tick cannot overwrite the `Cancelled` status with
+a stale `SetAsync`. Cancelled runs stay in the active reconcile set until
+every step reaches a terminal state, so cascade cancellation keeps making
+progress across ticks. On each reconcile pass over a cancelled run the engine
+inspects every step:
+
+- `Pending` steps transition to `Cancelled` immediately.
+- `Queued` or `Running` steps are cancelled through `CancelJobAsync` on the
+  job executor before the step moves to `Cancelled`. If `CancelJobAsync`
+  fails, the step remains in its current (non-terminal) state, a warning is
+  recorded on the run, and the cancel is retried on subsequent reconcile
+  passes. The run stays active until all child jobs are actually cancelled
+  or observed in a terminal state.
+- Already-terminal steps are left as-is.
+
+The engine swallows `GeoprocessingNotFoundException` and
+`GeoprocessingPreconditionFailedException` from the cascade so partially
+pruned or already-terminal child jobs stay idempotent.
+
+If the cancel path cannot acquire the reconcile lease within its bounded
+retry window (a concurrent reconcile tick is holding it longer than expected),
+the endpoint returns a shaped `409 Conflict` with a retriable message rather
+than a `500`. The run state has not been mutated, so callers can safely retry
+the same cancel request.
+
+If the workflow definition is deleted while a run is still active, the next
+reconcile tick finalises every non-terminal step state to `Cancelled`. A run
+that was already in a terminal state (e.g. `Cancelled`) keeps that status;
+otherwise the run transitions to `Failed` with a descriptive error. This
+guarantees the run leaves the active reconcile set exactly once and emits
+terminal telemetry.
+
+If the workflow definition's step set is modified while a run is active (steps
+added or removed), the engine detects the mismatch on the next reconcile tick,
+cancels underlying child jobs for non-terminal steps, and fails the run with
+a descriptive error (event 8121). If `CancelJobAsync` fails for a step, the
+step remains in its current (non-terminal) state, a warning is recorded, and
+the cancel is retried on subsequent reconcile passes — the same invariant
+enforced by the cascade-cancel and definition-missing paths. This prevents
+`KeyNotFoundException` crashes or silent state loss when the definition shape
+diverges from the run's persisted step states.
+
+### Progress Projection
+
+The `WorkflowProgress` projection written to `IUniversalProgressStore` is
+best-effort. After the authoritative `WorkflowRun` is durably saved, a
+progress-store failure is caught, logged (event 8122), and does not propagate
+as an unhandled exception. This prevents three failure modes: duplicate cron
+runs on partial success, terminal runs dropping out of reconciliation before
+telemetry fires, and cancel returning `500` after a durable success. The
+progress view self-heals on the next reconcile tick that succeeds in writing.
+
+### Policy Defaults and Tuning
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Reconcile poll interval | 5 s | `WorkflowOrchestrationBackgroundService` poll cadence |
+| Reconcile lease duration | 30 s | Matches the deploy reconciler lease pattern |
+| Reconcile lease renewal | 10 s | Background renewal while a run is being reconciled |
+| Scheduler tick interval | 30 s | `WorkflowSchedulerBackgroundService` cadence |
+| Scheduler claim retention | 24 h | Window during which a `(workflow, fire-time)` claim is honoured |
+| Run progress retention | 7 d | TTL applied to the `WorkflowProgress` projection in `IUniversalProgressStore` |
+
+### Persistence
+
+| Store | Key pattern | TTL | Index sets |
+|-------|-------------|-----|------------|
+| `RedisWorkflowDefinitionStore` | `orchestration:def:{workflowId}` | none | `orchestration:def:all` |
+| `RedisWorkflowRunStore` | `orchestration:run:{runId}` | 7 d | `orchestration:run:active`, `orchestration:run:wf:{workflowId}` |
+| Run leases | `orchestration:run:lease:{runId}` | 30 s | — |
+| Schedule claims | `orchestration:schedule:claim:{workflowId}:{minuteStamp}` | 24 h | — |
+| Schedule cursors | `orchestration:schedule:cursor:{workflowId}` | none | — |
+| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | none (cleared on cursor advance) | — |
+
+All serialization uses the source-generated `OrchestrationJsonContext`;
+orchestration does not introduce reflection or runtime JSON discovery.
+
+### Observability
+
+`WorkflowOrchestrationEngine`, the reconciler loop, and the scheduler emit
+structured logs in the `8100-8199` event-id band (`OrchestrationLog`). Notable
+events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
+`8102 WorkflowStepSubmitted`, `8104 WorkflowStepRetrying`,
+`8105 WorkflowStepSkipped`, `8107 InputBindingFailed`,
+`8108 SchedulerTriggered`, `8110 ReconciliationFailed`,
+`8111 PollLoopFailed`, `8114 SchedulerTickFailed`,
+`8115 WorkflowStepFailed`, `8116 SchedulerDefinitionInvalid`,
+`8117 WorkflowStepCancelJobFailed`,
+`8118 WorkflowStepObservationTransientFailure`,
+`8119 WorkflowCancelLeaseContention`,
+`8120 WorkflowStepArtifactsUnavailableForBoundDependents`,
+`8121 DefinitionStepSetMismatch`, and
+`8122 ProgressProjectionFailed`.
+
+The engine contributes activities
+(`honua.orchestration.reconcile_run`, `honua.orchestration.execute_step`,
+`honua.orchestration.resolve_bindings`, `honua.orchestration.scheduler_tick`)
+and metrics (`honua.orchestration.runs_created_total`,
+`honua.orchestration.runs_completed_total`,
+`honua.orchestration.steps_completed_total`,
+`honua.orchestration.steps_retried_total`,
+`honua.orchestration.run_duration_ms`,
+`honua.orchestration.step_duration_ms`).
+
+---
+
 ## OGC API Processes
 
 The OGC API Processes adapter is always registered and serves routes under

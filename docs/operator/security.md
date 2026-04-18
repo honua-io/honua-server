@@ -32,6 +32,7 @@ This guide covers authentication, authorization, edge security, and related oper
 - **JSON metrics endpoints** (`/api/v1/metrics/*`, `/healthz/metrics`) require admin authentication.
 - **Prometheus endpoint** (`/metrics`) requires admin authentication and should still be restricted at the edge to Prometheus/network allowlists.
 - **Data APIs** (FeatureServer, OGC, OData, Tiles) can be public or protected based on your access policy.
+- **Workflow orchestration** operations (cancel, status) are surfaced through the admin operations API and require admin authentication. Workflow runs inherit the admin auth context — there is no per-workflow or per-step credential isolation in the current release.
 
 Authentication schemes:
 - **API key** via `X-API-Key` (automation and service access).

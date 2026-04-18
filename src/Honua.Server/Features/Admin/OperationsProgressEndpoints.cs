@@ -10,6 +10,8 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -107,6 +109,7 @@ internal static class OperationsProgressEndpoints
             RasterImportProgress rasterImportProgress => Results.Json(rasterImportProgress, OperationsProgressJsonContext.Default.RasterImportProgress),
             GeoprocessingProgress geoprocessingProgress => Results.Json(geoprocessingProgress, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             PublishingProgress publishingProgress => Results.Json(publishingProgress, OperationsProgressJsonContext.Default.PublishingProgress),
+            WorkflowProgress workflowProgress => Results.Json(workflowProgress, OperationsProgressJsonContext.Default.WorkflowProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
     }
@@ -125,6 +128,7 @@ internal static class OperationsProgressEndpoints
             RasterImportProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.RasterImportProgress),
             GeoprocessingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             PublishingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PublishingProgress),
+            WorkflowProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.WorkflowProgress),
             _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
 
@@ -136,6 +140,47 @@ internal static class OperationsProgressEndpoints
         NormalizeCanonicalProperty(operation, "type", JsonValue.Create((int)progress.Type));
 
         return JsonSerializer.SerializeToElement(operation);
+    }
+
+    private static async Task<IResult> HandleOrchestrationCancelAsync(
+        string operationId,
+        IOperationProgress progress,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var coordinator = httpContext.RequestServices.GetService<IWorkflowCancellationCoordinator>();
+        if (coordinator is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status503ServiceUnavailable,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                "Orchestration engine is not available to process cancellation");
+        }
+
+        var outcome = await coordinator.CancelRunAsync(operationId, cancellationToken).ConfigureAwait(false);
+        return outcome switch
+        {
+            WorkflowCancellationOutcome.NotFound => ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status404NotFound,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
+                $"Workflow run '{operationId}' was not found"),
+            WorkflowCancellationOutcome.AlreadyTerminal => ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Workflow run '{operationId}' already reached a terminal state"),
+            WorkflowCancellationOutcome.LeaseContention => ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Workflow run '{operationId}' is currently being reconciled; retry the cancel request shortly"),
+            _ => Results.Json(
+                new CancelOperationResponse
+                {
+                    OperationId = operationId,
+                    Message = "Operation cancellation requested",
+                    Type = progress.Type
+                },
+                OperationsProgressJsonContext.Default.CancelOperationResponse)
+        };
     }
 
     private static async Task TryReconcileDurableCancelAsync(
@@ -265,6 +310,18 @@ internal static class OperationsProgressEndpoints
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
                 $"Operation type '{progress.Type}' does not support cancellation");
+        }
+
+        // Orchestration cancel needs to update the authoritative WorkflowRun record so the
+        // reconcile loop can cascade cancellation to the underlying queued/running jobs.
+        // A progress-only cancel would be silently overwritten on the next reconcile tick.
+        if (progress.Type == OperationType.Orchestration)
+        {
+            return await HandleOrchestrationCancelAsync(
+                operationId,
+                progress,
+                httpContext,
+                cancellationToken).ConfigureAwait(false);
         }
 
         // Signal in-flight job processors so they can begin aborting work.
@@ -581,6 +638,8 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(GeoprocessingStageStatus))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(PublishingProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(PublishIntentStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(WorkflowProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(WorkflowRunStatus))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]

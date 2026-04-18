@@ -58,11 +58,22 @@ services.AddRedisJobQueue("background-tasks", RedisFallbackMode.InMemoryFallback
 #### 3. AllowLocalInDev
 - **Use case**: Services that require distributed coordination in production but can operate locally in dev/test
 - **Behavior**: Allows fallback in development/test environments, fails fast in production
-- **Example**: Import job coordination, workflow orchestration
+- **Example**: Import job coordination
 
 ```csharp
-services.AddRedisLeaderElection("workflow-coordination", fallbackStrategy: RedisFallbackMode.AllowLocalInDev);
+services.AddRedisLeaderElection("import-coordination", fallbackStrategy: RedisFallbackMode.AllowLocalInDev);
 ```
+
+#### Conditional Registration (no fallback)
+
+Some features require Redis unconditionally and skip registration entirely when
+`IConnectionMultiplexer` is absent. This avoids DI activation failures while
+producing a clear operational signal (e.g. `503` on affected admin endpoints).
+
+- **Use case**: Durable stores and background services that have no meaningful
+  in-memory or local alternative
+- **Behavior**: Services are not registered; dependent features are unavailable
+- **Example**: Workflow orchestration (`AddOrchestration` / `AddOrchestrationBackgroundServices`)
 
 ### RedisServiceBase
 

@@ -41,6 +41,7 @@ using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -399,6 +400,11 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+if (!isTestEnvironment)
+{
+    builder.Services.AddOrchestrationBackgroundServices();
+}
+
 builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(sp =>
     new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),

@@ -51,8 +51,7 @@ See `.env.example` in the repo root for every available setting.
 
 - **Honua Server** is a stateless container. Scale horizontally by adding replicas.
 - **PostGIS** is the only required dependency. All protocols read from and write to the same database.
-<<<<<<< HEAD
-- **Redis** is optional for caching in single-node deployments (Honua falls back to in-memory caching there). Redis is required when running job orchestration workloads (geoprocessing, ETL, tile-cache jobs) because the durable job queue, execution log store, and reconciliation state use Redis-backed storage. Redis is also required when you use shared cloud-backed temporary files (`FileStorage=AwsS3` or `AzureBlob`) so temporary-file quotas stay correct across replicas. Enable Redis persistence (AOF recommended, or RDB with a short save interval) so that queued and in-flight job state survives Redis restarts; without persistence, a Redis restart loses all pending jobs and forces reconciliation recovery for any claimed work. See [Operations — Job Orchestration](operations.md#job-orchestration).
+- **Redis** is optional for caching in single-node deployments (Honua falls back to in-memory caching there). Redis is required when running job orchestration workloads (geoprocessing, ETL, tile-cache jobs) or declarative workflow orchestration because the durable job queue, execution log store, reconciliation state, and workflow run/definition stores all use Redis-backed storage. Redis is also required when you use shared cloud-backed temporary files (`FileStorage=AwsS3` or `AzureBlob`) so temporary-file quotas stay correct across replicas. Enable Redis persistence (AOF recommended, or RDB with a short save interval) so that queued and in-flight job state and workflow run state survive Redis restarts; without persistence, a Redis restart loses all pending jobs and workflow runs and forces reconciliation recovery for any claimed work. See [Operations — Job Orchestration](operations.md#job-orchestration) and [Operations — Workflow Orchestration](operations.md#workflow-orchestration).
 - **Object storage** (S3/MinIO) is optional, used only for file import workflows.
 - **TLS and rate limiting** are handled at the edge (ALB, API Gateway, Ingress Controller). Honua does not terminate TLS.
 
@@ -106,8 +105,8 @@ AOT images start faster and use less memory. Keep JIT cloud-targeted tags as deb
 
 - [ ] Set `HONUA_ADMIN_PASSWORD` to a strong secret
 - [ ] Use a managed PostGIS database (RDS, Azure Flexible Server) or a hardened self-hosted instance
-- [ ] Enable Redis for multi-node deployments (and for any deployment running job orchestration workloads)
-- [ ] Enable Redis persistence (AOF or RDB) when running job orchestration to preserve queue state across restarts
+- [ ] Enable Redis for multi-node deployments (and for any deployment running job or workflow orchestration workloads)
+- [ ] Enable Redis persistence (AOF or RDB) when running job or workflow orchestration to preserve queue and workflow run state across restarts
 - [ ] Terminate TLS at the ingress / load balancer
 - [ ] Configure OIDC if you need browser-based admin access — see [Security](security.md)
 - [ ] Set `HONUA_SKIP_MIGRATIONS=true` for serverless (run migrations out-of-band)

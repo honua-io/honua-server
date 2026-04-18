@@ -20,6 +20,7 @@ using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcMaps;
 using Honua.Server.Features.OgcProcesses;
 using Honua.Server.Features.OgcTiles;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.SpatialAnalytics;
 using Honua.Server.Features.Stac;
@@ -62,6 +63,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeoprocessing(configuration);
         services.AddSpatialAnalytics();
         services.AddEnhancedAdminServices();
+        services.AddOrchestration();
 
         return services;
     }

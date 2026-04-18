@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -63,6 +64,10 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
+
+        // Workflow orchestration substrate (#724) — exposes geoprocessing as the
+        // canonical job executor consumed by the orchestration engine.
+        services.TryAddSingleton<IWorkflowJobExecutor, GeoprocessingWorkflowJobExecutor>();
 
         // Job orchestration substrate: queue, log store (ticket #681)
         services.AddJobOrchestration();
