@@ -109,7 +109,7 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
-    public async Task ReconcileExecutionJob_LocalQueuedRetry_ObservesWithoutDoubleCountingAttempts()
+    public async Task ReconcileExecutionJob_UnclaimedLocalRetry_StaleRunningProgress_StaysQueuedAndResetsProgress()
     {
         var job = CreateJobRecord(
             operationId: "job-local-retry",
@@ -139,14 +139,20 @@ public sealed class ExecutionJobReconcilerTests
 
         var stored = await jobStore.GetAsync("job-local-retry");
         stored.Should().NotBeNull();
-        stored!.Status.Should().Be(ExecutionJobStatus.Running,
-            "non-terminal stale progress may promote to Running without functional harm");
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued,
+            "unclaimed local retries must be queue-authoritative and not promote from stale progress");
         stored.AttemptCount.Should().Be(1,
-            "ObserveLocalRetryAsync must not increment AttemptCount to avoid double-counting");
+            "AttemptCount must not change when the retry is waiting for worker claim");
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-local-retry");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution,
+            "stale Running progress must be reset to AwaitingExecution for admin endpoint consistency");
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Pending);
     }
 
     [Fact]
-    public async Task ReconcileExecutionJob_LocalQueuedRetry_StaleTerminalProgress_StaysQueued()
+    public async Task ReconcileExecutionJob_UnclaimedLocalRetry_StaleTerminalProgress_StaysQueuedAndResetsProgress()
     {
         var job = CreateJobRecord(
             operationId: "job-local-retry-terminal",
@@ -180,6 +186,86 @@ public sealed class ExecutionJobReconcilerTests
             "stale terminal progress from the prior attempt must not re-terminate a retried job");
         stored.AttemptCount.Should().Be(1,
             "AttemptCount must not change when the retry is waiting for worker claim");
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-local-retry-terminal");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution,
+            "stale Failed progress must be reset to AwaitingExecution so admin endpoints do not report terminal state");
+        progress.ErrorMessage.Should().BeNull(
+            "prior-attempt error message must be cleared on progress reset");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_UnclaimedLocalRetry_AlreadyAwaitingExecution_NoRedundantWrite()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-local-retry-idempotent",
+            status: ExecutionJobStatus.Queued,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var freshProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-retry-idempotent", "plan-local");
+        await progressStore.SetProgressAsync("job-local-retry-idempotent", freshProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-local-retry-idempotent");
+
+        var stored = await jobStore.GetAsync("job-local-retry-idempotent");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-local-retry-idempotent");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution,
+            "already-correct progress must not be overwritten");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_UnclaimedLocalRetryWithCancellation_CancelsDirectly()
+    {
+        var notifier = Substitute.For<IJobCancellationNotifier>();
+        var progressStore = new InMemoryProgressStore();
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-retry-cancel", "plan-local") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending
+        };
+        await progressStore.SetProgressAsync("job-retry-cancel", staleProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+
+        var job = CreateJobRecord(
+            operationId: "job-retry-cancel",
+            status: ExecutionJobStatus.Queued,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-retry-cancel");
+
+        var stored = await jobStore.GetAsync("job-retry-cancel");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Cancelled,
+            "cancellation must take precedence over unclaimed-retry logic");
+        stored.CompletedAt.Should().NotBeNull();
+        notifier.Received(1).Cancel("job-retry-cancel");
     }
 
     [Fact]

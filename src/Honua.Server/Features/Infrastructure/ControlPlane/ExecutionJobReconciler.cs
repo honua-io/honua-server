@@ -82,6 +82,9 @@ internal sealed partial class ExecutionJobReconciler(
                     && job.CancellationRequestedAt.HasValue
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    && job.AttemptCount > 0 && job.ClaimedBy == null
+                    => await ResetStaleRetryProgressAsync(job, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     && job.AttemptCount > 0
                     => await ObserveLocalRetryAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
@@ -261,6 +264,39 @@ internal sealed partial class ExecutionJobReconciler(
         }
 
         return observed;
+    }
+
+    private async Task<ExecutionJobRecord> ResetStaleRetryProgressAsync(
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var existing = await progressStore
+                .GetProgressAsync<GeoprocessingProgress>(job.OperationId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (existing != null && existing.WorkflowStatus != GeoprocessingWorkflowStatus.AwaitingExecution)
+            {
+                var bridged = existing with
+                {
+                    WorkflowStatus = GeoprocessingWorkflowStatus.AwaitingExecution,
+                    CurrentStageStatus = GeoprocessingStageStatus.Pending,
+                    CurrentPhase = job.CurrentPhase ?? existing.CurrentPhase,
+                    ErrorMessage = null,
+                    CompletedAt = null
+                };
+                await progressStore
+                    .SetProgressAsync(job.OperationId, bridged, ProgressRetention, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.ExecutionJobProgressBridgeFailed(logger, job.OperationId, ex);
+        }
+
+        return job;
     }
 
     private async Task BridgeProgressAsync(
