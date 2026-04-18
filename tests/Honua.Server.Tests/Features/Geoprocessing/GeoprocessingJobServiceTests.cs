@@ -1557,6 +1557,61 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteBackendReReadFindsCancelled_BridgesProgressWithoutBackendCall()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var running = CreateJobRecord(
+            "job-1",
+            ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var cancelled = running with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(running, cancelled);
+        _cancellationNotifier.Cancel("job-1").Returns(false);
+
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-1", "plan-1");
+        _progressStore.GetProgressAsync<GeoprocessingProgress>("job-1", Arg.Any<CancellationToken>())
+            .Returns(staleProgress);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await backend.DidNotReceive().CancelAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await _progressStore.Received(1).SetProgressAsync(
+            "job-1",
+            Arg.Is<Honua.Core.Features.Infrastructure.Domain.IOperationProgress>(p =>
+                p.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_IdempotentRetryAfterSubmissionRollback_ThrowsInsteadOfReturningFailedRecord()

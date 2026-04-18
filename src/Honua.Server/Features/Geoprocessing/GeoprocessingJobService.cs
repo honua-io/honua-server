@@ -463,35 +463,38 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' was not found on re-read and could not be cancelled.");
         }
 
-        var backendResult = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
-        switch (backendResult.Outcome)
+        if (!IsTerminal(latest.Status))
         {
-            case RemoteCancelOutcome.Delegated:
-                GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
-                return;
-            case RemoteCancelOutcome.TerminalConflict:
-                var terminalStatus = backendResult.TerminalStatus ?? latest.Status;
-                GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, terminalStatus.ToString());
-                throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' reached terminal state '{terminalStatus}' before cancellation could be applied.");
-            case RemoteCancelOutcome.Missing:
-                GeoprocessingServiceLog.JobNotFound(_logger, jobId);
-                throw new GeoprocessingNotFoundException(
-                    $"Job '{jobId}' was deleted during cancellation.");
-            case RemoteCancelOutcome.Unconfirmed:
-                GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
-                throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
-            case RemoteCancelOutcome.Unsupported:
-                GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
-            case RemoteCancelOutcome.BackendNotFound:
-                GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-                throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
-            case RemoteCancelOutcome.NotRemote:
-                break;
+            var backendResult = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
+            switch (backendResult.Outcome)
+            {
+                case RemoteCancelOutcome.Delegated:
+                    GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+                    return;
+                case RemoteCancelOutcome.TerminalConflict:
+                    var terminalStatus = backendResult.TerminalStatus ?? latest.Status;
+                    GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, terminalStatus.ToString());
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' reached terminal state '{terminalStatus}' before cancellation could be applied.");
+                case RemoteCancelOutcome.Missing:
+                    GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+                    throw new GeoprocessingNotFoundException(
+                        $"Job '{jobId}' was deleted during cancellation.");
+                case RemoteCancelOutcome.Unconfirmed:
+                    GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
+                case RemoteCancelOutcome.Unsupported:
+                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
+                case RemoteCancelOutcome.BackendNotFound:
+                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
+                case RemoteCancelOutcome.NotRemote:
+                    break;
+            }
         }
 
         if (IsTerminal(latest.Status))
