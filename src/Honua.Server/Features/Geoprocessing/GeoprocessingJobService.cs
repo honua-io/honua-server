@@ -337,7 +337,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             AttemptCount = provisioning.AttemptCount + 1
         };
 
-        await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            GeoprocessingServiceLog.SubmitPostStartCasConflict(_logger, job.OperationId);
+            var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            return current ?? updated;
+        }
 
         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
             _progressStore, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);

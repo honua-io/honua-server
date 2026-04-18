@@ -82,6 +82,8 @@ internal sealed partial class ExecutionJobReconciler(
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
+                    => CancelQueuedJob(job),
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running when job.CancellationRequestedAt.HasValue
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
@@ -143,6 +145,18 @@ internal sealed partial class ExecutionJobReconciler(
 
             await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static ExecutionJobRecord CancelQueuedJob(ExecutionJobRecord job)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return job with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Cancelled before submission"
+        };
     }
 
     private static async Task<ExecutionJobRecord> StartJobAsync(

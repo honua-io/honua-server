@@ -1259,6 +1259,70 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RemoteBackendPostStartCasConflict_ReturnsStoreRecord()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote geoprocessing"
+            }
+        });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "provider-cas-conflict",
+                Message = "Started"
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var callCount = 0;
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                callCount++;
+                // First CAS (Provisioning transition) succeeds; second CAS (post-start) fails.
+                return callCount != 2;
+            });
+
+        var cancelledByReconciler = CreateJobRecord(
+            "will-be-overwritten",
+            ExecutionJobStatus.Cancelled,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(cancelledByReconciler);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Status.Should().Be(ExecutionJobStatus.Cancelled,
+            "on CAS conflict the authoritative store record must be returned, not the stale submission result");
+    }
+
+    [UnitTest]
     [Operation(Operations.Delete)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJob_RemoteBackendReReadFindsTerminal_DoesNotCallBackendCancel()

@@ -460,6 +460,49 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_QueuedWithCancellationRequested_CancelledWithoutStarting()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+
+        var job = CreateJobRecord(
+            operationId: "job-queued-cancel",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-queued-cancel",
+            GeoprocessingProgress.CreateForSubmittedJob("job-queued-cancel", "plan-cancel"));
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-queued-cancel");
+
+        var stored = await jobStore.GetAsync("job-queued-cancel");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Cancelled,
+            "queued jobs with CancellationRequestedAt must not be started");
+        stored.CompletedAt.Should().NotBeNull();
+
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-queued-cancel");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Cancelled);
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_ExceptionDuringReconciliation_BridgesProgressOnFailure()
     {
         var backend = Substitute.For<IBatchComputeBackend>();

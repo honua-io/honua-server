@@ -142,4 +142,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void RemoteCancelCasRetry(
         ILogger logger,
         string jobId);
+
+    [LoggerMessage(8025, LogLevel.Warning, "Post-start CAS conflict for job {JobId}: returning authoritative store record")]
+    public static partial void SubmitPostStartCasConflict(
+        ILogger logger,
+        string jobId);
 }
