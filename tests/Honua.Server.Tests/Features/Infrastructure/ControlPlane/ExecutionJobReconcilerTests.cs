@@ -842,6 +842,127 @@ public sealed class ExecutionJobReconcilerTests
         progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution);
     }
 
+    [Fact]
+    public async Task StartOnRemoteBackendAsync_ProvisioningCasConflict_TerminalCurrent_BridgesProgress()
+    {
+        var terminalJob = CreateJobRecord(
+            operationId: "job-cas-prov",
+            status: ExecutionJobStatus.Cancelled,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Cancelled externally"
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        jobStore.GetAsync("job-cas-prov", Arg.Any<CancellationToken>())
+            .Returns(terminalJob);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-cas-prov", "plan-cas-prov");
+        await progressStore.SetProgressAsync("job-cas-prov", initialProgress);
+
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-prov",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-cas-prov");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Cancelled,
+            "CAS conflict with terminal current record must bridge progress");
+    }
+
+    [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_TerminalCurrent_BridgesProgress()
+    {
+        var terminalJob = CreateJobRecord(
+            operationId: "job-cas-post",
+            status: ExecutionJobStatus.Failed,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = "Failed externally"
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true, false);
+        jobStore.GetAsync("job-cas-post", Arg.Any<CancellationToken>())
+            .Returns(terminalJob);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                Message = "Started"
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-cas-post", "plan-cas-post");
+        await progressStore.SetProgressAsync("job-cas-post", initialProgress);
+
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-post",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-cas-post");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed,
+            "Post-start CAS conflict with terminal current record must bridge progress");
+        progress.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task StartOnRemoteBackendAsync_CasConflict_NonTerminalCurrent_DoesNotBridgeProgress()
+    {
+        var runningJob = CreateJobRecord(
+            operationId: "job-cas-nt",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        jobStore.GetAsync("job-cas-nt", Arg.Any<CancellationToken>())
+            .Returns(runningJob);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-cas-nt", "plan-cas-nt");
+        await progressStore.SetProgressAsync("job-cas-nt", initialProgress);
+
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-nt",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-cas-nt");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution,
+            "CAS conflict with non-terminal record must not modify progress");
+    }
+
     private static ExecutionJobRecord CreateJobRecord(
         string operationId,
         ExecutionJobStatus status,

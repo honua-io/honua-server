@@ -189,6 +189,7 @@ internal static class OperationsProgressEndpoints
     private static async Task<IResult?> TryReconcileDurableCancelAsync(
         HttpContext httpContext,
         string operationId,
+        IUniversalProgressStore progressStore,
         CancellationToken cancellationToken)
     {
         var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
@@ -210,6 +211,9 @@ internal static class OperationsProgressEndpoints
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 return null;
             }
+
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                progressStore, executionJob, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
 
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status409Conflict,
@@ -263,6 +267,9 @@ internal static class OperationsProgressEndpoints
                     }
                     else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                     {
+                        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                            progressStore, fresh, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+
                         return ProblemDetailsHelpers.CreateAdminProblem(
                             StatusCodes.Status409Conflict,
                             "Conflict",
@@ -313,6 +320,12 @@ internal static class OperationsProgressEndpoints
                 if (cancelOutcome.Job?.Status == ExecutionJobStatus.Cancelled)
                 {
                     return null;
+                }
+
+                if (cancelOutcome.Job != null)
+                {
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
                 }
 
                 return ProblemDetailsHelpers.CreateAdminProblem(
@@ -409,7 +422,7 @@ internal static class OperationsProgressEndpoints
 
         if (progress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
             if (reconcileResult != null)
             {
                 return reconcileResult;
@@ -488,7 +501,7 @@ internal static class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
-            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, progressStore, cancellationToken);
             if (reconcileResult != null)
             {
                 return reconcileResult;
@@ -546,6 +559,9 @@ internal static class OperationsProgressEndpoints
                     }
                     else
                     {
+                        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                            progressStore, executionJob, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+
                         return ProblemDetailsHelpers.CreateAdminProblem(
                             StatusCodes.Status409Conflict,
                             "Conflict",
@@ -606,6 +622,9 @@ internal static class OperationsProgressEndpoints
                         }
                         else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                         {
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, fresh, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+
                             return ProblemDetailsHelpers.CreateAdminProblem(
                                 StatusCodes.Status409Conflict,
                                 "Conflict",
@@ -687,6 +706,12 @@ internal static class OperationsProgressEndpoints
                             };
                             return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
                         case ExecutionJobCancellationState.TerminalConflict:
+                            if (cancelOutcome.Job != null)
+                            {
+                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                    progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                            }
+
                             return ProblemDetailsHelpers.CreateAdminProblem(
                                 StatusCodes.Status409Conflict,
                                 "Conflict",

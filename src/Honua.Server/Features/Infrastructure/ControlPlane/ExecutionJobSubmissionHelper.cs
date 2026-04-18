@@ -83,6 +83,12 @@ internal static partial class ExecutionJobSubmissionHelper
         if (!await jobStore.TrySetAsync(provisioning, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (current != null)
+            {
+                await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return current ?? job;
         }
 
@@ -106,6 +112,12 @@ internal static partial class ExecutionJobSubmissionHelper
             }
 
             var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (current != null)
+            {
+                await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return current ?? updated;
         }
 

@@ -192,15 +192,15 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
-        // Progress store should not have been overwritten to Cancelled
         var updatedProgress = await _progressStore.GetProgressAsync(operationId);
         updatedProgress.Should().NotBeNull();
-        updatedProgress!.Status.Should().NotBe(OperationStatus.Cancelled);
+        updatedProgress!.Status.Should().Be(OperationStatus.Completed,
+            "Terminal durable job must bridge progress to authoritative state");
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_WhenRemoteDurableJobAlreadySucceeded_Returns409()
+    public async Task CancelOperation_WhenRemoteDurableJobAlreadySucceeded_Returns409AndBridgesProgress()
     {
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
         if (jobStore == null)
@@ -239,7 +239,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var updatedProgress = await _progressStore.GetProgressAsync(operationId);
         updatedProgress.Should().NotBeNull();
-        updatedProgress!.Status.Should().NotBe(OperationStatus.Cancelled);
+        updatedProgress!.Status.Should().Be(OperationStatus.Completed,
+            "Terminal durable job must bridge progress to authoritative state");
     }
 
     [IntegrationTest]
@@ -362,7 +363,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_WhenProgressCancelledButDurableJobSucceeded_Returns409()
+    public async Task CancelOperation_WhenProgressCancelledButDurableJobSucceeded_Returns409AndBridgesProgress()
     {
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
         if (jobStore == null)
@@ -403,6 +404,11 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Completed,
+            "Durable job terminal state must be bridged into stale cancelled progress");
     }
 
     [IntegrationTest]
