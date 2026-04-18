@@ -310,7 +310,7 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().ContainKey("queue").WhoseValue.Should().Be("gp-primary");
         job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
             .WhoseValue.Should().Be("plan-1");
-        await _jobStore.Received(1).SetAsync(
+        await _jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(record =>
                 record.OperationId == job.OperationId &&
                 record.Status == ExecutionJobStatus.Provisioning &&
@@ -990,6 +990,67 @@ public sealed class GeoprocessingJobServiceTests
 
         await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
             .WithMessage("*does not support cancellation*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RemoteBackend_TransitionsToProvisioningBeforeStartAsync()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote geoprocessing"
+            }
+        });
+
+        ExecutionJobRecord? recordPassedToStart = null;
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                recordPassedToStart = call.Arg<ExecutionJobRecord>();
+                return new BatchComputeSubmissionResult
+                {
+                    Status = ExecutionJobStatus.Running,
+                    ProviderOperationId = "provider-1",
+                    Message = "Started"
+                };
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        recordPassedToStart.Should().NotBeNull();
+        recordPassedToStart!.Status.Should().Be(ExecutionJobStatus.Provisioning,
+            "the job must transition to Provisioning before StartAsync so the reconciler does not double-start it");
+
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Provisioning &&
+                string.IsNullOrEmpty(j.ProviderOperationId)),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

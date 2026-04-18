@@ -189,10 +189,12 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > **Deployment note:** Every Redis-enabled host registers the execution-job
 > reconciliation background service, which polls active jobs and bridges
 > status from pluggable batch-compute backends into the canonical job store.
-> Local (in-process) jobs are started by the geoprocessing submission path
-> and execute inside the combined host; the reconciler observes their
-> worker-published progress via `IUniversalProgressStore` and bridges it
-> into the canonical job store.
+> Local (in-process) jobs are queued by the geoprocessing submission path.
+> Execution requires a worker host registered via `AddJobWorker()`;
+> the combined host does not currently wire this (see below).
+> The reconciler observes worker-published progress via
+> `IUniversalProgressStore` and bridges it into the canonical job store
+> once a worker host is available.
 > Remote backends (AWS Batch, Azure Container Apps, etc.) are started
 > synchronously on submission and subsequently observed by the reconciler
 > on any Redis-enabled host.

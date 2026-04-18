@@ -24,7 +24,7 @@ internal static class ExecutionJobSubmissionHelper
         try
         {
             var current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (current == null || current.Status != ExecutionJobStatus.Queued)
+            if (current == null || current.Status is not (ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning))
             {
                 return;
             }

@@ -203,6 +203,35 @@ internal static class OperationsProgressEndpoints
             return;
         }
 
+        if (ExecutionJobCancellationHelper.IsTerminal(executionJob.Status))
+        {
+            if (executionJob.Status == ExecutionJobStatus.Cancelled)
+            {
+                await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        // For remote backends, set CancellationRequestedAt so the reconciler
+        // routes through IBatchComputeBackend.CancelAsync on the next sweep
+        // instead of terminalizing the local record without notifying the backend.
+        if (!string.Equals(executionJob.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            if (!executionJob.CancellationRequestedAt.HasValue)
+            {
+                var now = DateTimeOffset.UtcNow;
+                var requested = executionJob with
+                {
+                    CancellationRequestedAt = now,
+                    UpdatedAt = now
+                };
+                await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
         var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
             jobStore,
             operationId,

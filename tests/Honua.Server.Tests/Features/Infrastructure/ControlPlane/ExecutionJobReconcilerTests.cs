@@ -346,6 +346,48 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_RemoteProvisioningJob_ObservesInsteadOfRestarting()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "provider-mid-submit",
+                PercentComplete = 0,
+                Message = "Starting up"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-provisioning",
+            status: ExecutionJobStatus.Provisioning,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-provisioning");
+
+        await backend.Received(1).ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var stored = await jobStore.GetAsync("job-provisioning");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_StartJobAsync_IncrementsAttemptCount()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
@@ -529,6 +571,26 @@ public sealed class ExecutionJobReconcilerTests
         progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
         progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
         progress.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task TryRollbackCreatedJob_ProvisioningJob_RollsBackToFailed()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-provisioning-rollback",
+            status: ExecutionJobStatus.Provisioning,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+
+        await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+            jobStore, "job-provisioning-rollback");
+
+        var stored = await jobStore.GetAsync("job-provisioning-rollback");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Failed,
+            "Provisioning jobs that failed mid-submission must be rolled back");
+        stored.ErrorMessage.Should().Contain("progress or queue persistence");
     }
 
     [Fact]
