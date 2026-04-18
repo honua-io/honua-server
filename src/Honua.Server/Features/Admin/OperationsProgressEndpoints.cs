@@ -417,7 +417,21 @@ internal static class OperationsProgressEndpoints
             var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (executionJob != null)
             {
-                if (!string.Equals(executionJob.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+                if (ExecutionJobCancellationHelper.IsTerminal(executionJob.Status))
+                {
+                    if (executionJob.Status == ExecutionJobStatus.Cancelled)
+                    {
+                        await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' reached terminal state '{executionJob.Status}' in the durable job store before cancellation could be applied");
+                    }
+                }
+                else if (!string.Equals(executionJob.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
                 {
                     var backends = httpContext.RequestServices.GetService<IEnumerable<IBatchComputeBackend>>();
                     var backend = backends?.Resolve(executionJob.Spec.Backend, executionJob.Spec.TargetKind);

@@ -648,6 +648,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return false;
         }
 
+        if (IsTerminal(job.Status))
+        {
+            return false;
+        }
+
         var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
         if (backend == null)
         {

@@ -385,7 +385,8 @@ internal static class JobEndpoints
                 return JobNotFoundResult(jobId);
             }
 
-            if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+            if (!OgcProcessesConversionHelpers.IsTerminal(latest.Status)
+                && !string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                 && backends != null)
             {
                 var backend = backends.Resolve(latest.Spec.Backend, latest.Spec.TargetKind);
