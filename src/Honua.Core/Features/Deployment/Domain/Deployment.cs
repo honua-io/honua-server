@@ -194,9 +194,12 @@ public sealed record Deployment
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.RollingOut"/>, optionally
     /// setting the initial rollout step for canary rollouts. When the deployment is already
-    /// rolling out, an explicit <paramref name="step"/> must strictly advance past the
-    /// current step.
+    /// rolling out, an explicit <paramref name="step"/> is required and must strictly advance
+    /// past the current step; re-entry without a step is rejected so the audit trail never
+    /// records a no-op <c>RollingOut -&gt; RollingOut</c> transition.
     /// </summary>
+    /// <exception cref="ArgumentNullException">Thrown when the deployment is already rolling
+    /// out and <paramref name="step"/> is null.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="step"/> is
     /// outside the plan's range, or when the deployment is already rolling out and
     /// <paramref name="step"/> does not strictly advance past the current step.</exception>
@@ -564,6 +567,13 @@ public sealed record Deployment
     {
         if (step is null)
         {
+            if (Status == DeploymentStatus.RollingOut)
+            {
+                throw new ArgumentNullException(
+                    nameof(step),
+                    "Rollout step is required when re-entering RollingOut; step must strictly advance past the current step.");
+            }
+
             return;
         }
 

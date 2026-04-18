@@ -216,6 +216,36 @@ public class DeploymentTests
     }
 
     [UnitTest]
+    public void WithRollingOut_WhileAlreadyRollingOut_WithoutStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut(); // step 0
+
+        var transitionsBefore = deployment.Transitions.Count;
+
+        var act = () => deployment.WithRollingOut();
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("step")
+            .WithMessage("*strictly advance*");
+        deployment.Transitions.Should().HaveCount(transitionsBefore);
+    }
+
+    [UnitTest]
+    public void WithRollingOut_OnImmediateWhileAlreadyRollingOut_WithoutStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment()
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var act = () => deployment.WithRollingOut();
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("step");
+    }
+
+    [UnitTest]
     public void WithActive_OnCanaryBeforeFinalStep_ShouldThrow()
     {
         var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
