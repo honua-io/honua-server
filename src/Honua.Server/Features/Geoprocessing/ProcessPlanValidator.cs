@@ -237,7 +237,160 @@ internal static class ProcessPlanValidator
                 ValidateBufferAggregateSemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
+            case "generalization.simplify-layer":
+                ValidateSimplifyLayerSemantics(step, violations);
+                ApplySharedAnalyticsFilterSemantics(step, violations);
+                break;
+            case "generalization.dissolve":
+                ValidateDissolveSemantics(step, violations);
+                ApplySharedAnalyticsFilterSemantics(step, violations);
+                break;
+            case "data-management.copy-features":
+                ValidateCopyFeaturesSemantics(step, violations);
+                break;
+            case "data-management.delete-features":
+                ValidateDeleteFeaturesSemantics(step, violations);
+                break;
+            case "data-management.calculate-field":
+                ValidateCalculateFieldSemantics(step, violations);
+                break;
         }
+    }
+
+    // Layer-scoped counterpart of geometry.simplify: tolerance must be strictly
+    // positive in the layer's SRID units. The handler uses ST_Simplify /
+    // ST_SimplifyPreserveTopology, both of which reject non-positive tolerance.
+    private static void ValidateSimplifyLayerSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("tolerance", out var toleranceRaw)
+            || string.IsNullOrWhiteSpace(toleranceRaw))
+        {
+            return;
+        }
+
+        if (!double.TryParse(toleranceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var tolerance)
+            || double.IsNaN(tolerance) || double.IsInfinity(tolerance)
+            || tolerance <= 0d)
+        {
+            AddRangeViolationIfNew(step, "tolerance",
+                $"expected positive number, got '{toleranceRaw}'", violations);
+        }
+    }
+
+    // Dissolve mirrors the analytics.buffer-aggregate dissolve/outStatistics
+    // pairing: aggregate statistics can only be emitted when the rows are
+    // actually being grouped (dissolve=true). Also enforces the same
+    // outStatistics JSON shape and statisticType allow-list as the analytics
+    // family so protocol adapters see one consistent contract.
+    private static void ValidateDissolveSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateOutStatistics(step, violations);
+
+        var hasOutStatistics = step.Inputs.TryGetValue("outStatistics", out var dissolveStats)
+            && !string.IsNullOrWhiteSpace(dissolveStats);
+        var dissolve = true;
+        if (step.Inputs.TryGetValue("dissolve", out var dissolveRaw)
+            && !string.IsNullOrWhiteSpace(dissolveRaw)
+            && bool.TryParse(dissolveRaw, out var parsedDissolve))
+        {
+            dissolve = parsedDissolve;
+        }
+        if (hasOutStatistics && !dissolve)
+        {
+            AddRangeViolationIfNew(step, "outStatistics",
+                "outStatistics requires dissolve=true; per-feature output cannot carry aggregate statistics",
+                violations);
+        }
+    }
+
+    // copy-features accepts any non-blank targetLayerName at planning time;
+    // uniqueness is checked at runtime against the caller's workspace.
+    // Filters are optional, so objectIds parsing is the only validator-time
+    // check (shared with the analytics filter helper).
+    private static void ValidateCopyFeaturesSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateObjectIds(step, violations);
+    }
+
+    // Delete is destructive: at least one of where/objectIds must be supplied
+    // to prevent unbounded deletion ("delete everything"). Mirrors the live
+    // FeatureServer.ApplyEdits delete contract.
+    private static void ValidateDeleteFeaturesSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateObjectIds(step, violations);
+
+        var hasWhere = step.Inputs.TryGetValue("where", out var whereRaw)
+            && !string.IsNullOrWhiteSpace(whereRaw);
+        var hasObjectIds = step.Inputs.TryGetValue("objectIds", out var objectIdsRaw)
+            && !string.IsNullOrWhiteSpace(objectIdsRaw);
+
+        if (!hasWhere && !hasObjectIds)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "INVALID_PARAMETER_VALUE",
+                Message = $"Step '{step.StepId}' requires at least one of 'where' or 'objectIds' for process '{step.ProcessId}' to prevent unbounded deletion.",
+                FieldPath = $"steps[{step.StepId}].inputs.where"
+            });
+        }
+    }
+
+    // calculate-field requires a simple identifier for fieldName — no dotted
+    // paths, no SQL fragments — so the runtime can bind it as a column name
+    // without re-parsing. The expression itself is gated at execution time by
+    // FeatureServer.Edits.CalculateFieldValue's allow-list; validator-time
+    // checks here only enforce non-blank required inputs and objectIds shape.
+    private static void ValidateCalculateFieldSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        ValidateObjectIds(step, violations);
+
+        if (step.Inputs.TryGetValue("fieldName", out var fieldName)
+            && !string.IsNullOrWhiteSpace(fieldName)
+            && !IsSimpleIdentifier(fieldName))
+        {
+            AddRangeViolationIfNew(step, "fieldName",
+                $"expected simple identifier (letters, digits, underscore; first char letter or underscore), got '{fieldName}'",
+                violations);
+        }
+    }
+
+    // Mirrors PostgreSQL's unquoted-identifier rule (the shape
+    // FeatureServer.Edits.CalculateFieldValue accepts without further quoting).
+    // Kept deliberately narrow so the validator never admits values that the
+    // SQL binder would have to escape at runtime.
+    private static bool IsSimpleIdentifier(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        var first = value[0];
+        if (!(char.IsLetter(first) || first == '_'))
+        {
+            return false;
+        }
+
+        for (var i = 1; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (!(char.IsLetterOrDigit(c) || c == '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Validates the structured Text inputs every analytics handler honors via

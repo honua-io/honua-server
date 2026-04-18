@@ -257,6 +257,96 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
         },
+
+        // -----------------------------------------------------------------------
+        // Generalization operations (2)
+        // Layer-level counterparts of the geometry-scoped operations: apply a
+        // generalization transform across every geometry in a target layer.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "generalization.simplify-layer",
+            Title = "Simplify Layer",
+            Description = "Applies topology-aware simplification across every geometry in a layer. The tolerance is expressed in the layer's spatial-reference units (degrees for geographic, meters for projected), matching geometry.simplify; it is not forced to meters like analytics.density.cellSize.",
+            Category = "generalization",
+            Parameters =
+            [
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("tolerance", "Tolerance", "Simplification tolerance in the layer's spatial-reference units (degrees for geographic, meters for projected). Must be > 0.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("preserveTopology", "Preserve Topology", "Use topology-preserving simplification (ST_SimplifyPreserveTopology). Defaults to true.", ProcessParameterValueType.Flag, defaultValue: "true"),
+                .. SharedAnalyticsFilterParameters,
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "generalization.dissolve",
+            Title = "Dissolve",
+            Description = "Dissolves (unions) features by optional attribute group, producing one feature per group and optional aggregate statistics over the dissolved rows. Unlike analytics.buffer-aggregate, no buffer is applied before the union.",
+            Category = "generalization",
+            Parameters =
+            [
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("groupByFields", "Group By Fields", "Comma-separated attribute columns used to group dissolved features; one row is emitted per group. When empty, all features dissolve into a single geometry.", ProcessParameterValueType.Text),
+                Param("dissolve", "Dissolve", "Union the grouped geometries. Defaults to true.", ProcessParameterValueType.Flag, defaultValue: "true"),
+                Param("outStatistics", "Out Statistics", "GeoServices statistics payload aggregated per group. Requires dissolve=true; per-feature output cannot carry aggregate columns.", ProcessParameterValueType.Text),
+                .. SharedAnalyticsFilterParameters,
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
+        },
+
+        // -----------------------------------------------------------------------
+        // Data-management operations (3)
+        // Bulk, layer-level mutation workflows. delete-features and
+        // calculate-field are destructive and route through the existing
+        // approval gate via the destructive-process classifier. copy-features
+        // is non-destructive but still governed by the same canonical runtime.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "data-management.copy-features",
+            Title = "Copy Features",
+            Description = "Copies features (optionally filtered) from a source layer into a new target layer. Non-destructive — the source layer is not modified.",
+            Category = "data-management",
+            Parameters =
+            [
+                Param("sourceLayerId", "Source Layer", "Source layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("targetLayerName", "Target Layer Name", "Name of the new layer that will hold the copied features.", ProcessParameterValueType.Text, required: true),
+                Param("where", "Where", "Optional ArcGIS SQL filter applied to the source layer.", ProcessParameterValueType.Text),
+                Param("objectIds", "Object IDs", "Optional comma-separated feature identifiers to limit the copy to.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "data-management.delete-features",
+            Title = "Delete Features",
+            Description = "Deletes features matching a filter from a source layer. Destructive — requires approval. At least one of 'where' or 'objectIds' must be supplied to prevent unbounded deletion.",
+            Category = "data-management",
+            Parameters =
+            [
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("where", "Where", "ArcGIS SQL filter selecting features to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
+                Param("objectIds", "Object IDs", "Comma-separated feature identifiers to delete. At least one of 'where' or 'objectIds' is required.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "data-management.calculate-field",
+            Title = "Calculate Field",
+            Description = "Sets a field value on matching features using a constant or SQL expression. Destructive — requires approval. Expressions are gated by the FeatureServer.Edits expression allow-list at execution time.",
+            Category = "data-management",
+            Parameters =
+            [
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("fieldName", "Field Name", "Simple identifier naming the field to update (letters, digits, underscore; no dotted paths).", ProcessParameterValueType.Text, required: true),
+                Param("expression", "Expression", "Constant or SQL expression evaluated per feature. Parsed by the same allow-listed expression gate FeatureServer.Edits.CalculateFieldValue uses.", ProcessParameterValueType.Text, required: true),
+                Param("where", "Where", "Optional ArcGIS SQL filter selecting features to update.", ProcessParameterValueType.Text),
+                Param("objectIds", "Object IDs", "Optional comma-separated feature identifiers to update.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
     ];
 
     // Shared GeoServices-style filter inputs that every analytics handler honors via

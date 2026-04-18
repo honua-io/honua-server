@@ -125,4 +125,10 @@ internal static partial class GeoprocessingServiceLog
         string packageId,
         string oldStatus,
         string newStatus);
+
+    [LoggerMessage(8023, LogLevel.Information, "Destructive plan detected: PlanId={PlanId}, ProcessId={ProcessId}")]
+    public static partial void DestructivePlanDetected(
+        ILogger logger,
+        string planId,
+        string processId);
 }

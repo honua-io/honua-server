@@ -35,11 +35,11 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly14BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly19BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
-        all.Should().HaveCount(14);
+        all.Should().HaveCount(19);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -63,6 +63,74 @@ public sealed class ProcessCatalogTests
 
         analytics.Should().HaveCount(4);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_GeneralizationCategory_Returns2Processes()
+    {
+        var generalization = _catalog.GetProcessesByCategory("generalization");
+
+        generalization.Should().HaveCount(2);
+        generalization.Should().AllSatisfy(p => p.Category.Should().Be("generalization"));
+        generalization.Select(p => p.ProcessId).Should().BeEquivalentTo(
+            "generalization.simplify-layer",
+            "generalization.dissolve");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_DataManagementCategory_Returns3Processes()
+    {
+        var dataManagement = _catalog.GetProcessesByCategory("data-management");
+
+        dataManagement.Should().HaveCount(3);
+        dataManagement.Should().AllSatisfy(p => p.Category.Should().Be("data-management"));
+        dataManagement.Select(p => p.ProcessId).Should().BeEquivalentTo(
+            "data-management.copy-features",
+            "data-management.delete-features",
+            "data-management.calculate-field");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_GeneralizationSimplifyLayer_DeclaresFeatureLayerOutput()
+    {
+        var definition = _catalog.GetProcess("generalization.simplify-layer");
+
+        definition.Should().NotBeNull();
+        definition!.OutputArtifactKinds.Should().ContainSingle()
+            .Which.Should().Be(ArtifactKind.FeatureLayer);
+        definition.Parameters.Should().Contain(p => p.Name == "layerId" && p.Required)
+            .And.Contain(p => p.Name == "tolerance" && p.Required);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_DataManagementDeleteFeatures_DeclaresScalarOutput()
+    {
+        var definition = _catalog.GetProcess("data-management.delete-features");
+
+        definition.Should().NotBeNull();
+        definition!.OutputArtifactKinds.Should().ContainSingle()
+            .Which.Should().Be(ArtifactKind.Scalar);
+        definition.Parameters.Should().Contain(p => p.Name == "layerId" && p.Required);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_DataManagementCalculateField_RequiresFieldNameAndExpression()
+    {
+        var definition = _catalog.GetProcess("data-management.calculate-field");
+
+        definition.Should().NotBeNull();
+        definition!.Parameters.Should().Contain(p => p.Name == "fieldName" && p.Required);
+        definition.Parameters.Should().Contain(p => p.Name == "expression" && p.Required);
     }
 
     [UnitTest]
@@ -144,7 +212,10 @@ public sealed class ProcessCatalogTests
             "geometry.make-valid", "geometry.union", "geometry.intersect",
             "geometry.clip", "geometry.difference", "geometry.area",
             "geometry.length", "analytics.cluster", "analytics.spatial-join",
-            "analytics.buffer-aggregate", "analytics.density"
+            "analytics.buffer-aggregate", "analytics.density",
+            "generalization.simplify-layer", "generalization.dissolve",
+            "data-management.copy-features", "data-management.delete-features",
+            "data-management.calculate-field"
         ];
 
         foreach (var processId in expectedIds)
@@ -1990,6 +2061,625 @@ public sealed class ProcessCatalogTests
 
         (geometry is ProcessDefinition[]).Should().BeFalse(
             "read-only catalog must not leak the underlying array through IReadOnlyList");
+    }
+
+    // -----------------------------------------------------------------------
+    // Generalization family — simplify-layer
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationSimplifyLayer_MissingRequiredParameters_ProducesViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.simplify-layer",
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.layerId");
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.tolerance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationSimplifyLayer_NonPositiveTolerance_ProducesRangeViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.simplify-layer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["tolerance"] = "0"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.tolerance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationSimplifyLayer_WithValidTolerance_ProducesNoViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.simplify-layer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["tolerance"] = "0.001",
+                        ["preserveTopology"] = "false"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationSimplifyLayer_UnknownParameter_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.simplify-layer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["tolerance"] = "0.001",
+                        ["typo"] = "nope"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "UNKNOWN_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.typo");
+    }
+
+    // -----------------------------------------------------------------------
+    // Generalization family — dissolve
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationDissolve_WithoutDissolveFalse_AndOutStatistics_Allowed()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.dissolve",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["outStatistics"] = "{ \"statisticType\": \"count\", \"onStatisticField\": \"id\", \"outStatisticFieldName\": \"cnt\" }"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty("dissolve defaults to true so outStatistics is allowed");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationDissolve_WithDissolveFalse_AndOutStatistics_ProducesCrossFieldViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.dissolve",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["dissolve"] = "false",
+                        ["outStatistics"] = "{ \"statisticType\": \"count\", \"onStatisticField\": \"id\", \"outStatisticFieldName\": \"cnt\" }"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.outStatistics");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_GeneralizationDissolve_InvalidOutStatisticsJson_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "generalization.dissolve",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["outStatistics"] = "not json"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.outStatistics");
+    }
+
+    // -----------------------------------------------------------------------
+    // Data-management family — copy-features
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCopyFeatures_MissingRequiredParameters_ProducesViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.copy-features",
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.sourceLayerId");
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.targetLayerName");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCopyFeatures_WithRequired_ProducesNoViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.copy-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["sourceLayerId"] = "42",
+                        ["targetLayerName"] = "copy-of-parcels"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCopyFeatures_InvalidObjectIds_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.copy-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["sourceLayerId"] = "42",
+                        ["targetLayerName"] = "copy",
+                        ["objectIds"] = "1, two, 3"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.objectIds");
+    }
+
+    // -----------------------------------------------------------------------
+    // Data-management family — delete-features (destructive)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementDeleteFeatures_WithoutFilter_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.delete-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.where");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementDeleteFeatures_WithWhere_ProducesNoViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.delete-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["where"] = "status = 'retired'"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementDeleteFeatures_WithObjectIds_ProducesNoViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.delete-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["objectIds"] = "1,2,3"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // Data-management family — calculate-field (destructive)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCalculateField_MissingRequiredParameters_ProducesViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.calculate-field",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.fieldName");
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.expression");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCalculateField_ValidInputs_ProducesNoViolations()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.calculate-field",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["fieldName"] = "status_code",
+                        ["expression"] = "42"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCalculateField_InvalidFieldName_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.calculate-field",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["fieldName"] = "bad field-name",
+                        ["expression"] = "1"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.fieldName");
+    }
+
+    // -----------------------------------------------------------------------
+    // Destructive-process classifier
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_DeleteFeatures_IsDestructive()
+    {
+        ProcessDestructiveClassifier.IsDestructive("data-management.delete-features")
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_CalculateField_IsDestructive()
+    {
+        ProcessDestructiveClassifier.IsDestructive("data-management.calculate-field")
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_CopyFeatures_IsNotDestructive()
+    {
+        ProcessDestructiveClassifier.IsDestructive("data-management.copy-features")
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_AnalyticsProcess_IsNotDestructive()
+    {
+        ProcessDestructiveClassifier.IsDestructive("analytics.cluster")
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_PlanWithDeleteFeatures_ReturnsProcessId()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.delete-features"
+                }
+            ]
+        };
+
+        ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan)
+            .Should().Be("data-management.delete-features");
+        ProcessDestructiveClassifier.HasDestructiveStep(plan).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_PlanWithoutDestructiveStep_ReturnsNull()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.copy-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["sourceLayerId"] = "42",
+                        ["targetLayerName"] = "copy"
+                    }
+                }
+            ]
+        };
+
+        ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan).Should().BeNull();
+        ProcessDestructiveClassifier.HasDestructiveStep(plan).Should().BeFalse();
     }
 
     // -----------------------------------------------------------------------
