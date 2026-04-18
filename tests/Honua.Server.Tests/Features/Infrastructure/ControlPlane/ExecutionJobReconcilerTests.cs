@@ -503,6 +503,66 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_QueuedRemoteWithCancelAndProviderMarker_CancelsViaBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = "provider-cancel-queued",
+                Message = "Cancelled by backend"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-queued-remote-cancel",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            ProviderOperationId = "provider-cancel-queued",
+            AttemptCount = 1,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-queued-remote-cancel",
+            GeoprocessingProgress.CreateForSubmittedJob("job-queued-remote-cancel", "plan-cancel"));
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-queued-remote-cancel");
+
+        var stored = await jobStore.GetAsync("job-queued-remote-cancel");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Cancelled,
+            "queued remote jobs with CancellationRequestedAt and a provider marker must cancel via backend, not observe");
+        stored.CompletedAt.Should().NotBeNull();
+
+        await backend.Received(1).CancelAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-queued-remote-cancel");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Cancelled);
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_ExceptionDuringReconciliation_BridgesProgressOnFailure()
     {
         var backend = Substitute.For<IBatchComputeBackend>();

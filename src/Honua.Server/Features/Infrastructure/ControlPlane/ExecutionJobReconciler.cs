@@ -80,6 +80,9 @@ internal sealed partial class ExecutionJobReconciler(
             {
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
+                    && (!string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0)
+                    => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue

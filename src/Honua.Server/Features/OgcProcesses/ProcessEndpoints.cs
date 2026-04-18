@@ -432,7 +432,7 @@ internal static class ProcessEndpoints
                 await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
             }
 
-            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, context.RequestAborted).ConfigureAwait(false);
+            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, logger, context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
@@ -704,6 +704,7 @@ internal static class ProcessEndpoints
         IExecutionJobStore jobStore,
         IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend>? backends,
+        ILogger? logger,
         CancellationToken cancellationToken)
     {
         if (backends == null ||
@@ -719,42 +720,10 @@ internal static class ProcessEndpoints
                 $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
         }
 
-        var provisioning = job with
-        {
-            Status = ExecutionJobStatus.Provisioning,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Submitting to backend"
-        };
-        if (!await jobStore.TrySetAsync(provisioning, cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-            return current ?? job;
-        }
-
-        var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-        var updated = provisioning with
-        {
-            Status = submission.Status,
-            UpdatedAt = now,
-            CompletedAt = IsTerminalStatus(submission.Status) ? now : provisioning.CompletedAt,
-            ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
-            CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
-            AttemptCount = provisioning.AttemptCount + 1
-        };
-
-        await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-            progressStore, updated, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
-
-        return updated;
+        return await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            job, backend, jobStore, progressStore, TimeSpan.FromDays(7), logger, cancellationToken)
+            .ConfigureAwait(false);
     }
-
-    private static bool IsTerminalStatus(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 
     internal static IResult FormatOgcAuthError(Core.Features.Security.Abstractions.AccessDecision decision)
     {
