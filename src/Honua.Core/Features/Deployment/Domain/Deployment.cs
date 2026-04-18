@@ -1,0 +1,445 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.ControlPlane.Domain;
+
+namespace Honua.Core.Features.Deployment.Domain;
+
+/// <summary>
+/// Durable deployment record that ties a promoted publish or package artifact to a
+/// hosted deployment target. Deployment lifecycle transitions are deterministic,
+/// auditable, and recorded in <see cref="Transitions"/>; publish and package semantics
+/// remain owned by their originating lifecycles.
+/// </summary>
+public sealed record Deployment
+{
+    /// <summary>
+    /// Stable identifier for this deployment.
+    /// </summary>
+    public required string DeploymentId { get; init; }
+
+    /// <summary>
+    /// Promoted artifact backing this deployment.
+    /// </summary>
+    public required DeploymentSource Source { get; init; }
+
+    /// <summary>
+    /// Hosting target on which the deployment is served.
+    /// </summary>
+    public required DeploymentTarget Target { get; init; }
+
+    /// <summary>
+    /// Current lifecycle status.
+    /// </summary>
+    public required DeploymentStatus Status { get; init; }
+
+    /// <summary>
+    /// Operator-facing publication state tracking whether the deployment is visible on
+    /// its routable surface.
+    /// </summary>
+    public required DeploymentPublicationState PublicationState { get; init; }
+
+    /// <summary>
+    /// Rollout plan governing how this deployment reaches its final serving weight.
+    /// Immutable once the deployment is created.
+    /// </summary>
+    public RolloutPlan Rollout { get; init; } = RolloutPlan.Immediate();
+
+    /// <summary>
+    /// Observed rollout state.
+    /// </summary>
+    public RolloutState RolloutState { get; init; } = Domain.RolloutState.Pending;
+
+    /// <summary>
+    /// Index of the current canary step (0-based) when <see cref="RolloutPlan.Strategy"/>
+    /// is <see cref="RolloutStrategy.Canary"/>. Null for non-canary rollouts or before
+    /// the first step has begun.
+    /// </summary>
+    public int? CurrentRolloutStep { get; init; }
+
+    /// <summary>
+    /// Publication schedule, when the deployment is time-gated.
+    /// </summary>
+    public DeploymentSchedule? Schedule { get; init; }
+
+    /// <summary>
+    /// Observed runtime state.
+    /// </summary>
+    public RuntimeState Runtime { get; init; } = RuntimeState.Unknown();
+
+    /// <summary>
+    /// Operator identity and request metadata captured when the deployment was created.
+    /// </summary>
+    public OperationAuditInfo Audit { get; init; } = new();
+
+    /// <summary>
+    /// When the deployment was created.
+    /// </summary>
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// When the deployment record was most recently updated.
+    /// </summary>
+    public required DateTimeOffset UpdatedAt { get; init; }
+
+    /// <summary>
+    /// When the deployment first reached <see cref="DeploymentStatus.Active"/>. Null while
+    /// the deployment has not yet been published.
+    /// </summary>
+    public DateTimeOffset? ActivatedAt { get; init; }
+
+    /// <summary>
+    /// When the deployment was retired or superseded. Null while still live.
+    /// </summary>
+    public DateTimeOffset? RetiredAt { get; init; }
+
+    /// <summary>
+    /// Reason for entering <see cref="DeploymentStatus.Failed"/> when applicable.
+    /// </summary>
+    public string? FailureReason { get; init; }
+
+    /// <summary>
+    /// Identifier of the deployment that superseded this one when
+    /// <see cref="Status"/> is <see cref="DeploymentStatus.Superseded"/>.
+    /// </summary>
+    public string? SupersededByDeploymentId { get; init; }
+
+    /// <summary>
+    /// Identifier of an associated control-plane workflow operation when provider-backed
+    /// deploy orchestration is used for this deployment.
+    /// </summary>
+    public string? ControlPlaneOperationId { get; init; }
+
+    /// <summary>
+    /// Ordered audit trail of lifecycle transitions. Entries are append-only and
+    /// reflect every status change; runtime-only updates do not append transitions.
+    /// </summary>
+    public IReadOnlyList<DeploymentTransition> Transitions { get; init; } = [];
+
+    /// <summary>
+    /// Creates a new draft deployment targeting the given source and hosting target.
+    /// </summary>
+    public static Deployment CreateDraft(
+        string deploymentId,
+        DeploymentSource source,
+        DeploymentTarget target,
+        RolloutPlan? rollout = null,
+        DeploymentSchedule? schedule = null,
+        OperationAuditInfo? audit = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new Deployment
+        {
+            DeploymentId = deploymentId,
+            Source = source,
+            Target = target,
+            Status = DeploymentStatus.Draft,
+            PublicationState = DeploymentPublicationState.Draft,
+            Rollout = rollout ?? RolloutPlan.Immediate(),
+            Schedule = schedule,
+            Audit = audit ?? new OperationAuditInfo(),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Scheduled"/>, attaching
+    /// the publication schedule that gates activation.
+    /// </summary>
+    public Deployment WithScheduled(
+        DeploymentSchedule schedule,
+        string? reason = null,
+        OperationAuditInfo? audit = null)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+        return ApplyTransition(
+            DeploymentStatus.Scheduled,
+            schedule: schedule,
+            publicationState: DeploymentPublicationState.Scheduled,
+            reason: reason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Provisioning"/>.
+    /// </summary>
+    public Deployment WithProvisioning(string? reason = null, OperationAuditInfo? audit = null)
+        => ApplyTransition(DeploymentStatus.Provisioning, reason: reason, audit: audit);
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.RollingOut"/>, optionally
+    /// setting the initial rollout step for canary rollouts.
+    /// </summary>
+    public Deployment WithRollingOut(
+        int? step = null,
+        string? reason = null,
+        OperationAuditInfo? audit = null)
+    {
+        EnsureValidRolloutStep(step);
+        return ApplyTransition(
+            DeploymentStatus.RollingOut,
+            rolloutState: Domain.RolloutState.InProgress,
+            currentRolloutStep: step ?? CurrentRolloutStep ?? (Rollout.Strategy == RolloutStrategy.Canary ? 0 : null),
+            reason: reason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Advances the current canary step without changing the overall deployment status.
+    /// Only valid while in <see cref="DeploymentStatus.RollingOut"/> with a canary rollout.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the rollout is not a canary rollout or the deployment is not rolling out.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="step"/> is outside the plan's step range.</exception>
+    public Deployment WithRolloutStep(int step, OperationAuditInfo? audit = null)
+    {
+        if (Rollout.Strategy != RolloutStrategy.Canary)
+        {
+            throw new InvalidOperationException(
+                "Rollout step can only advance on canary rollouts.");
+        }
+
+        if (Status != DeploymentStatus.RollingOut)
+        {
+            throw new InvalidOperationException(
+                $"Rollout step can only advance while rolling out; current status is {Status}.");
+        }
+
+        if (step < 0 || step >= Rollout.Steps.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(step),
+                step,
+                $"Rollout step is outside the plan's range [0, {Rollout.Steps.Count - 1}].");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        return this with
+        {
+            CurrentRolloutStep = step,
+            RolloutState = Domain.RolloutState.InProgress,
+            UpdatedAt = now,
+            Transitions = AppendTransition(
+                from: Status,
+                to: Status,
+                at: now,
+                rolloutState: Domain.RolloutState.InProgress,
+                reason: $"rollout_step_{step}",
+                audit: audit)
+        };
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Active"/>, marking the
+    /// rollout as promoted and the publication state as published.
+    /// </summary>
+    public Deployment WithActive(
+        string? publicUrl = null,
+        string? reason = null,
+        OperationAuditInfo? audit = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var runtime = Runtime with
+        {
+            PublicUrl = publicUrl ?? Runtime.PublicUrl,
+            Health = Runtime.Health == RuntimeHealth.Unknown ? RuntimeHealth.Healthy : Runtime.Health,
+            LastObservedAt = now
+        };
+
+        return ApplyTransition(
+            DeploymentStatus.Active,
+            rolloutState: Domain.RolloutState.Promoted,
+            publicationState: DeploymentPublicationState.Published,
+            runtime: runtime,
+            activatedAt: ActivatedAt ?? now,
+            now: now,
+            reason: reason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Superseded"/>, recording
+    /// the successor that replaced it.
+    /// </summary>
+    public Deployment WithSuperseded(
+        string successorDeploymentId,
+        string? reason = null,
+        OperationAuditInfo? audit = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(successorDeploymentId);
+        var now = DateTimeOffset.UtcNow;
+        return ApplyTransition(
+            DeploymentStatus.Superseded,
+            publicationState: DeploymentPublicationState.Unpublished,
+            supersededBy: successorDeploymentId,
+            retiredAt: RetiredAt ?? now,
+            now: now,
+            reason: reason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Retired"/>.
+    /// </summary>
+    public Deployment WithRetired(string? reason = null, OperationAuditInfo? audit = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return ApplyTransition(
+            DeploymentStatus.Retired,
+            publicationState: DeploymentPublicationState.Retired,
+            retiredAt: RetiredAt ?? now,
+            now: now,
+            reason: reason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Failed"/>, recording the
+    /// failure reason and marking the rollout as failed.
+    /// </summary>
+    public Deployment WithFailed(string failureReason, OperationAuditInfo? audit = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(failureReason);
+        return ApplyTransition(
+            DeploymentStatus.Failed,
+            rolloutState: Domain.RolloutState.Failed,
+            failureReason: failureReason,
+            reason: failureReason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Transitions the deployment to <see cref="DeploymentStatus.Cancelled"/>, marking the
+    /// rollout as cancelled.
+    /// </summary>
+    public Deployment WithCancelled(string? reason = null, OperationAuditInfo? audit = null)
+        => ApplyTransition(
+            DeploymentStatus.Cancelled,
+            rolloutState: Domain.RolloutState.Cancelled,
+            reason: reason,
+            audit: audit);
+
+    /// <summary>
+    /// Reverses the rollout, leaving the deployment in <see cref="DeploymentStatus.Failed"/>
+    /// with a <see cref="Domain.RolloutState.RolledBack"/> state. Callers are expected to
+    /// subsequently retire the deployment or replace it with a rollback successor.
+    /// </summary>
+    public Deployment WithRollbackRequested(string reason, OperationAuditInfo? audit = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(reason);
+        return ApplyTransition(
+            DeploymentStatus.Failed,
+            rolloutState: Domain.RolloutState.RolledBack,
+            failureReason: reason,
+            reason: reason,
+            audit: audit);
+    }
+
+    /// <summary>
+    /// Updates observed runtime state without changing the deployment's lifecycle status
+    /// or appending a transition. Runtime state is owned by the runtime inspector and
+    /// evolves independently of the operator-driven lifecycle.
+    /// </summary>
+    public Deployment WithRuntime(RuntimeState runtime)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        return this with { Runtime = runtime, UpdatedAt = DateTimeOffset.UtcNow };
+    }
+
+    /// <summary>
+    /// Associates the deployment with a control-plane workflow operation identifier when
+    /// provider-backed deploy orchestration is being used.
+    /// </summary>
+    public Deployment WithControlPlaneOperation(string operationId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(operationId);
+        return this with { ControlPlaneOperationId = operationId, UpdatedAt = DateTimeOffset.UtcNow };
+    }
+
+    private Deployment ApplyTransition(
+        DeploymentStatus toStatus,
+        RolloutState? rolloutState = null,
+        int? currentRolloutStep = null,
+        DeploymentPublicationState? publicationState = null,
+        DeploymentSchedule? schedule = null,
+        RuntimeState? runtime = null,
+        string? supersededBy = null,
+        DateTimeOffset? activatedAt = null,
+        DateTimeOffset? retiredAt = null,
+        string? failureReason = null,
+        DateTimeOffset? now = null,
+        string? reason = null,
+        OperationAuditInfo? audit = null)
+    {
+        var at = now ?? DateTimeOffset.UtcNow;
+        var nextRolloutState = rolloutState ?? RolloutState;
+        var nextStep = currentRolloutStep ?? CurrentRolloutStep;
+        return this with
+        {
+            Status = toStatus,
+            PublicationState = publicationState ?? PublicationState,
+            RolloutState = nextRolloutState,
+            CurrentRolloutStep = nextStep,
+            Schedule = schedule ?? Schedule,
+            Runtime = runtime ?? Runtime,
+            SupersededByDeploymentId = supersededBy ?? (toStatus == DeploymentStatus.Superseded ? SupersededByDeploymentId : null),
+            ActivatedAt = activatedAt ?? ActivatedAt,
+            RetiredAt = retiredAt ?? RetiredAt,
+            FailureReason = toStatus == DeploymentStatus.Failed ? failureReason ?? FailureReason : null,
+            UpdatedAt = at,
+            Transitions = AppendTransition(
+                from: Status,
+                to: toStatus,
+                at: at,
+                rolloutState: nextRolloutState,
+                reason: reason,
+                audit: audit)
+        };
+    }
+
+    private List<DeploymentTransition> AppendTransition(
+        DeploymentStatus from,
+        DeploymentStatus to,
+        DateTimeOffset at,
+        RolloutState? rolloutState,
+        string? reason,
+        OperationAuditInfo? audit)
+    {
+        var entry = new DeploymentTransition
+        {
+            From = from,
+            To = to,
+            At = at,
+            RolloutState = rolloutState,
+            Reason = reason,
+            Audit = audit ?? Audit
+        };
+
+        var next = new List<DeploymentTransition>(Transitions.Count + 1);
+        next.AddRange(Transitions);
+        next.Add(entry);
+        return next;
+    }
+
+    private void EnsureValidRolloutStep(int? step)
+    {
+        if (step is null)
+        {
+            return;
+        }
+
+        if (Rollout.Strategy != RolloutStrategy.Canary)
+        {
+            throw new InvalidOperationException(
+                "An explicit rollout step is only valid for canary rollouts.");
+        }
+
+        if (step < 0 || step >= Rollout.Steps.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(step),
+                step,
+                $"Rollout step is outside the plan's range [0, {Rollout.Steps.Count - 1}].");
+        }
+    }
+}

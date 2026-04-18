@@ -154,5 +154,10 @@ public enum OperationType
     /// <summary>
     /// Multi-step orchestration workflow that chains canonical process steps.
     /// </summary>
-    Orchestration
+    Orchestration,
+
+    /// <summary>
+    /// Deployment lifecycle operation that hosts a promoted publish or package artifact.
+    /// </summary>
+    Deployment
 }
