@@ -880,7 +880,7 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed &&
                 j.Version == 1 &&
-                j.ErrorMessage!.Contains("progress or queue persistence")),
+                j.ErrorMessage!.Contains("Redis unavailable")),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
@@ -1247,7 +1247,7 @@ public sealed class GeoprocessingJobServiceTests
         await _jobStore.Received().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed &&
-                j.ErrorMessage!.Contains("progress or queue persistence")),
+                j.ErrorMessage!.Contains("Backend unavailable")),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }

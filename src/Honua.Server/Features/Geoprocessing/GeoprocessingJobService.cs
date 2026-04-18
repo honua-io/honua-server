@@ -230,12 +230,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
             jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
                 jobId,
-                CancellationToken.None).ConfigureAwait(false);
+                progressStore: _progressStore,
+                progressRetention: ProgressRetention,
+                failureMessage: $"Submission failed: {ex.Message}",
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }

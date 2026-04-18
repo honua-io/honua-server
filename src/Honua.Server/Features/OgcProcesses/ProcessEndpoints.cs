@@ -434,12 +434,15 @@ internal static class ProcessEndpoints
 
             jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, logger, context.RequestAborted).ConfigureAwait(false);
         }
-        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
+        catch (Exception ex) when (!context.RequestAborted.IsCancellationRequested)
         {
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
                 jobId,
-                CancellationToken.None).ConfigureAwait(false);
+                progressStore: progressStore,
+                progressRetention: TimeSpan.FromDays(7),
+                failureMessage: $"Submission failed: {ex.Message}",
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }

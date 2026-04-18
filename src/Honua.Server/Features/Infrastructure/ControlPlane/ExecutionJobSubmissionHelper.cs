@@ -11,11 +11,14 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 internal static partial class ExecutionJobSubmissionHelper
 {
     internal const string SubmissionFailurePhase = "Failed (submission)";
-    internal const string SubmissionFailureMessage = "Submission failed: progress or queue persistence error.";
+    internal const string SubmissionFailureMessage = "Submission failed.";
 
     public static async Task TryRollbackCreatedJobAsync(
         IExecutionJobStore jobStore,
         string operationId,
+        IUniversalProgressStore? progressStore = null,
+        TimeSpan? progressRetention = null,
+        string? failureMessage = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jobStore);
@@ -35,11 +38,18 @@ internal static partial class ExecutionJobSubmissionHelper
                 Status = ExecutionJobStatus.Failed,
                 UpdatedAt = now,
                 CompletedAt = now,
-                ErrorMessage = SubmissionFailureMessage,
+                ErrorMessage = failureMessage ?? SubmissionFailureMessage,
                 CurrentPhase = SubmissionFailurePhase
             };
 
             await jobStore.TrySetAsync(failedJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            if (progressStore != null)
+            {
+                await BridgeTerminalSubmissionProgressAsync(
+                    progressStore, failedJob, progressRetention ?? TimeSpan.FromDays(7), cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch
         {

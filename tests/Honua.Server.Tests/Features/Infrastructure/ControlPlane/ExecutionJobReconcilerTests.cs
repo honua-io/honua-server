@@ -693,7 +693,53 @@ public sealed class ExecutionJobReconcilerTests
         stored.Should().NotBeNull();
         stored!.Status.Should().Be(ExecutionJobStatus.Failed,
             "Provisioning jobs that failed mid-submission must be rolled back");
-        stored.ErrorMessage.Should().Contain("progress or queue persistence");
+        stored.ErrorMessage.Should().Be(ExecutionJobSubmissionHelper.SubmissionFailureMessage);
+    }
+
+    [Fact]
+    public async Task TryRollbackCreatedJob_WithProgressStore_BridgesProgressToFailed()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-rollback-progress",
+            status: ExecutionJobStatus.Provisioning,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-rollback-progress", "plan-rollback");
+        await progressStore.SetProgressAsync("job-rollback-progress", initialProgress);
+
+        await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+            jobStore, "job-rollback-progress",
+            progressStore: progressStore,
+            progressRetention: TimeSpan.FromDays(7));
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-rollback-progress");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed,
+            "Rollback must bridge progress to Failed to prevent zombie active operations");
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
+        progress.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task TryRollbackCreatedJob_WithCustomMessage_RecordsActualFailure()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-custom-msg",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+
+        await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+            jobStore, "job-custom-msg",
+            failureMessage: "Submission failed: Backend connection refused");
+
+        var stored = await jobStore.GetAsync("job-custom-msg");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Failed);
+        stored.ErrorMessage.Should().Be("Submission failed: Backend connection refused");
     }
 
     [Fact]
