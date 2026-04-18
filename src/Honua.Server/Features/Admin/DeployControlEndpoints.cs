@@ -231,8 +231,8 @@ internal static class DeployControlEndpoints
     private static async Task<IResult> HandleGetDeployOperation(
         string operationId,
         [FromServices] DeployWorkflowService deployWorkflowService,
-        [FromServices] IEnumerable<IOperationReconciler> reconcilers,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] IWorkflowOperationReconciler? reconciler = null)
     {
         try
         {
@@ -247,7 +247,6 @@ internal static class DeployControlEndpoints
 
             if (operation.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested)
             {
-                var reconciler = reconcilers.FirstOrDefault();
                 if (reconciler != null)
                 {
                     await reconciler.ReconcileWorkflowOperationAsync(operationId, context.RequestAborted).ConfigureAwait(false);

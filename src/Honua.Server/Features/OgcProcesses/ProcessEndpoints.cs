@@ -191,7 +191,9 @@ internal static class ProcessEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
         [FromServices] IExecutionJobStore? jobStore = null,
-        [FromServices] IJobQueue? jobQueue = null)
+        [FromServices] IJobQueue? jobQueue = null,
+        [FromServices] IExecutionJobDefinitionRegistry? workloadRegistry = null,
+        [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -374,6 +376,14 @@ internal static class ProcessEndpoints
         var now = DateTimeOffset.UtcNow;
         var jobId = $"gp-{Guid.NewGuid():N}";
 
+        var workload = workloadRegistry == null
+            ? null
+            : await workloadRegistry.GetAsync(planId, context.RequestAborted).ConfigureAwait(false);
+        var specParameters = workload?.Parameters.Count > 0
+            ? new Dictionary<string, string>(workload.Parameters, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+        specParameters[ExecutionJobParameterKeys.GeoprocessingPlanId] = planId;
+
         var jobRecord = new ExecutionJobRecord
         {
             OperationId = jobId,
@@ -386,13 +396,26 @@ internal static class ProcessEndpoints
                 RequestedBy = context.User.Identity?.Name,
                 RequestFingerprint = CreateRequestFingerprint(processId, planJson)
             },
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
-                WorkloadName = $"geoprocessing:{planId}"
-            }
+            Spec = workload == null
+                ? new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = LocalBatchComputeBackend.BackendId,
+                    WorkloadName = $"geoprocessing:{planId}",
+                    Parameters = specParameters
+                }
+                : new ExecutionJobSpec
+                {
+                    Kind = workload.Kind,
+                    TargetKind = workload.TargetKind,
+                    Backend = workload.Backend,
+                    WorkloadId = workload.WorkloadId,
+                    WorkloadName = workload.WorkloadName,
+                    Artifact = workload.ArtifactReference,
+                    RuntimeProfile = workload.RuntimeProfile,
+                    Parameters = specParameters
+                }
         };
 
         await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.RequestAborted).ConfigureAwait(false);
@@ -417,6 +440,8 @@ internal static class ProcessEndpoints
 
             throw;
         }
+
+        jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, backends, context.RequestAborted).ConfigureAwait(false);
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);
 
@@ -672,6 +697,44 @@ internal static class ProcessEndpoints
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"ogc-execute:{processId}:{planJson}"));
         return Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant();
     }
+
+    private static async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
+        ExecutionJobRecord job,
+        IExecutionJobStore jobStore,
+        IEnumerable<IBatchComputeBackend>? backends,
+        CancellationToken cancellationToken)
+    {
+        if (backends == null ||
+            string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            return job;
+        }
+
+        var backend = backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            return job;
+        }
+
+        var submission = await backend.StartAsync(job, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        var updated = job with
+        {
+            Status = submission.Status,
+            UpdatedAt = now,
+            CompletedAt = IsTerminalStatus(submission.Status) ? now : job.CompletedAt,
+            ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
+            CurrentPhase = submission.Message ?? job.CurrentPhase
+        };
+
+        await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    private static bool IsTerminalStatus(ExecutionJobStatus status)
+        => status is ExecutionJobStatus.Succeeded
+            or ExecutionJobStatus.Failed
+            or ExecutionJobStatus.Cancelled;
 
     internal static IResult FormatOgcAuthError(Core.Features.Security.Abstractions.AccessDecision decision)
     {

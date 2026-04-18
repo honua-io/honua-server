@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -128,7 +129,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithoutProtocolMetadata_HasEmptySpecParameters()
+    public async Task SubmitJob_WithoutProtocolMetadata_StoresCanonicalPlanMetadata()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -136,7 +137,9 @@ public sealed class GeoprocessingJobServiceTests
         var plan = CreateValidPlan();
         var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
-        job.Spec.Parameters.Should().BeEmpty();
+        job.Spec.Parameters.Should().ContainSingle();
+        job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
+            .WhoseValue.Should().Be("plan-1");
     }
 
     [UnitTest]
@@ -243,6 +246,74 @@ public sealed class GeoprocessingJobServiceTests
         var act = async () => await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithConfiguredWorkload_SubmitsToMatchingBackendAndPersistsState()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.GetAsync("plan-1", Arg.Any<CancellationToken>()).Returns(new ExecutionJobDefinition
+        {
+            WorkloadId = "plan-1",
+            Kind = ExecutionJobKind.Geoprocessing,
+            TargetKind = BatchComputeTargetKind.AwsBatch,
+            Backend = "aws-batch",
+            WorkloadName = "Remote geoprocessing",
+            ArtifactReference = "ecr/honua-gp:latest",
+            RuntimeProfile = "py311",
+            Parameters = new Dictionary<string, string>
+            {
+                ["queue"] = "gp-primary"
+            }
+        });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "job-remote-123",
+                Message = "Submitted to AWS Batch"
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), new Dictionary<string, string>
+        {
+            ["gpserver.serviceId"] = "TestService"
+        });
+
+        job.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        job.ProviderOperationId.Should().Be("job-remote-123");
+        job.CurrentPhase.Should().Be("Submitted to AWS Batch");
+        job.Spec.WorkloadId.Should().Be("plan-1");
+        job.Spec.Backend.Should().Be("aws-batch");
+        job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
+        job.Spec.Parameters.Should().ContainKey("gpserver.serviceId").WhoseValue.Should().Be("TestService");
+        job.Spec.Parameters.Should().ContainKey("queue").WhoseValue.Should().Be("gp-primary");
+        job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
+            .WhoseValue.Should().Be("plan-1");
+        await _jobStore.Received(1).SetAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.OperationId == job.OperationId &&
+                record.Status == ExecutionJobStatus.Provisioning &&
+                record.ProviderOperationId == "job-remote-123"),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     // -----------------------------------------------------------------------
@@ -762,6 +833,53 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteBackendSupportingCancellation_DelegatesToBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                Message = "Cancellation requested"
+            });
+
+        var record = CreateJobRecord(
+            "job-1",
+            ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await backend.Received(1).CancelAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.OperationId == "job-1"),
+            Arg.Any<CancellationToken>());
+        await _jobStore.DidNotReceive().SetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.OperationId == "job-1" && job.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_IdempotentRetryAfterSubmissionRollback_ThrowsInsteadOfReturningFailedRecord()
@@ -864,20 +982,24 @@ public sealed class GeoprocessingJobServiceTests
         ]
     };
 
-    private static ExecutionJobRecord CreateJobRecord(string jobId, ExecutionJobStatus status) => new()
-    {
-        OperationId = jobId,
-        Status = status,
-        CreatedAt = DateTimeOffset.UtcNow,
-        UpdatedAt = DateTimeOffset.UtcNow,
-        Spec = new ExecutionJobSpec
+    private static ExecutionJobRecord CreateJobRecord(
+        string jobId,
+        ExecutionJobStatus status,
+        string backend = LocalBatchComputeBackend.BackendId,
+        BatchComputeTargetKind targetKind = BatchComputeTargetKind.KubernetesJob) => new()
         {
-            Kind = ExecutionJobKind.Geoprocessing,
-            TargetKind = BatchComputeTargetKind.KubernetesJob,
-            Backend = "local",
-            WorkloadName = "test-workload"
-        }
-    };
+            OperationId = jobId,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = targetKind,
+                Backend = backend,
+                WorkloadName = "test-workload"
+            }
+        };
 
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(

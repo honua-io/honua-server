@@ -37,6 +37,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IProcessCatalog _processCatalog;
     private readonly AnalyticsLimits _analyticsLimits;
+    private readonly IExecutionJobDefinitionRegistry? _workloadRegistry;
+    private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -48,7 +50,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IExecutionJobStore? jobStore = null,
         IJobQueue? jobQueue = null,
-        IOptions<LimitsOptions>? limitsOptions = null)
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IExecutionJobDefinitionRegistry? workloadRegistry = null,
+        IEnumerable<IBatchComputeBackend>? backends = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -59,6 +63,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _logger = logger;
         _jobStore = jobStore;
         _jobQueue = jobQueue;
+        _workloadRegistry = workloadRegistry;
+        _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
     }
 
     public void EnsureCallerAuthorized(
@@ -175,6 +181,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
 
+        var workload = await ResolveWorkloadAsync(plan.PlanId, cancellationToken).ConfigureAwait(false);
+        var spec = BuildSpec(plan, specParams, workload);
+
         var jobRecord = new ExecutionJobRecord
         {
             OperationId = jobId,
@@ -188,14 +197,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 RequestedBy = principal.Identity?.Name,
                 RequestFingerprint = requestFingerprint
             },
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
-                WorkloadName = $"geoprocessing:{plan.PlanId}",
-                Parameters = specParams
-            }
+            Spec = spec
         };
 
         var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
@@ -236,9 +238,91 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             throw;
         }
 
+        jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
+
         GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
 
         return jobRecord;
+    }
+
+    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
+        string planId,
+        CancellationToken cancellationToken)
+    {
+        if (_workloadRegistry == null || string.IsNullOrWhiteSpace(planId))
+        {
+            return null;
+        }
+
+        return await _workloadRegistry.GetAsync(planId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static ExecutionJobSpec BuildSpec(
+        AnalysisPlan plan,
+        Dictionary<string, string> specParams,
+        ExecutionJobDefinition? workload)
+    {
+        specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
+
+        if (workload == null)
+        {
+            return new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = LocalBatchComputeBackend.BackendId,
+                WorkloadName = $"geoprocessing:{plan.PlanId}",
+                Parameters = specParams
+            };
+        }
+
+        foreach (var kv in workload.Parameters)
+        {
+            specParams.TryAdd(kv.Key, kv.Value);
+        }
+
+        return new ExecutionJobSpec
+        {
+            Kind = workload.Kind,
+            TargetKind = workload.TargetKind,
+            Backend = workload.Backend,
+            WorkloadId = workload.WorkloadId,
+            WorkloadName = workload.WorkloadName,
+            Artifact = workload.ArtifactReference,
+            RuntimeProfile = workload.RuntimeProfile,
+            Parameters = specParams
+        };
+    }
+
+    private async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
+        ExecutionJobRecord job,
+        IExecutionJobStore jobStore,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            return job;
+        }
+
+        var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            return job;
+        }
+
+        var submission = await backend.StartAsync(job, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        var updated = job with
+        {
+            Status = submission.Status,
+            UpdatedAt = now,
+            CompletedAt = IsTerminal(submission.Status) ? now : job.CompletedAt,
+            ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
+            CurrentPhase = submission.Message ?? job.CurrentPhase
+        };
+
+        await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return updated;
     }
 
     public async Task<ExecutionJobRecord> GetJobAsync(
@@ -386,6 +470,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' was not found on re-read and could not be cancelled.");
         }
 
+        var backendCancelled = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
+        if (backendCancelled)
+        {
+            GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+            return;
+        }
+
         if (IsTerminal(latest.Status))
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
@@ -526,6 +617,29 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new GeoprocessingStoreUnavailableException();
+
+    private async Task<bool> TryCancelViaBackendAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            return false;
+        }
+
+        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (!capabilities.SupportsCancellation)
+        {
+            return false;
+        }
+
+        await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     private static void ValidatePlanStructure(AnalysisPlan plan)
     {
