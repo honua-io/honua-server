@@ -37,15 +37,12 @@
   </PropertyGroup>
 
   <!--
-    AOT/trim analyzers only apply to shipped production assemblies. Enabling them
-    here surfaces IL2026/IL3050 warnings at build time for every library the server
-    links against; without this gate only the root Server project's PublishAot run
-    would catch them. Test/benchmark/AppHost projects are excluded because they do
-    not ship and the analyzer noise drowns out real issues.
+    Library-level IsAotCompatible was considered here to surface IL warnings in
+    every shipped assembly but propagating [RequiresDynamicCode] annotations
+    turned into a cascade (every caller of an AOT-unsafe config-binding helper
+    also has to be annotated) with no runtime benefit because the Server's
+    PublishAot=true already catches cross-assembly issues at publish time and
+    the EnableConfigurationBindingGenerator above makes the common
+    ConfigurationBinder.Bind / Configure<T> paths trim-safe at the source.
   -->
-  <PropertyGroup Condition="
-      $(MSBuildProjectFullPath.Contains('/src/'))
-      AND !$(MSBuildProjectFullPath.Contains('/src/Honua.AppHost/'))">
-    <IsAotCompatible>true</IsAotCompatible>
-  </PropertyGroup>
 </Project>
