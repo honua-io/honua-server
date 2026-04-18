@@ -147,4 +147,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void SubmitPostStartCasConflict(
         ILogger logger,
         string jobId);
+
+    [LoggerMessage(8026, LogLevel.Warning, "Remote cancel CAS exhausted for job {JobId}: cancellation could not be confirmed")]
+    public static partial void RemoteCancelCasExhausted(
+        ILogger logger,
+        string jobId);
 }

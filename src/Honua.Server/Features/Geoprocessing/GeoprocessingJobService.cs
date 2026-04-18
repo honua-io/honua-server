@@ -463,31 +463,35 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' was not found on re-read and could not be cancelled.");
         }
 
-        var backendCancelled = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
-        if (backendCancelled)
+        var backendResult = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
+        switch (backendResult.Outcome)
         {
-            GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
-            return;
-        }
-
-        if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
-        {
-            var afterBackend = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (afterBackend != null && IsTerminal(afterBackend.Status))
-            {
-                if (afterBackend.Status == ExecutionJobStatus.Cancelled)
-                {
-                    return;
-                }
-
-                GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, afterBackend.Status.ToString());
+            case RemoteCancelOutcome.Delegated:
+                GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+                return;
+            case RemoteCancelOutcome.TerminalConflict:
+                var terminalStatus = backendResult.TerminalStatus ?? latest.Status;
+                GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, terminalStatus.ToString());
                 throw new GeoprocessingPreconditionFailedException(
-                    $"Job '{jobId}' reached terminal state '{afterBackend.Status}' before cancellation could be applied.");
-            }
-
-            GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
-            throw new GeoprocessingPreconditionFailedException(
-                $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
+                    $"Job '{jobId}' reached terminal state '{terminalStatus}' before cancellation could be applied.");
+            case RemoteCancelOutcome.Missing:
+                GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+                throw new GeoprocessingNotFoundException(
+                    $"Job '{jobId}' was deleted during cancellation.");
+            case RemoteCancelOutcome.Unconfirmed:
+                GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
+            case RemoteCancelOutcome.Unsupported:
+                GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
+            case RemoteCancelOutcome.BackendNotFound:
+                GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
+            case RemoteCancelOutcome.NotRemote:
+                break;
         }
 
         if (IsTerminal(latest.Status))
@@ -631,28 +635,45 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new GeoprocessingStoreUnavailableException();
 
-    private async Task<bool> TryCancelViaBackendAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    private enum RemoteCancelOutcome
+    {
+        Delegated,
+        TerminalConflict,
+        Missing,
+        Unconfirmed,
+        Unsupported,
+        BackendNotFound,
+        NotRemote
+    }
+
+    private readonly record struct RemoteCancelResult(
+        RemoteCancelOutcome Outcome,
+        ExecutionJobStatus? TerminalStatus = null);
+
+    private async Task<RemoteCancelResult> TryCancelViaBackendAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
         if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
-            return false;
+            return new(RemoteCancelOutcome.NotRemote);
         }
 
         if (IsTerminal(job.Status))
         {
-            return false;
+            return job.Status == ExecutionJobStatus.Cancelled
+                ? new(RemoteCancelOutcome.Delegated)
+                : new(RemoteCancelOutcome.TerminalConflict, job.Status);
         }
 
         var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
         if (backend == null)
         {
-            return false;
+            return new(RemoteCancelOutcome.BackendNotFound);
         }
 
         var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
         if (!capabilities.SupportsCancellation)
         {
-            return false;
+            return new(RemoteCancelOutcome.Unsupported);
         }
 
         var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
@@ -678,7 +699,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
             if (fresh == null)
             {
-                return false;
+                return new(RemoteCancelOutcome.Missing);
             }
 
             if (fresh.Status == ExecutionJobStatus.Cancelled)
@@ -687,7 +708,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
             else if (IsTerminal(fresh.Status))
             {
-                return false;
+                return new(RemoteCancelOutcome.TerminalConflict, fresh.Status);
             }
             else
             {
@@ -711,7 +732,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 }
                 else
                 {
-                    return false;
+                    return new(RemoteCancelOutcome.Unconfirmed);
                 }
             }
         }
@@ -719,7 +740,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
             _progressStore, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        return updated.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed);
+        return updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed
+            ? new(RemoteCancelOutcome.TerminalConflict, updated.Status)
+            : new(RemoteCancelOutcome.Delegated);
     }
 
     private static void ValidatePlanStructure(AnalysisPlan plan)

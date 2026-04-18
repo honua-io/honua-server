@@ -249,13 +249,44 @@ internal static class OperationsProgressEndpoints
                 if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
                     var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                    if (fresh != null && ExecutionJobCancellationHelper.IsTerminal(fresh.Status)
-                        && fresh.Status != ExecutionJobStatus.Cancelled)
+                    if (fresh == null)
+                    {
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' was deleted before cancellation could be applied");
+                    }
+
+                    if (fresh.Status == ExecutionJobStatus.Cancelled)
+                    {
+                        // Already cancelled — idempotent success, fall through.
+                    }
+                    else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                     {
                         return ProblemDetailsHelpers.CreateAdminProblem(
                             StatusCodes.Status409Conflict,
                             "Conflict",
                             $"Operation '{operationId}' reached terminal state '{fresh.Status}' in the durable job store before cancellation could be applied");
+                    }
+                    else if (fresh.CancellationRequestedAt.HasValue)
+                    {
+                        // Another path already set the cancellation signal — idempotent success, fall through.
+                    }
+                    else
+                    {
+                        var retryNow = DateTimeOffset.UtcNow;
+                        var retryRequested = fresh with
+                        {
+                            CancellationRequestedAt = retryNow,
+                            UpdatedAt = retryNow
+                        };
+                        if (!await jobStore.TrySetAsync(retryRequested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                        {
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' cancellation could not be confirmed after retries.");
+                        }
                     }
                 }
             }
