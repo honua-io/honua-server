@@ -189,7 +189,6 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         // Assert - verify environment variable quick reference is populated
         var envVars = configDoc!.EnvironmentVariables;
         envVars.Should().Contain(e => e.Name == "ConnectionStrings__DefaultConnection");
-        envVars.Should().Contain(e => e.Name == "HONUA_ADMIN_UI");
         envVars.Should().Contain(e => e.Name == "Cache__Enabled");
         envVars.Should().Contain(e => e.Name == "HONUA_ENABLE_BASIC_AUTH_COMPAT");
         envVars.Should().Contain(e => e.Name == "HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH");
@@ -263,56 +262,19 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /admin/")]
-    public async Task GetAdminUi_WithTrailingSlash_ServesHostedShell()
-    {
-        var response = await _fixture.Client.GetAsync("/admin/");
-
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/html");
-
-        var html = await response.Content.ReadAsStringAsync();
-        html.Should().Contain("<base href=\"/admin/\" />");
-        html.Should().Contain("Honua Admin");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Configuration)]
-    [Endpoint("GET /admin/_framework/blazor.webassembly.js")]
-    public async Task GetAdminUiFrameworkAsset_WhenAdminUiEnabled_ReturnsStaticFile()
-    {
-        using var response = await _fixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
-
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Contain("javascript");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Configuration)]
     [Endpoint("GET /admin/index.html")]
     [Endpoint("GET /admin/_framework/blazor.webassembly.js")]
-    public async Task GetAdminUiAssets_WhenAdminUiDisabled_Return404EvenWhenStacDemoEnabled()
+    public async Task GetAdminUiAssets_NotServedByServer()
     {
-        var isolatedFixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("ServeStacOpsDemo", "true");
-            });
+        // The in-tree Blazor admin UI was removed; admin UI now lives in the
+        // sibling honua-server-admin repo and is deployed separately. Verify
+        // the server returns 404 for the /admin/* prefix to catch any
+        // accidental re-introduction of the hosted shell.
+        using var shellResponse = await _fixture.Client.GetAsync("/admin/index.html");
+        using var frameworkResponse = await _fixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
 
-        try
-        {
-            await isolatedFixture.InitializeAsync();
-
-            using var shellResponse = await isolatedFixture.Client.GetAsync("/admin/index.html");
-            using var frameworkResponse = await isolatedFixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
-
-            shellResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            frameworkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        }
-        finally
-        {
-            await isolatedFixture.DisposeAsync();
-        }
+        shellResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        frameworkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

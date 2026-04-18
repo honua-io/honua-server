@@ -86,14 +86,9 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                     : "Unhealthy";
                 Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, cacheStopwatch.Elapsed.TotalMilliseconds);
 
-                // Cache is an optional dependency — the in-memory fallback keeps the
-                // application serviceable while Redis is unreachable. Only fail
-                // readiness when the fallback itself is broken (IsUsingFallback=true
-                // combined with !isCacheHealthy indicates the fallback cache is
-                // also failing).
-                if (!isCacheHealthy && _cacheHealthChecker.IsUsingFallback)
+                if (!isCacheHealthy)
                 {
-                    return ReadinessResult.NotReady("Cache unavailable (fallback also unhealthy)");
+                    return ReadinessResult.NotReady("Cache unavailable");
                 }
             }
 
