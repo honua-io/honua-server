@@ -200,7 +200,10 @@ internal sealed partial class ExecutionJobReconciler(
             CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
             ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
             PercentComplete = observation.PercentComplete ?? job.PercentComplete,
-            CurrentPhase = observation.Message ?? job.CurrentPhase
+            CurrentPhase = observation.Message ?? job.CurrentPhase,
+            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                ? observation.Message ?? job.ErrorMessage
+                : job.ErrorMessage
         };
     }
 

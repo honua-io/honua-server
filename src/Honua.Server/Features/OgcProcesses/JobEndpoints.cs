@@ -403,7 +403,11 @@ internal static class JobEndpoints
                             UpdatedAt = cancelNow,
                             CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? cancelNow : latest.CompletedAt,
                             ProviderOperationId = observation.ProviderOperationId ?? latest.ProviderOperationId,
+                            PercentComplete = observation.PercentComplete ?? latest.PercentComplete,
                             CurrentPhase = observation.Message ?? latest.CurrentPhase,
+                            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                                ? observation.Message ?? latest.ErrorMessage
+                                : latest.ErrorMessage,
                             CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? latest.CancellationRequestedAt : (latest.CancellationRequestedAt ?? cancelNow)
                         };
                         var persisted = await jobStore.TrySetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
@@ -444,7 +448,11 @@ internal static class JobEndpoints
                                     UpdatedAt = retryNow,
                                     CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
                                     ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
+                                    PercentComplete = observation.PercentComplete ?? fresh.PercentComplete,
                                     CurrentPhase = observation.Message ?? fresh.CurrentPhase,
+                                    ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                                        ? observation.Message ?? fresh.ErrorMessage
+                                        : fresh.ErrorMessage,
                                     CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
                                 };
                                 if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: context.RequestAborted).ConfigureAwait(false))

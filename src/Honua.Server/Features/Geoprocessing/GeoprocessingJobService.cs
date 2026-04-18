@@ -664,7 +664,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             UpdatedAt = now,
             CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
             ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
+            PercentComplete = observation.PercentComplete ?? job.PercentComplete,
             CurrentPhase = observation.Message ?? job.CurrentPhase,
+            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                ? observation.Message ?? job.ErrorMessage
+                : job.ErrorMessage,
             CancellationRequestedAt = IsTerminal(observation.Status) ? job.CancellationRequestedAt : (job.CancellationRequestedAt ?? now)
         };
         var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -694,7 +698,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     UpdatedAt = retryNow,
                     CompletedAt = IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
                     ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
+                    PercentComplete = observation.PercentComplete ?? fresh.PercentComplete,
                     CurrentPhase = observation.Message ?? fresh.CurrentPhase,
+                    ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                        ? observation.Message ?? fresh.ErrorMessage
+                        : fresh.ErrorMessage,
                     CancellationRequestedAt = IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
                 };
                 if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))

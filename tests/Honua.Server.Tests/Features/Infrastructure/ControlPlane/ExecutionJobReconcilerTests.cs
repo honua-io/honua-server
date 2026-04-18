@@ -210,6 +210,61 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_CancelReturnsFailed_PreservesPercentCompleteAndErrorMessage()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = "provider-fail-1",
+                PercentComplete = 42.5,
+                Message = "Job failed before cancel was applied"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-cancel-failed",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch,
+            percentComplete: 10.0,
+            currentPhase: "Processing") with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-cancel-failed",
+            GeoprocessingProgress.CreateForSubmittedJob("job-cancel-failed", "plan-cancel-fail"));
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-cancel-failed");
+
+        var stored = await jobStore.GetAsync("job-cancel-failed");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Failed);
+        stored.CompletedAt.Should().NotBeNull();
+        stored.PercentComplete.Should().Be(42.5);
+        stored.ErrorMessage.Should().Be("Job failed before cancel was applied");
+        stored.CurrentPhase.Should().Be("Job failed before cancel was applied");
+        stored.ProviderOperationId.Should().Be("provider-fail-1");
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-cancel-failed");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        progress.ErrorMessage.Should().Be("Job failed before cancel was applied");
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_CancellationRequestedButUnsupported_FallsBackToObserve()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
