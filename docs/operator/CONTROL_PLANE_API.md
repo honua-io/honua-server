@@ -412,12 +412,15 @@ cancellation and checks the durable job store (when present) to mitigate TOCTOU
 races with worker-owned state transitions.
 
 Jobs submitted through the durable job orchestration substrate (via
-`ProcessService.SubmitPlanJob`) surface through these same operations endpoints
-using the `Geoprocessing` operation type. The substrate tracks additional
-claim, heartbeat, and retry state internally through `IExecutionJobStore`;
-structured execution logs are stored via `IExecutionLogStore` and are not yet
-exposed through a public API endpoint. See
-[Operations — Job Orchestration](operations.md#job-orchestration) for
+`ProcessService.SubmitPlanJob`, OGC API Processes `/execute`, or GPServer
+`submitJob`) surface through these same operations endpoints using the
+`Geoprocessing` operation type. The execution-job reconciler bridges
+progress from pluggable batch-compute backends into `IUniversalProgressStore`
+so all jobs — local and remote — appear through the operations surface.
+The substrate tracks additional claim, heartbeat, and retry state internally
+through `IExecutionJobStore`; structured execution logs are stored via
+`IExecutionLogStore` and are not yet exposed through a public API endpoint.
+See [Operations — Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
 
 Workflow runs produced by the declarative orchestration layer surface through

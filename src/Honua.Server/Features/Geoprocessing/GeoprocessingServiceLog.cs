@@ -131,4 +131,10 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string planId,
         string processId);
+
+    [LoggerMessage(8024, LogLevel.Warning, "Cancel refused for job {JobId}: remote backend '{Backend}' does not support cancellation")]
+    public static partial void RemoteCancelUnavailable(
+        ILogger logger,
+        string jobId,
+        string backend);
 }

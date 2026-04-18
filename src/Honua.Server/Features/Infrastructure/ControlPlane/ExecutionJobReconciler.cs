@@ -77,6 +77,8 @@ internal sealed partial class ExecutionJobReconciler(
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running when job.CancellationRequestedAt.HasValue
+                    => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 _ => job
@@ -142,6 +144,30 @@ internal sealed partial class ExecutionJobReconciler(
             CompletedAt = IsTerminal(submission.Status) ? now : job.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
             CurrentPhase = submission.Message ?? job.CurrentPhase
+        };
+    }
+
+    private static async Task<ExecutionJobRecord> CancelJobAsync(
+        ExecutionJobRecord job,
+        IBatchComputeBackend backend,
+        CancellationToken cancellationToken)
+    {
+        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (!capabilities.SupportsCancellation)
+        {
+            return await ObserveJobAsync(job, backend, cancellationToken).ConfigureAwait(false);
+        }
+
+        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        return job with
+        {
+            Status = observation.Status,
+            UpdatedAt = now,
+            CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
+            ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
+            PercentComplete = observation.PercentComplete ?? job.PercentComplete,
+            CurrentPhase = observation.Message ?? job.CurrentPhase
         };
     }
 

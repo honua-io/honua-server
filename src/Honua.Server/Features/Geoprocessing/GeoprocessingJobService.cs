@@ -480,6 +480,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
+        if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+            throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
+        }
+
         if (IsTerminal(latest.Status))
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
@@ -640,7 +647,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return false;
         }
 
-        await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
+        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
+        var jobStore = RequireJobStore();
+        var now = DateTimeOffset.UtcNow;
+        var updated = job with
+        {
+            Status = observation.Status,
+            UpdatedAt = now,
+            CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
+            ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
+            CurrentPhase = observation.Message ?? job.CurrentPhase
+        };
+        await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         return true;
     }
 

@@ -417,43 +417,84 @@ internal static class OperationsProgressEndpoints
             var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (executionJob != null)
             {
-                var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
-                    jobStore,
-                    operationId,
-                    executionJob,
-                    "Cancelled",
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-
-                switch (cancelOutcome.State)
+                if (!string.Equals(executionJob.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
                 {
-                    case ExecutionJobCancellationState.Cancelled:
+                    var backends = httpContext.RequestServices.GetService<IEnumerable<IBatchComputeBackend>>();
+                    var backend = backends?.Resolve(executionJob.Spec.Backend, executionJob.Spec.TargetKind);
+                    if (backend == null)
+                    {
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"No batch compute backend registered for '{executionJob.Spec.Backend}' ({executionJob.Spec.TargetKind}). Cannot cancel remote job locally.");
+                    }
+
+                    var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+                    if (!capabilities.SupportsCancellation)
+                    {
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Backend '{executionJob.Spec.Backend}' does not support cancellation.");
+                    }
+
+                    var observation = await backend.CancelAsync(executionJob, cancellationToken).ConfigureAwait(false);
+                    var now = DateTimeOffset.UtcNow;
+                    var updated = executionJob with
+                    {
+                        Status = observation.Status,
+                        UpdatedAt = now,
+                        CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? now : executionJob.CompletedAt,
+                        ProviderOperationId = observation.ProviderOperationId ?? executionJob.ProviderOperationId,
+                        CurrentPhase = observation.Message ?? executionJob.CurrentPhase
+                    };
+                    await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                    if (ExecutionJobCancellationHelper.IsTerminal(observation.Status))
+                    {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case ExecutionJobCancellationState.CancellationRequested:
-                        var delegated = new CancelOperationResponse
-                        {
-                            OperationId = operationId,
-                            Message = "Operation cancellation requested",
-                            Type = progress.Type
-                        };
-                        return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
-                    case ExecutionJobCancellationState.TerminalConflict:
-                        return ProblemDetailsHelpers.CreateAdminProblem(
-                            StatusCodes.Status409Conflict,
-                            "Conflict",
-                            $"Operation '{operationId}' reached terminal state '{cancelOutcome.Job?.Status}' in the durable job store before cancellation could be applied");
-                    case ExecutionJobCancellationState.Missing:
-                        return ProblemDetailsHelpers.CreateAdminProblem(
-                            StatusCodes.Status409Conflict,
-                            "Conflict",
-                            $"Operation '{operationId}' was deleted before cancellation could be applied");
-                    case ExecutionJobCancellationState.Unconfirmed:
-                        return ProblemDetailsHelpers.CreateAdminProblem(
-                            StatusCodes.Status409Conflict,
-                            "Conflict",
-                            $"Operation '{operationId}' cancellation could not be confirmed after retries.");
-                    default:
-                        throw new InvalidOperationException($"Unexpected durable cancellation outcome '{cancelOutcome.State}'.");
+                    }
+                }
+                else
+                {
+                    var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
+                        jobStore,
+                        operationId,
+                        executionJob,
+                        "Cancelled",
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                    switch (cancelOutcome.State)
+                    {
+                        case ExecutionJobCancellationState.Cancelled:
+                            await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                            break;
+                        case ExecutionJobCancellationState.CancellationRequested:
+                            var delegated = new CancelOperationResponse
+                            {
+                                OperationId = operationId,
+                                Message = "Operation cancellation requested",
+                                Type = progress.Type
+                            };
+                            return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                        case ExecutionJobCancellationState.TerminalConflict:
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' reached terminal state '{cancelOutcome.Job?.Status}' in the durable job store before cancellation could be applied");
+                        case ExecutionJobCancellationState.Missing:
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' was deleted before cancellation could be applied");
+                        case ExecutionJobCancellationState.Unconfirmed:
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' cancellation could not be confirmed after retries.");
+                        default:
+                            throw new InvalidOperationException($"Unexpected durable cancellation outcome '{cancelOutcome.State}'.");
+                    }
                 }
             }
         }

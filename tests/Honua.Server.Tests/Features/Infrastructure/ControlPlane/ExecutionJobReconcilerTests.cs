@@ -152,6 +152,102 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_CancellationRequested_DelegatesToBackendCancel()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = "provider-cancel-1",
+                Message = "Cancelled by provider"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-cancel-remote",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch,
+            currentPhase: "Running") with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-cancel-remote",
+            GeoprocessingProgress.CreateForSubmittedJob("job-cancel-remote", "plan-cancel"));
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-cancel-remote");
+
+        var stored = await jobStore.GetAsync("job-cancel-remote");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        stored.CompletedAt.Should().NotBeNull();
+        stored.ProviderOperationId.Should().Be("provider-cancel-1");
+
+        await backend.Received(1).CancelAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_CancellationRequestedButUnsupported_FallsBackToObserve()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = false });
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                PercentComplete = 50,
+                Message = "Still running"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-cancel-unsupported",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-cancel-unsupported");
+
+        var stored = await jobStore.GetAsync("job-cancel-unsupported");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Running);
+        stored.PercentComplete.Should().Be(50);
+
+        await backend.DidNotReceive().CancelAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.Received(1).ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task BridgeTerminalSubmissionProgress_TerminalJob_UpdatesGeoprocessingProgress()
     {
         var progressStore = new InMemoryProgressStore();

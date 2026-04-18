@@ -103,6 +103,46 @@ directly until a metrics projection is added.
 
 ---
 
+## Execution Job Reconciler Observability
+
+The `ExecutionJobReconciler` and its background service
+(`ExecutionJobReconcilerBackgroundService`) reconcile active execution jobs
+against pluggable `IBatchComputeBackend` adapters, bridging status and
+progress into `IUniversalProgressStore`. The reconciler runs on every
+Redis-enabled host and emits structured logs in the `9030-9036` event-id
+band.
+
+**ExecutionJobReconciler** (per-job reconciliation):
+
+| EventId | Level | Signal |
+|---------|-------|--------|
+| 9030 | Debug | Execution job reconciled to new status and percent complete |
+| 9031 | Warning | Execution-job reconciliation failed for a specific operation |
+| 9033 | Debug | Reconciliation lease was lost; another node may continue |
+| 9034 | Warning | No batch compute backend registered for the job's `(Backend, TargetKind)` |
+| 9035 | Warning | Failed to bridge execution-job progress into `IUniversalProgressStore` |
+
+**ExecutionJobReconcilerBackgroundService** (poll loop):
+
+| EventId | Level | Signal |
+|---------|-------|--------|
+| 9032 | Warning | Reconciliation poll loop failed |
+| 9036 | Information | Background service started |
+
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Missing backend registrations | Any occurrence | `ExecutionJobReconciler` Warning (9034) |
+| Sustained reconciliation failures | > 3 in 5 min | `ExecutionJobReconciler` Warning (9031) |
+| Poll loop failures | Any occurrence | `ExecutionJobReconciler` Warning (9032) |
+| Progress bridge failures | Sustained volume | `ExecutionJobReconciler` Warning (9035) |
+
+For lifecycle details and backend configuration, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+---
+
 ## Workflow Orchestration Observability
 
 The declarative workflow engine (`WorkflowOrchestrationEngine`), its

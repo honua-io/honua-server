@@ -394,8 +394,18 @@ internal static class JobEndpoints
                     var capabilities = await backend.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
                     if (capabilities.SupportsCancellation)
                     {
-                        await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
-                        job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false) ?? latest;
+                        var observation = await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
+                        var cancelNow = DateTimeOffset.UtcNow;
+                        var cancelled = latest with
+                        {
+                            Status = observation.Status,
+                            UpdatedAt = cancelNow,
+                            CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? cancelNow : latest.CompletedAt,
+                            ProviderOperationId = observation.ProviderOperationId ?? latest.ProviderOperationId,
+                            CurrentPhase = observation.Message ?? latest.CurrentPhase
+                        };
+                        await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                        job = cancelled;
                         var baseUrlBackend = BaseUrlResolver.GetBaseUrl(context);
                         return Results.Json(
                             OgcProcessesConversionHelpers.ToOgcStatusInfo(
@@ -446,6 +456,20 @@ internal static class JobEndpoints
                 }
 
                 job = latest;
+            }
+            else if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+            {
+                return Results.Json(
+                    new OgcProcessError
+                    {
+                        Type = "about:blank",
+                        Title = "Cancellation not supported",
+                        Status = StatusCodes.Status409Conflict,
+                        Detail = $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support dismissal."
+                    },
+                    OgcProcessesJsonContext.Default.OgcProcessError,
+                    MediaTypes.Json,
+                    StatusCodes.Status409Conflict);
             }
             else
             {

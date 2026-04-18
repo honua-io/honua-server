@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -50,7 +51,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "test-backend",
+                Backend = LocalBatchComputeBackend.BackendId,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "geo-workload"
             }
@@ -95,7 +96,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "test-backend",
+                Backend = LocalBatchComputeBackend.BackendId,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "geo-workload"
             }
@@ -124,7 +125,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "test-backend",
+                Backend = LocalBatchComputeBackend.BackendId,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "geo-workload"
             }
@@ -164,7 +165,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "test-backend",
+                Backend = LocalBatchComputeBackend.BackendId,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "geo-workload"
             }
@@ -203,7 +204,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "test-backend",
+                Backend = LocalBatchComputeBackend.BackendId,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "geo-workload"
             }

@@ -142,7 +142,8 @@ redis-cli -h redis ZCARD controlplane:jobqueue:pending
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Jobs stay Queued | No worker host running `AddJobWorker()` | Follow-on: worker-mode hosting lands with per-kind executor tickets (#721, #724, #727) |
+| Jobs stay Queued (local backend) | No worker host running `AddJobWorker()` | Deploy a combined or worker-mode host |
+| Jobs stay Queued (remote backend) | No `IBatchComputeBackend` registered for the job's `(Backend, TargetKind)` | Verify the backend adapter is registered and the `ControlPlane:ExecutionWorkloads` catalog entry matches |
 | Heartbeat expiry warnings | Worker crashed or network partition | Check worker health; reconciler auto-recovers |
 | Retry exhaustion errors | Executor fails repeatedly | Check executor logs for root cause |
 | Claim rollback warnings | Transient Redis error during claim | Self-healing; monitor frequency |
