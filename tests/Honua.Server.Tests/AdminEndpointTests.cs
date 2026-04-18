@@ -296,7 +296,6 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         var isolatedFixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ServeAdminUI", "false");
                 builder.UseSetting("ServeStacOpsDemo", "true");
             });
 

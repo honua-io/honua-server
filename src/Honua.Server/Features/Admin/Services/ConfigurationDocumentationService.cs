@@ -109,10 +109,6 @@ public sealed class ConfigurationDocumentationService
             Description = "Feature flags for enabling/disabling server capabilities",
             Properties =
             [
-                BuildProperty("HONUA_ADMIN_UI", "HONUA_ADMIN_UI", "boolean",
-                    "Enables the web admin interface", false, isSensitive: false),
-                BuildProperty("HONUA_SERVE_ADMIN_UI", "HONUA_SERVE_ADMIN_UI", "boolean",
-                    "Serve the admin UI from /admin (integrated hosting)", true, isSensitive: false),
                 BuildProperty("HONUA_OBSERVABILITY", "HONUA_OBSERVABILITY", "boolean",
                     "Activates metrics and health endpoints", false, isSensitive: false),
                 BuildProperty("HONUA_OPENTELEMETRY", "HONUA_OPENTELEMETRY", "boolean",
@@ -508,7 +504,7 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildProperty("FileUploadSecurity:MaxSecurityScanSizeBytes", "FileUploadSecurity__MaxSecurityScanSizeBytes", "integer",
-                    "Maximum number of bytes to scan for malicious content", 10 * 1024 * 1024)
+                    "Maximum prefix bytes to inspect for binary signatures before full text-format scanning", 10 * 1024 * 1024)
             ]
         };
     }
@@ -830,8 +826,6 @@ public sealed class ConfigurationDocumentationService
         var envVars = new List<EnvironmentVariableInfo>
         {
             // Feature flags
-            new() { Name = "HONUA_ADMIN_UI", ConfigPath = "Features", Description = "Enable web admin interface", Default = "false", Example = "true" },
-            new() { Name = "HONUA_SERVE_ADMIN_UI", ConfigPath = "Features", Description = "Serve the admin UI at /admin", Default = "true", Example = "false" },
             new() { Name = "HONUA_OBSERVABILITY", ConfigPath = "Features", Description = "Enable metrics endpoints", Default = "false", Example = "true" },
             new() { Name = "HONUA_OPENTELEMETRY", ConfigPath = "Features", Description = "Enable distributed tracing", Default = "false", Example = "true" },
             new() { Name = "HONUA_SKIP_MIGRATIONS", ConfigPath = "Features", Description = "Skip database migrations", Default = "false", Example = "true" },

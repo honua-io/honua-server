@@ -76,9 +76,6 @@ var registerInfrastructureInTestEnvironment =
         Environment.GetEnvironmentVariable("HONUA_REGISTER_TEST_INFRASTRUCTURE"),
         "true",
         StringComparison.OrdinalIgnoreCase);
-var serveAdminUi = builder.Configuration.GetValue(
-    "ServeAdminUI",
-    builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
 var serveStacOpsDemo = builder.Configuration.GetValue(
     "ServeStacOpsDemo",
     builder.Configuration.GetValue(
@@ -88,12 +85,8 @@ var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
 var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !isTestEnvironment;
-var adminStaticAssetsManifestPath = Path.Combine(
-    AppContext.BaseDirectory,
-    "Honua.Admin.staticwebassets.endpoints.json");
-var adminUiPathPrefix = new PathString("/admin");
 var stacOpsDemoPathPrefix = new PathString("/samples/stac-ops");
-if ((serveAdminUi || serveStacOpsDemo) && !builder.Environment.IsDevelopment())
+if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
 {
     builder.WebHost.UseStaticWebAssets();
 }
@@ -310,6 +303,7 @@ builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDepl
     Honua.Server.Features.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
+builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // Register license status provider (reads edition from AlertOptions until #338)
 builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider,
@@ -426,6 +420,8 @@ builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IU
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Import.UniversalProgressStore>>(),
         sp.GetService<IConnectionMultiplexer>()));
+builder.Services.Configure<Honua.Server.Features.Import.FileUploadOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Import.FileUploadOptions.SectionName));
 builder.Services.AddSingleton<Honua.Server.Features.Import.StreamingFileUploadService>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Abstractions.IUploadQueueMetricsProvider>(sp =>
     sp.GetRequiredService<Honua.Server.Features.Import.StreamingFileUploadService>());
@@ -635,12 +631,11 @@ builder.Services.AddApiVersioning(options =>
     options.ApiVersionReader = Asp.Versioning.ApiVersionReader.Combine(
         new Asp.Versioning.UrlSegmentApiVersionReader());
 
-    // Default version for unversioned endpoints
+    // Declare the currently published control-plane version. Unversioned admin routes remain unsupported.
     options.DefaultApiVersion = new Asp.Versioning.ApiVersion(1, 0);
     options.AssumeDefaultVersionWhenUnspecified = false;
 
-    // Use versioning conventions for better AOT compatibility
-    options.UnsupportedApiVersionStatusCode = 400;
+    // Keep versioning metadata explicit without publishing additional major paths.
 });
 
 // Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
@@ -704,15 +699,8 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
-var oidcEnabledForAdminUi = app.Configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
-var blockAdminUi = serveAdminUi &&
-                   !oidcEnabledForAdminUi &&
-                   !app.Environment.IsDevelopment() &&
-                   !app.Environment.IsEnvironment("Test");
-
 FilterHostedBlazorStaticAssetEndpoints(
     app,
-    allowAdminUiAssets: serveAdminUi && !blockAdminUi,
     allowStacOpsDemoAssets: serveStacOpsDemo);
 
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
@@ -805,37 +793,10 @@ app.UseSecurityHeaders();
 app.UseResponseCompression();
 app.UseWebSockets();
 
-if (serveAdminUi)
-{
-    // F-01: Block admin UI in non-Development environments when OIDC is not configured.
-    // Without OIDC the Blazor WASM client uses AnonymousAuthenticationStateProvider,
-    // which renders the full admin dashboard to any visitor.
-    if (blockAdminUi)
-    {
-        app.Map("/admin", adminApp =>
-        {
-            adminApp.Run(async context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/problem+json; charset=utf-8";
-                await context.Response.WriteAsync(
-                    """{"title":"Unauthorized","status":401,"detail":"Admin UI is disabled because OIDC authentication is not configured. Configure Oidc:Enabled in appsettings or environment variables before accessing the admin UI in production."}""")
-                    .ConfigureAwait(false);
-            });
-        });
-    }
-    else
-    {
-        ConfigureHostedBlazorAssets(app, adminUiPathPrefix);
-        app.MapGet("/admin", () => Results.Redirect("/admin/index.html"))
-            .ExcludeFromDescription();
-        MapHostedBlazorFallback(app, adminUiPathPrefix);
-    }
-}
-else
-{
-    MapDisabledHostedBlazorPrefix(app, adminUiPathPrefix);
-}
+// The admin web UI lives in the sibling `honua-server-admin` repo and is deployed
+// as a standalone Blazor WebAssembly app. This server only exposes the backing
+// `/api/v1/admin/*` REST + gRPC surface; the `/admin` static-asset prefix is no
+// longer served in-process.
 
 if (serveStacOpsDemo)
 {
@@ -940,6 +901,7 @@ app.MapAdminAuthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
+app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 
 // Configure layer publishing endpoints
@@ -1040,6 +1002,7 @@ if (useAspire)
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
 app.MapDatabasePerformanceEndpoints();
+app.MapProductionMonitoringEndpoints();
 
 app.Run();
 
@@ -1545,23 +1508,17 @@ static void MapHostedBlazorFallback(
 
 static void FilterHostedBlazorStaticAssetEndpoints(
     WebApplication app,
-    bool allowAdminUiAssets,
     bool allowStacOpsDemoAssets)
 {
-    var blockedPrefixes = new List<string>(2);
-    if (!allowAdminUiAssets)
-    {
-        blockedPrefixes.Add("admin/");
-    }
+    var blockedPrefixes = new List<string>(1);
+    // Always block the `admin/` static-asset prefix — the in-tree Blazor admin UI
+    // moved to the sibling `honua-server-admin` repo and ships as a separately
+    // deployed static site.
+    blockedPrefixes.Add("admin/");
 
     if (!allowStacOpsDemoAssets)
     {
         blockedPrefixes.Add("samples/stac-ops/");
-    }
-
-    if (blockedPrefixes.Count == 0)
-    {
-        return;
     }
 
     var routeBuilder = (IEndpointRouteBuilder)app;
