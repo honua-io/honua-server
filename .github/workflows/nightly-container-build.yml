@@ -11,6 +11,10 @@ env:
   IMAGE_NAME_GHCR: ${{ github.repository }}
   IMAGE_NAME_DOCKERHUB: honuaio/honua-server
 
+concurrency:
+  group: nightly-container-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-aot:
     name: Build & Push AOT (${{ matrix.arch }})
