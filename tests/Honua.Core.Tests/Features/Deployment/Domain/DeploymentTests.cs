@@ -399,6 +399,122 @@ public class DeploymentTests
         linked.Transitions.Count.Should().Be(deployment.Transitions.Count);
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Active)]
+    [InlineData(DeploymentStatus.Superseded)]
+    [InlineData(DeploymentStatus.Retired)]
+    [InlineData(DeploymentStatus.Failed)]
+    [InlineData(DeploymentStatus.Cancelled)]
+    public void WithCancelled_FromTerminalOrServingStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+
+        var act = () => deployment.WithCancelled("late cancel");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Draft)]
+    [InlineData(DeploymentStatus.Scheduled)]
+    [InlineData(DeploymentStatus.Active)]
+    [InlineData(DeploymentStatus.Superseded)]
+    [InlineData(DeploymentStatus.Retired)]
+    [InlineData(DeploymentStatus.Failed)]
+    [InlineData(DeploymentStatus.Cancelled)]
+    public void WithRollbackRequested_FromIneligibleStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+
+        var act = () => deployment.WithRollbackRequested("late rollback");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Active)]
+    [InlineData(DeploymentStatus.Superseded)]
+    [InlineData(DeploymentStatus.Retired)]
+    [InlineData(DeploymentStatus.Failed)]
+    [InlineData(DeploymentStatus.Cancelled)]
+    public void WithFailed_FromTerminalOrServingStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+
+        var act = () => deployment.WithFailed("late fail");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Cancelled)]
+    [InlineData(DeploymentStatus.Failed)]
+    [InlineData(DeploymentStatus.Superseded)]
+    [InlineData(DeploymentStatus.Retired)]
+    public void WithActive_FromTerminalStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+
+        var act = () => deployment.WithActive("/apps/revived");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Cancelled)]
+    [InlineData(DeploymentStatus.Failed)]
+    [InlineData(DeploymentStatus.Superseded)]
+    [InlineData(DeploymentStatus.Retired)]
+    public void WithScheduled_FromTerminalStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+
+        var act = () => deployment.WithScheduled(schedule);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Cancelled)]
+    [InlineData(DeploymentStatus.Failed)]
+    [InlineData(DeploymentStatus.Superseded)]
+    [InlineData(DeploymentStatus.Retired)]
+    public void WithSuperseded_FromTerminalStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+
+        var act = () => deployment.WithSuperseded("dep-successor");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [InlineData(DeploymentStatus.Cancelled)]
+    [InlineData(DeploymentStatus.Retired)]
+    public void WithRetired_FromTerminalStatus_ShouldThrow(DeploymentStatus status)
+    {
+        var deployment = CreateDeploymentAtStatus(status);
+
+        var act = () => deployment.WithRetired("late retire");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*from {status}*");
+    }
+
     [UnitTest]
     public void DeploymentSource_Factories_ShouldCaptureArtifactIdentifiers()
     {
@@ -425,6 +541,31 @@ public class DeploymentTests
             rollout,
             schedule,
             audit);
+
+    private static Honua.Core.Features.Deployment.Domain.Deployment CreateDeploymentAtStatus(
+        DeploymentStatus status)
+    {
+        var deployment = CreateTestDeployment();
+        return status switch
+        {
+            DeploymentStatus.Draft => deployment,
+            DeploymentStatus.Scheduled =>
+                deployment.WithScheduled(DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1))),
+            DeploymentStatus.Provisioning => deployment.WithProvisioning(),
+            DeploymentStatus.RollingOut => deployment.WithProvisioning().WithRollingOut(),
+            DeploymentStatus.Active =>
+                deployment.WithProvisioning().WithRollingOut().WithActive("/apps/test"),
+            DeploymentStatus.Superseded =>
+                deployment.WithProvisioning().WithRollingOut().WithActive("/apps/test")
+                    .WithSuperseded("dep-successor"),
+            DeploymentStatus.Retired =>
+                deployment.WithProvisioning().WithRollingOut().WithActive("/apps/test")
+                    .WithRetired("test retire"),
+            DeploymentStatus.Failed => deployment.WithProvisioning().WithFailed("test failure"),
+            DeploymentStatus.Cancelled => deployment.WithProvisioning().WithCancelled("test cancel"),
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        };
+    }
 
     private static DeploymentTarget CreateTestTarget()
         => new()

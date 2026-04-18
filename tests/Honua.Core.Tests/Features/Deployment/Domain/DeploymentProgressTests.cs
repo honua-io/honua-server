@@ -153,6 +153,27 @@ public class DeploymentProgressTests
     }
 
     [UnitTest]
+    public void WithCancellation_FromRollingOut_ShouldNormalizeRolloutStateToCancelled()
+    {
+        var progress = DeploymentProgress.CreateRollingOut("op-stale", "dep-stale", RolloutState.InProgress);
+
+        var cancelled = (DeploymentProgress)progress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
+
+        cancelled.RolloutState.Should().Be(RolloutState.Cancelled);
+    }
+
+    [UnitTest]
+    public void WithCancellation_FromInitialDraft_ShouldNormalizeRolloutStateToCancelled()
+    {
+        var progress = DeploymentProgress.CreateInitial("op-draft-cancel", "dep-draft-cancel");
+
+        var cancelled = (DeploymentProgress)progress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled before provision");
+
+        cancelled.DeploymentStatus.Should().Be(DeploymentStatus.Cancelled);
+        cancelled.RolloutState.Should().Be(RolloutState.Cancelled);
+    }
+
+    [UnitTest]
     public void OperationType_ShouldBeDeployment()
     {
         IOperationProgress progress = DeploymentProgress.CreateInitial("op-type", "dep-type");

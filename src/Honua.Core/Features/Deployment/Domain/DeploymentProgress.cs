@@ -93,10 +93,16 @@ public sealed record DeploymentProgress : IOperationProgress, ICancellableOperat
     OperationType IOperationProgress.Type => OperationType.Deployment;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Normalizes <see cref="RolloutState"/> to <see cref="Domain.RolloutState.Cancelled"/> so a
+    /// cancelled progress record never leaks a stale <see cref="Domain.RolloutState.InProgress"/>
+    /// value into eval, automation, or dashboard surfaces that project this record.
+    /// </remarks>
     public IOperationProgress WithCancellation(DateTimeOffset completedAt, string? currentPhase)
         => this with
         {
             DeploymentStatus = DeploymentStatus.Cancelled,
+            RolloutState = Domain.RolloutState.Cancelled,
             CompletedAt = completedAt,
             CurrentPhase = currentPhase
         };

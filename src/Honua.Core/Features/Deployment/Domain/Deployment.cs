@@ -153,6 +153,10 @@ public sealed record Deployment
         OperationAuditInfo? audit = null)
     {
         ArgumentNullException.ThrowIfNull(schedule);
+        EnsureTransitionAllowed(
+            DeploymentStatus.Scheduled,
+            DeploymentStatus.Draft,
+            DeploymentStatus.Scheduled);
         return ApplyTransition(
             DeploymentStatus.Scheduled,
             schedule: schedule,
@@ -165,7 +169,13 @@ public sealed record Deployment
     /// Transitions the deployment to <see cref="DeploymentStatus.Provisioning"/>.
     /// </summary>
     public Deployment WithProvisioning(string? reason = null, OperationAuditInfo? audit = null)
-        => ApplyTransition(DeploymentStatus.Provisioning, reason: reason, audit: audit);
+    {
+        EnsureTransitionAllowed(
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.Draft,
+            DeploymentStatus.Scheduled);
+        return ApplyTransition(DeploymentStatus.Provisioning, reason: reason, audit: audit);
+    }
 
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.RollingOut"/>, optionally
@@ -176,6 +186,10 @@ public sealed record Deployment
         string? reason = null,
         OperationAuditInfo? audit = null)
     {
+        EnsureTransitionAllowed(
+            DeploymentStatus.RollingOut,
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.RollingOut);
         EnsureValidRolloutStep(step);
         return ApplyTransition(
             DeploymentStatus.RollingOut,
@@ -238,6 +252,10 @@ public sealed record Deployment
         string? reason = null,
         OperationAuditInfo? audit = null)
     {
+        EnsureTransitionAllowed(
+            DeploymentStatus.Active,
+            DeploymentStatus.RollingOut,
+            DeploymentStatus.Active);
         var now = DateTimeOffset.UtcNow;
         var runtime = Runtime with
         {
@@ -267,6 +285,13 @@ public sealed record Deployment
         OperationAuditInfo? audit = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(successorDeploymentId);
+        EnsureTransitionAllowed(
+            DeploymentStatus.Superseded,
+            DeploymentStatus.Draft,
+            DeploymentStatus.Scheduled,
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.RollingOut,
+            DeploymentStatus.Active);
         var now = DateTimeOffset.UtcNow;
         return ApplyTransition(
             DeploymentStatus.Superseded,
@@ -284,6 +309,15 @@ public sealed record Deployment
     /// </summary>
     public Deployment WithRetired(string? reason = null, OperationAuditInfo? audit = null)
     {
+        EnsureTransitionAllowed(
+            DeploymentStatus.Retired,
+            DeploymentStatus.Draft,
+            DeploymentStatus.Scheduled,
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.RollingOut,
+            DeploymentStatus.Active,
+            DeploymentStatus.Superseded,
+            DeploymentStatus.Failed);
         var now = DateTimeOffset.UtcNow;
         return ApplyTransition(
             DeploymentStatus.Retired,
@@ -297,11 +331,19 @@ public sealed record Deployment
 
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.Failed"/>, recording the
-    /// failure reason and marking the rollout as failed.
+    /// failure reason and marking the rollout as failed. Only valid before the deployment
+    /// has reached a terminal state; an <see cref="DeploymentStatus.Active"/> deployment
+    /// that needs to wind down must be retired or superseded instead.
     /// </summary>
     public Deployment WithFailed(string failureReason, OperationAuditInfo? audit = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(failureReason);
+        EnsureTransitionAllowed(
+            DeploymentStatus.Failed,
+            DeploymentStatus.Draft,
+            DeploymentStatus.Scheduled,
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.RollingOut);
         return ApplyTransition(
             DeploymentStatus.Failed,
             rolloutState: Domain.RolloutState.Failed,
@@ -316,25 +358,40 @@ public sealed record Deployment
     /// Transitions the deployment to <see cref="DeploymentStatus.Cancelled"/>, marking the
     /// rollout as cancelled. Clears any pending schedule and marks the deployment as
     /// unpublished so a cancelled record never carries stale <see cref="DeploymentPublicationState.Scheduled"/>
-    /// metadata or a due <see cref="Schedule"/> that will never be honored.
+    /// metadata or a due <see cref="Schedule"/> that will never be honored. Only valid before
+    /// the deployment has reached a terminal state or begun serving traffic.
     /// </summary>
     public Deployment WithCancelled(string? reason = null, OperationAuditInfo? audit = null)
-        => ApplyTransition(
+    {
+        EnsureTransitionAllowed(
+            DeploymentStatus.Cancelled,
+            DeploymentStatus.Draft,
+            DeploymentStatus.Scheduled,
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.RollingOut);
+        return ApplyTransition(
             DeploymentStatus.Cancelled,
             rolloutState: Domain.RolloutState.Cancelled,
             publicationState: DeploymentPublicationState.Unpublished,
             clearSchedule: true,
             reason: reason,
             audit: audit);
+    }
 
     /// <summary>
     /// Reverses the rollout, leaving the deployment in <see cref="DeploymentStatus.Failed"/>
     /// with a <see cref="Domain.RolloutState.RolledBack"/> state. Callers are expected to
-    /// subsequently retire the deployment or replace it with a rollback successor.
+    /// subsequently retire the deployment or replace it with a rollback successor. Only valid
+    /// while the rollout has not yet been promoted; an <see cref="DeploymentStatus.Active"/>
+    /// deployment must be superseded or retired rather than rolled back through this helper.
     /// </summary>
     public Deployment WithRollbackRequested(string reason, OperationAuditInfo? audit = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(reason);
+        EnsureTransitionAllowed(
+            DeploymentStatus.Failed,
+            DeploymentStatus.Provisioning,
+            DeploymentStatus.RollingOut);
         return ApplyTransition(
             DeploymentStatus.Failed,
             rolloutState: Domain.RolloutState.RolledBack,
@@ -452,5 +509,21 @@ public sealed record Deployment
                 step,
                 $"Rollout step is outside the plan's range [0, {Rollout.Steps.Count - 1}].");
         }
+    }
+
+    private void EnsureTransitionAllowed(
+        DeploymentStatus target,
+        params ReadOnlySpan<DeploymentStatus> allowedFrom)
+    {
+        for (var i = 0; i < allowedFrom.Length; i++)
+        {
+            if (allowedFrom[i] == Status)
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot transition deployment from {Status} to {target}.");
     }
 }
