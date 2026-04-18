@@ -45,7 +45,7 @@ The adapter maps canonical `ExecutionJobStatus` values to OGC status strings:
 
 ## Catalog Validation Semantics
 
-Geoprocess steps are validated against the built-in `IProcessCatalog` (14 seeded geometry/analytics processes) before a job is created. The adapter surfaces the following structured violation codes:
+Geoprocess steps are validated against the built-in `IProcessCatalog` (19 seeded processes across `geometry.*`, `analytics.*`, `generalization.*`, and `data-management.*`) before a job is created. The adapter surfaces the following structured violation codes:
 
 | Code | Meaning |
 |---|---|
@@ -65,6 +65,11 @@ Per-process semantic rules mirror the live request handlers so plans accepted he
 | `analytics.spatial-join` | `predicate` ∈ {`intersects`, `contains`, `within`, `dwithin`} | `distance` when `predicate=dwithin` | `0 < distance ≤ MaxDWithinDistanceMeters` | `joinLayerId` must differ from `layerId` (no self-join) |
 | `analytics.density` | `mode` ∈ {`hex`, `square`} | — | `MinDensityCellSizeMeters ≤ cellSize ≤ MaxDensityCellSizeMeters` | — |
 | `analytics.buffer-aggregate` | `unit` ∈ {`meters`, `kilometers`, `feet`, `miles`} | — | `distance ≥ 0`; cap of `MaxBufferDistanceMeters` applied after converting `distance` to meters so alternate units cannot bypass the limit | `outStatistics` requires `dissolve=true` (per-feature buffers cannot carry GROUP BY aggregates) |
+| `generalization.simplify-layer` | — | — | `tolerance > 0` (finite); tolerance is expressed in the layer's SRID units (degrees for geographic, meters for projected), matching `geometry.simplify` | — |
+| `generalization.dissolve` | same `statisticType` allow-list as `analytics.buffer-aggregate` for `outStatistics` entries | — | — | `outStatistics` requires `dissolve=true` (per-feature output cannot carry aggregate columns) |
+| `data-management.copy-features` | — | — | — | `objectIds` parsed as comma-separated integers when supplied |
+| `data-management.delete-features` | — | — | — | at least one of `where` / `objectIds` must be supplied (`INVALID_PARAMETER_VALUE`) so deletion is never unbounded |
+| `data-management.calculate-field` | — | — | — | `fieldName` must be a simple unquoted identifier (letters, digits, underscore; first char letter or underscore); `expression` is re-gated at execution time by `FeatureServer.Edits.CalculateFieldValue`'s allow-list |
 
 Structured Text-typed inputs that the handlers parse without runtime services are validated here too: `outStatistics` is parsed as JSON (single object or array) and each entry must carry `statisticType` ∈ {`count`, `sum`, `min`, `max`, `avg`, `stddev`, `var`}, `onStatisticField`, and `outStatisticFieldName`, each as a JSON string (numeric, boolean, or object tokens surface as `INVALID_PARAMETER_VALUE` rather than escaping as 500s); `objectIds` must be comma-separated integer feature identifiers; and `spatialRel` rejects the distance-based variants (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) only when a `geometry` filter is also supplied, matching `AnalyticsFeatureQueryFactory` (which does not consult `spatialRel` without geometry) so the validator does not block plans the handler would accept.
 
@@ -81,7 +86,8 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 ## V1 Limitations
 
 - **Async-only**: synchronous execution returns `501 Not Implemented` when the `Prefer: respond-async` header is absent.
-- **Single process projection**: the OGC adapter lists one canonical process (`honua-geoprocessing`) even though the internal catalog now enumerates 14 built-in geometry and analytics processes (`geometry.*`, `analytics.*`). Per-process projection into `/processes` and `/processes/{id}` is follow-on adapter work; executions dispatch through the canonical process and are validated against the built-in catalog at the adapter boundary.
+- **Single process projection**: the OGC adapter lists one canonical process (`honua-geoprocessing`) even though the internal catalog now enumerates 19 built-in processes across four families (`geometry.*`, `analytics.*`, `generalization.*`, `data-management.*`). Per-process projection into `/processes` and `/processes/{id}` is follow-on adapter work; executions dispatch through the canonical process and are validated against the built-in catalog at the adapter boundary.
+- **Destructive data-management plans require approval**: submission and execution of plans that reference `data-management.delete-features` or `data-management.calculate-field` pass through `OperatorApprovalGate` with `IsDestructive = true`. When `Operator:Approval:DestructiveActionsRequireApproval` is on, these calls hard-fail at the gate before any job or progress record is created — gRPC `FailedPrecondition`, OGC `403` with problem type `about:blank` and title "Approval required" — rather than persisting an `AwaitingApproval` progress entry (pending-approval persistence is follow-on work). Non-destructive `data-management.copy-features` does not set the flag because it materializes a new target layer.
 - **Results endpoint**: V1 still stubs the `/results` endpoint — successful jobs return `404` until the execution engine populates result storage. When implemented, the planned V1 shape is a document-mode, by-value JSON response keyed by stable output identifiers. By-reference transmission remains deferred.
 - **Planned result document shape**: once result storage is populated, successful `/results` responses will contain outputs only. Job status, summary, and error state remain on job/status endpoints rather than inside `/results`.
 - **No results link in StatusInfo**: V1 StatusInfo documents do not include the `http://www.opengis.net/def/rel/ogc/1.0/results` relation because the `/results` endpoint is stubbed. The link will be emitted once result storage is populated by the execution engine.

@@ -2588,6 +2588,44 @@ public sealed class ProcessCatalogTests
             v.FieldPath == "steps[s1].inputs.fieldName");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCalculateField_NonAsciiFieldName_ProducesViolation()
+    {
+        // The storage-engine field-name regex is strict ASCII
+        // (FeatureQueryBuilder.ValidFieldNameRegex / DuckDB FieldNameRegex).
+        // Validator must reject non-ASCII identifiers (e.g. `Åfield`) that
+        // char.IsLetter would otherwise admit, so plans accepted here are
+        // also accepted by the live field-name binders.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.calculate-field",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["fieldName"] = "\u00c5field",
+                        ["expression"] = "1"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.fieldName");
+    }
+
     // -----------------------------------------------------------------------
     // Destructive-process classifier
     // -----------------------------------------------------------------------

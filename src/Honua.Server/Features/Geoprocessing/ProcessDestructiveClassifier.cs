@@ -9,9 +9,14 @@ namespace Honua.Server.Features.Geoprocessing;
 /// <summary>
 /// Classifies canonical process ids by whether they mutate or erase caller-owned
 /// data. Destructive plans route through the existing approval gate (with
-/// <c>OperatorAuthorizationRequest.IsDestructive = true</c>) before
-/// <c>GeoprocessingStageKind.Execute</c> so workflows transition
-/// <c>Validated → AwaitingApproval</c> before any layer mutation runs.
+/// <c>OperatorAuthorizationRequest.IsDestructive = true</c>) before any job or
+/// progress record is created: when
+/// <c>Operator:Approval:DestructiveActionsRequireApproval</c> is on, submission
+/// hard-fails with <see cref="GeoprocessingApprovalRequiredException"/>
+/// (gRPC <c>FailedPrecondition</c>, OGC <c>403 Approval required</c>) instead of
+/// persisting an <c>AwaitingApproval</c> progress entry. Pending-approval
+/// persistence and <c>Validated → AwaitingApproval</c> status projection are
+/// follow-on work — see ADR-0029.
 ///
 /// Kept as a server-side static helper rather than a field on
 /// <see cref="ProcessDefinition"/> so destruction policy stays policy-owned

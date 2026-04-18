@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -20,7 +21,7 @@ namespace Honua.Server.Features.Geoprocessing;
 /// handler contracts so plans accepted here are also accepted downstream by
 /// <c>SpatialAnalyticsRequestHandlers</c>.
 /// </summary>
-internal static class ProcessPlanValidator
+internal static partial class ProcessPlanValidator
 {
     // Accepted enum values mirror the canonical spellings in the live handlers
     // (SpatialAnalyticsRequestHandlers.Clusters/SpatialJoin/Density/BufferAggregate).
@@ -365,33 +366,16 @@ internal static class ProcessPlanValidator
     }
 
     // Mirrors PostgreSQL's unquoted-identifier rule (the shape
-    // FeatureServer.Edits.CalculateFieldValue accepts without further quoting).
-    // Kept deliberately narrow so the validator never admits values that the
-    // SQL binder would have to escape at runtime.
+    // FeatureServer.Edits.CalculateFieldValue accepts without further quoting)
+    // and the strict ASCII regex `FeatureQueryBuilder.ValidFieldNameRegex` /
+    // `DuckDBFeatureQueryBuilder.FieldNameRegex` enforce. Keeping the validator
+    // in lockstep with both feature-store binders prevents `ValidatePlan` from
+    // admitting non-ASCII field names (e.g. `Åfield`) the stores would reject.
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex SimpleIdentifierRegex();
+
     private static bool IsSimpleIdentifier(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return false;
-        }
-
-        var first = value[0];
-        if (!(char.IsLetter(first) || first == '_'))
-        {
-            return false;
-        }
-
-        for (var i = 1; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (!(char.IsLetterOrDigit(c) || c == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+        => !string.IsNullOrEmpty(value) && SimpleIdentifierRegex().IsMatch(value);
 
     // Validates the structured Text inputs every analytics handler honors via
     // AnalyticsFeatureQueryFactory. Each parser is dependency-free so the

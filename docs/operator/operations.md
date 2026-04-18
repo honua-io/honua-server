@@ -748,9 +748,17 @@ The lifecycle rules described in this section are the current workspace contract
 GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
 Esri clients. Currently, job status polling and cancellation are functional;
 `submitJob` and `execute` return 501 pending GPServer per-task projection of the
-built-in `IProcessCatalog` (14 seeded processes) and canonical `ExecutePlan`
-support. The mapping between admin operation tracking and GPServer responses
-(once submission is available):
+built-in `IProcessCatalog` (19 seeded processes across `geometry.*`,
+`analytics.*`, `generalization.*`, and `data-management.*`) and canonical
+`ExecutePlan` support. Destructive `data-management.*` ids
+(`delete-features`, `calculate-field`) are classified server-side and route
+through `OperatorApprovalGate` with `IsDestructive = true`. When
+`Operator:Approval:DestructiveActionsRequireApproval` is on, submissions
+hard-fail at the gate (gRPC `FailedPrecondition`, OGC `403 Approval required`)
+before any job or progress record is created; pending-approval persistence and
+a `Validated → AwaitingApproval` status projection are follow-on work.
+The mapping between admin operation tracking and GPServer responses (once
+submission is available):
 
 | Admin operation state | GPServer `jobStatus` | Endpoint |
 |-----------------------|----------------------|----------|

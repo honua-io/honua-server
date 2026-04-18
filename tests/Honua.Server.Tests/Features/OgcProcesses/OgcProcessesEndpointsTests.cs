@@ -3,12 +3,17 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.OgcProcesses;
 
@@ -462,6 +467,92 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("detail").GetString().Should().Contain("required parameter");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_DestructivePlanWhenApprovalRequired_Returns403()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperatorApprovalEvaluator>();
+                services.AddSingleton<IOperatorApprovalEvaluator>(new DestructiveOnlyApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                "/ogc/processes/processes/honua-geoprocessing/execution");
+            request.Headers.Add("Prefer", "respond-async");
+            request.Content = new StringContent(
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess","processId":"data-management.delete-features","inputs":{"layerId":"0","where":"OBJECTID > 0"}}]}}}""",
+                Encoding.UTF8, "application/json");
+
+            var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("title").GetString().Should().Be("Approval required");
+            json.RootElement.GetProperty("detail").GetString().Should().Contain("operator.destructive.process");
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_NonDestructivePlanWithDestructiveOnlyPolicy_IsAccepted()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperatorApprovalEvaluator>();
+                services.AddSingleton<IOperatorApprovalEvaluator>(new DestructiveOnlyApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var client = approvalFixture.CreateAdminClient();
+
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                "/ogc/processes/processes/honua-geoprocessing/execution");
+            request.Headers.Add("Prefer", "respond-async");
+            // queryFeatures is a non-geoprocess step kind — catalog validation skips it
+            // and the destructive classifier sees no Geoprocess step, so the submission
+            // should not trigger the IsDestructive branch of the evaluator.
+            request.Content = new StringContent(
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+                Encoding.UTF8, "application/json");
+
+            var response = await client.SendAsync(request);
+
+            // Either 201 (job created) or 503 (no Redis) — never 403 (approval required),
+            // since the plan is non-destructive and the evaluator only gates destructive plans.
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    private sealed class DestructiveOnlyApprovalEvaluator : IOperatorApprovalEvaluator
+    {
+        public ApprovalRequirement Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+            => request.IsDestructive
+                ? ApprovalRequirement.Required(
+                    $"operator.destructive.{request.ResourceType.ToString().ToLowerInvariant()}",
+                    "destructive-action-requires-approval")
+                : ApprovalRequirement.NotRequired();
     }
 
     // -----------------------------------------------------------------------
