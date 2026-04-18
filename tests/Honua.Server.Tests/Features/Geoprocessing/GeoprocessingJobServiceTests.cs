@@ -257,18 +257,21 @@ public sealed class GeoprocessingJobServiceTests
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
-        workloadRegistry.GetAsync("plan-1", Arg.Any<CancellationToken>()).Returns(new ExecutionJobDefinition
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
         {
-            WorkloadId = "plan-1",
-            Kind = ExecutionJobKind.Geoprocessing,
-            TargetKind = BatchComputeTargetKind.AwsBatch,
-            Backend = "aws-batch",
-            WorkloadName = "Remote geoprocessing",
-            ArtifactReference = "ecr/honua-gp:latest",
-            RuntimeProfile = "py311",
-            Parameters = new Dictionary<string, string>
+            new ExecutionJobDefinition
             {
-                ["queue"] = "gp-primary"
+                WorkloadId = "geoprocessing-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote geoprocessing",
+                ArtifactReference = "ecr/honua-gp:latest",
+                RuntimeProfile = "py311",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["queue"] = "gp-primary"
+                }
             }
         });
         backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
@@ -300,7 +303,7 @@ public sealed class GeoprocessingJobServiceTests
         job.Status.Should().Be(ExecutionJobStatus.Provisioning);
         job.ProviderOperationId.Should().Be("job-remote-123");
         job.CurrentPhase.Should().Be("Submitted to AWS Batch");
-        job.Spec.WorkloadId.Should().Be("plan-1");
+        job.Spec.WorkloadId.Should().Be("geoprocessing-remote");
         job.Spec.Backend.Should().Be("aws-batch");
         job.Spec.TargetKind.Should().Be(BatchComputeTargetKind.AwsBatch);
         job.Spec.Parameters.Should().ContainKey("gpserver.serviceId").WhoseValue.Should().Be("TestService");
@@ -313,6 +316,56 @@ public sealed class GeoprocessingJobServiceTests
                 record.Status == ExecutionJobStatus.Provisioning &&
                 record.ProviderOperationId == "job-remote-123"),
             Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithRemoteBackend_DoesNotEnqueueToLocalQueue()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote geoprocessing"
+            }
+        });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "job-remote-456",
+                Message = "Submitted to AWS Batch"
+            });
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            _jobQueue,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        await _jobQueue.DidNotReceive().EnqueueAsync(
+            Arg.Any<string>(),
+            Arg.Any<OperationPriority>(),
             Arg.Any<CancellationToken>());
     }
 

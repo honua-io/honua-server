@@ -274,7 +274,8 @@ internal static class JobEndpoints
         IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IUniversalProgressStore progressStore,
         [FromServices] IExecutionJobStore? jobStore = null,
-        [FromServices] IJobQueue? jobQueue = null)
+        [FromServices] IJobQueue? jobQueue = null,
+        [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
     {
         EnrichActivity("DismissJob");
 
@@ -382,6 +383,27 @@ internal static class JobEndpoints
             {
                 OgcProcessesLog.JobNotFound(logger, jobId);
                 return JobNotFoundResult(jobId);
+            }
+
+            if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                && backends != null)
+            {
+                var backend = backends.Resolve(latest.Spec.Backend, latest.Spec.TargetKind);
+                if (backend != null)
+                {
+                    var capabilities = await backend.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+                    if (capabilities.SupportsCancellation)
+                    {
+                        await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
+                        job = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false) ?? latest;
+                        var baseUrlBackend = BaseUrlResolver.GetBaseUrl(context);
+                        return Results.Json(
+                            OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                                job, ProcessEndpoints.CanonicalProcessId, baseUrlBackend),
+                            OgcProcessesJsonContext.Default.OgcStatusInfo,
+                            MediaTypes.Json);
+                    }
+                }
             }
 
             if (OgcProcessesConversionHelpers.IsTerminal(latest.Status))

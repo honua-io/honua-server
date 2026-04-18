@@ -378,7 +378,8 @@ internal static class ProcessEndpoints
 
         var workload = workloadRegistry == null
             ? null
-            : await workloadRegistry.GetAsync(planId, context.RequestAborted).ConfigureAwait(false);
+            : (await workloadRegistry.ListAsync(context.RequestAborted).ConfigureAwait(false))
+                .FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
         var specParameters = workload?.Parameters.Count > 0
             ? new Dictionary<string, string>(workload.Parameters, StringComparer.Ordinal)
             : new Dictionary<string, string>(StringComparer.Ordinal);
@@ -426,7 +427,7 @@ internal static class ProcessEndpoints
             await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
                 .ConfigureAwait(false);
 
-            if (jobQueue != null)
+            if (jobQueue != null && string.Equals(jobRecord.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
             {
                 await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
             }

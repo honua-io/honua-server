@@ -181,7 +181,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
 
-        var workload = await ResolveWorkloadAsync(plan.PlanId, cancellationToken).ConfigureAwait(false);
+        var workload = await ResolveWorkloadAsync(cancellationToken).ConfigureAwait(false);
         var spec = BuildSpec(plan, specParams, workload);
 
         var jobRecord = new ExecutionJobRecord
@@ -223,7 +223,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (_jobQueue != null)
+            if (_jobQueue != null && string.Equals(jobRecord.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
             {
                 await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
@@ -245,16 +245,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return jobRecord;
     }
 
-    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
-        string planId,
-        CancellationToken cancellationToken)
+    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(CancellationToken cancellationToken)
     {
-        if (_workloadRegistry == null || string.IsNullOrWhiteSpace(planId))
+        if (_workloadRegistry == null)
         {
             return null;
         }
 
-        return await _workloadRegistry.GetAsync(planId, cancellationToken).ConfigureAwait(false);
+        var definitions = await _workloadRegistry.ListAsync(cancellationToken).ConfigureAwait(false);
+        return definitions.FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
     }
 
     private static ExecutionJobSpec BuildSpec(
