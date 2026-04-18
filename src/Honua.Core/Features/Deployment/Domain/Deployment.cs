@@ -271,6 +271,7 @@ public sealed record Deployment
         return ApplyTransition(
             DeploymentStatus.Superseded,
             publicationState: DeploymentPublicationState.Unpublished,
+            clearSchedule: true,
             supersededBy: successorDeploymentId,
             retiredAt: RetiredAt ?? now,
             now: now,
@@ -287,6 +288,7 @@ public sealed record Deployment
         return ApplyTransition(
             DeploymentStatus.Retired,
             publicationState: DeploymentPublicationState.Retired,
+            clearSchedule: true,
             retiredAt: RetiredAt ?? now,
             now: now,
             reason: reason,
@@ -303,6 +305,8 @@ public sealed record Deployment
         return ApplyTransition(
             DeploymentStatus.Failed,
             rolloutState: Domain.RolloutState.Failed,
+            publicationState: DeploymentPublicationState.Unpublished,
+            clearSchedule: true,
             failureReason: failureReason,
             reason: failureReason,
             audit: audit);
@@ -310,12 +314,16 @@ public sealed record Deployment
 
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.Cancelled"/>, marking the
-    /// rollout as cancelled.
+    /// rollout as cancelled. Clears any pending schedule and marks the deployment as
+    /// unpublished so a cancelled record never carries stale <see cref="DeploymentPublicationState.Scheduled"/>
+    /// metadata or a due <see cref="Schedule"/> that will never be honored.
     /// </summary>
     public Deployment WithCancelled(string? reason = null, OperationAuditInfo? audit = null)
         => ApplyTransition(
             DeploymentStatus.Cancelled,
             rolloutState: Domain.RolloutState.Cancelled,
+            publicationState: DeploymentPublicationState.Unpublished,
+            clearSchedule: true,
             reason: reason,
             audit: audit);
 
@@ -330,6 +338,8 @@ public sealed record Deployment
         return ApplyTransition(
             DeploymentStatus.Failed,
             rolloutState: Domain.RolloutState.RolledBack,
+            publicationState: DeploymentPublicationState.Unpublished,
+            clearSchedule: true,
             failureReason: reason,
             reason: reason,
             audit: audit);
@@ -362,6 +372,7 @@ public sealed record Deployment
         int? currentRolloutStep = null,
         DeploymentPublicationState? publicationState = null,
         DeploymentSchedule? schedule = null,
+        bool clearSchedule = false,
         RuntimeState? runtime = null,
         string? supersededBy = null,
         DateTimeOffset? activatedAt = null,
@@ -380,7 +391,7 @@ public sealed record Deployment
             PublicationState = publicationState ?? PublicationState,
             RolloutState = nextRolloutState,
             CurrentRolloutStep = nextStep,
-            Schedule = schedule ?? Schedule,
+            Schedule = clearSchedule ? null : (schedule ?? Schedule),
             Runtime = runtime ?? Runtime,
             SupersededByDeploymentId = supersededBy ?? (toStatus == DeploymentStatus.Superseded ? SupersededByDeploymentId : null),
             ActivatedAt = activatedAt ?? ActivatedAt,

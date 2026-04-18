@@ -239,6 +239,79 @@ public class DeploymentTests
 
         cancelled.Status.Should().Be(DeploymentStatus.Cancelled);
         cancelled.RolloutState.Should().Be(RolloutState.Cancelled);
+        cancelled.PublicationState.Should().Be(DeploymentPublicationState.Unpublished);
+        cancelled.Schedule.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithCancelled_FromScheduled_ShouldClearScheduleAndPublicationState()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(2));
+        var deployment = CreateTestDeployment().WithScheduled(schedule);
+
+        var cancelled = deployment.WithCancelled("Schedule revoked");
+
+        cancelled.Status.Should().Be(DeploymentStatus.Cancelled);
+        cancelled.RolloutState.Should().Be(RolloutState.Cancelled);
+        cancelled.PublicationState.Should().Be(DeploymentPublicationState.Unpublished);
+        cancelled.Schedule.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithFailed_FromScheduled_ShouldClearScheduleAndPublicationState()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var deployment = CreateTestDeployment().WithScheduled(schedule);
+
+        var failed = deployment.WithFailed("Scheduler outage");
+
+        failed.Status.Should().Be(DeploymentStatus.Failed);
+        failed.PublicationState.Should().Be(DeploymentPublicationState.Unpublished);
+        failed.Schedule.Should().BeNull();
+        failed.FailureReason.Should().Be("Scheduler outage");
+    }
+
+    [UnitTest]
+    public void WithSuperseded_FromScheduled_ShouldClearSchedule()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var deployment = CreateTestDeployment().WithScheduled(schedule);
+
+        var superseded = deployment.WithSuperseded("dep-002", reason: "Replaced before publish");
+
+        superseded.Status.Should().Be(DeploymentStatus.Superseded);
+        superseded.PublicationState.Should().Be(DeploymentPublicationState.Unpublished);
+        superseded.Schedule.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithRetired_FromScheduled_ShouldClearSchedule()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var deployment = CreateTestDeployment().WithScheduled(schedule);
+
+        var retired = deployment.WithRetired("Campaign cancelled before publish");
+
+        retired.Status.Should().Be(DeploymentStatus.Retired);
+        retired.PublicationState.Should().Be(DeploymentPublicationState.Retired);
+        retired.Schedule.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void WithRollbackRequested_ShouldClearScheduleAndUnpublish()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var deployment = CreateTestDeployment()
+            .WithScheduled(schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var rolledBack = deployment.WithRollbackRequested("Health regressed");
+
+        rolledBack.Status.Should().Be(DeploymentStatus.Failed);
+        rolledBack.RolloutState.Should().Be(RolloutState.RolledBack);
+        rolledBack.PublicationState.Should().Be(DeploymentPublicationState.Unpublished);
+        rolledBack.Schedule.Should().BeNull();
     }
 
     [UnitTest]
