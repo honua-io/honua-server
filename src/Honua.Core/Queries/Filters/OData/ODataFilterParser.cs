@@ -15,6 +15,7 @@ public sealed class ODataFilterParser
 {
     private IReadOnlyList<ODataFilterToken> _tokens = [];
     private int _position;
+    private int _expressionDepth;
 
     /// <summary>
     /// Parses an OData $filter expression into a <see cref="FilterExpression"/>.
@@ -32,6 +33,7 @@ public sealed class ODataFilterParser
         var lexer = new ODataFilterLexer(filter);
         _tokens = lexer.Tokenize();
         _position = 0;
+        _expressionDepth = 0;
 
         var expression = ParseExpression();
         if (!IsAtEnd())
@@ -97,6 +99,9 @@ public sealed class ODataFilterParser
                 do
                 {
                     values.Add(ParseAdditiveExpression());
+                    // Cap the number of IN operands so a single malicious request
+                    // cannot force the parser to allocate an arbitrarily large list.
+                    FilterParserGuard.EnsureInListSize(values.Count, "OData");
                 } while (Match(ODataFilterTokenType.Comma));
             }
 
@@ -144,21 +149,22 @@ public sealed class ODataFilterParser
     }
 
     private FilterExpression ParseUnaryExpression()
-    {
-        if (Match(ODataFilterTokenType.Not))
+        => ParseWithDepth(() =>
         {
-            var operand = ParseUnaryExpression();
-            return new UnaryExpression(UnaryOperator.Not, operand);
-        }
+            if (Match(ODataFilterTokenType.Not))
+            {
+                var operand = ParseUnaryExpression();
+                return new UnaryExpression(UnaryOperator.Not, operand);
+            }
 
-        if (Match(ODataFilterTokenType.Minus))
-        {
-            var operand = ParseUnaryExpression();
-            return new UnaryExpression(UnaryOperator.Negate, operand);
-        }
+            if (Match(ODataFilterTokenType.Minus))
+            {
+                var operand = ParseUnaryExpression();
+                return new UnaryExpression(UnaryOperator.Negate, operand);
+            }
 
-        return ParsePrimaryExpression();
-    }
+            return ParsePrimaryExpression();
+        });
 
     private FilterExpression ParsePrimaryExpression()
     {
@@ -251,6 +257,26 @@ public sealed class ODataFilterParser
         }
 
         throw new ODataFilterParseException("Unexpected token in expression", Current().Position);
+    }
+
+    private T ParseWithDepth<T>(Func<T> parse)
+    {
+        _expressionDepth++;
+        try
+        {
+            if (_expressionDepth > FilterParserGuard.MaxExpressionDepth)
+            {
+                throw new ODataFilterParseException(
+                    $"Filter expression exceeds the maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}.",
+                    Current().Position);
+            }
+
+            return parse();
+        }
+        finally
+        {
+            _expressionDepth--;
+        }
     }
 
     private FilterExpression ParseFunctionCall(string identifier)
@@ -481,20 +507,12 @@ public sealed class ODataFilterParser
 
         try
         {
-            var geometryServices = new NtsGeometryServices(new PrecisionModel(), srid);
-            var reader = new WKTReader(geometryServices);
-            var geometry = reader.Read(wkt);
-            if (!IsGeometryValid(geometry))
+            var geometry = FilterParserGuard.ParseWktGeometry(wkt, "OData geometry literal", srid);
+            if (!IsGeometryValid(geometry) || !geometry.IsValid)
             {
                 throw new ODataFilterParseException($"Invalid geometry literal '{value}'", position);
             }
 
-            if (!geometry.IsValid)
-            {
-                throw new ODataFilterParseException($"Invalid geometry literal '{value}'", position);
-            }
-
-            geometry.SRID = srid;
             var writer = new WKBWriter();
             var wkb = writer.Write(geometry);
             return new GeometryLiteral(wkb, srid, value);

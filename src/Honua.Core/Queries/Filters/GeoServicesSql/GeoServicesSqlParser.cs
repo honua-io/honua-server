@@ -13,6 +13,7 @@ public sealed class GeoServicesSqlParser
 {
     private readonly List<Token> _tokens = [];
     private int _current;
+    private int _expressionDepth;
 
     /// <summary>
     /// Parses a GeoServices SQL WHERE expression into a filter AST.
@@ -27,6 +28,7 @@ public sealed class GeoServicesSqlParser
         _tokens.Clear();
         _tokens.AddRange(new Lexer(whereClause).Tokenize());
         _current = 0;
+        _expressionDepth = 0;
 
         var expression = ParseExpression();
         Consume(TokenType.EndOfFile, "Unexpected trailing tokens.");
@@ -60,15 +62,16 @@ public sealed class GeoServicesSqlParser
     }
 
     private FilterExpression ParseNot()
-    {
-        if (Match(TokenType.Not))
+        => ParseWithDepth(() =>
         {
-            var operand = ParseNot();
-            return new UnaryExpression(UnaryOperator.Not, operand);
-        }
+            if (Match(TokenType.Not))
+            {
+                var operand = ParseNot();
+                return new UnaryExpression(UnaryOperator.Not, operand);
+            }
 
-        return ParseComparison();
-    }
+            return ParseComparison();
+        });
 
     private FilterExpression ParseComparison()
     {
@@ -187,19 +190,20 @@ public sealed class GeoServicesSqlParser
     }
 
     private FilterExpression ParseUnary()
-    {
-        if (Match(TokenType.Minus))
+        => ParseWithDepth(() =>
         {
-            return new UnaryExpression(UnaryOperator.Negate, ParseUnary());
-        }
+            if (Match(TokenType.Minus))
+            {
+                return new UnaryExpression(UnaryOperator.Negate, ParseUnary());
+            }
 
-        if (Match(TokenType.Plus))
-        {
-            return ParseUnary();
-        }
+            if (Match(TokenType.Plus))
+            {
+                return ParseUnary();
+            }
 
-        return ParsePrimary();
-    }
+            return ParsePrimary();
+        });
 
     private FilterExpression ParsePrimary()
     {
@@ -362,8 +366,27 @@ public sealed class GeoServicesSqlParser
             throw new ArgumentException($"Invalid DATE literal '{value}'.");
         }
 
-        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp))
+        // Require an explicit offset only when the literal includes a time component.
+        // A bare date (e.g. `2024-01-01`) is unambiguous; a date+time without an offset
+        // (e.g. `2024-01-01T12:00:00`) is not, and AssumeUniversal would silently fold
+        // it to UTC, producing off-by-TZ filters for non-UTC callers.
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
         {
+            var hasTimeComponent = value.Contains('T', StringComparison.OrdinalIgnoreCase)
+                || value.Contains(':');
+            if (hasTimeComponent)
+            {
+                var hasOffsetIndicator = value.Contains('Z', StringComparison.OrdinalIgnoreCase)
+                    || value.LastIndexOf('+') > 0
+                    || (value.LastIndexOf('-') > 8); // after the date portion
+                if (!hasOffsetIndicator)
+                {
+                    throw new ArgumentException(
+                        $"Datetime literal '{value}' is missing a timezone offset. "
+                        + "Use an explicit 'Z' or '+hh:mm' suffix to disambiguate.");
+                }
+            }
+
             if (dateOnly == null && timestamp.TimeOfDay == TimeSpan.Zero)
             {
                 return new Literal(DateOnly.FromDateTime(timestamp.UtcDateTime), LiteralType.Date);
@@ -379,6 +402,20 @@ public sealed class GeoServicesSqlParser
         }
 
         throw new ArgumentException($"Invalid temporal literal '{value}'.");
+    }
+
+    private T ParseWithDepth<T>(Func<T> parse)
+    {
+        _expressionDepth++;
+        try
+        {
+            FilterParserGuard.EnsureExpressionDepth(_expressionDepth);
+            return parse();
+        }
+        finally
+        {
+            _expressionDepth--;
+        }
     }
 
     private bool Match(params TokenType[] types)
@@ -669,6 +706,13 @@ public sealed class GeoServicesSqlParser
                     return;
                 }
 
+                // Bound the literal size so an unbounded single-quoted payload cannot
+                // pin a large StringBuilder in memory before the closing quote arrives.
+                if (builder.Length >= FilterParserGuard.MaxStringLiteralLength)
+                {
+                    FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
+                }
+
                 builder.Append(Advance());
             }
 
@@ -738,6 +782,12 @@ public sealed class GeoServicesSqlParser
 
             if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
             {
+                // Reject exponent overflow (parses into ±Infinity) and "NaN"/"Infinity"
+                // literals that NumberStyles.Float accepts by default.
+                if (!double.IsFinite(doubleValue))
+                {
+                    throw new ArgumentException($"Numeric literal '{text}' is not a finite number.");
+                }
                 AddToken(TokenType.Number, doubleValue);
                 return;
             }
