@@ -19,6 +19,18 @@ internal readonly record struct ExecutionJobCancellationResult(
     ExecutionJobCancellationState State,
     ExecutionJobRecord? Job);
 
+internal enum PreSubmissionCancelOutcome
+{
+    Cancelled,
+    TerminalConflict,
+    Missing,
+    Unconfirmed
+}
+
+internal readonly record struct PreSubmissionCancelResult(
+    PreSubmissionCancelOutcome Outcome,
+    ExecutionJobRecord? Job);
+
 internal static class ExecutionJobCancellationHelper
 {
     public static bool IsTerminal(ExecutionJobStatus status)
@@ -32,6 +44,46 @@ internal static class ExecutionJobCancellationHelper
     /// </summary>
     public static bool WasSubmittedToProvider(ExecutionJobRecord job)
         => !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0;
+
+    public static async Task<PreSubmissionCancelResult> TryCancelPreSubmissionAsync(
+        IExecutionJobStore jobStore,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobStore);
+
+        var cancelNow = DateTimeOffset.UtcNow;
+        var cancelled = job with
+        {
+            Status = ExecutionJobStatus.Cancelled,
+            UpdatedAt = cancelNow,
+            CompletedAt = cancelNow,
+            CurrentPhase = "Cancelled before submission"
+        };
+
+        if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            return new(PreSubmissionCancelOutcome.Cancelled, cancelled);
+        }
+
+        var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        if (fresh == null)
+        {
+            return new(PreSubmissionCancelOutcome.Missing, null);
+        }
+
+        if (fresh.Status == ExecutionJobStatus.Cancelled)
+        {
+            return new(PreSubmissionCancelOutcome.Cancelled, fresh);
+        }
+
+        if (IsTerminal(fresh.Status))
+        {
+            return new(PreSubmissionCancelOutcome.TerminalConflict, fresh);
+        }
+
+        return new(PreSubmissionCancelOutcome.Unconfirmed, fresh);
+    }
 
     public static async Task<ExecutionJobCancellationResult> TryApplyAsync(
         IExecutionJobStore jobStore,

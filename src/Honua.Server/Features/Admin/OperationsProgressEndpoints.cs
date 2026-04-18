@@ -600,51 +600,33 @@ internal static partial class OperationsProgressEndpoints
 
                     if (executionJob.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(executionJob))
                     {
-                        var localNow = DateTimeOffset.UtcNow;
-                        var localCancelled = executionJob with
+                        var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
+                            jobStore, executionJob, cancellationToken).ConfigureAwait(false);
+
+                        switch (preResult.Outcome)
                         {
-                            Status = ExecutionJobStatus.Cancelled,
-                            UpdatedAt = localNow,
-                            CompletedAt = localNow,
-                            CurrentPhase = "Cancelled before submission"
-                        };
-                        if (!await jobStore.TrySetAsync(localCancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
-                        {
-                            var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                            if (fresh == null)
-                            {
+                            case PreSubmissionCancelOutcome.TerminalConflict:
+                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                    progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' reached terminal state '{preResult.Job!.Status}' before pre-submission cancellation could be applied");
+                            case PreSubmissionCancelOutcome.Missing:
                                 return ProblemDetailsHelpers.CreateAdminProblem(
                                     StatusCodes.Status409Conflict,
                                     "Conflict",
                                     $"Operation '{operationId}' was deleted before pre-submission cancellation could be applied");
-                            }
-
-                            if (fresh.Status == ExecutionJobStatus.Cancelled)
-                            {
-                                localCancelled = fresh;
-                            }
-                            else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
-                            {
-                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                    progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
-
-                                return ProblemDetailsHelpers.CreateAdminProblem(
-                                    StatusCodes.Status409Conflict,
-                                    "Conflict",
-                                    $"Operation '{operationId}' reached terminal state '{fresh.Status}' before pre-submission cancellation could be applied");
-                            }
-                            else
-                            {
+                            case PreSubmissionCancelOutcome.Unconfirmed:
                                 return ProblemDetailsHelpers.CreateAdminProblem(
                                     StatusCodes.Status409Conflict,
                                     "Conflict",
                                     $"Operation '{operationId}' pre-submission cancellation could not be confirmed.");
-                            }
                         }
 
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                            progressStore, localCancelled, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                            progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
                         var localResponse = new CancelOperationResponse
                         {
                             OperationId = operationId,

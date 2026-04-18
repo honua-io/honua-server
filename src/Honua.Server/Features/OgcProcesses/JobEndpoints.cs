@@ -397,44 +397,30 @@ internal static class JobEndpoints
                     {
                         if (latest.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(latest))
                         {
-                            var localNow = DateTimeOffset.UtcNow;
-                            var localCancelled = latest with
-                            {
-                                Status = ExecutionJobStatus.Cancelled,
-                                UpdatedAt = localNow,
-                                CompletedAt = localNow,
-                                CurrentPhase = "Cancelled before submission"
-                            };
-                            if (!await jobStore.TrySetAsync(localCancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false))
-                            {
-                                var fresh = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-                                if (fresh == null)
-                                {
-                                    OgcProcessesLog.JobNotFound(logger, jobId);
-                                    return JobNotFoundResult(jobId);
-                                }
+                            var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
+                                jobStore, latest, context.RequestAborted).ConfigureAwait(false);
 
-                                if (fresh.Status == ExecutionJobStatus.Cancelled)
-                                {
-                                    localCancelled = fresh;
-                                }
-                                else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
-                                {
-                                    OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status));
+                            switch (preResult.Outcome)
+                            {
+                                case PreSubmissionCancelOutcome.TerminalConflict:
+                                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                        progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                                    OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(preResult.Job!.Status));
                                     return Results.Json(
                                         new OgcProcessError
                                         {
                                             Type = "about:blank",
                                             Title = "Cannot dismiss completed job",
                                             Status = StatusCodes.Status409Conflict,
-                                            Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status)}' before dismiss could be applied."
+                                            Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(preResult.Job!.Status)}' before dismiss could be applied."
                                         },
                                         OgcProcessesJsonContext.Default.OgcProcessError,
                                         MediaTypes.Json,
                                         StatusCodes.Status409Conflict);
-                                }
-                                else
-                                {
+                                case PreSubmissionCancelOutcome.Missing:
+                                    OgcProcessesLog.JobNotFound(logger, jobId);
+                                    return JobNotFoundResult(jobId);
+                                case PreSubmissionCancelOutcome.Unconfirmed:
                                     return Results.Json(
                                         new OgcProcessError
                                         {
@@ -446,12 +432,11 @@ internal static class JobEndpoints
                                         OgcProcessesJsonContext.Default.OgcProcessError,
                                         MediaTypes.Json,
                                         StatusCodes.Status409Conflict);
-                                }
                             }
 
                             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                progressStore, localCancelled, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
-                            job = localCancelled;
+                                progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            job = preResult.Job!;
                             var baseUrlLocal = BaseUrlResolver.GetBaseUrl(context);
                             return Results.Json(
                                 OgcProcessesConversionHelpers.ToOgcStatusInfo(

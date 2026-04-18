@@ -683,17 +683,24 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(job))
         {
-            var cancelNow = DateTimeOffset.UtcNow;
-            var cancelled = job with
+            var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
+                jobStore, job, cancellationToken).ConfigureAwait(false);
+
+            switch (preResult.Outcome)
             {
-                Status = ExecutionJobStatus.Cancelled,
-                UpdatedAt = cancelNow,
-                CompletedAt = cancelNow,
-                CurrentPhase = "Cancelled before submission"
-            };
-            return await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false)
-                ? new(RemoteCancelOutcome.Delegated)
-                : new(RemoteCancelOutcome.Unconfirmed);
+                case PreSubmissionCancelOutcome.Cancelled:
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        _progressStore, preResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    return new(RemoteCancelOutcome.Delegated);
+                case PreSubmissionCancelOutcome.TerminalConflict:
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        _progressStore, preResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    return new(RemoteCancelOutcome.TerminalConflict, preResult.Job!.Status);
+                case PreSubmissionCancelOutcome.Missing:
+                    return new(RemoteCancelOutcome.Missing);
+                default:
+                    return new(RemoteCancelOutcome.Unconfirmed);
+            }
         }
 
         var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
