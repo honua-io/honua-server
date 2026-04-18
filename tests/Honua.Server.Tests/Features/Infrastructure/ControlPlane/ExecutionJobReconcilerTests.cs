@@ -109,7 +109,7 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
-    public async Task ReconcileExecutionJob_LocalQueuedRetry_StartsInsteadOfObservingStaleProgress()
+    public async Task ReconcileExecutionJob_LocalQueuedRetry_ObservesWithoutDoubleCountingAttempts()
     {
         var job = CreateJobRecord(
             operationId: "job-local-retry",
@@ -140,11 +140,46 @@ public sealed class ExecutionJobReconcilerTests
         var stored = await jobStore.GetAsync("job-local-retry");
         stored.Should().NotBeNull();
         stored!.Status.Should().Be(ExecutionJobStatus.Running,
-            "retried local jobs bypass stale progress observation via StartJobAsync");
-        stored.AttemptCount.Should().Be(2,
-            "StartJobAsync increments AttemptCount to prevent re-entering the retry branch");
-        stored.CurrentPhase.Should().NotBe("Prior attempt progress",
-            "phase must not come from stale progress store data");
+            "non-terminal stale progress may promote to Running without functional harm");
+        stored.AttemptCount.Should().Be(1,
+            "ObserveLocalRetryAsync must not increment AttemptCount to avoid double-counting");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_LocalQueuedRetry_StaleTerminalProgress_StaysQueued()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-local-retry-terminal",
+            status: ExecutionJobStatus.Queued,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-retry-terminal", "plan-local") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Failed,
+            CurrentStageStatus = GeoprocessingStageStatus.Failed,
+            ErrorMessage = "Prior attempt failed"
+        };
+        await progressStore.SetProgressAsync("job-local-retry-terminal", staleProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-local-retry-terminal");
+
+        var stored = await jobStore.GetAsync("job-local-retry-terminal");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued,
+            "stale terminal progress from the prior attempt must not re-terminate a retried job");
+        stored.AttemptCount.Should().Be(1,
+            "AttemptCount must not change when the retry is waiting for worker claim");
     }
 
     [Fact]

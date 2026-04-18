@@ -83,7 +83,7 @@ internal sealed partial class ExecutionJobReconciler(
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     && job.AttemptCount > 0
-                    => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                    => await ObserveLocalRetryAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
@@ -247,6 +247,20 @@ internal sealed partial class ExecutionJobReconciler(
             CurrentPhase = newPhase,
             ErrorMessage = newError
         };
+    }
+
+    private static async Task<ExecutionJobRecord> ObserveLocalRetryAsync(
+        ExecutionJobRecord job,
+        IBatchComputeBackend backend,
+        CancellationToken cancellationToken)
+    {
+        var observed = await ObserveJobAsync(job, backend, cancellationToken).ConfigureAwait(false);
+        if (!ReferenceEquals(observed, job) && IsTerminal(observed.Status))
+        {
+            return job;
+        }
+
+        return observed;
     }
 
     private async Task BridgeProgressAsync(
