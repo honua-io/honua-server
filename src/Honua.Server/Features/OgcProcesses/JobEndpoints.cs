@@ -479,7 +479,7 @@ internal static class JobEndpoints
                         if (ExecutionJobCancellationHelper.IsTerminal(cancelled.Status))
                         {
                             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                progressStore, cancelled, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                                progressStore, cancelled, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
                         }
 
                         if (cancelled.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)

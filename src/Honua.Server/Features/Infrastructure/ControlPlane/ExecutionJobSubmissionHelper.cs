@@ -47,7 +47,7 @@ internal static partial class ExecutionJobSubmissionHelper
             if (progressStore != null && committed)
             {
                 await BridgeTerminalSubmissionProgressAsync(
-                    progressStore, failedJob, progressRetention ?? TimeSpan.FromDays(7), cancellationToken)
+                    progressStore, failedJob, progressRetention ?? TimeSpan.FromDays(7), cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -85,7 +85,7 @@ internal static partial class ExecutionJobSubmissionHelper
             var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
             if (current != null)
             {
-                await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, cancellationToken)
+                await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, logger, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -114,14 +114,14 @@ internal static partial class ExecutionJobSubmissionHelper
             var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
             if (current != null)
             {
-                await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, cancellationToken)
+                await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, logger, cancellationToken)
                     .ConfigureAwait(false);
             }
 
             return current ?? updated;
         }
 
-        await BridgeTerminalSubmissionProgressAsync(progressStore, updated, progressRetention, cancellationToken)
+        await BridgeTerminalSubmissionProgressAsync(progressStore, updated, progressRetention, logger, cancellationToken)
             .ConfigureAwait(false);
         return updated;
     }
@@ -134,6 +134,7 @@ internal static partial class ExecutionJobSubmissionHelper
         IUniversalProgressStore progressStore,
         ExecutionJobRecord job,
         TimeSpan retention,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
         if (!ExecutionJobReconciler.IsTerminal(job.Status))
@@ -155,9 +156,12 @@ internal static partial class ExecutionJobSubmissionHelper
                     .ConfigureAwait(false);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort; terminal status is already persisted on the job record.
+            if (logger != null)
+            {
+                Log.TerminalProgressBridgeFailed(logger, job.OperationId, ex);
+            }
         }
     }
 
@@ -165,5 +169,8 @@ internal static partial class ExecutionJobSubmissionHelper
     {
         [LoggerMessage(9040, LogLevel.Warning, "Post-start CAS conflict for execution job {OperationId}: returning authoritative store record")]
         public static partial void PostStartCasConflict(ILogger logger, string operationId);
+
+        [LoggerMessage(9041, LogLevel.Warning, "Failed to bridge terminal submission progress for execution job {OperationId}")]
+        public static partial void TerminalProgressBridgeFailed(ILogger logger, string operationId, Exception exception);
     }
 }

@@ -213,7 +213,7 @@ internal static partial class OperationsProgressEndpoints
             }
 
             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                progressStore, executionJob, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                progressStore, executionJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
 
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status409Conflict,
@@ -268,7 +268,7 @@ internal static partial class OperationsProgressEndpoints
                     else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                     {
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                            progressStore, fresh, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                            progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
 
                         return ProblemDetailsHelpers.CreateAdminProblem(
                             StatusCodes.Status409Conflict,
@@ -325,7 +325,7 @@ internal static partial class OperationsProgressEndpoints
                 if (cancelOutcome.Job != null)
                 {
                     await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                        progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                        progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
                 }
 
                 return ProblemDetailsHelpers.CreateAdminProblem(
@@ -569,7 +569,7 @@ internal static partial class OperationsProgressEndpoints
                     else
                     {
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                            progressStore, executionJob, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                            progressStore, executionJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
 
                         return ProblemDetailsHelpers.CreateAdminProblem(
                             StatusCodes.Status409Conflict,
@@ -632,7 +632,7 @@ internal static partial class OperationsProgressEndpoints
                         else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                         {
                             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                progressStore, fresh, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                                progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
 
                             return ProblemDetailsHelpers.CreateAdminProblem(
                                 StatusCodes.Status409Conflict,
@@ -673,7 +673,7 @@ internal static partial class OperationsProgressEndpoints
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                            progressStore, updated, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                            progressStore, updated, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
                     }
 
                     if (updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
@@ -718,7 +718,7 @@ internal static partial class OperationsProgressEndpoints
                             if (cancelOutcome.Job != null)
                             {
                                 await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                    progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+                                    progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
                             }
 
                             return ProblemDetailsHelpers.CreateAdminProblem(

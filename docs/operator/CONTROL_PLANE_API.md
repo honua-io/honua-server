@@ -412,8 +412,8 @@ cancellation and checks the durable job store (when present) to mitigate TOCTOU
 races with worker-owned state transitions.
 
 Jobs submitted through the durable job orchestration substrate (via
-`ProcessService.SubmitPlanJob`, OGC API Processes `/execute`, or GPServer
-`submitJob`) surface through these same operations endpoints using the
+`ProcessService.SubmitPlanJob` or OGC API Processes `/execute`) surface
+through these same operations endpoints using the
 `Geoprocessing` operation type. The execution-job reconciler bridges
 progress from pluggable batch-compute backends into `IUniversalProgressStore`
 so all jobs — local and remote — appear through the operations surface.
