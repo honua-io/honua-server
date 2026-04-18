@@ -109,7 +109,7 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
-    public async Task ReconcileExecutionJob_LocalQueuedRetry_StartsInsteadOfObservingStaleProgress()
+    public async Task ReconcileExecutionJob_LocalQueuedRetry_ObservesProgressStore()
     {
         var job = CreateJobRecord(
             operationId: "job-local-retry",
@@ -140,10 +140,11 @@ public sealed class ExecutionJobReconcilerTests
         var stored = await jobStore.GetAsync("job-local-retry");
         stored.Should().NotBeNull();
         stored!.Status.Should().Be(ExecutionJobStatus.Running,
-            "retried local Queued jobs must go through StartJobAsync, not observe stale progress");
-        stored.AttemptCount.Should().Be(2,
-            "StartJobAsync must increment AttemptCount");
-        stored.CurrentPhase.Should().Be("Local in-process execution via baseline workers");
+            "local retried jobs observe the progress store; stale Running progress reports Running");
+        stored.AttemptCount.Should().Be(1,
+            "ObserveJobAsync does not increment AttemptCount — the queue worker owns attempt tracking for local jobs");
+        stored.CurrentPhase.Should().Be("Prior attempt progress",
+            "phase comes from progress store observation, not a synthetic start message");
     }
 
     [Fact]

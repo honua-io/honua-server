@@ -94,7 +94,8 @@ separates API-side and worker-side concerns at the service-registration level:
 `AddJobOrchestration()` to wire the shared queue and log store. The pluggable
 batch-compute backend contract (`IBatchComputeBackend`) and execution-job
 reconciler are registered directly in the combined host; `LocalBatchComputeBackend`
-handles in-process workloads. `AddJobWorker()` (queue-based claim/execute for
+observes in-process worker progress (actual execution requires `AddJobWorker()`
+wiring on a worker host). `AddJobWorker()` (queue-based claim/execute for
 dedicated worker hosts) is not yet invoked from a host entrypoint. Separate
 API-only and worker-only images are a planned topology for Scenario 3
 (enterprise scale-out).

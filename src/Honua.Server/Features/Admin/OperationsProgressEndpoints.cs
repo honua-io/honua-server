@@ -28,7 +28,7 @@ namespace Honua.Server.Features.Admin;
 /// Unified operation progress endpoints for tracking any tracked operation type.
 /// Replaces legacy progress endpoints with a single, consistent API.
 /// </summary>
-internal static class OperationsProgressEndpoints
+internal static partial class OperationsProgressEndpoints
 {
     /// <summary>
     /// Map unified operation progress endpoints.
@@ -357,11 +357,20 @@ internal static class OperationsProgressEndpoints
         {
             await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Best-effort: the durable store is authoritative and stale-claim
-            // reconciliation or later terminal cleanup will repair the queue.
+            Log.QueueRemovalFailed(
+                httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(typeof(OperationsProgressEndpoints).FullName!),
+                operationId,
+                ex);
         }
+    }
+
+    internal static partial class Log
+    {
+        [LoggerMessage(9080, LogLevel.Warning, "Admin cancel queue cleanup failed for operation {OperationId}; stale-claim reconciler will repair")]
+        public static partial void QueueRemovalFailed(ILogger logger, string operationId, Exception exception);
     }
 
     private static void NormalizeCanonicalProperty(JsonObject operation, string propertyName, JsonNode? value)
