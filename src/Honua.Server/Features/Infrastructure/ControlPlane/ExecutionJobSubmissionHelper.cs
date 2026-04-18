@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Server.Features.Infrastructure.ControlPlane;
 
@@ -48,4 +50,39 @@ internal static class ExecutionJobSubmissionHelper
     public static bool IsSubmissionRollback(ExecutionJobRecord job)
         => job.Status == ExecutionJobStatus.Failed
             && string.Equals(job.CurrentPhase, SubmissionFailurePhase, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Bridges geoprocessing progress when a backend submission returns a terminal status
+    /// synchronously, before the job drops out of the active index.
+    /// </summary>
+    public static async Task BridgeTerminalSubmissionProgressAsync(
+        IUniversalProgressStore progressStore,
+        ExecutionJobRecord job,
+        TimeSpan retention,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ExecutionJobReconciler.IsTerminal(job.Status))
+        {
+            return;
+        }
+
+        try
+        {
+            var existing = await progressStore
+                .GetProgressAsync<GeoprocessingProgress>(job.OperationId, cancellationToken)
+                .ConfigureAwait(false);
+
+            var bridged = ExecutionJobReconciler.BuildProgress(job, existing);
+            if (bridged != null)
+            {
+                await progressStore
+                    .SetProgressAsync(job.OperationId, bridged, retention, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Best-effort; terminal status is already persisted on the job record.
+        }
+    }
 }

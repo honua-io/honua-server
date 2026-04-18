@@ -321,6 +321,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         };
 
         await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+            _progressStore, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);
+
         return updated;
     }
 

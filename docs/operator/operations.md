@@ -183,15 +183,15 @@ contract and infrastructure are implemented; end-to-end wiring from
 submission endpoints through the queue to worker execution lands with the
 per-kind executor tickets (#721, #724, #727).
 
-> **Deployment note:** The substrate is split into API-side and worker-side
-> registrations. The API image registers shared infrastructure (queue, log
-> store) via `AddJobOrchestration()`. A future worker or combined-mode image
-> will additionally register the execution host and reconciliation sweep via
-> `AddJobWorker()`. `AddJobWorker()` is not yet invoked from a host
-> entrypoint; it will be wired when the first concrete executor is
-> integrated in follow-on tickets (#721, #724, #727). Lean API-only
-> deployments will not run execution or reconciliation overhead. See
-> [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md)
+> **Deployment note:** Every Redis-enabled host registers the execution-job
+> reconciliation background service, which polls active jobs and bridges
+> status from pluggable batch-compute backends into the canonical job store.
+> Local (in-process) jobs are queue-gated: the reconciler observes their
+> worker-published progress but does not advance them from `Queued` —
+> that transition is owned by the worker substrate via `AddJobWorker()`.
+> Remote backends (AWS Batch, Azure Container Apps, etc.) are started and
+> observed by the reconciler on any host.
+> See [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md)
 > and [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
 
 ### Supported Job Kinds

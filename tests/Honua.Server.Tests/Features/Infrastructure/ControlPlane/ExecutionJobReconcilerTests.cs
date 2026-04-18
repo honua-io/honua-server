@@ -41,7 +41,7 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
-    public async Task ReconcileExecutionJob_LocalQueuedJob_StartsViaBaselineBackend()
+    public async Task ReconcileExecutionJob_LocalQueuedJob_ObservesInsteadOfStarting()
     {
         var job = CreateJobRecord(
             operationId: "job-local",
@@ -64,9 +64,39 @@ public sealed class ExecutionJobReconcilerTests
 
         var stored = await jobStore.GetAsync("job-local");
         stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_LocalRunningWorkerProgress_BridgesToRunning()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-local-running",
+            status: ExecutionJobStatus.Queued,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var workerProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-running", "plan-local") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending,
+            CurrentPhase = "Executing buffer analysis"
+        };
+        await progressStore.SetProgressAsync("job-local-running", workerProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-local-running");
+
+        var stored = await jobStore.GetAsync("job-local-running");
+        stored.Should().NotBeNull();
         stored!.Status.Should().Be(ExecutionJobStatus.Running);
-        stored.ProviderOperationId.Should().Be("job-local");
-        stored.CurrentPhase.Should().Be("Local in-process execution via baseline workers");
+        stored.CurrentPhase.Should().Be("Executing buffer analysis");
     }
 
     [Fact]
@@ -119,6 +149,55 @@ public sealed class ExecutionJobReconcilerTests
         progress.PercentComplete.Should().Be(100);
         progress.CurrentPhase.Should().Be("Execution complete");
         progress.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task BridgeTerminalSubmissionProgress_TerminalJob_UpdatesGeoprocessingProgress()
+    {
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-terminal", "plan-terminal");
+        await progressStore.SetProgressAsync("job-terminal", initialProgress);
+
+        var terminalJob = CreateJobRecord(
+            operationId: "job-terminal",
+            status: ExecutionJobStatus.Failed,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch,
+            currentPhase: "Backend rejected the request") with
+        {
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = "Backend rejected the request"
+        };
+
+        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+            progressStore, terminalJob, TimeSpan.FromDays(7));
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-terminal");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
+        progress.CompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task BridgeTerminalSubmissionProgress_NonTerminalJob_DoesNotModifyProgress()
+    {
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-running", "plan-running");
+        await progressStore.SetProgressAsync("job-running", initialProgress);
+
+        var runningJob = CreateJobRecord(
+            operationId: "job-running",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+            progressStore, runningJob, TimeSpan.FromDays(7));
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-running");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution);
     }
 
     private static ExecutionJobRecord CreateJobRecord(

@@ -74,6 +74,8 @@ internal sealed partial class ExecutionJobReconciler(
 
             var updated = job.Status switch
             {
+                ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
@@ -196,7 +198,7 @@ internal sealed partial class ExecutionJobReconciler(
         }
     }
 
-    private static GeoprocessingProgress? BuildProgress(ExecutionJobRecord job, GeoprocessingProgress? existing)
+    internal static GeoprocessingProgress? BuildProgress(ExecutionJobRecord job, GeoprocessingProgress? existing)
     {
         if (existing == null && job.Spec.Kind != ExecutionJobKind.Geoprocessing)
         {
@@ -240,7 +242,7 @@ internal sealed partial class ExecutionJobReconciler(
         };
     }
 
-    private static (int StepsCompleted, int? TotalSteps) ResolveSyntheticSteps(
+    internal static (int StepsCompleted, int? TotalSteps) ResolveSyntheticSteps(
         GeoprocessingProgress? existing,
         double? percentComplete)
     {
@@ -258,7 +260,7 @@ internal sealed partial class ExecutionJobReconciler(
         return (stepsCompleted, totalSteps);
     }
 
-    private static GeoprocessingWorkflowStatus MapWorkflowStatus(ExecutionJobStatus status)
+    internal static GeoprocessingWorkflowStatus MapWorkflowStatus(ExecutionJobStatus status)
         => status switch
         {
             ExecutionJobStatus.Queued => GeoprocessingWorkflowStatus.AwaitingExecution,
@@ -270,7 +272,7 @@ internal sealed partial class ExecutionJobReconciler(
             _ => GeoprocessingWorkflowStatus.AwaitingExecution
         };
 
-    private static GeoprocessingStageStatus MapStageStatus(ExecutionJobStatus status)
+    internal static GeoprocessingStageStatus MapStageStatus(ExecutionJobStatus status)
         => status switch
         {
             ExecutionJobStatus.Queued => GeoprocessingStageStatus.Pending,

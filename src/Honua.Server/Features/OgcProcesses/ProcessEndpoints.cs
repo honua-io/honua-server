@@ -442,7 +442,7 @@ internal static class ProcessEndpoints
             throw;
         }
 
-        jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, backends, context.RequestAborted).ConfigureAwait(false);
+        jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, context.RequestAborted).ConfigureAwait(false);
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);
 
@@ -702,6 +702,7 @@ internal static class ProcessEndpoints
     private static async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
         ExecutionJobRecord job,
         IExecutionJobStore jobStore,
+        IUniversalProgressStore progressStore,
         IEnumerable<IBatchComputeBackend>? backends,
         CancellationToken cancellationToken)
     {
@@ -729,6 +730,10 @@ internal static class ProcessEndpoints
         };
 
         await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+            progressStore, updated, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
+
         return updated;
     }
 
