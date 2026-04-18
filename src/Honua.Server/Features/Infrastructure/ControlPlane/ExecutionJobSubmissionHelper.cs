@@ -42,9 +42,9 @@ internal static partial class ExecutionJobSubmissionHelper
                 CurrentPhase = SubmissionFailurePhase
             };
 
-            await jobStore.TrySetAsync(failedJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var committed = await jobStore.TrySetAsync(failedJob, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            if (progressStore != null)
+            if (progressStore != null && committed)
             {
                 await BridgeTerminalSubmissionProgressAsync(
                     progressStore, failedJob, progressRetention ?? TimeSpan.FromDays(7), cancellationToken)

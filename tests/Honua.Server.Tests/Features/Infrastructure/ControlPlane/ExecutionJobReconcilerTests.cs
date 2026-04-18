@@ -798,6 +798,30 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task TryRollbackCreatedJob_LostCas_DoesNotBridgeProgress()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-cas-lost",
+            status: ExecutionJobStatus.Provisioning,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new CasRejectingJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var initialProgress = GeoprocessingProgress.CreateForSubmittedJob("job-cas-lost", "plan-cas");
+        await progressStore.SetProgressAsync("job-cas-lost", initialProgress);
+
+        await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+            jobStore, "job-cas-lost",
+            progressStore: progressStore,
+            progressRetention: TimeSpan.FromDays(7));
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-cas-lost");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution,
+            "Progress must not flip to Failed when the durable rollback lost the CAS race");
+    }
+
+    [Fact]
     public async Task BridgeTerminalSubmissionProgress_NonTerminalJob_DoesNotModifyProgress()
     {
         var progressStore = new InMemoryProgressStore();
@@ -892,6 +916,31 @@ public sealed class ExecutionJobReconcilerTests
                 .ToArray();
             return Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(jobs);
         }
+    }
+
+    private sealed class CasRejectingJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
+    {
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = jobs.ToDictionary(job => job.OperationId, StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+        public Task<bool> TryCreateAsync(ExecutionJobRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_jobs.TryGetValue(operationId, out var job) ? job : null);
+        public Task SetAsync(ExecutionJobRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[operation.OperationId] = operation;
+            return Task.CompletedTask;
+        }
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 
     private sealed class InMemoryProgressStore : IUniversalProgressStore

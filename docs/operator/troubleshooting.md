@@ -142,7 +142,7 @@ redis-cli -h redis ZCARD controlplane:jobqueue:pending
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Jobs stay Queued (local backend) | In-process worker did not start or failed silently | Check geoprocessing submission logs; the local backend observes in-process worker progress and the reconciler bridges it into the job store. If the combined host is healthy and the worker started, the job should transition automatically |
+| Jobs stay Queued (local backend) | Worker host not wired or worker failed silently | The combined host queues local jobs but does not execute them — execution requires a worker host registered via `AddJobWorker()`. Check that a worker host is running and healthy; the local backend observes worker-published progress and the reconciler bridges it into the job store |
 | Jobs stay Queued (remote backend) | No `IBatchComputeBackend` registered for the job's `(Backend, TargetKind)` | Verify the backend adapter is registered and the `ControlPlane:ExecutionWorkloads` catalog entry matches |
 | Heartbeat expiry warnings | Worker crashed or network partition | Check worker health; reconciler auto-recovers |
 | Retry exhaustion errors | Executor fails repeatedly | Check executor logs for root cause |
