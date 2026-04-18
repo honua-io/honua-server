@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -677,6 +678,108 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         // The response should be parseable and contain an operations array
         var operations = GetOperationsArray(json.RootElement);
         operations.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
+    public async Task GetOperationStatus_DeploymentType_ReturnsLifecycleFields()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateRollingOut(operationId, deploymentId, RolloutState.InProgress);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(json.RootElement, "deploymentId").GetString().Should().Be(deploymentId);
+        GetPropertyCaseInsensitive(json.RootElement, "deploymentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        GetPropertyCaseInsensitive(json.RootElement, "rolloutState").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_DeploymentType_ReturnsLifecycleFields()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateProvisioning(operationId, deploymentId);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Deployment");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+
+        var op = operations.EnumerateArray()
+            .First(e => GetPropertyCaseInsensitive(e, "operationId").GetString() == operationId);
+        GetPropertyCaseInsensitive(op, "type").GetInt32().Should().Be((int)OperationType.Deployment);
+        GetPropertyCaseInsensitive(op, "deploymentId").GetString().Should().Be(deploymentId);
+        GetPropertyCaseInsensitive(op, "deploymentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/type/{operationType}")]
+    public async Task GetOperationsByType_DeploymentType_ReturnsOperations()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateInitial(operationId, deploymentId);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/type/Deployment");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        var op = operations.EnumerateArray()
+            .First(e => GetPropertyCaseInsensitive(e, "operationId").GetString() == operationId);
+        GetPropertyCaseInsensitive(op, "type").GetInt32().Should().Be((int)OperationType.Deployment);
+        GetPropertyCaseInsensitive(op, "deploymentId").GetString().Should().Be(deploymentId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_DeploymentType_PersistsCancelledStateWithNormalizedRollout()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateRollingOut(operationId, deploymentId, RolloutState.InProgress);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(json.RootElement, "type").GetInt32().Should().Be((int)OperationType.Deployment);
+
+        var updated = await _progressStore.GetProgressAsync<DeploymentProgress>(operationId);
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(OperationStatus.Cancelled);
+        updated.DeploymentStatus.Should().Be(DeploymentStatus.Cancelled);
+        updated.RolloutState.Should().Be(RolloutState.Cancelled);
     }
 
     private static JsonElement GetOperationsArray(JsonElement root)

@@ -235,6 +235,86 @@ public class DeploymentTests
     }
 
     [UnitTest]
+    public void CreateDraft_WithScheduledRolloutAndNoSchedule_ShouldThrow()
+    {
+        var act = () => Honua.Core.Features.Deployment.Domain.Deployment.CreateDraft(
+            "dep-scheduled-missing",
+            DeploymentSource.FromPublishedService("svc-scheduled"),
+            CreateTestTarget(),
+            rollout: RolloutPlan.Scheduled(),
+            schedule: null);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("schedule")
+            .WithMessage("*Scheduled rollout*DeploymentSchedule*");
+    }
+
+    [UnitTest]
+    public void CreateDraft_WithScheduledRolloutAndSchedule_ShouldSucceed()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+
+        var deployment = Honua.Core.Features.Deployment.Domain.Deployment.CreateDraft(
+            "dep-scheduled-ok",
+            DeploymentSource.FromPublishedService("svc-scheduled-ok"),
+            CreateTestTarget(),
+            rollout: RolloutPlan.Scheduled(),
+            schedule: schedule);
+
+        deployment.Rollout.Strategy.Should().Be(RolloutStrategy.Scheduled);
+        deployment.Schedule.Should().Be(schedule);
+    }
+
+    [UnitTest]
+    public void WithActive_ScheduledRolloutBeforeScheduleFires_ShouldThrow()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Scheduled(), schedule: schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var act = () => deployment.WithActive("/apps/scheduled");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*scheduled publish time*");
+    }
+
+    [UnitTest]
+    public void WithActive_ScheduledRolloutOnceScheduleFires_ShouldSucceed()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var schedule = DeploymentSchedule.Window(
+            now - TimeSpan.FromMinutes(1),
+            now + TimeSpan.FromHours(1));
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Scheduled(), schedule: schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var active = deployment.WithActive("/apps/scheduled");
+
+        active.Status.Should().Be(DeploymentStatus.Active);
+        active.RolloutState.Should().Be(RolloutState.Promoted);
+        active.PublicationState.Should().Be(DeploymentPublicationState.Published);
+    }
+
+    [UnitTest]
+    public void WithActive_ScheduledRolloutWithClearedSchedule_ShouldThrow()
+    {
+        // Defense-in-depth: a scheduled rollout whose schedule was elided via the record
+        // `with` operator must still fail activation rather than silently promoting.
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var rollingOut = CreateTestDeployment(rollout: RolloutPlan.Scheduled(), schedule: schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+        var withoutSchedule = rollingOut with { Schedule = null };
+
+        var act = () => withoutSchedule.WithActive("/apps/scheduled");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*scheduled rollout*DeploymentSchedule*");
+    }
+
+    [UnitTest]
     public void WithSuperseded_ShouldRecordSuccessorAndUnpublish()
     {
         var deployment = CreateTestDeployment().WithProvisioning().WithRollingOut().WithActive();

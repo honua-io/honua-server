@@ -120,6 +120,11 @@ public sealed record Deployment
     /// <summary>
     /// Creates a new draft deployment targeting the given source and hosting target.
     /// </summary>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="rollout"/> uses
+    /// <see cref="RolloutStrategy.Scheduled"/> without a matching <paramref name="schedule"/>.
+    /// A schedule-gated rollout must carry a publication schedule for the lifecycle to honor
+    /// its gate; otherwise the deployment could activate immediately and the strategy would be
+    /// declarative-only.</exception>
     public static Deployment CreateDraft(
         string deploymentId,
         DeploymentSource source,
@@ -128,6 +133,14 @@ public sealed record Deployment
         DeploymentSchedule? schedule = null,
         OperationAuditInfo? audit = null)
     {
+        var effectiveRollout = rollout ?? RolloutPlan.Immediate();
+        if (effectiveRollout.Strategy == RolloutStrategy.Scheduled && schedule is null)
+        {
+            throw new ArgumentException(
+                "Scheduled rollout strategy requires a DeploymentSchedule to gate activation.",
+                nameof(schedule));
+        }
+
         var now = DateTimeOffset.UtcNow;
         return new Deployment
         {
@@ -136,7 +149,7 @@ public sealed record Deployment
             Target = target,
             Status = DeploymentStatus.Draft,
             PublicationState = DeploymentPublicationState.Draft,
-            Rollout = rollout ?? RolloutPlan.Immediate(),
+            Rollout = effectiveRollout,
             Schedule = schedule,
             Audit = audit ?? new OperationAuditInfo(),
             CreatedAt = now,
@@ -248,10 +261,13 @@ public sealed record Deployment
     /// Transitions the deployment to <see cref="DeploymentStatus.Active"/>, marking the
     /// rollout as promoted and the publication state as published. When a
     /// <see cref="Schedule"/> is attached, activation is gated to the publication window:
-    /// the deployment must be due and must not have passed its auto-retire time.
+    /// the deployment must be due and must not have passed its auto-retire time. A
+    /// <see cref="RolloutStrategy.Scheduled"/> rollout always requires a schedule; activation
+    /// without one is rejected to keep the declared strategy load-bearing.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when a schedule is attached and
-    /// the current time is outside its publish window.</exception>
+    /// the current time is outside its publish window, or when the rollout strategy is
+    /// <see cref="RolloutStrategy.Scheduled"/> but no schedule is attached.</exception>
     public Deployment WithActive(
         string? publicUrl = null,
         string? reason = null,
@@ -262,6 +278,12 @@ public sealed record Deployment
             DeploymentStatus.RollingOut,
             DeploymentStatus.Active);
         var now = DateTimeOffset.UtcNow;
+        if (Rollout.Strategy == RolloutStrategy.Scheduled && Schedule is null)
+        {
+            throw new InvalidOperationException(
+                "Cannot activate a scheduled rollout without an attached DeploymentSchedule.");
+        }
+
         if (Schedule is not null)
         {
             if (!Schedule.IsDue(now))
