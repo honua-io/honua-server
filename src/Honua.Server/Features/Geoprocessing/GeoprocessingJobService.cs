@@ -708,7 +708,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
             _progressStore, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        return true;
+        return updated.Status is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed);
     }
 
     private static void ValidatePlanStructure(AnalysisPlan plan)

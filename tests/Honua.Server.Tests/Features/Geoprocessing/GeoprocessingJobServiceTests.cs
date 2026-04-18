@@ -1040,6 +1040,102 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteBackendReturnsSucceeded_ThrowsPreconditionFailed()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Succeeded,
+                Message = "Job already completed"
+            });
+
+        var record = CreateJobRecord(
+            "job-1",
+            ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var succeededRecord = record with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, succeededRecord);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        var act = async () => await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*terminal state*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteBackendReturnsFailed_ThrowsPreconditionFailed()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = "Job already failed"
+            });
+
+        var record = CreateJobRecord(
+            "job-1",
+            ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var failedRecord = record with
+        {
+            Status = ExecutionJobStatus.Failed,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, failedRecord);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        var act = async () => await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*terminal state*");
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_RemoteBackend_TransitionsToProvisioningBeforeStartAsync()

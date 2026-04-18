@@ -474,6 +474,22 @@ internal static class JobEndpoints
                                 progressStore, cancelled, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
                         }
 
+                        if (cancelled.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                        {
+                            OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(cancelled.Status));
+                            return Results.Json(
+                                new OgcProcessError
+                                {
+                                    Type = "about:blank",
+                                    Title = "Cannot dismiss completed job",
+                                    Status = StatusCodes.Status409Conflict,
+                                    Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(cancelled.Status)}' before dismiss could be applied."
+                                },
+                                OgcProcessesJsonContext.Default.OgcProcessError,
+                                MediaTypes.Json,
+                                StatusCodes.Status409Conflict);
+                        }
+
                         job = cancelled;
                         var baseUrlBackend = BaseUrlResolver.GetBaseUrl(context);
                         return Results.Json(

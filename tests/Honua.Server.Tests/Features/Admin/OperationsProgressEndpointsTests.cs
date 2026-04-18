@@ -563,6 +563,144 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteBackendReturnsSucceeded_Returns409()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Succeeded,
+                Message = "Job already completed"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services => services.AddSingleton(backend));
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Processing",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-terminal-race"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-terminal-race");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteBackendReturnsFailed_Returns409()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = "Job already failed"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services => services.AddSingleton(backend));
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Processing",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-failed-race"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-failed-race");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/active")]
     public async Task ListActiveOperations_WhenFiltered_ReturnsOnlyActive()
     {

@@ -548,6 +548,14 @@ internal static class OperationsProgressEndpoints
                             progressStore, updated, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
                     }
 
+                    if (updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                    {
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' reached terminal state '{updated.Status}' in the durable job store before remote cancellation could be applied");
+                    }
+
                     var remoteResponse = new CancelOperationResponse
                     {
                         OperationId = operationId,
