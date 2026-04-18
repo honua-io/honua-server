@@ -137,4 +137,9 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string jobId,
         string backend);
+
+    [LoggerMessage(8024, LogLevel.Warning, "Remote cancel CAS conflict for job {JobId}: retrying with fresh record")]
+    public static partial void RemoteCancelCasRetry(
+        ILogger logger,
+        string jobId);
 }

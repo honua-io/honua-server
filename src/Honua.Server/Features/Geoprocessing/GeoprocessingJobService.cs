@@ -227,6 +227,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             {
                 await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
+
+            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -237,8 +239,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
             throw;
         }
-
-        jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
 
         GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
 
@@ -658,7 +658,26 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
             CurrentPhase = observation.Message ?? job.CurrentPhase
         };
-        await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!persisted)
+        {
+            GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
+            var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (fresh != null && !IsTerminal(fresh.Status))
+            {
+                var retryNow = DateTimeOffset.UtcNow;
+                var retryUpdate = fresh with
+                {
+                    Status = observation.Status,
+                    UpdatedAt = retryNow,
+                    CompletedAt = IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
+                    ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
+                    CurrentPhase = observation.Message ?? fresh.CurrentPhase
+                };
+                await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         return true;
     }
 

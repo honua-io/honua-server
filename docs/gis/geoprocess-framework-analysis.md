@@ -262,7 +262,7 @@ The critical adapter difference is result access pattern:
 | --- | --- | --- |
 | Esri GPServer | `POST /{task}/jobs/{jobId}/cancel` | Transitions through `esriJobCancelling` to `esriJobCancelled` |
 | OGC API Processes | `DELETE /jobs/{jobId}` | Transitions to `dismissed`; may also delete the job resource |
-| Honua canonical | `ProcessService.CancelJob` | Sets `ExecutionJobStatus.Cancelled` via `IJobCancellationNotifier`; best-effort, no transient cancelling state |
+| Honua canonical | `ProcessService.CancelJob` | Attempts `IJobCancellationNotifier` for in-process workers; delegates to `IBatchComputeBackend.CancelAsync` for remote backends that advertise `SupportsCancellation`; falls back to `ExecutionJobCancellationHelper` for local durable cancellation; best-effort, no transient cancelling state |
 
 Adapter notes:
 
@@ -363,7 +363,7 @@ API Processes Part 1 Core contract. Key mappings:
 | `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
 | `GET /jobs/{jobId}` | `IExecutionJobStore` → `ExecutionJobRecord` projected to OGC `StatusInfo` |
 | `GET /jobs/{jobId}/results` | V1 stub: non-terminal `404`, successful `404`, failed `500`, dismissed `410`. Planned successful shape: document-mode, by-value output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
-| `DELETE /jobs/{jobId}` | `IJobCancellationNotifier` + durable job store cancellation mapping to OGC `dismissed` |
+| `DELETE /jobs/{jobId}` | `IJobCancellationNotifier` → remote backend `CancelAsync` (if applicable) → `ExecutionJobCancellationHelper` + durable job store cancellation mapping to OGC `dismissed` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
 | `jobControlOptions` | V1 fixed capability declaration for the canonical process stub: `async-execute`, `dismiss` |
 | `Prefer: respond-async` | Required for execution; successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` |

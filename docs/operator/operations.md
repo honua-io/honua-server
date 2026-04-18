@@ -191,7 +191,8 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > status from pluggable batch-compute backends into the canonical job store.
 > Local (in-process) jobs are queue-gated: the reconciler observes their
 > worker-published progress but does not advance them from `Queued` —
-> that transition is owned by the worker substrate via `AddJobWorker()`.
+> that transition is owned by the worker substrate via `AddJobWorker()`,
+> which is not yet wired in the default host.
 > Remote backends (AWS Batch, Azure Container Apps, etc.) are started
 > synchronously on submission and subsequently observed by the reconciler
 > on any Redis-enabled host.

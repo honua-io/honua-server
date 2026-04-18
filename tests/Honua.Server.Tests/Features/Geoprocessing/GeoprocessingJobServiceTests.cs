@@ -995,6 +995,113 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_RemoteBackendStartFails_RollsBackJobToFailed()
+    {
+        var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new ExecutionJobDefinition
+            {
+                WorkloadId = "geoprocessing-remote",
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "Remote geoprocessing"
+            }
+        });
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task<BatchComputeSubmissionResult>>(_ => throw new InvalidOperationException("Backend unavailable"));
+
+        ExecutionJobRecord? createdJob = null;
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                createdJob = call.Arg<ExecutionJobRecord>();
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => createdJob == null ? null : createdJob with { Version = 1 });
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            workloadRegistry: workloadRegistry,
+            backends: [backend]);
+
+        var act = async () => await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(j =>
+                j.Status == ExecutionJobStatus.Failed &&
+                j.ErrorMessage!.Contains("progress or queue persistence")),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteBackendCasConflict_RetriesWithFreshRecord()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                Message = "Cancellation confirmed"
+            });
+
+        var record = CreateJobRecord(
+            "job-1",
+            ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var freshRecord = record with { UpdatedAt = DateTimeOffset.UtcNow };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns(record, record, freshRecord);
+
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false, true);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received(2).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.OperationId == "job-1" &&
+                job.Status == ExecutionJobStatus.Cancelled),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_IdempotentRetryAfterSubmissionRollback_ThrowsInsteadOfReturningFailedRecord()
     {
         var plan = CreateValidPlan();

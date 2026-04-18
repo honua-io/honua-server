@@ -454,6 +454,21 @@ internal static class OperationsProgressEndpoints
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                     }
+
+                    if (observation.Status == ExecutionJobStatus.Cancelled)
+                    {
+                        var remoteCancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
+                        await progressStore.SetProgressAsync(operationId, remoteCancelledProgress,
+                            TimeSpan.FromHours(24), cancellationToken);
+                    }
+
+                    var remoteResponse = new CancelOperationResponse
+                    {
+                        OperationId = operationId,
+                        Message = "Operation cancellation requested",
+                        Type = progress.Type
+                    };
+                    return Results.Json(remoteResponse, OperationsProgressJsonContext.Default.CancelOperationResponse);
                 }
                 else
                 {

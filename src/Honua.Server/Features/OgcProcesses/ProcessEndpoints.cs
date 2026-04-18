@@ -431,6 +431,8 @@ internal static class ProcessEndpoints
             {
                 await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
             }
+
+            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
         {
@@ -441,8 +443,6 @@ internal static class ProcessEndpoints
 
             throw;
         }
-
-        jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, context.RequestAborted).ConfigureAwait(false);
 
         OgcProcessesLog.JobCreated(logger, jobId, processId);
 

@@ -28,7 +28,7 @@ Honua implements OGC API Processes as a **protocol adapter** over the canonical 
 | Job list | GET | `/ogc/processes/jobs` | MVP | Returns active jobs only. Supports `limit` query param (must be positive; defaults to `OgcProcesses:DefaultJobLimit`). `conf/job-list` is not advertised because V1 does not support required filters (`type`, `processID`, `status`, `datetime`, `minDuration`, `maxDuration`), `next` pagination, or terminal job enumeration. |
 | Job status | GET | `/ogc/processes/jobs/{jobId}` | Implemented | OGC StatusInfo document. V1 intentionally omits the OGC results relation because `/results` is still stubbed. |
 | Job results | GET | `/ogc/processes/jobs/{jobId}/results` | Stub | Non-terminal jobs return `404` (result not ready). Failed jobs return `500`. Dismissed jobs return `410 Gone`. Successful jobs return `404` (result storage pending execution engine integration). |
-| Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Attempts cancellation via `IJobCancellationNotifier`; already-dismissed jobs return `200`, succeeded/failed jobs return `409 Conflict` |
+| Dismiss job | DELETE | `/ogc/processes/jobs/{jobId}` | Implemented | Attempts cancellation via `IJobCancellationNotifier`; for remote backends that advertise `SupportsCancellation`, delegates to `IBatchComputeBackend.CancelAsync`; for local backends uses `ExecutionJobCancellationHelper`; already-dismissed jobs return `200`, succeeded/failed jobs return `409 Conflict` |
 
 ## Job Status Mapping
 
