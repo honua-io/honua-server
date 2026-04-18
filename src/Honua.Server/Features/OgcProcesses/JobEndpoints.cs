@@ -405,7 +405,50 @@ internal static class JobEndpoints
                                 CompletedAt = localNow,
                                 CurrentPhase = "Cancelled before submission"
                             };
-                            await jobStore.TrySetAsync(localCancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            if (!await jobStore.TrySetAsync(localCancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false))
+                            {
+                                var fresh = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                                if (fresh == null)
+                                {
+                                    OgcProcessesLog.JobNotFound(logger, jobId);
+                                    return JobNotFoundResult(jobId);
+                                }
+
+                                if (fresh.Status == ExecutionJobStatus.Cancelled)
+                                {
+                                    localCancelled = fresh;
+                                }
+                                else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
+                                {
+                                    OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status));
+                                    return Results.Json(
+                                        new OgcProcessError
+                                        {
+                                            Type = "about:blank",
+                                            Title = "Cannot dismiss completed job",
+                                            Status = StatusCodes.Status409Conflict,
+                                            Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status)}' before dismiss could be applied."
+                                        },
+                                        OgcProcessesJsonContext.Default.OgcProcessError,
+                                        MediaTypes.Json,
+                                        StatusCodes.Status409Conflict);
+                                }
+                                else
+                                {
+                                    return Results.Json(
+                                        new OgcProcessError
+                                        {
+                                            Type = "about:blank",
+                                            Title = "Dismiss could not be confirmed",
+                                            Status = StatusCodes.Status409Conflict,
+                                            Detail = $"Job '{jobId}' pre-submission dismiss could not be confirmed."
+                                        },
+                                        OgcProcessesJsonContext.Default.OgcProcessError,
+                                        MediaTypes.Json,
+                                        StatusCodes.Status409Conflict);
+                                }
+                            }
+
                             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                                 progressStore, localCancelled, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
                             job = localCancelled;

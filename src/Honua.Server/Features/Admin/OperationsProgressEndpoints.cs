@@ -608,7 +608,40 @@ internal static partial class OperationsProgressEndpoints
                             CompletedAt = localNow,
                             CurrentPhase = "Cancelled before submission"
                         };
-                        await jobStore.TrySetAsync(localCancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+                        if (!await jobStore.TrySetAsync(localCancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
+                        {
+                            var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                            if (fresh == null)
+                            {
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' was deleted before pre-submission cancellation could be applied");
+                            }
+
+                            if (fresh.Status == ExecutionJobStatus.Cancelled)
+                            {
+                                localCancelled = fresh;
+                            }
+                            else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
+                            {
+                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                    progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' reached terminal state '{fresh.Status}' before pre-submission cancellation could be applied");
+                            }
+                            else
+                            {
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' pre-submission cancellation could not be confirmed.");
+                            }
+                        }
+
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                             progressStore, localCancelled, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
