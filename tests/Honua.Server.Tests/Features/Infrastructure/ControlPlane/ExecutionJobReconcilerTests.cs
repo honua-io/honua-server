@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
