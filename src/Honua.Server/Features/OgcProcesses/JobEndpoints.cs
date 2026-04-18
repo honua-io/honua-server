@@ -403,7 +403,8 @@ internal static class JobEndpoints
                             UpdatedAt = cancelNow,
                             CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? cancelNow : latest.CompletedAt,
                             ProviderOperationId = observation.ProviderOperationId ?? latest.ProviderOperationId,
-                            CurrentPhase = observation.Message ?? latest.CurrentPhase
+                            CurrentPhase = observation.Message ?? latest.CurrentPhase,
+                            CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? latest.CancellationRequestedAt : (latest.CancellationRequestedAt ?? cancelNow)
                         };
                         var persisted = await jobStore.TrySetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
                         if (!persisted)
@@ -443,7 +444,8 @@ internal static class JobEndpoints
                                     UpdatedAt = retryNow,
                                     CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
                                     ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
-                                    CurrentPhase = observation.Message ?? fresh.CurrentPhase
+                                    CurrentPhase = observation.Message ?? fresh.CurrentPhase,
+                                    CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
                                 };
                                 if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: context.RequestAborted).ConfigureAwait(false))
                                 {

@@ -719,19 +719,31 @@ internal static class ProcessEndpoints
                 $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
         }
 
-        var submission = await backend.StartAsync(job, cancellationToken).ConfigureAwait(false);
+        var provisioning = job with
+        {
+            Status = ExecutionJobStatus.Provisioning,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Submitting to backend"
+        };
+        if (!await jobStore.TrySetAsync(provisioning, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            return current ?? job;
+        }
+
+        var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
-        var updated = job with
+        var updated = provisioning with
         {
             Status = submission.Status,
             UpdatedAt = now,
-            CompletedAt = IsTerminalStatus(submission.Status) ? now : job.CompletedAt,
-            ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
-            CurrentPhase = submission.Message ?? job.CurrentPhase,
-            AttemptCount = job.AttemptCount + 1
+            CompletedAt = IsTerminalStatus(submission.Status) ? now : provisioning.CompletedAt,
+            ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
+            CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
+            AttemptCount = provisioning.AttemptCount + 1
         };
 
-        await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
             progressStore, updated, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);

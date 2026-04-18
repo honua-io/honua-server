@@ -938,6 +938,53 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteBackendNonterminalResponse_PersistsCancellationRequestedAt()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                Message = "Cancellation pending"
+            });
+
+        var record = CreateJobRecord(
+            "job-1",
+            ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        await sut.CancelJobAsync("job-1", CreatePrincipal());
+
+        await _jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.OperationId == "job-1" &&
+                job.CancellationRequestedAt.HasValue &&
+                job.Status == ExecutionJobStatus.Running),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJob_RemoteBackendNoCancellationSupport_ThrowsPreconditionFailed()
     {
         var backend = Substitute.For<IBatchComputeBackend>();

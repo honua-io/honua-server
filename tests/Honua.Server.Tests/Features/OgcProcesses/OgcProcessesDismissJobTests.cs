@@ -319,6 +319,84 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_RemoteBackendNonterminalResponse_PersistsCancellationRequestedAt()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                Message = "Cancellation pending"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        var cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
+        cancellationNotifier.Cancel(JobId).Returns(false);
+
+        var remoteRunning = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteRunning);
+        jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ExecutionJobRecord>());
+
+        var fixture = new WebAppFixture()
+            .ReplaceService(jobStore)
+            .ReplaceService(jobQueue)
+            .ReplaceService(progressStore)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(cancellationNotifier);
+                services.AddSingleton(backend);
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await jobStore.Received().TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(j =>
+                    j.OperationId == JobId &&
+                    j.CancellationRequestedAt.HasValue &&
+                    j.Status == ExecutionJobStatus.Running),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_ReReadFindsDeleted_Returns404WithoutRecreatingJob()
     {
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");

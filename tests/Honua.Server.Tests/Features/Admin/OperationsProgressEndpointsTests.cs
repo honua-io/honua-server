@@ -16,6 +16,7 @@ using Honua.Server.Tests.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -476,6 +477,83 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             updatedProgress!.Status.Should().NotBe(OperationStatus.Cancelled);
 
             await jobQueue.DidNotReceive().RemoveAsync(operationId, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteBackendReturnsNonterminal_PersistsCancellationRequestedAt()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                Message = "Cancellation pending"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services => services.AddSingleton(backend));
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Processing",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-nonterminal"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-nonterminal");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await jobStore.Received().TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(j =>
+                    j.OperationId == operationId &&
+                    j.CancellationRequestedAt.HasValue &&
+                    j.Status == ExecutionJobStatus.Running),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {

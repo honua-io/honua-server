@@ -691,7 +691,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             UpdatedAt = now,
             CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
             ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
-            CurrentPhase = observation.Message ?? job.CurrentPhase
+            CurrentPhase = observation.Message ?? job.CurrentPhase,
+            CancellationRequestedAt = IsTerminal(observation.Status) ? job.CancellationRequestedAt : (job.CancellationRequestedAt ?? now)
         };
         var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!persisted)
@@ -720,7 +721,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     UpdatedAt = retryNow,
                     CompletedAt = IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
                     ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
-                    CurrentPhase = observation.Message ?? fresh.CurrentPhase
+                    CurrentPhase = observation.Message ?? fresh.CurrentPhase,
+                    CancellationRequestedAt = IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
                 };
                 if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
