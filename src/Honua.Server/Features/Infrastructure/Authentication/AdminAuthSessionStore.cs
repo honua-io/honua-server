@@ -137,6 +137,10 @@ internal sealed class AdminAuthSessionStore(
         {
             _memoryCache.Remove(key);
             _logger.LogWarning(ex, "Admin auth session store could not persist distributed cache key {CacheKey}.", key);
+            // Surface the failure to the caller so the client retries instead of
+            // continuing with a single-instance-only session that breaks the moment
+            // another replica serves the next request.
+            throw;
         }
     }
 

@@ -140,6 +140,21 @@ internal sealed class GeometryServiceHandler(
                 Geodesic = geodesic
             };
 
+            // Geodesic buffers always execute in geographic space (effectively EPSG:4326);
+            // a client-supplied bufferSR would be silently ignored, so reject the conflict
+            // up front rather than producing surprising output.
+            if (parameters.Geodesic
+                && parameters.BufferSR.HasValue
+                && parameters.BufferSR.Value != parameters.InSR
+                && parameters.BufferSR.Value != 4326)
+            {
+                const string conflictMessage =
+                    "Parameter 'bufferSR' is not compatible with 'geodesic=true'. "
+                    + "Geodesic buffers execute in geographic coordinates; omit 'bufferSR' or set geodesic=false.";
+                GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", conflictMessage);
+                return CreateError(400, conflictMessage);
+            }
+
             GeometryServiceLog.RequestParsed(_logger, "buffer", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
 
             return await ExecuteBufferAsync(parameters, scope, ct);

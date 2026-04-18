@@ -380,14 +380,16 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
     /// </summary>
     private static string GetOrGenerateCorrelationId(HttpContext context)
     {
-        // 1. Check for client-provided correlation ID header
+        // 1. Check for client-provided correlation ID header.
+        //    Accept only alphanumeric, hyphen, underscore, dot, colon — enough to cover
+        //    UUID, trace-id, and common custom forms without allowing log-injection
+        //    sequences (CR/LF, control chars, quotes, whitespace, etc.). Cap at 64 chars.
         if (context.Request.Headers.TryGetValue(CorrelationIdHeader, out StringValues headerValue) &&
             !string.IsNullOrWhiteSpace(headerValue.ToString()))
         {
             string clientCorrelationId = headerValue.ToString().Trim();
-            // Basic validation - ensure it's reasonable length and doesn't contain control characters
-            if (clientCorrelationId.Length <= 128 &&
-                !HasControlCharacters(clientCorrelationId))
+            if (clientCorrelationId.Length <= 64 &&
+                IsSafeCorrelationIdForm(clientCorrelationId))
             {
                 return clientCorrelationId;
             }
@@ -403,18 +405,25 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         return Guid.NewGuid().ToString("D"); // Standard Guid format (32 digits separated by hyphens)
     }
 
-    /// <summary>
-    /// Checks if a string contains control characters without using LINQ in async context
-    /// </summary>
-    private static bool HasControlCharacters(string input)
+    // Accepts only characters safe for structured logging sinks and trace-id
+    // propagation: ASCII letters/digits, hyphen, underscore, dot, colon.
+    // Rejects control characters, whitespace, quotes, and anything outside that
+    // set to stop log-injection via the X-Correlation-ID header.
+    private static bool IsSafeCorrelationIdForm(string input)
     {
+        if (input.Length == 0) return false;
         for (int i = 0; i < input.Length; i++)
         {
-            if (char.IsControl(input[i]))
-                return true;
+            var c = input[i];
+            var isAllowed = (c >= 'A' && c <= 'Z')
+                || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9')
+                || c == '-' || c == '_' || c == '.' || c == ':';
+            if (!isAllowed) return false;
         }
-        return false;
+        return true;
     }
+
 }
 
 /// <summary>

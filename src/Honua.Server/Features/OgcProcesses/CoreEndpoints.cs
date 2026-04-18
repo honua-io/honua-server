@@ -22,6 +22,9 @@ internal static class CoreEndpoints
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss",
+        // The /jobs endpoint is implemented (returns the job list in canonical order);
+        // declare it so clients can discover the capability.
+        "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list",
         "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json");
 

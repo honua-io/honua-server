@@ -16,7 +16,7 @@ public sealed class GeoServerRestClientTests
     public async Task DiscoverServiceAsync_WithVersionXml_ParsesGeoServerVersionMetadata()
     {
         using var httpClient = new HttpClient(new StubGeoServerHandler());
-        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var result = await client.DiscoverServiceAsync(
             "https://example.com/geoserver/rest",
@@ -26,6 +26,7 @@ public sealed class GeoServerRestClientTests
             includeStyleContent: false,
             timeoutSeconds: 5,
             maxRetryAttempts: 0,
+            allowUnsafeLocalUrls: false,
             CancellationToken.None);
 
         result.Version.Should().Be("2.28.0");
@@ -38,7 +39,7 @@ public sealed class GeoServerRestClientTests
     {
         using var handler = new CoordinatedGeoServerHandler();
         using var httpClient = new HttpClient(handler);
-        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var alphaTask = client.DiscoverServiceAsync(
             "https://alpha.example/geoserver/rest",
@@ -48,6 +49,7 @@ public sealed class GeoServerRestClientTests
             includeStyleContent: false,
             timeoutSeconds: 5,
             maxRetryAttempts: 0,
+            allowUnsafeLocalUrls: false,
             CancellationToken.None);
 
         await handler.WaitForAlphaVersionRequestAsync();
@@ -60,6 +62,7 @@ public sealed class GeoServerRestClientTests
             includeStyleContent: false,
             timeoutSeconds: 5,
             maxRetryAttempts: 0,
+            allowUnsafeLocalUrls: false,
             CancellationToken.None);
 
         await Task.WhenAll(alphaTask, betaTask);
@@ -72,7 +75,7 @@ public sealed class GeoServerRestClientTests
     public async Task DiscoverServiceAsync_WithLayerGroupStylesAndBounds_ParsesLayerGroupMetadata()
     {
         using var httpClient = new HttpClient(new LayerGroupMetadataGeoServerHandler());
-        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var result = await client.DiscoverServiceAsync(
             "https://example.com/geoserver/rest",
@@ -82,6 +85,7 @@ public sealed class GeoServerRestClientTests
             includeStyleContent: false,
             timeoutSeconds: 5,
             maxRetryAttempts: 0,
+            allowUnsafeLocalUrls: false,
             CancellationToken.None);
 
         var layerGroup = result.LayerGroups.Should().ContainSingle(group => group.Name == "transport").Subject;
@@ -97,7 +101,7 @@ public sealed class GeoServerRestClientTests
     public async Task DiscoverServiceAsync_WithLayerBounds_ParsesLayerBoundingBoxes()
     {
         using var httpClient = new HttpClient(new LayerBoundsGeoServerHandler());
-        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var result = await client.DiscoverServiceAsync(
             "https://example.com/geoserver/rest",
@@ -107,6 +111,7 @@ public sealed class GeoServerRestClientTests
             includeStyleContent: false,
             timeoutSeconds: 5,
             maxRetryAttempts: 0,
+            allowUnsafeLocalUrls: false,
             CancellationToken.None);
 
         var layer = result.Layers.Should().ContainSingle(item => item.Name == "roads").Subject;
@@ -125,7 +130,7 @@ public sealed class GeoServerRestClientTests
     public async Task DiscoverServiceAsync_WithAlreadyQualifiedDefaultStyle_DoesNotDoublePrefixWorkspace()
     {
         using var httpClient = new HttpClient(new QualifiedStyleGeoServerHandler());
-        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var result = await client.DiscoverServiceAsync(
             "https://example.com/geoserver/rest",
@@ -135,6 +140,7 @@ public sealed class GeoServerRestClientTests
             includeStyleContent: false,
             timeoutSeconds: 5,
             maxRetryAttempts: 0,
+            allowUnsafeLocalUrls: false,
             CancellationToken.None);
 
         result.Layers.Should().ContainSingle(layer => layer.Name == "states")

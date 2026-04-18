@@ -212,6 +212,12 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
     private static RpcException MapToRpcException(Exception ex) => ex switch
     {
+        OperationCanceledException => new RpcException(new Status(StatusCode.Cancelled, "The operation was cancelled.")),
+
+        TimeoutException timeoutEx => new RpcException(new Status(
+            StatusCode.DeadlineExceeded,
+            timeoutEx.Message)),
+
         GeoprocessingAuthorizationException authEx => new RpcException(new Status(
             authEx.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
             authEx.Message)),

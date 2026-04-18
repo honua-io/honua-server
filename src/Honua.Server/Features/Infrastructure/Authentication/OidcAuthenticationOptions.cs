@@ -206,12 +206,12 @@ public sealed class GenericOidcProviderOptions
     public string[] Scopes { get; set; } = ["openid", "profile", "email"];
 
     /// <summary>
-    /// Gets or sets the response type (default: code for authorization code flow).
+    /// Gets or sets the response type. Generic OIDC currently supports only the authorization code flow.
     /// </summary>
     public string ResponseType { get; set; } = "code";
 
     /// <summary>
-    /// Gets or sets whether to use PKCE (Proof Key for Code Exchange).
+    /// Gets or sets whether to use PKCE (Proof Key for Code Exchange). Generic OIDC requires this in v1.
     /// </summary>
     public bool UsePkce { get; set; } = true;
 

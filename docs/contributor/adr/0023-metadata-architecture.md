@@ -68,7 +68,7 @@ This preserves a single source of truth while providing performant queries.
 ### Versioning and Compatibility
 
 - Every resource carries `apiVersion` and optional `specVersion`.
-- Server supports N-1 versions with up-conversion on read and validation on write.
+- Metadata resource schemas support the current and legacy `apiVersion` values with up-conversion on write/read; the admin HTTP surface remains `/api/v1/admin` until a future control-plane major is actually published.
 - Contract changes are additive; breaking changes require a new `apiVersion`.
 - Admin UI queries `/api/v1/admin/version` and `/api/v1/admin/capabilities` to
   warn on incompatibility.

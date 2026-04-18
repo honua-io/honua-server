@@ -71,9 +71,16 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
 
             case AlertTriggerType.Threshold:
                 {
-                    var previousBreached = ParseThresholdState(currentState?.ThresholdStateJson);
+                    var (previousBreached, previousBreachedSince) = ParseThresholdState(currentState?.ThresholdStateJson);
                     var breachedNow = EvaluateThreshold(rule.ConditionsJson, feature);
-                    thresholdStateJson = CreateThresholdStateJson(breachedNow);
+
+                    // Track the breach-start timestamp separately from the last-emitted
+                    // timestamp: if cooldown suppresses the "threshold" start event the
+                    // resolve event still needs the correct incident duration.
+                    DateTimeOffset? breachedSince = breachedNow
+                        ? (previousBreached ? previousBreachedSince ?? evaluatedAt : evaluatedAt)
+                        : null;
+                    thresholdStateJson = CreateThresholdStateJson(breachedNow, breachedSince);
 
                     if (!previousBreached && breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
@@ -82,7 +89,7 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                     }
                     else if (previousBreached && !breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
-                        var durationMs = (long)(evaluatedAt - (currentState?.LastAlertAt ?? evaluatedAt)).TotalMilliseconds;
+                        var durationMs = (long)(evaluatedAt - (previousBreachedSince ?? evaluatedAt)).TotalMilliseconds;
                         generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold_resolved", feature, zone,
                             evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Ended, durationMs);
                     }
@@ -287,35 +294,51 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         }
     }
 
-    private static bool ParseThresholdState(string? stateJson)
+    private static (bool Breached, DateTimeOffset? BreachedSince) ParseThresholdState(string? stateJson)
     {
         if (string.IsNullOrWhiteSpace(stateJson))
         {
-            return false;
+            return (false, null);
         }
 
         try
         {
             using var document = JsonDocument.Parse(stateJson);
-            if (!document.RootElement.TryGetProperty("breached", out var breached))
+            var root = document.RootElement;
+            var breached = root.TryGetProperty("breached", out var breachedProp)
+                && breachedProp.ValueKind == JsonValueKind.True;
+
+            DateTimeOffset? breachedSince = null;
+            if (root.TryGetProperty("breachedSince", out var sinceProp)
+                && sinceProp.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(
+                    sinceProp.GetString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out var parsed))
             {
-                return false;
+                breachedSince = parsed;
             }
 
-            return breached.ValueKind == JsonValueKind.True;
+            return (breached, breachedSince);
         }
         catch (JsonException)
         {
-            return false;
+            return (false, null);
         }
     }
 
-    private static string CreateThresholdStateJson(bool breached)
+    private static string CreateThresholdStateJson(bool breached, DateTimeOffset? breachedSince)
     {
         var state = new JsonObject
         {
             ["breached"] = breached
         };
+
+        if (breached && breachedSince.HasValue)
+        {
+            state["breachedSince"] = breachedSince.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         return state.ToJsonString();
     }

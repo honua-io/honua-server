@@ -14,7 +14,7 @@ internal sealed class FileUploadSecurityOptions
     public const string SectionName = "FileUploadSecurity";
 
     /// <summary>
-    /// Maximum number of bytes to scan for malicious content.
+    /// Maximum number of prefix bytes to inspect for binary signatures before text-format deep scanning.
     /// </summary>
     public long MaxSecurityScanSizeBytes { get; set; } = FileUploadSecurity.MaxSecurityScanSize;
 }

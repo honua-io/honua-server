@@ -323,7 +323,8 @@ internal static class ServiceCollectionExtensions
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
-            });
+            },
+            configureHandler: static () => GeoServerRestClient.CreatePinnedDnsHttpMessageHandler());
 
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();

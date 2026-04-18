@@ -336,6 +336,38 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             It.IsAny<RedisValue[]>()), Times.AtLeastOnce);
     }
 
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    public async Task Dispose_WhenReleaseDoesNotComplete_ReturnsAfterTimeout()
+    {
+        var election = CreateRedisBackedElection();
+        var hangingRelease = new TaskCompletionSource<RedisResult>();
+
+        _database.Setup(db => db.StringSetAsync(
+                "test-leader-key",
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                When.NotExists))
+            .ReturnsAsync(true);
+        _database.Setup(db => db.ScriptEvaluateAsync(
+                It.IsAny<string>(),
+                It.IsAny<RedisKey[]>(),
+                It.IsAny<RedisValue[]>()))
+            .Returns(hangingRelease.Task);
+
+        await election.TryAcquireLeadershipAsync();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        election.Dispose();
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        _database.Verify(db => db.ScriptEvaluateAsync(
+            It.IsAny<string>(),
+            It.IsAny<RedisKey[]>(),
+            It.IsAny<RedisValue[]>()), Times.Once);
+    }
+
     private RedisDistributedLeaderElection CreateRedisBackedElection()
     {
         _redis.SetupGet(r => r.IsConnected).Returns(true);

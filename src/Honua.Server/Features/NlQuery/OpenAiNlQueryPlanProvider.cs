@@ -144,6 +144,18 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
 
         NlQueryLog.PlanRequested(_logger, request.CollectionId ?? "unknown", _configuration.Model);
 
+        // Cap user-supplied text before it is shipped to the model so that a runaway
+        // prompt cannot exhaust the provider's token budget or produce a billing spike.
+        // 8 000 characters is well below every current OpenAI context window and is
+        // larger than any reasonable natural-language query.
+        const int MaxQueryCharacters = 8_000;
+        if (!string.IsNullOrEmpty(request.Query) && request.Query.Length > MaxQueryCharacters)
+        {
+            throw new ArgumentException(
+                $"Natural-language query exceeds the {MaxQueryCharacters:N0}-character limit.",
+                nameof(request));
+        }
+
         try
         {
             var systemPrompt = NlQuerySystemPrompt.Build(request.Layer);

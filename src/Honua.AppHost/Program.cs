@@ -21,6 +21,7 @@ var redis = builder.AddRedis("redis")
 var honua = builder.AddProject("honua-server", "../Honua.Server/Honua.Server.csproj")
     .WithReference(db)
     .WithReference(redis)
-    .WaitFor(db);
+    .WaitFor(db)
+    .WaitFor(redis);
 
 builder.Build().Run();

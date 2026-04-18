@@ -616,6 +616,23 @@ internal static partial class ImportEndpoints
 
             throw;
         }
+        catch
+        {
+            if (cloudStorage != null && !string.IsNullOrWhiteSpace(cloudFileId))
+            {
+                try
+                {
+                    _ = await cloudStorage.DeleteAsync(cloudFileId, CancellationToken.None);
+                }
+                catch (Exception cleanupEx)
+                {
+                    var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+                    Log.CleanupFailed(logger, cloudFileId, cleanupEx);
+                }
+            }
+
+            throw;
+        }
         finally
         {
             if (deleteLocalFile)

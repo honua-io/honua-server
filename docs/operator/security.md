@@ -29,7 +29,7 @@ This guide covers authentication, authorization, edge security, and related oper
 ## Authorization
 
 - **Admin endpoints** (`/api/v1/admin/*`) require admin authentication.
-- **JSON metrics endpoints** (`/api/v1/metrics/*`, `/healthz/metrics`) require admin authentication.
+- **JSON metrics endpoints** (`/api/v1/metrics/*`, `/healthz/metrics`, `/monitoring/*`) require admin authentication.
 - **Prometheus endpoint** (`/metrics`) requires admin authentication and should still be restricted at the edge to Prometheus/network allowlists.
 - **Data APIs** (FeatureServer, OGC, OData, Tiles) can be public or protected based on your access policy.
 
@@ -82,6 +82,7 @@ Honua does not include application-level rate limiting. Enforce limits at the ed
 | `/api/v1/admin/*` | 30 req/min/IP |
 | `/healthz/*` | Exempt |
 | `/api/v1/metrics/*` | Exempt (or protect with auth, based on policy) |
+| `/monitoring/*` | Exempt (or protect with auth, based on policy) |
 | `/metrics` | Exempt from rate limits, require admin auth, and restrict at edge to Prometheus/network allowlists |
 
 ### AWS (ALB + WAFv2)

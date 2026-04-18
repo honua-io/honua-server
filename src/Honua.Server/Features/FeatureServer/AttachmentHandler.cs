@@ -337,6 +337,13 @@ internal static partial class AttachmentHandler
 
             LogDownloadAttachmentSuccess(logger, layerId, featureId, attachmentId);
 
+            // Block browser-side MIME sniffing — the stored ContentType is client-supplied
+            // and, if it disagreed with the actual bytes, legacy browsers could still
+            // execute the content inline. Results.File with a filename forces
+            // Content-Disposition: attachment; X-Content-Type-Options locks the declared
+            // MIME so intermediaries cannot override it.
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
             return Results.File(
                 content,
                 attachment.ContentType,

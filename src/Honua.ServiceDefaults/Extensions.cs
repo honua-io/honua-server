@@ -115,9 +115,19 @@ public static partial class Extensions
                         return new AdaptiveOpenTelemetrySampler(adaptiveSampler, tracingOptions);
                     }
 
-                    if (tracingOptions.SamplingRatio < 1.0)
+                    // Clamp ratio to the valid [0,1] range and short-circuit the edges.
+                    // TraceIdRatioBasedSampler accepts any double but documenting a negative
+                    // or >1 value as either "off" or "on" is clearer than relying on library
+                    // behavior for out-of-range input.
+                    var ratio = Math.Clamp(tracingOptions.SamplingRatio, 0.0, 1.0);
+                    if (ratio <= 0.0)
                     {
-                        return new TraceIdRatioBasedSampler(tracingOptions.SamplingRatio);
+                        return new AlwaysOffSampler();
+                    }
+
+                    if (ratio < 1.0)
+                    {
+                        return new TraceIdRatioBasedSampler(ratio);
                     }
 
                     return new AlwaysOnSampler();

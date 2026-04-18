@@ -5,6 +5,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Import.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -103,7 +104,8 @@ internal static partial class GeoServerImportEndpoints
                 Password = request.Password,
                 TimeoutSeconds = request.TimeoutSeconds ?? 120,
                 IncludeCompatibilityAnalysis = request.IncludeCompatibilityAnalysis ?? true,
-                IncludeStyleContent = request.IncludeStyleContent ?? false
+                IncludeStyleContent = request.IncludeStyleContent ?? false,
+                AllowUnsafeLocalUrls = allowUnsafeLocalUrls
             };
 
             var serviceInfo = await importService.DiscoverServiceAsync(discoveryRequest, cancellationToken);
@@ -184,6 +186,13 @@ internal static partial class GeoServerImportEndpoints
             return;
         }
 
+        var queuedCredentialValidationError = ValidateQueuedCredentialRequest(context, request);
+        if (queuedCredentialValidationError != null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, queuedCredentialValidationError, StatusCodes.Status400BadRequest);
+            return;
+        }
+
         try
         {
             jobManager = context.RequestServices.GetRequiredService<GeoServerImportJobManager>();
@@ -205,9 +214,9 @@ internal static partial class GeoServerImportEndpoints
                 JobId = jobId,
                 GeoServerRestUrl = request.GeoServerRestUrl,
                 Username = request.Username,
-                Password = request.Password,
+                PasswordSecretReference = request.PasswordSecretReference,
                 TargetHonuaUrl = request.TargetHonuaUrl ?? "https://localhost", // Placeholder for dry run
-                HonuaApiKey = request.HonuaApiKey,
+                HonuaApiKeySecretReference = request.HonuaApiKeySecretReference,
                 WorkspaceNames = request.WorkspaceNames,
                 DataStoreNames = request.DataStoreNames,
                 LayerNames = request.LayerNames,
@@ -227,7 +236,8 @@ internal static partial class GeoServerImportEndpoints
                     ContinueOnResourceFailure = request.ImportOptions.ContinueOnResourceFailure ?? true,
                     WorkspaceNameMappings = request.ImportOptions.WorkspaceNameMappings,
                     DefaultWorkspaceName = request.ImportOptions.DefaultWorkspaceName ?? "geoserver-import"
-                } : null
+                } : null,
+                AllowUnsafeLocalUrls = allowUnsafeLocalStartUrls
             };
 
             var progress = GeoServerImportProgress.CreateInitial(
@@ -294,6 +304,49 @@ internal static partial class GeoServerImportEndpoints
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static string? ValidateQueuedCredentialRequest(HttpContext context, GeoServerImportApiRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            return "Password must be provided as passwordSecretReference for queued GeoServer imports.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.HonuaApiKey))
+        {
+            return "HonuaApiKey must be provided as honuaApiKeySecretReference for queued GeoServer imports.";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PasswordSecretReference) &&
+            string.IsNullOrWhiteSpace(request.HonuaApiKeySecretReference))
+        {
+            return null;
+        }
+
+        var secretProvider = context.RequestServices.GetService<ISecretProvider>();
+        if (!IsSupportedSecretReference(request.PasswordSecretReference, secretProvider))
+        {
+            return "PasswordSecretReference must use a supported secret reference format.";
+        }
+
+        if (!IsSupportedSecretReference(request.HonuaApiKeySecretReference, secretProvider))
+        {
+            return "HonuaApiKeySecretReference must use a supported secret reference format.";
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedSecretReference(string? secretReference, ISecretProvider? secretProvider)
+    {
+        if (string.IsNullOrWhiteSpace(secretReference))
+        {
+            return true;
+        }
+
+        return SecretReferenceResolver.IsEnvironmentReference(secretReference) ||
+            (secretProvider?.IsSecretReference(secretReference) ?? false);
     }
 
     private static async Task TryRollbackQueuedStateAsync(

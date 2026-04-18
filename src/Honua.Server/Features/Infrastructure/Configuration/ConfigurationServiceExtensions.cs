@@ -8,6 +8,7 @@ using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -71,7 +72,6 @@ public static class ConfigurationServiceExtensions
             if (isDevelopment)
             {
                 options.FailOnSecretValidationError = false; // Be more lenient in development
-                options.AutoResolveSecrets = true;
             }
         });
 
@@ -320,24 +320,37 @@ internal sealed class SecretResolutionPostConfigureOptions<
             if (property.PropertyType == typeof(string) && property.CanWrite && property.CanRead)
             {
                 var value = property.GetValue(options) as string;
-                if (!string.IsNullOrWhiteSpace(value) && _secretProvider.IsSecretReference(value))
+                if (string.IsNullOrWhiteSpace(value))
                 {
-                    try
+                    continue;
+                }
+
+                try
+                {
+                    if (SecretReferenceResolver.IsEnvironmentReference(value))
                     {
-                        var resolvedValue = _secretProvider.GetSecretAsync(value).GetAwaiter().GetResult();
-                        if (!string.IsNullOrEmpty(resolvedValue))
-                        {
-                            property.SetValue(options, resolvedValue);
-                            _logger.LogDebug("Resolved secret reference for {OptionsType}.{PropertyName}",
-                                typeof(TOptions).Name, property.Name);
-                        }
+                        var resolvedValue = SecretReferenceResolver.ResolveEnvironmentReference(
+                            value,
+                            $"{typeof(TOptions).Name}.{property.Name}");
+                        property.SetValue(options, resolvedValue);
+                        _logger.LogDebug(
+                            "Resolved environment secret reference for {OptionsType}.{PropertyName}",
+                            typeof(TOptions).Name,
+                            property.Name);
+                        continue;
                     }
-                    catch (Exception ex)
+
+                    if (_secretProvider.IsSecretReference(value))
                     {
-                        _logger.LogError(ex, "Failed to resolve secret reference for {OptionsType}.{PropertyName}: {SecretRef}",
-                            typeof(TOptions).Name, property.Name, value);
-                        throw;
+                        throw new InvalidOperationException(
+                            $"Configuration option '{typeof(TOptions).Name}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
                     }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to resolve secret reference for {OptionsType}.{PropertyName}: {SecretRef}",
+                        typeof(TOptions).Name, property.Name, value);
+                    throw;
                 }
             }
         }

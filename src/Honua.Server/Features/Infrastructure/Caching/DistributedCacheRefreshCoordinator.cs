@@ -87,22 +87,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             SingleWriter = false
         });
 
-        // Subscribe to invalidation notifications if Redis is available
-        if (_redisSubscriber != null)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _redisSubscriber.SubscribeAsync(RedisChannel.Literal(RedisInvalidationChannel), OnInvalidationReceived);
-                    Log.InvalidationSubscriptionStarted(_logger);
-                }
-                catch (Exception ex)
-                {
-                    Log.InvalidationSubscriptionFailed(_logger, ex);
-                }
-            });
-        }
+        // Redis subscription is established inside ExecuteAsync so the task handle is
+        // observed by the host's BackgroundService lifecycle (fire-and-forget Task.Run
+        // in the constructor dropped the handle and hid startup faults).
     }
 
     /// <inheritdoc />
@@ -233,6 +220,23 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         {
             Log.BackgroundRefreshDisabled(_logger);
             return;
+        }
+
+        if (_redisSubscriber != null)
+        {
+            try
+            {
+                await _redisSubscriber
+                    .SubscribeAsync(RedisChannel.Literal(RedisInvalidationChannel), OnInvalidationReceived)
+                    .ConfigureAwait(false);
+                Log.InvalidationSubscriptionStarted(_logger);
+            }
+            catch (Exception ex)
+            {
+                // Subscription failure must not prevent the background refresh loop
+                // from starting; the coordinator degrades to local-only invalidation.
+                Log.InvalidationSubscriptionFailed(_logger, ex);
+            }
         }
 
         Log.BackgroundRefreshStarted(_logger, _options.MaxConcurrentRefreshes, IsDistributed);

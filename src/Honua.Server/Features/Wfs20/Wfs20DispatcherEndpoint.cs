@@ -6,6 +6,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Wfs20.Models;
 using Honua.Server.Features.Wfs20.Services;
 
@@ -198,6 +199,11 @@ internal static class Wfs20DispatcherEndpoint
             }
         }
 
+        if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+        {
+            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+        }
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var sections = parameters.Get(Wfs20Utilities.ParameterNames.Sections);
         if (!Wfs20Utilities.TryParseSections(sections, out var requestedSections, out var sectionsError))
@@ -262,6 +268,11 @@ internal static class Wfs20DispatcherEndpoint
                     "InvalidParameterValue",
                     $"Unsupported output format '{outputFormat}'. DescribeFeatureType requires XML-based formats.",
                     "outputFormat");
+            }
+
+            if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
             }
 
             // Handle the request

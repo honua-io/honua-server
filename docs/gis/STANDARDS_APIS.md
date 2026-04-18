@@ -136,7 +136,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 - Items and search hits preserve declared `stac_extensions` when item-level extension metadata is configured.
 - Items always include `properties.datetime`; when a layer has no resolvable time field, the property remains present with a `null` value.
 - Pagination links preserve encoded `bbox` and `datetime` filters so clients can replay sampled queries exactly.
-- Search supports GET and POST with `fields`, `sortby`, and CQL2 filtering (`filter` plus `filter-lang`).
+- Search supports GET and POST with `fields`, `sortby`, and CQL2 filtering (`filter`, `filter-lang`, and registry-backed `filter-crs` / explicit geometry CRS for CQL2 spatial literals).
 
 **Typical use cases:**
 - STAC browser and catalog interoperability

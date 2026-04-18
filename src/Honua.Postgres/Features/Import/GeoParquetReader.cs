@@ -99,6 +99,16 @@ internal static class GeoParquetReader
 
             using var rowGroupReader = reader.OpenRowGroupReader(rg);
 
+            // Enforce the per-row-group ceiling even when ExtractMetadataAsync was
+            // bypassed (it is advisory only). Parquet.Net materializes the whole
+            // row group on ReadColumnAsync, so an oversized group defeats the
+            // streaming-memory contract.
+            if (rowGroupReader.RowCount > MaxRowsPerRowGroup)
+            {
+                throw new InvalidDataException(
+                    BuildLargeRowGroupMessage(rowGroupReader.RowCount, reader.RowGroupCount));
+            }
+
             // Read geometry column
             var geometryColumn = await rowGroupReader.ReadColumnAsync(
                 (DataField)schema.Fields[geometryFieldIndex], cancellationToken);
@@ -189,6 +199,18 @@ internal static class GeoParquetReader
         if (!isWkbEncoding)
         {
             warnings.Add($"GeoParquet file uses '{geoMeta.Encoding}' geometry encoding. Only WKB encoding is supported.");
+        }
+
+        // GeoParquet leaves the CRS key optional and implies OGC:CRS84 when absent.
+        // We map CRS84 to SRID 4326, which is an axis-order mismatch that silently
+        // "just works" for most consumers but can surprise clients that assume
+        // EPSG:4326 lat-lon ordering. Surface it so importers can audit their source.
+        if (geoMeta.Crs84Implied)
+        {
+            warnings.Add(
+                "GeoParquet file omits 'crs' metadata; defaulting to OGC:CRS84 and storing as SRID 4326. "
+                + "OGC:CRS84 is lon-lat while EPSG:4326 is officially lat-lon — downstream clients that "
+                + "assume lat-lon order on SRID 4326 may interpret coordinates incorrectly.");
         }
 
         // Check for multiple geometry columns
@@ -343,6 +365,7 @@ internal static class GeoParquetReader
         var geometryColumnCount = 0;
         var geometryColumnNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var foundPrimaryInColumns = false;
+        var crs84Implied = false;
 
         foreach (var col in columns.EnumerateObject())
         {
@@ -364,7 +387,7 @@ internal static class GeoParquetReader
             }
 
             // CRS detection — priority order per design brief
-            srid = ExtractSrid(colObj);
+            srid = ExtractSrid(colObj, out crs84Implied);
         }
 
         // The GeoParquet spec requires that primary_column references a key in "columns".
@@ -376,16 +399,19 @@ internal static class GeoParquetReader
                 $"GeoParquet 'geo' metadata declares primary_column '{primaryColumn}' but 'columns' does not contain a matching entry.");
         }
 
-        return new GeoParquetMetadata(primaryColumn, encoding ?? "WKB", srid, geometryColumnCount, geometryColumnNames);
+        return new GeoParquetMetadata(primaryColumn, encoding ?? "WKB", srid, geometryColumnCount, geometryColumnNames, crs84Implied);
     }
 
-    private static int? ExtractSrid(JsonElement columnElement)
+    private static int? ExtractSrid(JsonElement columnElement, out bool crs84Implied)
     {
+        crs84Implied = false;
         // GeoParquet 1.1.0 spec: absent "crs" key defaults to OGC:CRS84 (lon-lat).
         // OGC:CRS84 is mapped to SRID 4326 per industry convention (PostGIS, GDAL, etc.)
-        // even though EPSG:4326 officially defines lat-lon axis order.
+        // even though EPSG:4326 officially defines lat-lon axis order. The caller
+        // surfaces a warning so operators notice the silent semantics mismatch.
         if (!columnElement.TryGetProperty("crs", out var crs))
         {
+            crs84Implied = true;
             return 4326;
         }
 
@@ -458,5 +484,6 @@ internal static class GeoParquetReader
         string Encoding,
         int? Srid,
         int GeometryColumnCount,
-        HashSet<string> GeometryColumnNames);
+        HashSet<string> GeometryColumnNames,
+        bool Crs84Implied);
 }

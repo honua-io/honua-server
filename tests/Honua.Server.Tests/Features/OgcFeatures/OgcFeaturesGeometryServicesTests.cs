@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -41,6 +44,26 @@ public sealed class OgcFeaturesGeometryServicesTests
         result.Should().BeNull();
     }
 
+    [Fact]
+    public void TryCreateWkbFromGeoJson_WithTooManyVertices_ReturnsFailure()
+    {
+        var sut = CreateSut();
+        var coordinates = string.Join(",", Enumerable.Range(0, 50_001).Select(i => $"[{i},0]"));
+        var geometry = new SimpleGeoJsonGeometry
+        {
+            Type = "LineString",
+            CoordinatesJson = $"[{coordinates}]"
+        };
+
+        var result = sut.TryCreateWkbFromGeoJson(geometry, 4326);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("Invalid geometry.");
+    }
+
     private static OgcFeaturesGeometryServices CreateSut()
-        => new(Options.Create(new LimitsOptions()), NullLogger<OgcFeaturesGeometryServices>.Instance);
+        => new(
+            new Honua.Server.Features.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
+            Options.Create(new LimitsOptions()),
+            NullLogger<OgcFeaturesGeometryServices>.Instance);
 }

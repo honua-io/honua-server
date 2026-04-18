@@ -20,6 +20,7 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
     private readonly FileUploadOptions _options;
     private readonly SemaphoreSlim _processingSlot;
     private readonly CancellationTokenSource _cancellationTokenSource;
+    private int _disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamingFileUploadService"/> class.
@@ -205,8 +206,18 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
             cancellationToken.ThrowIfCancellationRequested();
         }
 
-        // Validate final size matches expected
-        if (expectedSize > 0 && totalBytesRead != expectedSize)
+        // Validate final size matches expected. When the client used chunked transfer
+        // encoding (Content-Length absent or zero), the contract requires the caller
+        // to pass the expected size via another channel; accepting an unknown size
+        // silently admits truncated uploads as successful.
+        if (expectedSize <= 0)
+        {
+            throw new InvalidOperationException(
+                "File upload requires an explicit Content-Length or out-of-band expected size; "
+                + "chunked uploads without a length cannot be verified.");
+        }
+
+        if (totalBytesRead != expectedSize)
         {
             throw new InvalidOperationException($"File size mismatch. Expected {expectedSize} bytes, received {totalBytesRead} bytes");
         }
@@ -246,7 +257,20 @@ internal sealed class StreamingFileUploadService : IDisposable, IUploadQueueMetr
     /// </summary>
     public void Dispose()
     {
-        _cancellationTokenSource.Cancel();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _cancellationTokenSource.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Host teardown can race repeated disposal across test fixtures.
+        }
+
         _writer.TryComplete();
         _processingSlot.Dispose();
         _cancellationTokenSource.Dispose();

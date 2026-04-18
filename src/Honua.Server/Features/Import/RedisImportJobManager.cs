@@ -381,6 +381,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 /// </summary>
 internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, IDisposable
 {
+    private static readonly TimeSpan _disposeReleaseTimeout = TimeSpan.FromSeconds(1);
     private readonly IDatabase? _redisDb;
     private readonly ILogger _logger;
     private readonly string _lockKey;
@@ -680,6 +681,33 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
             return;
         }
 
+        _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
+
+        if (_isLeader && _useRedis && _redisDb != null)
+        {
+            try
+            {
+                ReleaseLeadershipAsync(CancellationToken.None).WaitAsync(_disposeReleaseTimeout).GetAwaiter().GetResult();
+            }
+            catch (TimeoutException)
+            {
+                _isLeader = false;
+                _usingLocalFallbackLeadership = false;
+                Log.DisposeReleaseTimedOut(_logger, _instanceId, _disposeReleaseTimeout);
+            }
+            catch (Exception ex)
+            {
+                _isLeader = false;
+                _usingLocalFallbackLeadership = false;
+                Log.LeadershipError(_logger, "dispose", ex);
+            }
+        }
+        else
+        {
+            _isLeader = false;
+            _usingLocalFallbackLeadership = false;
+        }
+
         _disposed = true;
         _heartbeatTimer.Dispose();
     }
@@ -706,6 +734,9 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
         [LoggerMessage(7616, LogLevel.Information, "Instance {InstanceId} switching from local fallback leadership to Redis lock leadership")]
         public static partial void RedisLeadershipRequired(ILogger logger, string instanceId);
+
+        [LoggerMessage(7617, LogLevel.Warning, "Timed out waiting {Timeout} to release leadership for instance {InstanceId} during dispose")]
+        public static partial void DisposeReleaseTimedOut(ILogger logger, string instanceId, TimeSpan timeout);
     }
 }
 

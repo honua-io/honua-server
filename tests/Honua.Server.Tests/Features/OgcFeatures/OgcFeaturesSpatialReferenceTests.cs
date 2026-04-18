@@ -183,17 +183,34 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var filter = "INTERSECTS(geometry, POINT(0 0))";
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+        var createdFeatureId = NormalizeFeatureId(created.Id);
+        createdFeatureId.Should().NotBeNull();
+
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        var projected = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
+            _fixture.Postgres,
+            schema,
+            createdFeatureId!.Value,
+            SpatialReferenceTestLayerCatalog.PointLayerId,
+            3395);
+        projected.Should().NotBeNull();
+
+        var filter = FormattableString.Invariant(
+            $"INTERSECTS(geometry, POINT({projected!.Value.X} {projected.Value.Y}))");
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
-            $"?filter={Uri.EscapeDataString(filter)}&filter-crs=EPSG:3857");
+            $"?filter={Uri.EscapeDataString(filter)}&filter-crs=EPSG:3395");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var responseContent = await response.Content.ReadAsStringAsync();
         var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
         collection.Should().NotBeNull();
-        collection!.Features.Should().NotBeEmpty();
+        collection!.Features.Should().Contain(item => NormalizeFeatureId(item.Id) == createdFeatureId);
     }
 
     [IntegrationTest]
@@ -249,15 +266,176 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithRegistryBackedExplicitGeometryCrs_UsesNonAdvertisedCrs()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[1000, 2000]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Registry CRS Filter Feature"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(createJson, Encoding.UTF8, "application/geo+json")
+        };
+        createRequest.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+
+        var createResponse = await _fixture.Client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+        var createdFeatureId = NormalizeFeatureId(created.Id);
+        createdFeatureId.Should().NotBeNull();
+
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        var projected = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
+            _fixture.Postgres,
+            schema,
+            createdFeatureId!.Value,
+            SpatialReferenceTestLayerCatalog.PointLayerId,
+            3395);
+        projected.Should().NotBeNull();
+
+        var ring = new[]
+        {
+            new[] { projected!.Value.X - 1d, projected.Value.Y - 1d },
+            new[] { projected.Value.X + 1d, projected.Value.Y - 1d },
+            new[] { projected.Value.X + 1d, projected.Value.Y + 1d },
+            new[] { projected.Value.X - 1d, projected.Value.Y + 1d },
+            new[] { projected.Value.X - 1d, projected.Value.Y - 1d }
+        };
+        var filterJson = JsonSerializer.Serialize(new
+        {
+            op = "s_intersects",
+            args = new object[]
+            {
+                new { property = "geometry" },
+                new
+                {
+                    type = "Polygon",
+                    coordinates = new[] { ring },
+                    crs = new
+                    {
+                        type = "name",
+                        properties = new { name = "EPSG:3395" }
+                    }
+                }
+            }
+        });
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?filter-lang=cql2-json&filter={Uri.EscapeDataString(filterJson)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
+        collection.Should().NotBeNull();
+        collection!.Features.Should().Contain(f => NormalizeFeatureId(f.Id) == createdFeatureId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithUnsupportedExplicitGeometryCrs_ReturnsBadRequest()
+    {
+        var filterJson =
+            """{"op":"s_intersects","args":[{"property":"geometry"},{"type":"Point","coordinates":[0,0],"crs":{"type":"name","properties":{"name":"EPSG:999999"}}}]}""";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?filter-lang=cql2-json&filter={Uri.EscapeDataString(filterJson)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(responseContent);
+        problem.GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:999999'");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCrsParameter_SetsContentCrsHeader()
     {
-        var crs = "EPSG:3857";
+        var crs = "EPSG:3395";
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items?crs={Uri.EscapeDataString(crs)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
-        contentCrsValues!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
+        contentCrsValues!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/3395>");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithRegistryBackedBboxCrs_UsesNonAdvertisedCrs()
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[1000, 2000]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "BBox Registry CRS Feature"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(createJson, Encoding.UTF8, "application/geo+json")
+        };
+        createRequest.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+
+        var createResponse = await _fixture.Client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+        var createdFeatureId = NormalizeFeatureId(created.Id);
+        createdFeatureId.Should().NotBeNull();
+
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        var projected = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
+            _fixture.Postgres,
+            schema,
+            createdFeatureId!.Value,
+            SpatialReferenceTestLayerCatalog.PointLayerId,
+            3395);
+        projected.Should().NotBeNull();
+
+        var bbox = FormattableString.Invariant(
+            $"{projected!.Value.X - 1},{projected.Value.Y - 1},{projected.Value.X + 1},{projected.Value.Y + 1}");
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?bbox={Uri.EscapeDataString(bbox)}&bbox-crs=EPSG:3395");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var collection = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.FeatureCollection);
+        collection.Should().NotBeNull();
+        collection!.Features.Should().Contain(item => NormalizeFeatureId(item.Id) == createdFeatureId);
     }
 
     [IntegrationTest]

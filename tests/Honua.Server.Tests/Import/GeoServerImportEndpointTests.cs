@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
@@ -115,6 +117,82 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("Only dry-run imports are currently supported");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
+    public async Task Start_WithPlaintextPassword_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            Username = "admin",
+            Password = "plaintext-secret",
+            DryRun = true
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("passwordSecretReference");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/start")]
+    public async Task Start_WithSecretReferencePassword_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue()
+    {
+        const string envKey = "HONUA_TEST_GEOSERVER_IMPORT_PASSWORD";
+        const string envValue = "resolved-geoserver-secret";
+        var previousValue = Environment.GetEnvironmentVariable(envKey);
+        var distributedCache = new TrackingDistributedCache();
+        var isolatedImportService = new TestGeoServerImportService(TimeSpan.FromMilliseconds(25));
+        var isolatedFixture = new WebAppFixture()
+            .ReplaceService<IGeoServerImportService>(isolatedImportService)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDistributedCache>();
+                services.AddSingleton<IDistributedCache>(distributedCache);
+                services.RemoveAll<GeoServerImportJobManager>();
+                services.AddSingleton(sp => new GeoServerImportJobManager(
+                    sp.GetRequiredService<IUniversalProgressStore>(),
+                    distributedCache,
+                    sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
+                    new StaticHostEnvironment("Test")));
+            });
+
+        Environment.SetEnvironmentVariable(envKey, envValue);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var startResponse = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+            {
+                GeoServerRestUrl = "https://example.com/geoserver/rest",
+                Username = "admin",
+                PasswordSecretReference = $"env:{envKey}",
+                DryRun = true
+            });
+
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            var jobId = await GetJobIdAsync(startResponse);
+
+            var requestPayload = Encoding.UTF8.GetString(distributedCache.Get($"geoserver:import:request:{jobId}")!);
+            requestPayload.Should().Contain($"\"passwordSecretReference\":\"env:{envKey}\"");
+            requestPayload.Should().NotContain(envValue);
+            requestPayload.Should().NotContain("\"password\":");
+
+            using var completed = await WaitForJobStatusAsync(isolatedFixture.Client, jobId, "Completed", TimeSpan.FromSeconds(20));
+            completed.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+            completed.RootElement.GetProperty("status").GetString().Should().Be("Completed");
+
+            isolatedImportService.ImportRequests.Should().ContainSingle();
+            isolatedImportService.ImportRequests.Single().Password.Should().Be(envValue);
+            isolatedImportService.ImportRequests.Single().PasswordSecretReference.Should().Be($"env:{envKey}");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envKey, previousValue);
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -250,13 +328,16 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         return document!.RootElement.GetProperty("jobId").GetString()!;
     }
 
-    private async Task<JsonDocument> WaitForJobStatusAsync(string jobId, string expectedStatus, TimeSpan timeout)
+    private Task<JsonDocument> WaitForJobStatusAsync(string jobId, string expectedStatus, TimeSpan timeout)
+        => WaitForJobStatusAsync(_client, jobId, expectedStatus, timeout);
+
+    private static async Task<JsonDocument> WaitForJobStatusAsync(HttpClient client, string jobId, string expectedStatus, TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
 
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var response = await _client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
+            var response = await client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
@@ -275,6 +356,8 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
 
     private sealed class TestGeoServerImportService(TimeSpan delay) : IGeoServerImportService
     {
+        public ConcurrentQueue<GeoServerImportRequest> ImportRequests { get; } = new();
+
         public Task<GeoServerServiceInfo> DiscoverServiceAsync(
             GeoServerDiscoveryRequest request,
             CancellationToken cancellationToken = default)
@@ -407,6 +490,8 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             IProgress<GeoServerImportProgress>? progress,
             CancellationToken cancellationToken = default)
         {
+            ImportRequests.Enqueue(request);
+
             var current = GeoServerImportProgress.CreateInitial(
                 request.JobId ?? Guid.NewGuid().ToString("N"),
                 request.GeoServerRestUrl,

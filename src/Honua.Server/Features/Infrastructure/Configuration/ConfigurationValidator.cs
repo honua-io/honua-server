@@ -172,6 +172,17 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
                 return new OptionsValidationResult(metadata.SectionName, optionsType.Name, result, metadata.IsRequired);
             }
 
+            // Required sections that failed to bind any real values (section absent from
+            // configuration) are flagged so the misconfiguration surfaces at startup
+            // rather than manifesting as empty allow-lists or zero timeouts at runtime.
+            if (metadata.IsRequired && !_configuration.GetSection(metadata.SectionName).Exists())
+            {
+                var error = new ValidationResult(
+                    $"Required configuration section '{metadata.SectionName}' is missing or empty.");
+                var result = new ConfigurationValidationResult(new[] { error }, isDevelopment);
+                return new OptionsValidationResult(metadata.SectionName, optionsType.Name, result, metadata.IsRequired);
+            }
+
             var validationResult = ValidateOptionsInstance(
                 optionsInstance,
                 metadata.SectionName,

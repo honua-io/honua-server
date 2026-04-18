@@ -10,6 +10,7 @@ using System.Text;
 using FluentAssertions.Execution;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -209,6 +210,148 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         finally
         {
             await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
+    public async Task CreateAuthorizeUrl_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailable()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
+            });
+
+        var initialized = false;
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            initialized = true;
+            var oidcClient = oidcFixture.CreateClient();
+
+            var response = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Public:BaseUrl");
+        }
+        finally
+        {
+            if (initialized)
+            {
+                await oidcFixture.DisposeAsync();
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
+    public async Task GetLogoutUrl_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailable()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
+            });
+
+        var initialized = false;
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            initialized = true;
+            var oidcClient = oidcFixture.CreateClient();
+
+            var response = await oidcClient.GetAsync("/api/v1/admin/auth/providers/oidc/logout-url?idTokenHint=id-token");
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Public:BaseUrl");
+        }
+        finally
+        {
+            if (initialized)
+            {
+                await oidcFixture.DisposeAsync();
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/logout")]
+    public async Task Logout_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailableAndClearsSession()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
+            });
+
+        var initialized = false;
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            initialized = true;
+
+            string sessionId;
+            await using (var scope = oidcFixture.Services.CreateAsyncScope())
+            {
+                var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+                sessionId = await sessionStore.CreateAuthenticatedSessionAsync(
+                    "oidc",
+                    "access-token",
+                    "id-token",
+                    [new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "user-123" }],
+                    DateTimeOffset.UtcNow.AddMinutes(5),
+                    CancellationToken.None);
+            }
+
+            var oidcClient = oidcFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+            var response = await oidcClient.PostAsJsonAsync("/api/v1/admin/auth/logout", new { });
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain("Public:BaseUrl");
+
+            await using var verificationScope = oidcFixture.Services.CreateAsyncScope();
+            var verificationStore = verificationScope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+            var persistedSession = await verificationStore.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None);
+            persistedSession.Should().BeNull();
+        }
+        finally
+        {
+            if (initialized)
+            {
+                await oidcFixture.DisposeAsync();
+            }
         }
     }
 

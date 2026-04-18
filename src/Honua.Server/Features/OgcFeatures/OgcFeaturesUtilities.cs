@@ -178,6 +178,29 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
+    /// Resolves request CRS parameters against the collection baseline first, then falls back to the CRS registry.
+    /// </summary>
+    public static async ValueTask<(bool IsSuccess, CrsDefinition Definition, string? Error)> TryResolveCrsAsync(
+        string? crs,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        if (TryResolveCrs(crs, supportedCrs, out var definition, out var error))
+        {
+            return (true, definition, null);
+        }
+
+        var resolvedDefinition = await crsRegistry.ResolveAsync(crs, cancellationToken).ConfigureAwait(false);
+        if (resolvedDefinition.HasValue)
+        {
+            return (true, resolvedDefinition.Value, null);
+        }
+
+        return (false, default, error ?? $"Unsupported CRS '{crs}'.");
+    }
+
+    /// <summary>
     /// Validates query parameters for items requests including queryable fields
     /// </summary>
     public static BadRequest<string>? ValidateItemsQueryParameters(
