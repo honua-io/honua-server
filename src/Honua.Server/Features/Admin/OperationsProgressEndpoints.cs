@@ -448,9 +448,55 @@ internal static class OperationsProgressEndpoints
                         ProviderOperationId = observation.ProviderOperationId ?? executionJob.ProviderOperationId,
                         CurrentPhase = observation.Message ?? executionJob.CurrentPhase
                     };
-                    await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    if (!persisted)
+                    {
+                        var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                        if (fresh == null)
+                        {
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' was deleted before remote cancellation could be applied");
+                        }
 
-                    if (ExecutionJobCancellationHelper.IsTerminal(observation.Status))
+                        if (fresh.Status == ExecutionJobStatus.Cancelled)
+                        {
+                            updated = fresh;
+                        }
+                        else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
+                        {
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' reached terminal state '{fresh.Status}' in the durable job store before remote cancellation could be applied");
+                        }
+                        else
+                        {
+                            var retryNow = DateTimeOffset.UtcNow;
+                            var retryUpdate = fresh with
+                            {
+                                Status = observation.Status,
+                                UpdatedAt = retryNow,
+                                CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
+                                ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
+                                CurrentPhase = observation.Message ?? fresh.CurrentPhase
+                            };
+                            if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
+                            {
+                                updated = retryUpdate;
+                            }
+                            else
+                            {
+                                return ProblemDetailsHelpers.CreateAdminProblem(
+                                    StatusCodes.Status409Conflict,
+                                    "Conflict",
+                                    $"Operation '{operationId}' remote cancellation could not be confirmed after retries.");
+                            }
+                        }
+                    }
+
+                    if (ExecutionJobCancellationHelper.IsTerminal(updated.Status))
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(

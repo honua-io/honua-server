@@ -76,7 +76,7 @@ internal sealed partial class ExecutionJobReconciler(
             {
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
-                ExecutionJobStatus.Queued when !string.IsNullOrEmpty(job.ProviderOperationId)
+                ExecutionJobStatus.Queued when !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running when job.CancellationRequestedAt.HasValue
@@ -151,7 +151,8 @@ internal sealed partial class ExecutionJobReconciler(
             UpdatedAt = now,
             CompletedAt = IsTerminal(submission.Status) ? now : job.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
-            CurrentPhase = submission.Message ?? job.CurrentPhase
+            CurrentPhase = submission.Message ?? job.CurrentPhase,
+            AttemptCount = job.AttemptCount + 1
         };
     }
 

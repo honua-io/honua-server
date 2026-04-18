@@ -482,6 +482,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
+            var afterBackend = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (afterBackend != null && IsTerminal(afterBackend.Status))
+            {
+                if (afterBackend.Status == ExecutionJobStatus.Cancelled)
+                {
+                    return;
+                }
+
+                GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, afterBackend.Status.ToString());
+                throw new GeoprocessingPreconditionFailedException(
+                    $"Job '{jobId}' reached terminal state '{afterBackend.Status}' before cancellation could be applied.");
+            }
+
             GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
@@ -663,7 +676,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
             var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-            if (fresh != null && !IsTerminal(fresh.Status))
+            if (fresh == null)
+            {
+                return false;
+            }
+
+            if (fresh.Status == ExecutionJobStatus.Cancelled)
+            {
+                updated = fresh;
+            }
+            else if (IsTerminal(fresh.Status))
+            {
+                return false;
+            }
+            else
             {
                 var retryNow = DateTimeOffset.UtcNow;
                 var retryUpdate = fresh with
@@ -674,7 +700,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
                     CurrentPhase = observation.Message ?? fresh.CurrentPhase
                 };
-                await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    updated = retryUpdate;
+                }
+                else
+                {
+                    return false;
+                }
             }
         }
 

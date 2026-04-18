@@ -293,6 +293,84 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_RemoteQueuedWithAttemptCountButNoProviderId_ObservesInsteadOfRestarting()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                PercentComplete = 0,
+                Message = "Provisioning resources"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-attempt-marker",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            AttemptCount = 1
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-attempt-marker");
+
+        await backend.Received(1).ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var stored = await jobStore.GetAsync("job-attempt-marker");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Provisioning);
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_StartJobAsync_IncrementsAttemptCount()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Queued,
+                Message = "Queued on provider"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-start-attempt",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-start-attempt");
+
+        var stored = await jobStore.GetAsync("job-start-attempt");
+        stored.Should().NotBeNull();
+        stored!.AttemptCount.Should().Be(1);
+        stored.CurrentPhase.Should().Be("Queued on provider");
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_CasConflict_DoesNotOverwriteConcurrentWrite()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
