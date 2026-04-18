@@ -99,8 +99,9 @@ public sealed record Deployment
     public string? FailureReason { get; init; }
 
     /// <summary>
-    /// Identifier of the deployment that superseded this one when
-    /// <see cref="Status"/> is <see cref="DeploymentStatus.Superseded"/>.
+    /// Identifier of the deployment that superseded this one. Set on transition to
+    /// <see cref="DeploymentStatus.Superseded"/> and preserved if the deployment is later
+    /// retired, so the durable record retains the replacement link.
     /// </summary>
     public string? SupersededByDeploymentId { get; init; }
 
@@ -245,8 +246,12 @@ public sealed record Deployment
 
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.Active"/>, marking the
-    /// rollout as promoted and the publication state as published.
+    /// rollout as promoted and the publication state as published. When a
+    /// <see cref="Schedule"/> is attached, activation is gated to the publication window:
+    /// the deployment must be due and must not have passed its auto-retire time.
     /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when a schedule is attached and
+    /// the current time is outside its publish window.</exception>
     public Deployment WithActive(
         string? publicUrl = null,
         string? reason = null,
@@ -257,6 +262,21 @@ public sealed record Deployment
             DeploymentStatus.RollingOut,
             DeploymentStatus.Active);
         var now = DateTimeOffset.UtcNow;
+        if (Schedule is not null)
+        {
+            if (!Schedule.IsDue(now))
+            {
+                throw new InvalidOperationException(
+                    "Cannot activate deployment before its scheduled publish time.");
+            }
+
+            if (Schedule.IsExpired(now))
+            {
+                throw new InvalidOperationException(
+                    "Cannot activate deployment after its scheduled publish window has expired.");
+            }
+        }
+
         var runtime = Runtime with
         {
             PublicUrl = publicUrl ?? Runtime.PublicUrl,
@@ -450,7 +470,7 @@ public sealed record Deployment
             CurrentRolloutStep = nextStep,
             Schedule = clearSchedule ? null : (schedule ?? Schedule),
             Runtime = runtime ?? Runtime,
-            SupersededByDeploymentId = supersededBy ?? (toStatus == DeploymentStatus.Superseded ? SupersededByDeploymentId : null),
+            SupersededByDeploymentId = supersededBy ?? SupersededByDeploymentId,
             ActivatedAt = activatedAt ?? ActivatedAt,
             RetiredAt = retiredAt ?? RetiredAt,
             FailureReason = toStatus == DeploymentStatus.Failed ? failureReason ?? FailureReason : null,

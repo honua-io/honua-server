@@ -184,6 +184,57 @@ public class DeploymentTests
     }
 
     [UnitTest]
+    public void WithActive_BeforeScheduledPublishTime_ShouldThrow()
+    {
+        var schedule = DeploymentSchedule.At(DateTimeOffset.UtcNow.AddHours(1));
+        var deployment = CreateTestDeployment()
+            .WithScheduled(schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var act = () => deployment.WithActive("/apps/flood");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*scheduled publish time*");
+    }
+
+    [UnitTest]
+    public void WithActive_AfterScheduledUnpublishTime_ShouldThrow()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var schedule = DeploymentSchedule.Window(
+            now - TimeSpan.FromHours(2),
+            now - TimeSpan.FromMinutes(1));
+        var deployment = CreateTestDeployment()
+            .WithScheduled(schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var act = () => deployment.WithActive("/apps/flood");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*publish window has expired*");
+    }
+
+    [UnitTest]
+    public void WithActive_WithinScheduledWindow_ShouldSucceed()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var schedule = DeploymentSchedule.Window(
+            now - TimeSpan.FromMinutes(1),
+            now + TimeSpan.FromHours(1));
+        var deployment = CreateTestDeployment()
+            .WithScheduled(schedule)
+            .WithProvisioning()
+            .WithRollingOut();
+
+        var active = deployment.WithActive("/apps/flood");
+
+        active.Status.Should().Be(DeploymentStatus.Active);
+        active.PublicationState.Should().Be(DeploymentPublicationState.Published);
+    }
+
+    [UnitTest]
     public void WithSuperseded_ShouldRecordSuccessorAndUnpublish()
     {
         var deployment = CreateTestDeployment().WithProvisioning().WithRollingOut().WithActive();
@@ -216,6 +267,21 @@ public class DeploymentTests
         retired.Status.Should().Be(DeploymentStatus.Retired);
         retired.PublicationState.Should().Be(DeploymentPublicationState.Retired);
         retired.RetiredAt.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void WithRetired_AfterSuperseded_ShouldPreserveSuccessorLink()
+    {
+        var deployment = CreateTestDeployment()
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithActive()
+            .WithSuperseded("dep-002", reason: "Rolled forward");
+
+        var retired = deployment.WithRetired("Retention window elapsed");
+
+        retired.Status.Should().Be(DeploymentStatus.Retired);
+        retired.SupersededByDeploymentId.Should().Be("dep-002");
     }
 
     [UnitTest]
