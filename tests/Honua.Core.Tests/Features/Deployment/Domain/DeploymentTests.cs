@@ -157,6 +157,95 @@ public class DeploymentTests
     }
 
     [UnitTest]
+    public void WithRolloutStep_RepeatingCurrentStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(1);
+
+        var act = () => deployment.WithRolloutStep(1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("step")
+            .WithMessage("*strictly advance*");
+    }
+
+    [UnitTest]
+    public void WithRolloutStep_BackwardStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(2);
+
+        var act = () => deployment.WithRolloutStep(1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("step")
+            .WithMessage("*strictly advance*");
+    }
+
+    [UnitTest]
+    public void WithRollingOut_WhileAlreadyRollingOut_BackwardStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(2);
+
+        var act = () => deployment.WithRollingOut(step: 1);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("step")
+            .WithMessage("*strictly advance*");
+    }
+
+    [UnitTest]
+    public void WithRollingOut_WhileAlreadyRollingOut_RepeatingCurrentStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut(); // step 0
+
+        var act = () => deployment.WithRollingOut(step: 0);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("step")
+            .WithMessage("*strictly advance*");
+    }
+
+    [UnitTest]
+    public void WithActive_OnCanaryBeforeFinalStep_ShouldThrow()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(1);
+
+        var act = () => deployment.WithActive("/apps/canary");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*final rollout step*");
+    }
+
+    [UnitTest]
+    public void WithActive_OnCanaryAtFinalStep_ShouldSucceed()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(1)
+            .WithRolloutStep(2);
+
+        var active = deployment.WithActive("/apps/canary");
+
+        active.Status.Should().Be(DeploymentStatus.Active);
+        active.RolloutState.Should().Be(RolloutState.Promoted);
+        active.CurrentRolloutStep.Should().Be(2);
+    }
+
+    [UnitTest]
     public void WithActive_ShouldTransitionPromoteAndPublish()
     {
         var deployment = CreateTestDeployment().WithProvisioning().WithRollingOut();

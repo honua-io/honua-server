@@ -84,7 +84,7 @@ public sealed record RolloutPlan
         return new RolloutPlan
         {
             Strategy = RolloutStrategy.Canary,
-            Steps = steps,
+            Steps = steps.ToArray(),
             AutoPromote = autoPromote
         };
     }

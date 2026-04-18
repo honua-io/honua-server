@@ -122,6 +122,18 @@ public class RolloutPlanTests
     }
 
     [UnitTest]
+    public void Canary_ShouldDefensivelyCopyCallerSteps()
+    {
+        var mutable = new List<int> { 10, 50, 100 };
+
+        var plan = RolloutPlan.Canary(mutable);
+        mutable[1] = 99;
+        mutable.Add(0);
+
+        plan.Steps.Should().Equal(10, 50, 100);
+    }
+
+    [UnitTest]
     public void Scheduled_ShouldRequireManualPromotion()
     {
         var plan = RolloutPlan.Scheduled();

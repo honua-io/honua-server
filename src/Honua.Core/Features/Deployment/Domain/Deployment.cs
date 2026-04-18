@@ -193,8 +193,13 @@ public sealed record Deployment
 
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.RollingOut"/>, optionally
-    /// setting the initial rollout step for canary rollouts.
+    /// setting the initial rollout step for canary rollouts. When the deployment is already
+    /// rolling out, an explicit <paramref name="step"/> must strictly advance past the
+    /// current step.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="step"/> is
+    /// outside the plan's range, or when the deployment is already rolling out and
+    /// <paramref name="step"/> does not strictly advance past the current step.</exception>
     public Deployment WithRollingOut(
         int? step = null,
         string? reason = null,
@@ -216,9 +221,11 @@ public sealed record Deployment
     /// <summary>
     /// Advances the current canary step without changing the overall deployment status.
     /// Only valid while in <see cref="DeploymentStatus.RollingOut"/> with a canary rollout.
+    /// Steps must strictly advance: repeating or regressing is rejected so the rollout
+    /// audit trail reflects forward progression.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when the rollout is not a canary rollout or the deployment is not rolling out.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="step"/> is outside the plan's step range.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="step"/> is outside the plan's step range, or does not strictly advance past the current step.</exception>
     public Deployment WithRolloutStep(int step, OperationAuditInfo? audit = null)
     {
         if (Rollout.Strategy != RolloutStrategy.Canary)
@@ -239,6 +246,14 @@ public sealed record Deployment
                 nameof(step),
                 step,
                 $"Rollout step is outside the plan's range [0, {Rollout.Steps.Count - 1}].");
+        }
+
+        if (CurrentRolloutStep is int current && step <= current)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(step),
+                step,
+                $"Rollout step must strictly advance; current step is {current}.");
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -263,11 +278,15 @@ public sealed record Deployment
     /// <see cref="Schedule"/> is attached, activation is gated to the publication window:
     /// the deployment must be due and must not have passed its auto-retire time. A
     /// <see cref="RolloutStrategy.Scheduled"/> rollout always requires a schedule; activation
-    /// without one is rejected to keep the declared strategy load-bearing.
+    /// without one is rejected to keep the declared strategy load-bearing. For
+    /// <see cref="RolloutStrategy.Canary"/> rollouts, activation from
+    /// <see cref="DeploymentStatus.RollingOut"/> requires the current step to match the
+    /// final step of the plan so that canary promotion honors its declared progression.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when a schedule is attached and
-    /// the current time is outside its publish window, or when the rollout strategy is
-    /// <see cref="RolloutStrategy.Scheduled"/> but no schedule is attached.</exception>
+    /// the current time is outside its publish window, when the rollout strategy is
+    /// <see cref="RolloutStrategy.Scheduled"/> but no schedule is attached, or when a
+    /// canary rollout is activated before reaching its final step.</exception>
     public Deployment WithActive(
         string? publicUrl = null,
         string? reason = null,
@@ -282,6 +301,16 @@ public sealed record Deployment
         {
             throw new InvalidOperationException(
                 "Cannot activate a scheduled rollout without an attached DeploymentSchedule.");
+        }
+
+        if (Status == DeploymentStatus.RollingOut && Rollout.Strategy == RolloutStrategy.Canary)
+        {
+            var finalStep = Rollout.Steps.Count - 1;
+            if (CurrentRolloutStep is null || CurrentRolloutStep.Value != finalStep)
+            {
+                throw new InvalidOperationException(
+                    "Cannot activate canary rollout before reaching the final rollout step.");
+            }
         }
 
         if (Schedule is not null)
@@ -550,6 +579,14 @@ public sealed record Deployment
                 nameof(step),
                 step,
                 $"Rollout step is outside the plan's range [0, {Rollout.Steps.Count - 1}].");
+        }
+
+        if (Status == DeploymentStatus.RollingOut && CurrentRolloutStep is int current && step.Value <= current)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(step),
+                step,
+                $"Rollout step must strictly advance; current step is {current}.");
         }
     }
 
