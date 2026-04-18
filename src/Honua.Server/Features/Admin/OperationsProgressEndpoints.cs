@@ -186,7 +186,7 @@ internal static class OperationsProgressEndpoints
         };
     }
 
-    private static async Task TryReconcileDurableCancelAsync(
+    private static async Task<IResult?> TryReconcileDurableCancelAsync(
         HttpContext httpContext,
         string operationId,
         CancellationToken cancellationToken)
@@ -194,13 +194,13 @@ internal static class OperationsProgressEndpoints
         var jobStore = httpContext.RequestServices.GetService<IExecutionJobStore>();
         if (jobStore == null)
         {
-            return;
+            return null;
         }
 
         var executionJob = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (executionJob == null)
         {
-            return;
+            return null;
         }
 
         if (ExecutionJobCancellationHelper.IsTerminal(executionJob.Status))
@@ -208,28 +208,59 @@ internal static class OperationsProgressEndpoints
             if (executionJob.Status == ExecutionJobStatus.Cancelled)
             {
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                return null;
             }
 
-            return;
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Operation '{operationId}' reached terminal state '{executionJob.Status}' in the durable job store");
         }
 
-        // For remote backends, set CancellationRequestedAt so the reconciler
-        // routes through IBatchComputeBackend.CancelAsync on the next sweep
-        // instead of terminalizing the local record without notifying the backend.
         if (!string.Equals(executionJob.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
             if (!executionJob.CancellationRequestedAt.HasValue)
             {
+                var backends = httpContext.RequestServices.GetService<IEnumerable<IBatchComputeBackend>>();
+                var backend = backends?.Resolve(executionJob.Spec.Backend, executionJob.Spec.TargetKind);
+                if (backend == null)
+                {
+                    return ProblemDetailsHelpers.CreateAdminProblem(
+                        StatusCodes.Status409Conflict,
+                        "Conflict",
+                        $"No batch compute backend registered for '{executionJob.Spec.Backend}' ({executionJob.Spec.TargetKind}). Cannot cancel remote job locally.");
+                }
+
+                var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+                if (!capabilities.SupportsCancellation)
+                {
+                    return ProblemDetailsHelpers.CreateAdminProblem(
+                        StatusCodes.Status409Conflict,
+                        "Conflict",
+                        $"Backend '{executionJob.Spec.Backend}' does not support cancellation.");
+                }
+
                 var now = DateTimeOffset.UtcNow;
                 var requested = executionJob with
                 {
                     CancellationRequestedAt = now,
                     UpdatedAt = now
                 };
-                await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+                    if (fresh != null && ExecutionJobCancellationHelper.IsTerminal(fresh.Status)
+                        && fresh.Status != ExecutionJobStatus.Cancelled)
+                    {
+                        return ProblemDetailsHelpers.CreateAdminProblem(
+                            StatusCodes.Status409Conflict,
+                            "Conflict",
+                            $"Operation '{operationId}' reached terminal state '{fresh.Status}' in the durable job store before cancellation could be applied");
+                    }
+                }
             }
 
-            return;
+            return null;
         }
 
         var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
@@ -239,9 +270,31 @@ internal static class OperationsProgressEndpoints
             "Cancelled",
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        if (cancelOutcome.State == ExecutionJobCancellationState.Cancelled)
+        switch (cancelOutcome.State)
         {
-            await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+            case ExecutionJobCancellationState.Cancelled:
+                await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                return null;
+            case ExecutionJobCancellationState.CancellationRequested:
+            case ExecutionJobCancellationState.Missing:
+                return null;
+            case ExecutionJobCancellationState.TerminalConflict:
+                if (cancelOutcome.Job?.Status == ExecutionJobStatus.Cancelled)
+                {
+                    return null;
+                }
+
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status409Conflict,
+                    "Conflict",
+                    $"Operation '{operationId}' reached terminal state '{cancelOutcome.Job?.Status}' in the durable job store");
+            case ExecutionJobCancellationState.Unconfirmed:
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status409Conflict,
+                    "Conflict",
+                    $"Operation '{operationId}' cancellation could not be confirmed after retries.");
+            default:
+                return null;
         }
     }
 
@@ -325,7 +378,11 @@ internal static class OperationsProgressEndpoints
 
         if (progress.Status is OperationStatus.Cancelled)
         {
-            await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+            if (reconcileResult != null)
+            {
+                return reconcileResult;
+            }
 
             var alreadyCancelled = new CancelOperationResponse
             {
@@ -400,7 +457,11 @@ internal static class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
-            await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+            var reconcileResult = await TryReconcileDurableCancelAsync(httpContext, operationId, cancellationToken);
+            if (reconcileResult != null)
+            {
+                return reconcileResult;
+            }
 
             var alreadyCancelled = new CancelOperationResponse
             {
@@ -545,7 +606,7 @@ internal static class OperationsProgressEndpoints
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                         await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                            progressStore, updated, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+                            progressStore, updated, TimeSpan.FromDays(7), cancellationToken).ConfigureAwait(false);
                     }
 
                     if (updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
@@ -610,7 +671,7 @@ internal static class OperationsProgressEndpoints
 
         var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
         await progressStore.SetProgressAsync(operationId, cancelledProgress,
-            TimeSpan.FromHours(24), cancellationToken);
+            TimeSpan.FromDays(7), cancellationToken);
 
         var response = new CancelOperationResponse
         {
