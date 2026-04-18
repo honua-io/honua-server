@@ -109,6 +109,125 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_LocalQueuedRetry_StartsInsteadOfObservingStaleProgress()
+    {
+        var job = CreateJobRecord(
+            operationId: "job-local-retry",
+            status: ExecutionJobStatus.Queued,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-retry", "plan-local") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending,
+            CurrentPhase = "Prior attempt progress"
+        };
+        await progressStore.SetProgressAsync("job-local-retry", staleProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-local-retry");
+
+        var stored = await jobStore.GetAsync("job-local-retry");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Running,
+            "retried local Queued jobs must go through StartJobAsync, not observe stale progress");
+        stored.AttemptCount.Should().Be(2,
+            "StartJobAsync must increment AttemptCount");
+        stored.CurrentPhase.Should().Be("Local in-process execution via baseline workers");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_LocalQueuedWithCancellation_CancelsDirectly()
+    {
+        var notifier = Substitute.For<IJobCancellationNotifier>();
+        var progressStore = new InMemoryProgressStore();
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-q-cancel", "plan-local") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending
+        };
+        await progressStore.SetProgressAsync("job-local-q-cancel", staleProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+
+        var job = CreateJobRecord(
+            operationId: "job-local-q-cancel",
+            status: ExecutionJobStatus.Queued,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-local-q-cancel");
+
+        var stored = await jobStore.GetAsync("job-local-q-cancel");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Cancelled,
+            "Queued local jobs with cancellation must transition to Cancelled directly");
+        stored.CompletedAt.Should().NotBeNull();
+        notifier.Received(1).Cancel("job-local-q-cancel");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_NoOpObservation_SkipsPersistence()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "provider-noop",
+                PercentComplete = 25,
+                Message = "Processing"
+            });
+
+        var originalUpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var job = CreateJobRecord(
+            operationId: "job-noop",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch,
+            percentComplete: 25,
+            currentPhase: "Processing") with
+        {
+            ProviderOperationId = "provider-noop",
+            UpdatedAt = originalUpdatedAt
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-noop");
+
+        var stored = await jobStore.GetAsync("job-noop");
+        stored.Should().NotBeNull();
+        stored!.UpdatedAt.Should().Be(originalUpdatedAt,
+            "no-op observations must not update the record");
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_RemoteObservation_BridgesProgressAndCompletesJob()
     {
         var backend = Substitute.For<IBatchComputeBackend>();

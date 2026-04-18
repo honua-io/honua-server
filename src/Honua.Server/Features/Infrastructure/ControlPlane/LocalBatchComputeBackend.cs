@@ -57,6 +57,18 @@ internal sealed class LocalBatchComputeBackend(
         CancellationToken cancellationToken = default)
     {
         cancellationNotifier.Cancel(job.OperationId);
+
+        if (job.Status == ExecutionJobStatus.Queued)
+        {
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = job.OperationId,
+                PercentComplete = job.PercentComplete,
+                Message = "Cancelled before worker pickup"
+            };
+        }
+
         return await ObserveAsync(job, cancellationToken).ConfigureAwait(false);
     }
 

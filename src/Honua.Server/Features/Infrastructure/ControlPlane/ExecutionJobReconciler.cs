@@ -79,7 +79,13 @@ internal sealed partial class ExecutionJobReconciler(
             var updated = job.Status switch
             {
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    && job.CancellationRequestedAt.HasValue
+                    => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    && job.AttemptCount == 0
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
                     && (!string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0)
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
@@ -213,18 +219,33 @@ internal sealed partial class ExecutionJobReconciler(
         CancellationToken cancellationToken)
     {
         var observation = await backend.ObserveAsync(job, cancellationToken).ConfigureAwait(false);
+
+        var newProviderOpId = observation.ProviderOperationId ?? job.ProviderOperationId;
+        var newPercent = observation.PercentComplete ?? job.PercentComplete;
+        var newPhase = observation.Message ?? job.CurrentPhase;
+        var newError = observation.Status == ExecutionJobStatus.Failed
+            ? observation.Message ?? job.ErrorMessage
+            : job.ErrorMessage;
+
+        if (observation.Status == job.Status &&
+            string.Equals(newProviderOpId, job.ProviderOperationId, StringComparison.Ordinal) &&
+            Math.Abs((newPercent ?? 0d) - (job.PercentComplete ?? 0d)) < 0.0001 &&
+            string.Equals(newPhase, job.CurrentPhase, StringComparison.Ordinal) &&
+            string.Equals(newError, job.ErrorMessage, StringComparison.Ordinal))
+        {
+            return job;
+        }
+
         var now = DateTimeOffset.UtcNow;
         return job with
         {
             Status = observation.Status,
             UpdatedAt = now,
             CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
-            ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
-            PercentComplete = observation.PercentComplete ?? job.PercentComplete,
-            CurrentPhase = observation.Message ?? job.CurrentPhase,
-            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                ? observation.Message ?? job.ErrorMessage
-                : job.ErrorMessage
+            ProviderOperationId = newProviderOpId,
+            PercentComplete = newPercent,
+            CurrentPhase = newPhase,
+            ErrorMessage = newError
         };
     }
 

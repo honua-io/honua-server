@@ -195,9 +195,11 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > The reconciler observes worker-published progress via
 > `IUniversalProgressStore` and bridges it into the canonical job store
 > once a worker host is available.
-> Remote backends (AWS Batch, Azure Container Apps, etc.) are started
-> synchronously on submission and subsequently observed by the reconciler
-> on any Redis-enabled host.
+> Remote backends (AWS Batch, Azure Container Apps, etc.) are defined by
+> the pluggable `IBatchComputeBackend` contract but are not yet registered;
+> see provider tickets for implementation. Once registered, remote jobs
+> are started synchronously on submission and subsequently observed by the
+> reconciler on any Redis-enabled host.
 > Dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute
 > on separate hosts is not yet wired; see
 > [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
