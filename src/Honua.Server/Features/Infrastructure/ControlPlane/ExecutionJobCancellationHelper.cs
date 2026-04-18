@@ -26,6 +26,13 @@ internal static class ExecutionJobCancellationHelper
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
+    /// <summary>
+    /// Returns <c>true</c> when the job has evidence of provider-side state,
+    /// meaning the backend has seen the job and a remote cancel is valid.
+    /// </summary>
+    public static bool WasSubmittedToProvider(ExecutionJobRecord job)
+        => !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0;
+
     public static async Task<ExecutionJobCancellationResult> TryApplyAsync(
         IExecutionJobStore jobStore,
         string operationId,

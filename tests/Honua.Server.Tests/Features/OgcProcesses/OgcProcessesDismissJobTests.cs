@@ -266,6 +266,82 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_RemoteQueuedNeverSubmitted_CancelsLocallyWithoutCallingBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        var cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
+        cancellationNotifier.Cancel(JobId).Returns(false);
+
+        var remoteQueued = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(remoteQueued);
+        jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ExecutionJobRecord>());
+
+        var fixture = new WebAppFixture()
+            .ReplaceService(jobStore)
+            .ReplaceService(jobQueue)
+            .ReplaceService(progressStore)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(cancellationNotifier);
+                services.AddSingleton(backend);
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await backend.DidNotReceive().CancelAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<CancellationToken>());
+            await jobStore.Received(1).TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(job =>
+                    job.OperationId == JobId &&
+                    job.Status == ExecutionJobStatus.Cancelled &&
+                    job.CompletedAt.HasValue &&
+                    job.CurrentPhase == "Cancelled before submission"),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_UnclaimedCasConflict_JobBecomesClaimed_SwitchesToDurableSignal()
     {
         var queuedJob = new ExecutionJobRecord

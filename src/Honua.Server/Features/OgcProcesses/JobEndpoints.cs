@@ -395,6 +395,28 @@ internal static class JobEndpoints
                     var capabilities = await backend.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
                     if (capabilities.SupportsCancellation)
                     {
+                        if (latest.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(latest))
+                        {
+                            var localNow = DateTimeOffset.UtcNow;
+                            var localCancelled = latest with
+                            {
+                                Status = ExecutionJobStatus.Cancelled,
+                                UpdatedAt = localNow,
+                                CompletedAt = localNow,
+                                CurrentPhase = "Cancelled before submission"
+                            };
+                            await jobStore.TrySetAsync(localCancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, localCancelled, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            job = localCancelled;
+                            var baseUrlLocal = BaseUrlResolver.GetBaseUrl(context);
+                            return Results.Json(
+                                OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                                    job, ProcessEndpoints.CanonicalProcessId, baseUrlLocal),
+                                OgcProcessesJsonContext.Default.OgcStatusInfo,
+                                MediaTypes.Json);
+                        }
+
                         var observation = await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
                         var cancelNow = DateTimeOffset.UtcNow;
                         var cancelled = latest with

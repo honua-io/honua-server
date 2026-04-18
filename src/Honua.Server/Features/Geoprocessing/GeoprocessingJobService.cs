@@ -679,8 +679,24 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return new(RemoteCancelOutcome.Unsupported);
         }
 
-        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
         var jobStore = RequireJobStore();
+
+        if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(job))
+        {
+            var cancelNow = DateTimeOffset.UtcNow;
+            var cancelled = job with
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                UpdatedAt = cancelNow,
+                CompletedAt = cancelNow,
+                CurrentPhase = "Cancelled before submission"
+            };
+            return await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false)
+                ? new(RemoteCancelOutcome.Delegated)
+                : new(RemoteCancelOutcome.Unconfirmed);
+        }
+
+        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var updated = job with
         {

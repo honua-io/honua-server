@@ -598,6 +598,29 @@ internal static partial class OperationsProgressEndpoints
                             $"Backend '{executionJob.Spec.Backend}' does not support cancellation.");
                     }
 
+                    if (executionJob.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(executionJob))
+                    {
+                        var localNow = DateTimeOffset.UtcNow;
+                        var localCancelled = executionJob with
+                        {
+                            Status = ExecutionJobStatus.Cancelled,
+                            UpdatedAt = localNow,
+                            CompletedAt = localNow,
+                            CurrentPhase = "Cancelled before submission"
+                        };
+                        await jobStore.TrySetAsync(localCancelled, cancellationToken: cancellationToken).ConfigureAwait(false);
+                        await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
+                        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                            progressStore, localCancelled, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                        var localResponse = new CancelOperationResponse
+                        {
+                            OperationId = operationId,
+                            Message = "Operation cancellation requested",
+                            Type = progress.Type
+                        };
+                        return Results.Json(localResponse, OperationsProgressJsonContext.Default.CancelOperationResponse);
+                    }
+
                     var observation = await backend.CancelAsync(executionJob, cancellationToken).ConfigureAwait(false);
                     var now = DateTimeOffset.UtcNow;
                     var updated = executionJob with
