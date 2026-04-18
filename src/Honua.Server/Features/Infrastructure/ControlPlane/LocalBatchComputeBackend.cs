@@ -52,20 +52,12 @@ internal sealed class LocalBatchComputeBackend(
         return BuildObservation(job, progress);
     }
 
-    public Task<BatchComputeObservation> CancelAsync(
+    public async Task<BatchComputeObservation> CancelAsync(
         ExecutionJobRecord job,
         CancellationToken cancellationToken = default)
     {
-        var signalled = cancellationNotifier.Cancel(job.OperationId);
-        return Task.FromResult(new BatchComputeObservation
-        {
-            Status = signalled ? ExecutionJobStatus.Cancelled : job.Status,
-            ProviderOperationId = job.OperationId,
-            PercentComplete = job.PercentComplete,
-            Message = signalled
-                ? "Cancellation signalled to local worker"
-                : "No in-process worker tracked this job"
-        });
+        cancellationNotifier.Cancel(job.OperationId);
+        return await ObserveAsync(job, cancellationToken).ConfigureAwait(false);
     }
 
     private static BatchComputeObservation BuildObservation(ExecutionJobRecord job, IOperationProgress? progress)

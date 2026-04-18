@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class ExecutionJobReconcilerTests
 {
     [Fact]
-    public async Task ReconcileExecutionJob_BackendMissing_FailsJobRecord()
+    public async Task ReconcileExecutionJob_BackendMissing_FailsJobRecordAndBridgesProgress()
     {
         var job = CreateJobRecord(
             operationId: "job-missing",
@@ -25,6 +25,9 @@ public sealed class ExecutionJobReconcilerTests
             targetKind: BatchComputeTargetKind.AwsBatch);
         var jobStore = new InMemoryExecutionJobStore(job);
         var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-missing",
+            GeoprocessingProgress.CreateForSubmittedJob("job-missing", "plan-missing"));
         var sut = new ExecutionJobReconciler(
             jobStore,
             Array.Empty<IBatchComputeBackend>(),
@@ -38,6 +41,11 @@ public sealed class ExecutionJobReconcilerTests
         stored!.Status.Should().Be(ExecutionJobStatus.Failed);
         stored.CompletedAt.Should().NotBeNull();
         stored.ErrorMessage.Should().Contain("No batch compute backend registered");
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-missing");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
     }
 
     [Fact]
@@ -368,6 +376,82 @@ public sealed class ExecutionJobReconcilerTests
         stored.Should().NotBeNull();
         stored!.AttemptCount.Should().Be(1);
         stored.CurrentPhase.Should().Be("Queued on provider");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_LocalCancellationRequested_DoesNotSynthesizeTerminalState()
+    {
+        var notifier = Substitute.For<IJobCancellationNotifier>();
+        notifier.Cancel("job-local-cancel").Returns(true);
+        var progressStore = new InMemoryProgressStore();
+        var workerProgress = GeoprocessingProgress.CreateForSubmittedJob("job-local-cancel", "plan-local") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+            CurrentStageStatus = GeoprocessingStageStatus.Pending
+        };
+        await progressStore.SetProgressAsync("job-local-cancel", workerProgress);
+        var backend = new LocalBatchComputeBackend(progressStore, notifier);
+
+        var job = CreateJobRecord(
+            operationId: "job-local-cancel",
+            status: ExecutionJobStatus.Running,
+            backend: LocalBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            currentPhase: "Executing") with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-local-cancel");
+
+        var stored = await jobStore.GetAsync("job-local-cancel");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Running,
+            "the worker owns the terminal state transition, not the reconciler");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_ExceptionDuringReconciliation_BridgesProgressOnFailure()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("backend exploded"));
+
+        var job = CreateJobRecord(
+            operationId: "job-exception",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-exception",
+            GeoprocessingProgress.CreateForSubmittedJob("job-exception", "plan-exception"));
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        var act = () => sut.ReconcileExecutionJobAsync("job-exception");
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        var stored = await jobStore.GetAsync("job-exception");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Failed);
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-exception");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
     }
 
     [Fact]

@@ -306,7 +306,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
         if (backend == null)
         {
-            return job;
+            throw new InvalidOperationException(
+                $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
         }
 
         var submission = await backend.StartAsync(job, cancellationToken).ConfigureAwait(false);
@@ -317,7 +318,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             UpdatedAt = now,
             CompletedAt = IsTerminal(submission.Status) ? now : job.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
-            CurrentPhase = submission.Message ?? job.CurrentPhase
+            CurrentPhase = submission.Message ?? job.CurrentPhase,
+            AttemptCount = job.AttemptCount + 1
         };
 
         await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);

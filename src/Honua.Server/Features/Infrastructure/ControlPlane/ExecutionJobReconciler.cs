@@ -68,7 +68,11 @@ internal sealed partial class ExecutionJobReconciler(
                     CurrentPhase = "No batch compute backend is registered for this job.",
                     ErrorMessage = $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind})."
                 };
-                await jobStore.TrySetAsync(missing, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+                if (await jobStore.TrySetAsync(missing, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
+                {
+                    await BridgeProgressAsync(job, missing, reconciliationCancellation.Token).ConfigureAwait(false);
+                }
+
                 return;
             }
 
@@ -118,7 +122,10 @@ internal sealed partial class ExecutionJobReconciler(
                     CurrentPhase = "Execution-job reconciliation failed.",
                     ErrorMessage = $"Execution-job reconciliation failed due to {ex.GetType().Name}."
                 };
-                await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    await BridgeProgressAsync(job, failed, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             throw;
