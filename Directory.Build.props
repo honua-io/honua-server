@@ -4,9 +4,48 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
-    <!-- Required for IDE0005 (remove unused usings) to work in build -->
+
+    <!--
+      Source-generated configuration binding eliminates the reflection-based
+      ConfigurationBinder.Bind / GetValue calls at every callsite. Safe project-wide.
+    -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+  </PropertyGroup>
+
+  <!--
+    Style-analyzer + XML-doc generation are expensive and not needed for the inner
+    dev loop. Run them only on Release builds (and CI, which always builds Release)
+    so `dotnet build -c Debug` stays snappy.
+    GenerateDocumentationFile is required for IDE0005 (remove unused usings) to fire
+    during build — gate it to the same condition so the two move together.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' or '$(ContinuousIntegrationBuild)' == 'true'">
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Test + benchmark projects don't need to run `dotnet pack`; suppressing the
+    default `IsPackable` skips pack-related targets during restore/build.
+  -->
+  <PropertyGroup Condition="
+      $(MSBuildProjectFullPath.Contains('/tests/'))
+      OR $(MSBuildProjectFullPath.Contains('/benchmarks/'))">
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <!--
+    AOT/trim analyzers only apply to shipped production assemblies. Enabling them
+    here surfaces IL2026/IL3050 warnings at build time for every library the server
+    links against; without this gate only the root Server project's PublishAot run
+    would catch them. Test/benchmark/AppHost projects are excluded because they do
+    not ship and the analyzer noise drowns out real issues.
+  -->
+  <PropertyGroup Condition="
+      $(MSBuildProjectFullPath.Contains('/src/'))
+      AND !$(MSBuildProjectFullPath.Contains('/src/Honua.AppHost/'))">
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 </Project>
