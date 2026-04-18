@@ -968,6 +968,16 @@ internal static partial class ProcessPlanValidator
         switch (type)
         {
             case ProcessParameterValueType.Text:
+                // Required Text inputs reach this branch with blank values
+                // (optional blanks are skipped upstream). Reject them here so
+                // declared-required text parameters surface as
+                // INVALID_PARAMETER_VALUE instead of silently passing — the
+                // handlers treat IsNullOrWhiteSpace as "not supplied".
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    errorDetail = "expected non-empty text value";
+                    return false;
+                }
                 return true;
 
             case ProcessParameterValueType.WholeNumber:

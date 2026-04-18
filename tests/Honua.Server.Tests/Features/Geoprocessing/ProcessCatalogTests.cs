@@ -2626,6 +2626,107 @@ public sealed class ProcessCatalogTests
             v.FieldPath == "steps[s1].inputs.fieldName");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCopyFeatures_BlankTargetLayerName_ProducesViolation()
+    {
+        // Declared-required Text inputs must be rejected when blank so the
+        // validator does not admit plans the handlers would treat as missing
+        // (handlers use IsNullOrWhiteSpace for "not supplied").
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.copy-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["sourceLayerId"] = "42",
+                        ["targetLayerName"] = "   "
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.targetLayerName");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCalculateField_BlankFieldName_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.calculate-field",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["fieldName"] = "",
+                        ["expression"] = "1"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.fieldName");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_DataManagementCalculateField_BlankExpression_ProducesViolation()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.calculate-field",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["fieldName"] = "status_code",
+                        ["expression"] = "\t"
+                    }
+                }
+            ]
+        };
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.expression");
+    }
+
     // -----------------------------------------------------------------------
     // Destructive-process classifier
     // -----------------------------------------------------------------------
