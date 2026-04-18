@@ -404,7 +404,14 @@ internal static class JobEndpoints
                             ProviderOperationId = observation.ProviderOperationId ?? latest.ProviderOperationId,
                             CurrentPhase = observation.Message ?? latest.CurrentPhase
                         };
-                        await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                        await jobStore.TrySetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+
+                        if (ExecutionJobCancellationHelper.IsTerminal(observation.Status))
+                        {
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, cancelled, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                        }
+
                         job = cancelled;
                         var baseUrlBackend = BaseUrlResolver.GetBaseUrl(context);
                         return Results.Json(

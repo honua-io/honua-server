@@ -448,18 +448,13 @@ internal static class OperationsProgressEndpoints
                         ProviderOperationId = observation.ProviderOperationId ?? executionJob.ProviderOperationId,
                         CurrentPhase = observation.Message ?? executionJob.CurrentPhase
                     };
-                    await jobStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     if (ExecutionJobCancellationHelper.IsTerminal(observation.Status))
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    if (observation.Status == ExecutionJobStatus.Cancelled)
-                    {
-                        var remoteCancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
-                        await progressStore.SetProgressAsync(operationId, remoteCancelledProgress,
-                            TimeSpan.FromHours(24), cancellationToken);
+                        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                            progressStore, updated, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
                     }
 
                     var remoteResponse = new CancelOperationResponse

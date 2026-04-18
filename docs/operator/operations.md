@@ -189,15 +189,17 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > **Deployment note:** Every Redis-enabled host registers the execution-job
 > reconciliation background service, which polls active jobs and bridges
 > status from pluggable batch-compute backends into the canonical job store.
-> Local (in-process) jobs are queue-gated: the reconciler observes their
-> worker-published progress but does not advance them from `Queued` —
-> that transition is owned by the worker substrate via `AddJobWorker()`,
-> which is not yet wired in the default host.
+> Local (in-process) jobs are started by the geoprocessing submission path
+> and execute inside the combined host; the reconciler observes their
+> worker-published progress via `IUniversalProgressStore` and bridges it
+> into the canonical job store.
 > Remote backends (AWS Batch, Azure Container Apps, etc.) are started
 > synchronously on submission and subsequently observed by the reconciler
 > on any Redis-enabled host.
-> See [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md)
-> and [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
+> Dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute
+> on separate hosts is not yet wired; see
+> [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
+> See [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md).
 
 ### Supported Job Kinds
 

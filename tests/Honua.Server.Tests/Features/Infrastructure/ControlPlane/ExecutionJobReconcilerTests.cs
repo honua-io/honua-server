@@ -248,6 +248,99 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_RemoteQueuedWithProviderOperationId_ObservesInsteadOfRestarting()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "provider-already-submitted",
+                PercentComplete = 10,
+                Message = "Starting up"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-remote-queued",
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            ProviderOperationId = "provider-already-submitted"
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-remote-queued");
+
+        await backend.Received(1).ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var stored = await jobStore.GetAsync("job-remote-queued");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_CasConflict_DoesNotOverwriteConcurrentWrite()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                PercentComplete = 50,
+                Message = "Processing"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-cas",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.RenewLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.GetAsync("job-cas", Arg.Any<CancellationToken>())
+            .Returns(job);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-cas");
+
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-cas");
+        progress.Should().BeNull();
+    }
+
+    [Fact]
     public async Task BridgeTerminalSubmissionProgress_TerminalJob_UpdatesGeoprocessingProgress()
     {
         var progressStore = new InMemoryProgressStore();

@@ -71,7 +71,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri Leaflet, Esri map clients |
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
-| GeoServices REST GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, Esri geoprocessing SDKs (partial: job status and cancel; submit and execute pending) |
+| GeoServices REST GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, Esri geoprocessing SDKs (async submit, job status, cancel; synchronous execute pending) |
 | MCP Operator JSON-RPC | `/mcp` | AI agents, operator automation, MCP clients |
 | STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |
 | OGC API Features | `/ogc/features` | QGIS, OpenLayers, MapLibre, any OGC client |

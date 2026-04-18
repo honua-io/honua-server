@@ -68,13 +68,15 @@ internal sealed partial class ExecutionJobReconciler(
                     CurrentPhase = "No batch compute backend is registered for this job.",
                     ErrorMessage = $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind})."
                 };
-                await jobStore.SetAsync(missing, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+                await jobStore.TrySetAsync(missing, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
                 return;
             }
 
             var updated = job.Status switch
             {
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                    => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
+                ExecutionJobStatus.Queued when !string.IsNullOrEmpty(job.ProviderOperationId)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running when job.CancellationRequestedAt.HasValue
@@ -86,7 +88,13 @@ internal sealed partial class ExecutionJobReconciler(
 
             if (!ReferenceEquals(updated, job))
             {
-                await jobStore.SetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+                var persisted = await jobStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+                if (!persisted)
+                {
+                    Log.ExecutionJobCasConflict(logger, operationId);
+                    return;
+                }
+
                 await BridgeProgressAsync(job, updated, reconciliationCancellation.Token).ConfigureAwait(false);
                 Log.ExecutionJobReconciled(logger, operationId, updated.Status.ToString(), updated.PercentComplete ?? double.NaN);
             }
@@ -110,7 +118,7 @@ internal sealed partial class ExecutionJobReconciler(
                     CurrentPhase = "Execution-job reconciliation failed.",
                     ErrorMessage = $"Execution-job reconciliation failed due to {ex.GetType().Name}."
                 };
-                await jobStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
             throw;
@@ -361,6 +369,9 @@ internal sealed partial class ExecutionJobReconciler(
 
         [LoggerMessage(9035, LogLevel.Warning, "Failed to bridge execution-job progress for {OperationId}")]
         public static partial void ExecutionJobProgressBridgeFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9037, LogLevel.Debug, "Execution-job reconciliation CAS conflict for {OperationId}; deferring to next sweep")]
+        public static partial void ExecutionJobCasConflict(ILogger logger, string operationId);
     }
 
     internal static partial class BackgroundLog
