@@ -208,17 +208,6 @@ internal static class ProcessEndpoints
             return FormatOgcAuthError(authDecision);
         }
 
-        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = OperatorResourceType.Process,
-            Operation = OperatorOperation.Execute
-        });
-        if (approval.IsRequired)
-        {
-            OgcProcessesLog.ExecutionRejectedApprovalRequired(logger, approval.PolicyRef ?? "unknown");
-            return FormatOgcApprovalError(approval);
-        }
-
         if (!string.Equals(processId, CanonicalProcessId, StringComparison.OrdinalIgnoreCase))
         {
             OgcProcessesLog.ProcessNotFound(logger, processId);
@@ -323,7 +312,13 @@ internal static class ProcessEndpoints
         var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var analyticsLimits = context.RequestServices
             .GetRequiredService<IOptions<LimitsOptions>>().Value.Analytics;
-        var catalogError = ValidatePlanAgainstCatalog(planElement, planId, catalog, analyticsLimits, logger);
+        var analysisPlan = new AnalysisPlan
+        {
+            PlanId = planId,
+            IntentId = "ogc-execute",
+            Steps = ExtractPlanSteps(planElement)
+        };
+        var catalogError = ValidatePlanAgainstCatalog(analysisPlan, catalog, analyticsLimits, logger);
         if (catalogError != null)
         {
             OgcProcessesLog.PlanStructureInvalid(logger, processId, catalogError);
@@ -338,6 +333,23 @@ internal static class ProcessEndpoints
                 OgcProcessesJsonContext.Default.OgcProcessError,
                 MediaTypes.Json,
                 StatusCodes.Status400BadRequest);
+        }
+
+        // Approval gate runs after catalog validation so `IsDestructive` reflects the
+        // parsed plan: destructive `data-management.*` ids (`delete-features`,
+        // `calculate-field`) trigger the destructive policy, matching
+        // `GeoprocessingJobService.EnsureApproved` on the canonical submit path.
+        var destructiveProcessId = ProcessDestructiveClassifier.FindFirstDestructiveProcessId(analysisPlan);
+        var approval = gate.CheckApproval(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = destructiveProcessId != null
+        });
+        if (approval.IsRequired)
+        {
+            OgcProcessesLog.ExecutionRejectedApprovalRequired(logger, approval.PolicyRef ?? "unknown");
+            return FormatOgcApprovalError(approval);
         }
 
         OgcProcessesLog.ExecutionRequested(logger, processId, true);
@@ -425,22 +437,14 @@ internal static class ProcessEndpoints
     /// </summary>
     /// <returns>Error message if invalid; null if valid.</returns>
     private static string? ValidatePlanAgainstCatalog(
-        JsonElement plan, string planId, IProcessCatalog catalog, AnalyticsLimits analyticsLimits, ILogger logger)
+        AnalysisPlan plan, IProcessCatalog catalog, AnalyticsLimits analyticsLimits, ILogger logger)
     {
-        var steps = ExtractPlanSteps(plan);
-        if (steps.Count == 0)
+        if (plan.Steps.Count == 0)
         {
             return null;
         }
 
-        var analysisPlan = new AnalysisPlan
-        {
-            PlanId = planId,
-            IntentId = "ogc-execute",
-            Steps = steps
-        };
-
-        var (violations, _) = ProcessPlanValidator.Validate(analysisPlan, catalog, analyticsLimits);
+        var (violations, _) = ProcessPlanValidator.Validate(plan, catalog, analyticsLimits);
         if (violations.Count == 0)
         {
             return null;

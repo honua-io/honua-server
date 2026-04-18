@@ -108,12 +108,19 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
+        var destructiveProcessId = ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan);
+        if (destructiveProcessId != null)
+        {
+            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", destructiveProcessId);
+        }
+
         var approvalReq = _approvalEvaluator.Evaluate(
             principal,
             new OperatorAuthorizationRequest
             {
                 ResourceType = OperatorResourceType.Process,
-                Operation = OperatorOperation.Execute
+                Operation = OperatorOperation.Execute,
+                IsDestructive = destructiveProcessId != null
             });
 
         var result = new PlanValidationResult
@@ -156,7 +163,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
         EnsurePlanCatalogValid(plan);
-        EnsureApproved(principal);
+        EnsureApproved(principal, plan);
 
         var jobStore = RequireJobStore();
         var now = DateTimeOffset.UtcNow;
@@ -491,14 +498,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
     }
 
-    private void EnsureApproved(ClaimsPrincipal principal)
+    private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
     {
+        var destructiveProcessId = ProcessDestructiveClassifier.FindFirstDestructiveProcessId(plan);
+        if (destructiveProcessId != null)
+        {
+            GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", destructiveProcessId);
+        }
+
         var approval = _approvalEvaluator.Evaluate(
             principal,
             new OperatorAuthorizationRequest
             {
                 ResourceType = OperatorResourceType.Process,
-                Operation = OperatorOperation.Execute
+                Operation = OperatorOperation.Execute,
+                IsDestructive = destructiveProcessId != null
             });
 
         if (!approval.IsRequired)

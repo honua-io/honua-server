@@ -1824,7 +1824,7 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): service info, job status, job result, cancel job over the canonical process runtime; task info and submitJob return 501 pending per-task projection of the built-in IProcessCatalog (14 seeded processes) into the GPServer surface"
+        "Generic GPServer adapter (#723): service info, job status, job result, cancel job over the canonical process runtime; task info and submitJob return 501 pending per-task projection of the built-in IProcessCatalog (19 seeded processes across geometry.*, analytics.*, generalization.*, data-management.*) into the GPServer surface"
       ],
       "knownGaps": [
         "synchronous execute returns 501 pending #721 ExecutePlan",
@@ -1936,7 +1936,7 @@
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 14 processes for plan validation (#735); task info and submitJob return 501 pending per-task projection of that catalog into the GPServer surface.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 19 processes across geometry.*, analytics.*, generalization.*, and data-management.* families for plan validation (#735, #737); destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Task info and submitJob return 501 pending per-task projection of that catalog into the GPServer surface.",
         "Synchronous execute returns 501 pending #721 ExecutePlan.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]
