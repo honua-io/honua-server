@@ -255,11 +255,14 @@ var kubernetesExecutionOptions = builder.Configuration
     .GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes")
     .Get<KubernetesExecutionOptions>() ?? new KubernetesExecutionOptions();
 var kubernetesCaBundlePath = kubernetesExecutionOptions.CaBundlePath;
+var kubernetesInClusterAutoDetect = kubernetesExecutionOptions.InClusterAutoDetect;
 builder.Services.AddResilientHttpClient(
     KubernetesJobClient.HttpClientName,
     "control-plane-kubernetes",
     HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(kubernetesCaBundlePath));
+    configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(
+        kubernetesInClusterAutoDetect,
+        kubernetesCaBundlePath));
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
 builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
 builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();

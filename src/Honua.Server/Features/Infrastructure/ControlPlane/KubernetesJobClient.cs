@@ -401,18 +401,17 @@ internal sealed partial class KubernetesJobClient(
 
     /// <summary>
     /// Creates an <see cref="HttpMessageHandler"/> that trusts the Kubernetes API server CA.
-    /// Prefers the in-cluster projected CA bundle when available; otherwise, trusts a
-    /// PEM bundle at <paramref name="caBundlePath"/> if provided (for clusters fronted by
-    /// a private or self-signed CA); otherwise falls back to the OS trust store so
-    /// operators whose API server chains to a public CA keep working. Wired at DI
-    /// registration time.
+    /// When <paramref name="inClusterAutoDetect"/> is true and the projected service-account
+    /// CA is available, uses that bundle (matching the in-cluster path selected by
+    /// <see cref="ResolveAuthentication"/>). Otherwise, trusts a PEM bundle at
+    /// <paramref name="caBundlePath"/> if provided (for clusters fronted by a private or
+    /// self-signed CA); otherwise falls back to the OS trust store so operators whose API
+    /// server chains to a public CA keep working. Wired at DI registration time.
     /// </summary>
-    internal static HttpMessageHandler CreatePrimaryHandler(string? caBundlePath = null)
+    internal static HttpMessageHandler CreatePrimaryHandler(bool inClusterAutoDetect, string? caBundlePath = null)
     {
         var handler = new HttpClientHandler();
-        var resolvedPath = File.Exists(InClusterCaCertPath)
-            ? InClusterCaCertPath
-            : (!string.IsNullOrWhiteSpace(caBundlePath) && File.Exists(caBundlePath) ? caBundlePath : null);
+        var resolvedPath = ResolveTrustedCaPath(inClusterAutoDetect, caBundlePath, InClusterCaCertPath);
 
         if (resolvedPath != null)
         {
@@ -433,6 +432,35 @@ internal sealed partial class KubernetesJobClient(
         }
 
         return handler;
+    }
+
+    /// <summary>
+    /// Mirrors the auth-context decision made by <see cref="ResolveAuthentication"/>: the
+    /// projected in-cluster CA only validates the local cluster's API server, so it is
+    /// preferred only when in-cluster auto-detect is enabled. When operators disable
+    /// auto-detect to target a different cluster via an explicit <c>ApiServerUrl</c>, the
+    /// trust anchor must come from the configured <c>CaBundlePath</c> — otherwise a Honua
+    /// host running inside one cluster would silently validate a remote private-CA API
+    /// server against its local cluster's CA and fail every call.
+    /// </summary>
+    internal static string? ResolveTrustedCaPath(
+        bool inClusterAutoDetect,
+        string? configuredCaBundlePath,
+        string inClusterCaCertPath)
+    {
+        if (inClusterAutoDetect
+            && !string.IsNullOrEmpty(inClusterCaCertPath)
+            && File.Exists(inClusterCaCertPath))
+        {
+            return inClusterCaCertPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuredCaBundlePath) && File.Exists(configuredCaBundlePath))
+        {
+            return configuredCaBundlePath;
+        }
+
+        return null;
     }
 
     private static X509Certificate2Collection LoadCaBundle(string pemPath)

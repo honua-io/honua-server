@@ -249,6 +249,93 @@ public sealed class KubernetesJobClientTests
     }
 
     [Fact]
+    public void ResolveTrustedCaPath_InClusterAutoDetectFalse_IgnoresProjectedInClusterCa()
+    {
+        // Simulates a Honua host running inside one Kubernetes cluster (so the projected
+        // service-account CA file exists) but targeting a *different* private-CA cluster
+        // via explicit ApiServerUrl + CaBundlePath. InClusterAutoDetect=false must cause
+        // the configured bundle to be honored; otherwise the adapter silently validates
+        // the remote cluster's cert against the local cluster's CA and every call fails.
+        var projectedCa = Path.GetTempFileName();
+        var configuredCa = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(projectedCa, "in-cluster-pem");
+            File.WriteAllText(configuredCa, "configured-pem");
+
+            var resolved = KubernetesJobClient.ResolveTrustedCaPath(
+                inClusterAutoDetect: false,
+                configuredCaBundlePath: configuredCa,
+                inClusterCaCertPath: projectedCa);
+
+            resolved.Should().Be(
+                configuredCa,
+                "InClusterAutoDetect=false must not hijack TLS validation with the local projected CA");
+        }
+        finally
+        {
+            File.Delete(projectedCa);
+            File.Delete(configuredCa);
+        }
+    }
+
+    [Fact]
+    public void ResolveTrustedCaPath_InClusterAutoDetectTrue_PrefersProjectedInClusterCa()
+    {
+        var projectedCa = Path.GetTempFileName();
+        var configuredCa = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(projectedCa, "in-cluster-pem");
+            File.WriteAllText(configuredCa, "configured-pem");
+
+            var resolved = KubernetesJobClient.ResolveTrustedCaPath(
+                inClusterAutoDetect: true,
+                configuredCaBundlePath: configuredCa,
+                inClusterCaCertPath: projectedCa);
+
+            resolved.Should().Be(projectedCa);
+        }
+        finally
+        {
+            File.Delete(projectedCa);
+            File.Delete(configuredCa);
+        }
+    }
+
+    [Fact]
+    public void ResolveTrustedCaPath_InClusterAutoDetectTrueButProjectedCaMissing_FallsBackToConfiguredBundle()
+    {
+        var configuredCa = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(configuredCa, "configured-pem");
+
+            var resolved = KubernetesJobClient.ResolveTrustedCaPath(
+                inClusterAutoDetect: true,
+                configuredCaBundlePath: configuredCa,
+                inClusterCaCertPath: Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
+
+            resolved.Should().Be(configuredCa);
+        }
+        finally
+        {
+            File.Delete(configuredCa);
+        }
+    }
+
+    [Fact]
+    public void ResolveTrustedCaPath_NoBundlesAvailable_ReturnsNullForOsTrustStore()
+    {
+        var resolved = KubernetesJobClient.ResolveTrustedCaPath(
+            inClusterAutoDetect: false,
+            configuredCaBundlePath: null,
+            inClusterCaCertPath: Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
+
+        resolved.Should().BeNull();
+    }
+
+    [Fact]
     public void ValidateAgainstTrustedCas_WithIntermediate_FailsWhenIntermediateUnavailable()
     {
         var (rootCert, intermediateCert, leafCert) = CreateIntermediateChain(

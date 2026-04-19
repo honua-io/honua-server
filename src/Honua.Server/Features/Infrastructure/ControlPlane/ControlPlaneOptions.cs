@@ -74,8 +74,12 @@ internal sealed class KubernetesExecutionOptions
     /// Optional path to a PEM-encoded CA bundle that the adapter should trust when
     /// verifying the Kubernetes API server certificate. Required for out-of-cluster
     /// targets whose API server certificate is signed by a private or self-signed CA
-    /// that does not chain to the OS trust store. Ignored when the adapter is running
-    /// in-cluster and <see cref="InClusterAutoDetect"/> resolves the projected CA bundle.
+    /// that does not chain to the OS trust store. Ignored only when
+    /// <see cref="InClusterAutoDetect"/> is enabled and the projected service-account
+    /// CA bundle is available; in that case the in-cluster bundle is used. When
+    /// <see cref="InClusterAutoDetect"/> is disabled — including from inside a pod
+    /// that targets a different cluster — this value is honored even if the local
+    /// projected CA file exists.
     /// </summary>
     public string? CaBundlePath { get; set; }
 
