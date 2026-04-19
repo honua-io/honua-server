@@ -108,8 +108,11 @@ public class OgcMapsConformanceHandlerTests
     {
         var result = await _handler.GetConformanceAsync();
 
+        // "bbox" rather than the broader "spatial-subsetting" class: the latter's
+        // requirements class also mandates the generic `subset` dimension
+        // parameter (OGC 20-058 §7.6), which this server does not implement.
         result.ConformsTo.Should().Contain(
-            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting");
+            "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox");
         result.ConformsTo.Should().Contain(
             "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/scaling");
     }
