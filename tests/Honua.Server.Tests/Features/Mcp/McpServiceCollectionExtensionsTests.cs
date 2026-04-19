@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.Mcp.Stores;
 using Honua.TestKit.Attributes;
@@ -59,11 +60,45 @@ public sealed class McpServiceCollectionExtensionsTests
         provider.GetRequiredService<IDeploymentStore>().Should().BeSameAs(canonicalDeployments);
     }
 
+    /// <summary>
+    /// Tripwire for the default real-host composition (<see cref="FeatureRegistrationExtensions.AddServerFeatures"/>).
+    /// Nothing in the default server composition registers canonical publishing/deployment
+    /// persistence today, so <see cref="IPublishedServiceStore"/>, <see cref="IPublishIntentStore"/>,
+    /// and <see cref="IDeploymentStore"/> still resolve to the in-memory fallbacks registered
+    /// by <see cref="McpServiceCollectionExtensions.AddMcpOperatorSurface"/>. This test pins that
+    /// known gap — documented in <c>docs/developer/MCP_SERVER.md</c> — so that when a downstream
+    /// ticket wires canonical persistence earlier in the composition root, the assertion flips
+    /// and forces a deliberate update (either delete the fallback registrations or narrow this
+    /// test to the new wiring).
+    /// </summary>
+    [UnitTest]
+    public void AddServerFeatures_DefaultComposition_StillResolvesInMemoryPromotionStoresFallback()
+    {
+        var services = BuildBaseServices();
+        services.AddServerFeatures(new ConfigurationBuilder().Build());
+
+        ResolveImplementationType(services, typeof(IPublishedServiceStore))
+            .Should().Be<InMemoryPublishedServiceStore>(
+                "canonical IPublishedServiceStore persistence is not yet wired into AddServerFeatures");
+        ResolveImplementationType(services, typeof(IPublishIntentStore))
+            .Should().Be<InMemoryPublishIntentStore>(
+                "canonical IPublishIntentStore persistence is not yet wired into AddServerFeatures");
+        ResolveImplementationType(services, typeof(IDeploymentStore))
+            .Should().Be<InMemoryDeploymentStore>(
+                "canonical IDeploymentStore persistence is not yet wired into AddServerFeatures");
+    }
+
     private static ServiceProvider BuildProvider()
     {
         var services = BuildBaseServices();
         services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
         return services.BuildServiceProvider();
+    }
+
+    private static Type? ResolveImplementationType(IServiceCollection services, Type serviceType)
+    {
+        var descriptor = services.LastOrDefault(d => d.ServiceType == serviceType);
+        return descriptor?.ImplementationType;
     }
 
     private static ServiceCollection BuildBaseServices()
