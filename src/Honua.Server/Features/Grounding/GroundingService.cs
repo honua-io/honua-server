@@ -155,7 +155,9 @@ internal sealed class GroundingService : IGroundingService
         findings = FilterAnsweredFindings(findings, appliedIds);
 
         // 5. Build draft intent.
-        var intentId = request.IntentId ?? $"grounding-{Guid.NewGuid():N}";
+        var intentId = string.IsNullOrWhiteSpace(request.IntentId)
+            ? $"grounding-{Guid.NewGuid():N}"
+            : request.IntentId;
         var assumptions = CollectAssumptions(request, applied.ResolvedParameters);
         var clarificationQuestionIds = findings.Select(f => f.QuestionId).ToArray();
         var draft = IntentDrafter.Draft(

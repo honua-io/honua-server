@@ -71,6 +71,8 @@ internal static class GroundingToolMapper
             throw new GeoprocessingValidationException("Clarification turn requires response.answers to be supplied.");
         }
 
+        EnsureAnswersContainNonBlankValues(argument.Response.Answers);
+
         var clarification = new ClarificationResponse
         {
             IntentId = argument.IntentId,
@@ -190,6 +192,22 @@ internal static class GroundingToolMapper
             TimeWindowEnd = input.TimeWindowEnd,
             Units = input.Units
         };
+    }
+
+    private static void EnsureAnswersContainNonBlankValues(
+        IReadOnlyDictionary<string, IReadOnlyList<string>> answers)
+    {
+        foreach (var (questionId, values) in answers)
+        {
+            if (values.Any(value => !string.IsNullOrWhiteSpace(value)))
+            {
+                continue;
+            }
+
+            var label = string.IsNullOrWhiteSpace(questionId) ? "<blank>" : questionId;
+            throw new GeoprocessingValidationException(
+                $"Clarification answer '{label}' must include at least one non-blank value.");
+        }
     }
 
     private static CallerContext ToDomain(McpCallerContextInput? input)

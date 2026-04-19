@@ -435,6 +435,19 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_WhitespaceOnlyIntentId_AssignsNewIntentId()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest { Goal = "buffer", IntentId = "   " },
+            Principal);
+
+        result.DraftIntent.IntentId.Should().StartWith("grounding-");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_PreservesCallerSuppliedIntentIdAcrossTurns()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
@@ -857,6 +870,39 @@ public sealed class GroundingServiceTests
             result.Clarification.Questions.Should().NotContain(q => q.QuestionId == "publish.source");
             result.Clarification.Questions.Should().NotContain(q => q.QuestionId == "publish.target");
         }
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_PaddedPublishSourceAnswer_TrimsValueBeforeDrafting()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish my data",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["publish.source"] = ["  parcels-layer  "],
+                        ["publish.target"] = [" TileService "]
+                    }
+                }
+            },
+            Principal);
+
+        result.DraftIntent.Publishing.Should().NotBeNull();
+        result.DraftIntent.Publishing!.SourceId.Should().Be("parcels-layer");
+        result.DraftIntent.Publishing.TargetKind.Should().Be(PublishTargetKind.TileService);
     }
 
     [UnitTest]

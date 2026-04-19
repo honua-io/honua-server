@@ -457,9 +457,10 @@ catalog discovery on top of the same authorization graph via
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
   published schema also marks `goal` as required and requires at least
-  one entry in `answers` (`minProperties: 1`), matching the server
-  mapper which rejects blank goals and empty answer maps with
-  `invalid_argument`. The tool
+  one entry in `answers` (`minProperties: 1`); each answer item also
+  advertises `minLength = 1`. The server mapper rejects blank goals,
+  empty answer maps, and any question whose answer list contains only
+  blank / whitespace values with `invalid_argument`. The tool
   requires the same `(Catalog, Discover)` authorization grant as
   `honua_ground_candidates` — both halves of the grounding flow
   delegate to `IGroundingService.GroundAsync`, so asymmetric permissions
@@ -476,7 +477,8 @@ catalog discovery on top of the same authorization graph via
   ranking (unknown ids fail with `invalid_argument`), `publish.source`
   pins the drafted `PublishIntent.SourceId` when no `explicitInputs`
   and no high-confidence dataset are available (free-text or a dataset
-  option id from the ranked list), `publish.target` flows into the
+  option id from the ranked list; leading/trailing whitespace is
+  trimmed before application), `publish.target` flows into the
   drafted `PublishIntent.TargetKind`, and `param.<name>` answers skip
   the matching parameter-gap clarification and surface as
   `param.<name>=<value>` entries on `provenance.assumptions`. See

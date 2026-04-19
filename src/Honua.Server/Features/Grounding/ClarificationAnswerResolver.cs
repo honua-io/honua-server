@@ -252,7 +252,7 @@ internal static class ClarificationAnswerResolver
         {
             if (!string.IsNullOrWhiteSpace(values[i]))
             {
-                return values[i];
+                return values[i].Trim();
             }
         }
         return null;

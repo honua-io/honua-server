@@ -297,6 +297,26 @@ public sealed class GroundingToolMapperTests
         request.ClarificationResponse.Answers.Should().ContainKey("param.distance");
     }
 
+    [UnitTest]
+    public void ClarifyIntentToDomain_WhitespaceOnlyAnswerValue_ThrowsValidation()
+    {
+        var act = () => GroundingToolMapper.ToDomain(new McpClarifyIntentArgument
+        {
+            IntentId = "intent-1",
+            Goal = "Buffer the parcels",
+            Response = new McpClarificationResponseInput
+            {
+                Answers = new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["publish.source"] = ["   "]
+                }
+            }
+        });
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage("*publish.source*non-blank*");
+    }
+
     // -----------------------------------------------------------------------
     // GroundingResult → McpGroundingOutput
     // -----------------------------------------------------------------------
@@ -384,6 +404,21 @@ public sealed class GroundingToolMapperTests
             "schema-driven clients rely on the published schema to prevent empty answers payloads.");
         minProperties.ValueKind.Should().Be(JsonValueKind.Number);
         minProperties.GetInt32().Should().Be(1);
+    }
+
+    [UnitTest]
+    public void ClarifyIntentArgumentSchema_RequiresNonEmptyAnswerStrings()
+    {
+        var schema = GroundingToolSchemas.ClarifyIntentArgumentSchema;
+        var answerItems = schema
+            .GetProperty("properties")
+            .GetProperty("response")
+            .GetProperty("properties")
+            .GetProperty("answers")
+            .GetProperty("additionalProperties")
+            .GetProperty("items");
+
+        answerItems.GetProperty("minLength").GetInt32().Should().Be(1);
     }
 
     [UnitTest]
