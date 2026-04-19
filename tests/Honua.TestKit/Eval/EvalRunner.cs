@@ -307,7 +307,25 @@ public sealed class EvalRunner
             stopwatch.Stop();
 
             var expected = scenario.ExpectedOutcome.EstimatedArtifactKinds;
-            var actual = response.EstimatedArtifacts.Select(EvalProtoMap.ToDomainArtifactKind).ToArray();
+            var mapped = response.EstimatedArtifacts
+                .Select(k => (Proto: k, Domain: EvalProtoMap.ToDomainArtifactKind(k)))
+                .ToArray();
+
+            var unknownProtoKinds = mapped.Where(x => x.Domain is null).Select(x => x.Proto).ToArray();
+            if (unknownProtoKinds.Length > 0)
+            {
+                stopwatch.Stop();
+                return (new EvalStageOutcome
+                {
+                    Stage = EvalStageKind.DryRun,
+                    Status = EvalStageStatus.Failed,
+                    Reason = "artifact-kind-unknown",
+                    Detail = $"Dry-run returned unmapped proto artifact kind(s) [{string.Join(",", unknownProtoKinds)}].",
+                    ElapsedMs = stopwatch.ElapsedMilliseconds
+                }, response);
+            }
+
+            var actual = mapped.Select(x => x.Domain!.Value).ToArray();
 
             if (expected.Count > 0)
             {

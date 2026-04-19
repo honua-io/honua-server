@@ -13,8 +13,13 @@ namespace Honua.TestKit.Eval;
 /// </summary>
 internal static class EvalProtoMap
 {
-    /// <summary>Maps a proto <see cref="Proto.ArtifactKind"/> to the domain enum.</summary>
-    public static ArtifactKind ToDomainArtifactKind(Proto.ArtifactKind kind) => kind switch
+    /// <summary>
+    /// Maps a proto <see cref="Proto.ArtifactKind"/> to the domain enum, or returns
+    /// <c>null</c> when the proto enum has no domain counterpart. Callers record the
+    /// unknown value as a deterministic stage failure rather than throwing so the
+    /// eval report is always emitted.
+    /// </summary>
+    public static ArtifactKind? ToDomainArtifactKind(Proto.ArtifactKind kind) => kind switch
     {
         Proto.ArtifactKind.Scalar => ArtifactKind.Scalar,
         Proto.ArtifactKind.FeatureLayer => ArtifactKind.FeatureLayer,
@@ -24,7 +29,7 @@ internal static class EvalProtoMap
         Proto.ArtifactKind.Report => ArtifactKind.Report,
         Proto.ArtifactKind.Map => ArtifactKind.Map,
         Proto.ArtifactKind.AppBundle => ArtifactKind.AppBundle,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, $"Unsupported proto artifact kind: {kind}")
+        _ => null
     };
 
     /// <summary>Maps a domain <see cref="ArtifactKind"/> to the proto enum.</summary>

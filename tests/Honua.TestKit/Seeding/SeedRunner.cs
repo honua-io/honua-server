@@ -545,7 +545,9 @@ internal static class SeedRunner
         => declaredType.StartsWith("smallint", StringComparison.Ordinal) ||
            declaredType.StartsWith("integer", StringComparison.Ordinal) ||
            declaredType.StartsWith("bigint", StringComparison.Ordinal) ||
-           declaredType.StartsWith("int", StringComparison.Ordinal) ||
+           declaredType.StartsWith("int2", StringComparison.Ordinal) ||
+           declaredType.StartsWith("int4", StringComparison.Ordinal) ||
+           declaredType.StartsWith("int8", StringComparison.Ordinal) ||
            declaredType.StartsWith("serial", StringComparison.Ordinal) ||
            declaredType.StartsWith("bigserial", StringComparison.Ordinal);
 
