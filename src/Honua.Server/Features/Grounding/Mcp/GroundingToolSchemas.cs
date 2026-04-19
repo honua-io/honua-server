@@ -129,6 +129,7 @@ internal static class GroundingToolSchemas
                         "answers": {
                           "type": "object",
                           "description": "Answers keyed by question identifier. Each answer is a list of values to support multi-select questions.",
+                          "minProperties": 1,
                           "additionalProperties": {
                             "type": "array",
                             "items": { "type": "string" }

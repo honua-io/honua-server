@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Domain;
@@ -275,6 +276,30 @@ public sealed class GroundingToolMapperTests
         wire.DraftIntent.Publishing.Status.Should().Be(nameof(PublishIntentStatus.Draft));
         wire.Candidates.Datasets.Should().ContainSingle()
             .Which.ConfidenceBand.Should().Be(nameof(ConfidenceBand.High));
+    }
+
+    // -----------------------------------------------------------------------
+    // Published clarify-intent JSON schema — the server mapper rejects an
+    // empty answers object, so the advertised contract must not claim an
+    // empty object is acceptable (schema-driven clients would otherwise hit
+    // a server-side invalid_argument the published contract should have
+    // prevented).
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    public void ClarifyIntentArgumentSchema_RequiresAtLeastOneAnswer()
+    {
+        var schema = GroundingToolSchemas.ClarifyIntentArgumentSchema;
+        var answers = schema
+            .GetProperty("properties")
+            .GetProperty("response")
+            .GetProperty("properties")
+            .GetProperty("answers");
+
+        answers.TryGetProperty("minProperties", out var minProperties).Should().BeTrue(
+            "schema-driven clients rely on the published schema to prevent empty answers payloads.");
+        minProperties.ValueKind.Should().Be(JsonValueKind.Number);
+        minProperties.GetInt32().Should().Be(1);
     }
 
     [UnitTest]

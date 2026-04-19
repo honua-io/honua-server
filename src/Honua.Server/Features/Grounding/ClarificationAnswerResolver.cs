@@ -175,11 +175,16 @@ internal static class ClarificationAnswerResolver
         string questionId,
         HashSet<string> appliedIds)
     {
-        if (string.IsNullOrWhiteSpace(pinnedId) || candidates.Count == 0)
+        if (string.IsNullOrWhiteSpace(pinnedId))
         {
             return candidates;
         }
 
+        // An empty post-filter ranking with a nonblank pin means the caller
+        // answered a prior turn with a selection that no longer exists — for
+        // example because the goal changed or authorization filtered the
+        // candidate out. Surface the same invalid_argument error the "id not
+        // in ranking" path raises instead of silently ignoring the choice.
         var matchIndex = -1;
         for (var i = 0; i < candidates.Count; i++)
         {

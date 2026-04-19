@@ -444,8 +444,10 @@ catalog discovery on top of the same authorization graph via
   optional `analysis` and `publishing` blocks per the drafted family.
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
-  published schema also marks `goal` as required, matching the server
-  mapper which rejects blank goals with `invalid_argument`. The tool
+  published schema also marks `goal` as required and requires at least
+  one entry in `answers` (`minProperties: 1`), matching the server
+  mapper which rejects blank goals and empty answer maps with
+  `invalid_argument`. The tool
   requires the same `(Catalog, Discover)` authorization grant as
   `honua_ground_candidates` — both halves of the grounding flow
   delegate to `IGroundingService.GroundAsync`, so asymmetric permissions

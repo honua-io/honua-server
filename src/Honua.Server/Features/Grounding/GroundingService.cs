@@ -272,7 +272,7 @@ internal sealed class GroundingService : IGroundingService
         var merged = new List<GroundingCandidate>(layerScores.Count + serviceScores.Count);
         merged.AddRange(layerScores);
         merged.AddRange(serviceScores);
-        merged.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+        merged.Sort(GroundingCandidateComparer.ByScoreDescending);
         return merged;
     }
 

@@ -245,4 +245,58 @@ public sealed class DeterministicGroundingEngineTests
         results.Should().NotBeEmpty();
         results[0].Id.Should().Be("Parcels");
     }
+
+    // -----------------------------------------------------------------------
+    // Deterministic tie-breakers — scores are rounded to 3 decimals before
+    // ranking, so equal-score candidates must fall back to an ordinal key so
+    // the published contract's deterministic ranking still holds.
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    public void ScoreLayers_WithTiedScores_SortsStablyByOrdinalIdForDeterminism()
+    {
+        var request = new GroundingRequest { Goal = "water" };
+        var layersForward = new List<LayerCandidate>
+        {
+            new(10, "water", null),
+            new(2, "water", null),
+            new(7, "water", null)
+        };
+        var layersReversed = new List<LayerCandidate>
+        {
+            new(7, "water", null),
+            new(10, "water", null),
+            new(2, "water", null)
+        };
+
+        var forward = _engine.ScoreLayers(request, layersForward);
+        var reversed = _engine.ScoreLayers(request, layersReversed);
+
+        forward.Select(c => c.Score).Should().OnlyContain(s => s == forward[0].Score);
+        forward.Select(c => c.Id).Should().Equal(reversed.Select(c => c.Id));
+    }
+
+    [UnitTest]
+    public void ScoreServices_WithTiedScores_SortsStablyByOrdinalIdForDeterminism()
+    {
+        var request = new GroundingRequest { Goal = "water" };
+        var servicesForward = new List<ServiceCandidate>
+        {
+            new("water-c", null),
+            new("water-a", null),
+            new("water-b", null)
+        };
+        var servicesReversed = new List<ServiceCandidate>
+        {
+            new("water-b", null),
+            new("water-c", null),
+            new("water-a", null)
+        };
+
+        var forward = _engine.ScoreServices(request, servicesForward);
+        var reversed = _engine.ScoreServices(request, servicesReversed);
+
+        forward.Select(c => c.Id).Should().Equal("water-a", "water-b", "water-c");
+        forward.Select(c => c.Id).Should().Equal(reversed.Select(c => c.Id));
+    }
 }

@@ -611,6 +611,39 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_ProcessSelectionAnswer_EmptyRefreshedRanking_Throws()
+    {
+        // Regression: if the refreshed ranking is empty (for example because
+        // the caller changed the goal and no process now matches), a pinned
+        // process id must not be silently ignored — the docs advertise an
+        // invalid_argument error on stale pins.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns([]);
+
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "xylophone quartz zebra",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["process.selection"] = ["geometry.buffer"]
+                    }
+                }
+            },
+            Principal);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*process.selection*");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_PublishTargetAnswer_AppliedToDraftedPublishIntent()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification

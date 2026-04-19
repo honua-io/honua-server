@@ -191,7 +191,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
             });
         }
 
-        results.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+        results.Sort(GroundingCandidateComparer.ByScoreDescending);
         return results;
     }
 
@@ -225,7 +225,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
             });
         }
 
-        results.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+        results.Sort(GroundingCandidateComparer.ByScoreDescending);
         return results;
     }
 
@@ -259,7 +259,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
             });
         }
 
-        results.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+        results.Sort(GroundingCandidateComparer.ByScoreDescending);
         return results;
     }
 
