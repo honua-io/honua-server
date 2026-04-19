@@ -441,14 +441,26 @@ grant receive a `permission_denied` error, matching the functional tools.
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
-| `honua://published-services` | `resources/list` | functional | Capped list of published services whose status is `Active` (serving requests), with summary fields and ETags. |
-| `honua://published-services/{serviceId}` | `resources/templates/list` | functional | Published-service record with provenance edges back to the originating intent, result package, and hosted deployments. |
-| `honua://deployments` | `resources/list` | functional | Capped list of deployments whose publication state is `Published` (currently routable), with source kind, target, and ETags. |
-| `honua://deployments/{deploymentId}` | `resources/templates/list` | functional | Deployment record including publication state, rollout state, runtime health, and the append-only transition audit trail. |
-| `honua://map-packages` | `resources/list` | functional | Capped list of map packages referenced by at least one currently-published deployment (reverse lookup). |
-| `honua://map-packages/{packageId}` | `resources/templates/list` | functional | Map-package surface derived from deployments that reference the package. Packages have no standalone store; the view is limited to provenance edges. |
-| `honua://app-packages` | `resources/list` | functional | Capped list of app packages referenced by at least one currently-published deployment (reverse lookup). |
-| `honua://app-packages/{packageId}` | `resources/templates/list` | functional | App-package surface derived from deployments that reference the package. |
+| `honua://published-services` | `resources/list` | contract stub | Handler wired; reads the registered `IPublishedServiceStore` and returns an empty list until canonical publishing persistence is registered. |
+| `honua://published-services/{serviceId}` | `resources/templates/list` | contract stub | Handler wired; returns `not_found` until canonical publishing persistence is registered. Payload shape is stable so clients can bind today. |
+| `honua://deployments` | `resources/list` | contract stub | Handler wired; reads the registered `IDeploymentStore` and returns an empty list until canonical deployment persistence is registered. |
+| `honua://deployments/{deploymentId}` | `resources/templates/list` | contract stub | Handler wired; returns `not_found` until canonical deployment persistence is registered. Payload shape is stable so clients can bind today. |
+| `honua://map-packages` | `resources/list` | contract stub | Handler wired (reverse lookup against the registered `IDeploymentStore`); returns an empty list until canonical deployment persistence is registered. |
+| `honua://map-packages/{packageId}` | `resources/templates/list` | contract stub | Handler wired; returns `not_found` until canonical deployment persistence is registered. Packages have no standalone store; the view is derived from deployments that reference the package. |
+| `honua://app-packages` | `resources/list` | contract stub | Handler wired (reverse lookup against the registered `IDeploymentStore`); returns an empty list until canonical deployment persistence is registered. |
+| `honua://app-packages/{packageId}` | `resources/templates/list` | contract stub | Handler wired; returns `not_found` until canonical deployment persistence is registered. |
+
+The promotion-surface resources follow the same `contract stub` pattern as
+`honua://workspaces/{workspaceId}`: the handler code, URIs, payload shapes,
+authorization, and telemetry are fixed so agents and `honua-devops-29` can
+integrate against the wire contract today. `AddMcpOperatorSurface` registers
+`InMemoryPublishedServiceStore`, `InMemoryPublishIntentStore`, and
+`InMemoryDeploymentStore` via `TryAddSingleton` so DI always resolves, but
+nothing in the current composition writes to those fallbacks — so list reads
+return empty and detail reads return `not_found` until a downstream ticket
+registers the canonical publishing / deployment persistence earlier in the
+composition root. When that lands, the fallback registrations become no-ops
+and the resources flip to `functional` without an API change.
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
 map-package artifact. The wire shape is stable so clients can bind today;
