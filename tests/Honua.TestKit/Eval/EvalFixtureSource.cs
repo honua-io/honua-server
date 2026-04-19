@@ -60,7 +60,9 @@ public sealed class SharedCorpusFixtureSource : IEvalFixtureSource
 
     /// <summary>
     /// Attempts to bind to the shared corpus via <see cref="CorpusPathEnvVar"/>. Returns
-    /// <c>null</c> when the env var is unset or the directory does not exist.
+    /// <c>null</c> only when the env var is unset or blank. Throws
+    /// <see cref="InvalidOperationException"/> when the env var points at a path that
+    /// does not exist or does not contain a resolvable seed file.
     /// </summary>
     public static SharedCorpusFixtureSource? TryCreate()
     {

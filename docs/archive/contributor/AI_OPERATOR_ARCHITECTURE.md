@@ -500,7 +500,7 @@ The evaluation suite should measure:
 
 Phase 1 of this strategy is implemented by the end-to-end operator eval harness
 in `tests/Honua.TestKit/Eval/` (see
-[TestKit → Operator Eval Harness](testkit.md#end-to-end-operator-eval-harness)).
+[TestKit → Operator Eval Harness](../../contributor/testkit.md#end-to-end-operator-eval-harness)).
 Scenarios declared under `tests/Eval/scenarios/` drive the canonical runtime
 and every protocol adapter through the deterministic stage model and emit a
 versioned `eval-report.json` that `honua-devops-31` consumes as the canonical

@@ -301,14 +301,17 @@ Claude and Codex evaluations should score:
 The deterministic assertions behind these scores are exercised by the
 end-to-end operator eval harness (`tests/Honua.TestKit/Eval/` plus scenarios
 in `tests/Eval/scenarios/`). Each scenario captures `AnalysisIntent`, compiles
-to an `AnalysisPlan`, validates and dry-runs the plan across gRPC / OGC API
-Processes / GeoServices GPServer, and asserts the expected outcome envelope
-(`isExecutable`, `requiresApproval`, `estimatedArtifactKinds`,
-`terminalWorkflowStatus`, `expectsMapPackage`, `expectsAppPackage`). Results
-are emitted as a versioned `eval-report.json`
+to an `AnalysisPlan`, runs canonical `ValidatePlan` and `DryRun` against the
+gRPC `ProcessService`, and cross-checks plan acceptance through protocol-parity
+probes over OGC API Processes and GeoServices GPServer. Phase 1 asserts the
+outcome envelope (`isExecutable`, `requiresApproval`, `estimatedArtifactKinds`).
+`terminalWorkflowStatus`, `expectsMapPackage`, and `expectsAppPackage` stay in
+the scenario contract for later execution/package stages, but they are not yet
+validated while those stages still report `Skipped`. Results are emitted as a
+versioned `eval-report.json`
 (`reportSchemaVersion = "1"`) so downstream automation can treat the harness
 as a stable gate. See the
-[TestKit Operator Eval Harness](../contributor/testkit.md#end-to-end-operator-eval-harness)
+[TestKit Operator Eval Harness](../../contributor/testkit.md#end-to-end-operator-eval-harness)
 section for scenario authoring and report contract details.
 
 ## Progress Tracking

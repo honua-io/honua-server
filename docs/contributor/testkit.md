@@ -385,9 +385,12 @@ reflection). Each scenario declares:
   outputs, `assumptionPolicy`)
 - `precompiledPlan` — shape of `AnalysisPlan` (steps, DAG edges, declared
   outputs) used in Phase 1 until the compile seam from #529/#723 lands
-- `expectedOutcome` — asserted `isExecutable`, `requiresApproval`,
-  `estimatedArtifactKinds`, `terminalWorkflowStatus`, and
-  `expectsMapPackage` / `expectsAppPackage` flags
+- `expectedOutcome` — Phase 1 currently asserts `isExecutable`,
+  `requiresApproval`, and `estimatedArtifactKinds`. It also carries forward
+  `terminalWorkflowStatus` plus `expectsMapPackage` / `expectsAppPackage` for
+  later execution/package assertions; today they are forward-declared and not
+  validated against runtime outputs yet (`expectsAppPackage` is the only one
+  that currently affects stage scoping)
 
 The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, the
 `tests/Eval/scenarios/` directory under `Honua.sln`, then the directory next to
@@ -401,12 +404,17 @@ the test binary.
 `ComposeAppPackage` → `PromoteDeployment`. Stages whose upstream capability is
 not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
-stages break the gate today.
+stages break the gate today. `SubmitPlanJob` also degrades to
+`Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
+which keeps local/dev runs honest instead of treating infrastructure gaps as
+contract failures.
 
 `ProtocolParity` cross-checks plan acceptance across gRPC and OGC API
 Processes, and it probes the GPServer `submitJob` surface separately. Because
 the GPServer adapter still lacks a formal task catalog binding, that probe is
 recorded as `Skipped(task-resolution-unavailable)` instead of a false `Passed`.
+When OGC execution cannot enqueue because Redis is unavailable, that probe is
+recorded as `Skipped(service-unavailable)` rather than `Failed`.
 Spans are emitted from the `Honua.Tests.Eval` `ActivitySource` (one span per
 scenario, one per stage).
 
