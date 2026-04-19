@@ -21,6 +21,9 @@ public static class EvalScenarioLoader
     ///   <item>Co-located scenarios under the solution's <c>tests/Eval/scenarios/</c> directory.</item>
     ///   <item>Co-located scenarios next to the test binary.</item>
     /// </list>
+    /// When <c>HONUA_EVAL_SCENARIO_ROOT</c> is set but the directory does not exist, the loader
+    /// fails closed with <see cref="EvalScenarioException"/> rather than falling back to the
+    /// bundled corpus, so a misconfigured override cannot mask a typoed path as a green run.
     /// </summary>
     public static EvalScenario LoadById(string scenarioId)
     {
@@ -91,8 +94,15 @@ public static class EvalScenarioLoader
     private static string? ResolveScenarioRoot()
     {
         var overrideRoot = Environment.GetEnvironmentVariable("HONUA_EVAL_SCENARIO_ROOT");
-        if (!string.IsNullOrWhiteSpace(overrideRoot) && Directory.Exists(overrideRoot))
+        if (!string.IsNullOrWhiteSpace(overrideRoot))
         {
+            if (!Directory.Exists(overrideRoot))
+            {
+                throw new EvalScenarioException(
+                    $"HONUA_EVAL_SCENARIO_ROOT is set to '{overrideRoot}' but the directory does not exist. " +
+                    "Fix the override or unset the variable to use the bundled scenario corpus.");
+            }
+
             return overrideRoot;
         }
 

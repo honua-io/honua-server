@@ -113,4 +113,29 @@ public sealed class EvalHarnessSupportTests
             tempDirectory.Delete(recursive: true);
         }
     }
+
+    [UnitTest]
+    [Operation(Operations.ContractTesting)]
+    public void EvalScenarioLoader_WithInvalidScenarioRootOverride_FailsClosed()
+    {
+        const string OverrideVariable = "HONUA_EVAL_SCENARIO_ROOT";
+        var original = Environment.GetEnvironmentVariable(OverrideVariable);
+        var missingDirectory = Path.Combine(Path.GetTempPath(), "honua-eval-missing-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable(OverrideVariable, missingDirectory);
+
+            var loadAct = () => EvalScenarioLoader.LoadById("analysis-buffer-places");
+            var discoverAct = () => EvalScenarioLoader.DiscoverScenarioIds();
+
+            loadAct.Should().Throw<EvalScenarioException>()
+                .WithMessage($"*{missingDirectory}*directory does not exist*");
+            discoverAct.Should().Throw<EvalScenarioException>()
+                .WithMessage($"*{missingDirectory}*directory does not exist*");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(OverrideVariable, original);
+        }
+    }
 }
