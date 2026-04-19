@@ -33,9 +33,9 @@ GroundingRequest (goal, optional hint, explicit inputs, assumption policy)
 │ GroundingService                                                     │
 │  1. Tokenize goal                                                    │
 │  2. Engine classification + candidate scoring                        │
-│  3. Apply confidence bands + MaxCandidatesPerKind cap                │
-│  4. IGroundingAuthorizationFilter — drop candidates the principal    │
+│  3. IGroundingAuthorizationFilter — drop candidates the principal    │
 │     cannot see (shares the IOperatorAuthorizationEvaluator graph)    │
+│  4. Apply confidence bands + MaxCandidatesPerKind cap                │
 │  5. MaterialAmbiguityEvaluator — emit findings per ADR-0027          │
 │  6. IntentDrafter — shape the typed DraftIntent                      │
 │  7. Synthesise Clarification envelope from findings (if any)         │

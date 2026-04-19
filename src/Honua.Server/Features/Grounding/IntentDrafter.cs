@@ -188,9 +188,21 @@ internal static class IntentDrafter
             processIds.Add(process.Id);
         }
 
-        IReadOnlyList<string> answered = clarificationsAnswered.Count == 0
-            ? []
-            : clarificationsAnswered as IReadOnlyList<string> ?? clarificationsAnswered.ToArray();
+        // Applied question ids arrive here from a HashSet whose enumeration
+        // order is not guaranteed — sort ordinally so `clarificationsAnswered`
+        // is deterministic for the "fixed request + catalog snapshot"
+        // contract documented in docs/developer/GROUNDING.md.
+        IReadOnlyList<string> answered;
+        if (clarificationsAnswered.Count == 0)
+        {
+            answered = [];
+        }
+        else
+        {
+            var buffer = clarificationsAnswered.ToArray();
+            Array.Sort(buffer, StringComparer.Ordinal);
+            answered = buffer;
+        }
 
         return new ProvenanceRecord
         {

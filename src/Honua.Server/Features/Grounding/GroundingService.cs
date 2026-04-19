@@ -111,11 +111,13 @@ internal sealed class GroundingService : IGroundingService
 
         // 2. Rank processes against the frozen process catalog. The catalog
         // is a singleton and contains the deterministic 20-process roster;
-        // no IO is required here.
+        // no IO is required here. Authorization runs before the shortlist
+        // cap so denied top hits cannot consume the MaxCandidatesPerKind
+        // budget and hide an authorized candidate ranked just below them.
         var processes = _processCatalog.ListProcesses();
         var processCandidates = _engine.ScoreProcesses(request, processes);
-        processCandidates = ApplyBandsAndCap(processCandidates);
         processCandidates = _authorizationFilter.Filter(principal, processCandidates);
+        processCandidates = ApplyBandsAndCap(processCandidates);
         processCandidates = ClarificationAnswerResolver.ApplyPin(
             processCandidates, applied.PinnedProcessId, "process.selection", appliedIds);
 
@@ -123,10 +125,11 @@ internal sealed class GroundingService : IGroundingService
         // deployments (e.g. read-only raster servers, pre-provisioning test
         // harnesses) may not have it wired. Missing catalog → empty dataset
         // list rather than a hard failure; the clarification envelope will
-        // prompt for explicit inputs.
+        // prompt for explicit inputs. Authorization runs before the shortlist
+        // cap for the same reason as processes above.
         var datasetCandidates = await RankDatasetsAsync(request, cancellationToken).ConfigureAwait(false);
-        datasetCandidates = ApplyBandsAndCap(datasetCandidates);
         datasetCandidates = _authorizationFilter.Filter(principal, datasetCandidates);
+        datasetCandidates = ApplyBandsAndCap(datasetCandidates);
         datasetCandidates = ClarificationAnswerResolver.ApplyPin(
             datasetCandidates, applied.PinnedDatasetId, "dataset.selection", appliedIds);
 

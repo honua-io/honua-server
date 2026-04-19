@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Grounding.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Grounding;
 
@@ -28,6 +29,8 @@ internal static class GroundingServiceCollectionExtensions
             .AddOptions<GroundingOptions>()
             .Bind(configuration.GetSection(GroundingOptions.SectionName))
             .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<GroundingOptions>, GroundingOptionsValidator>());
 
         services.TryAddSingleton<IGroundingEngine, DeterministicGroundingEngine>();
         services.TryAddSingleton<IGroundingAuthorizationFilter, OperatorGroundingAuthorizationFilter>();

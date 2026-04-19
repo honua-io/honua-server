@@ -165,6 +165,35 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_AuthorizationRunsBeforeShortlistCap_SoDeniedTopHitsDoNotHideAllowedCandidates()
+    {
+        // Regression: ApplyBandsAndCap must run after the authorization filter,
+        // or denied top hits consume the MaxCandidatesPerKind budget and hide
+        // an authorized candidate ranked just below the cap.
+        _options.MaxCandidatesPerKind = 2;
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns(
+            [
+                Candidate("denied-1", 0.95, CandidateKind.Process),
+                Candidate("denied-2", 0.90, CandidateKind.Process),
+                Candidate("allowed-below-cap", 0.80, CandidateKind.Process)
+            ]);
+        _authorizationFilter.Filter(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>())
+            .Returns(callInfo =>
+                callInfo.Arg<IReadOnlyList<GroundingCandidate>>()
+                    .Where(c => !c.Id.StartsWith("denied", StringComparison.Ordinal))
+                    .ToList());
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(new GroundingRequest { Goal = "buffer" }, Principal);
+
+        result.Candidates.Processes.Should().ContainSingle()
+            .Which.Id.Should().Be("allowed-below-cap");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_ProbesOnlyTopProcessCandidateForRequiredParameters()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);

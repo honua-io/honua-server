@@ -231,6 +231,38 @@ public sealed class IntentDrafterTests
             .Which.Should().Be("srid=4326 (default)");
     }
 
+    [UnitTest]
+    public void Draft_ClarificationsAnswered_AreSortedOrdinallyEvenWhenInputIsAHashSet()
+    {
+        // Regression: GroundingService passes a HashSet of applied question
+        // ids into the drafter. HashSet enumeration order is unspecified, so
+        // the drafter must sort before assigning ProvenanceRecord.ClarificationsAnswered
+        // to honour the "fixed request + catalog snapshot" determinism contract
+        // documented in docs/developer/GROUNDING.md.
+        var unsortedAnswers = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "publish.target",
+            "workflow_family",
+            "param.distance",
+            "dataset.selection"
+        };
+
+        var draft = IntentDrafter.Draft(
+            new GroundingRequest { Goal = "Buffer the parcels" },
+            intentId: "intent-stable",
+            classification: Classification(WorkflowFamily.Analyze, 0.9),
+            candidates: new CandidateRanking(),
+            clarificationQuestionIds: [],
+            clarificationsAnswered: unsortedAnswers,
+            assumptions: []);
+
+        draft.Provenance.ClarificationsAnswered.Should().ContainInOrder(
+            "dataset.selection",
+            "param.distance",
+            "publish.target",
+            "workflow_family");
+    }
+
     private static WorkflowFamilyClassification Classification(WorkflowFamily family, double confidence) => new()
     {
         Value = family,
