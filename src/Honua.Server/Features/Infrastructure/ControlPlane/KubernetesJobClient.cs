@@ -70,6 +70,14 @@ internal sealed record KubernetesJobDeleteResult
     /// True when the API server reported that the Job was already gone.
     /// </summary>
     public bool NotFound => StatusCode == HttpStatusCode.NotFound;
+
+    /// <summary>
+    /// Job status as it existed at deletion time, when the API server returns a
+    /// Job body rather than a bare <c>Status</c> kind. The adapter uses this to
+    /// preserve <c>Succeeded</c>/<c>Failed</c> outcomes that occur between the
+    /// pre-delete observation and the delete request itself.
+    /// </summary>
+    public KubernetesJobStatusSnapshot? Snapshot { get; init; }
 }
 
 /// <summary>
@@ -230,7 +238,17 @@ internal sealed partial class KubernetesJobClient(
             await ThrowApiErrorAsync(response, "delete Job", cancellationToken).ConfigureAwait(false);
         }
 
-        return new KubernetesJobDeleteResult { StatusCode = response.StatusCode };
+        // Kubernetes may return either the Job object or a bare Status kind on DELETE.
+        // When the body represents the Job, ParseJobStatus reads its terminal conditions
+        // so the adapter can preserve Succeeded/Failed outcomes that occurred between
+        // the pre-delete GET and this DELETE. A Status body yields an empty snapshot
+        // (no conditions, no pod counts) which the caller treats as non-terminal.
+        var snapshot = await TryParseJobResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        return new KubernetesJobDeleteResult
+        {
+            StatusCode = response.StatusCode,
+            Snapshot = snapshot
+        };
     }
 
     public async Task<IReadOnlyList<KubernetesPodStatusSnapshot>> ListPodsAsync(
@@ -375,6 +393,24 @@ internal sealed partial class KubernetesJobClient(
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return KubernetesJobManifestSerializer.ParseJobStatus(document.RootElement);
+    }
+
+    // DELETE responses can be either a Job body or a bare Status kind; the latter
+    // parses cleanly but has no Job-specific fields, and some clusters send empty
+    // or non-JSON bodies. Swallow parse failures so a malformed tail does not mask
+    // a successful delete.
+    private static async Task<KubernetesJobStatusSnapshot?> TryParseJobResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ParseJobResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task ThrowApiErrorAsync(

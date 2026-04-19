@@ -30,6 +30,11 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     internal const string BackendId = "honua-kubernetes-job";
 
     private const string OperationIdLabel = "honua.io/operation-id";
+    // Mirrors the raw OperationId into an annotation when label sanitization drops or
+    // rewrites characters so operators can still trace a Job back to its canonical
+    // OperationId value (labels cap at 63 chars and allow only
+    // [a-z0-9._-], while annotations accept any UTF-8).
+    private const string OperationIdAnnotation = "honua.io/operation-id-original";
     private const string WorkloadLabel = "honua.io/workload";
     private const string WorkloadKindLabel = "honua.io/workload-kind";
     private const string ManagedByLabel = "app.kubernetes.io/managed-by";
@@ -150,7 +155,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 var pods = await jobClient
                     .ListPodsAsync(
                         namespaceName,
-                        $"{OperationIdLabel}={job.OperationId}",
+                        BuildOperationIdSelector(job.OperationId),
                         cancellationToken)
                     .ConfigureAwait(false);
                 message = BuildFailureMessage(snapshot, pods);
@@ -223,6 +228,24 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
             var result = await jobClient.DeleteJobAsync(namespaceName, jobName, cancellationToken)
                 .ConfigureAwait(false);
+
+            // The Job may have transitioned to Succeeded/Failed in the window between
+            // the pre-delete GET and this DELETE. The Kubernetes API returns the Job
+            // object at deletion time, so use its status conditions (when provided) to
+            // preserve any terminal outcome the race missed.
+            if (!result.NotFound && result.Snapshot is { } deleteSnapshot)
+            {
+                var postDelete = await BuildTerminalObservationFromSnapshotAsync(
+                        job, namespaceName, deleteSnapshot, cancellationToken)
+                    .ConfigureAwait(false);
+                if (postDelete != null)
+                {
+                    ControlPlaneTelemetry.RecordExecutionRequest(
+                        job, "cancel", postDelete.Status.ToString().ToLowerInvariant() + "_race");
+                    return postDelete;
+                }
+            }
+
             var message = result.NotFound
                 ? "Kubernetes Job was already absent; treating as cancelled."
                 : $"Requested cascade deletion of Kubernetes Job {namespaceName}/{jobName}.";
@@ -263,7 +286,17 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             return null;
         }
 
-        var snapshot = fetch.Snapshot;
+        return await BuildTerminalObservationFromSnapshotAsync(
+                job, namespaceName, fetch.Snapshot, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<BatchComputeObservation?> BuildTerminalObservationFromSnapshotAsync(
+        ExecutionJobRecord job,
+        string namespaceName,
+        KubernetesJobStatusSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
         var observed = MapStatus(snapshot, job.Status);
         if (observed is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed))
         {
@@ -276,7 +309,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             var pods = await jobClient
                 .ListPodsAsync(
                     namespaceName,
-                    $"{OperationIdLabel}={job.OperationId}",
+                    BuildOperationIdSelector(job.OperationId),
                     cancellationToken)
                 .ConfigureAwait(false);
             message = BuildFailureMessage(snapshot, pods);
@@ -349,10 +382,11 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var ns = ResolveNamespace(job, snapshot);
         var name = BuildJobName(job.OperationId);
 
+        var operationIdLabel = BuildOperationIdLabelValue(job.OperationId);
         var labels = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [ManagedByLabel] = ManagedByValue,
-            [OperationIdLabel] = job.OperationId,
+            [OperationIdLabel] = operationIdLabel,
             [WorkloadKindLabel] = job.Spec.Kind.ToString().ToLowerInvariant()
         };
         if (!string.IsNullOrWhiteSpace(job.Spec.WorkloadName))
@@ -361,6 +395,13 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         }
 
         var annotations = new Dictionary<string, string>(StringComparer.Ordinal);
+        // Preserve the original OperationId whenever sanitization changed it so
+        // operators can still join Kubernetes objects to canonical records.
+        if (!string.Equals(operationIdLabel, job.OperationId, StringComparison.Ordinal))
+        {
+            annotations[OperationIdAnnotation] = job.OperationId;
+        }
+
         if (!string.IsNullOrWhiteSpace(job.Audit.CorrelationId))
         {
             annotations["honua.io/correlation-id"] = job.Audit.CorrelationId!;
@@ -547,6 +588,18 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
         return candidate;
     }
+
+    // Kubernetes label values must match DNS-1123 (ascii letter/digit/./-, up to 63
+    // chars, trimmed edges). Raw OperationIds can contain characters outside that
+    // alphabet (slashes, underscores, longer than 63), so sanitize consistently
+    // whenever the value is written as a label or used in a label selector. The
+    // original value is preserved in an annotation via BuildManifest when the
+    // sanitization mutates it.
+    internal static string BuildOperationIdLabelValue(string operationId)
+        => SanitizeLabelValue(operationId);
+
+    internal static string BuildOperationIdSelector(string operationId)
+        => $"{OperationIdLabel}={BuildOperationIdLabelValue(operationId)}";
 
     internal static string SanitizeLabelValue(string value)
     {

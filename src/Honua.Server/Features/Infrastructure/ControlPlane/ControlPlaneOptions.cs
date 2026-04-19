@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
@@ -308,14 +310,49 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
             failures.Add($"{prefix}:ApiServerUrl must be configured when InClusterAutoDetect is disabled.");
         }
 
-        if (!string.IsNullOrWhiteSpace(options.CaBundlePath) && !File.Exists(options.CaBundlePath))
+        if (!string.IsNullOrWhiteSpace(options.CaBundlePath))
         {
-            failures.Add($"{prefix}:CaBundlePath '{options.CaBundlePath}' does not exist or is unreadable.");
+            if (!File.Exists(options.CaBundlePath))
+            {
+                failures.Add($"{prefix}:CaBundlePath '{options.CaBundlePath}' does not exist or is unreadable.");
+            }
+            else
+            {
+                ValidateCaBundleContents(options.CaBundlePath!, prefix, failures);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(options.BearerTokenPath) && !File.Exists(options.BearerTokenPath))
         {
             failures.Add($"{prefix}:BearerTokenPath '{options.BearerTokenPath}' does not exist or is unreadable.");
+        }
+    }
+
+    // Empty/malformed PEM files otherwise pass existence-only validation and then
+    // silently fall back to the OS trust store at runtime
+    // (KubernetesJobClient.CreatePrimaryHandler swallows import exceptions), which
+    // masks a misconfiguration as TLS failures against private-CA clusters. Fail
+    // startup so the operator is told upfront.
+    private static void ValidateCaBundleContents(string path, string prefix, List<string> failures)
+    {
+        try
+        {
+            var collection = new X509Certificate2Collection();
+            collection.ImportFromPemFile(path);
+            if (collection.Count == 0)
+            {
+                failures.Add(
+                    $"{prefix}:CaBundlePath '{path}' does not contain any PEM-encoded certificates.");
+            }
+        }
+        catch (CryptographicException ex)
+        {
+            failures.Add(
+                $"{prefix}:CaBundlePath '{path}' is not a valid PEM certificate bundle: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            failures.Add($"{prefix}:CaBundlePath '{path}' could not be read: {ex.Message}");
         }
     }
 }

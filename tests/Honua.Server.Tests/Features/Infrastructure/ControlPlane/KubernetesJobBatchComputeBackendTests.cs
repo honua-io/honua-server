@@ -440,6 +440,117 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task CancelAsync_JobCompletesBetweenGetAndDelete_PreservesSucceeded()
+    {
+        // Race: the pre-delete GET sees the Job still running, but the pod finishes
+        // before the DELETE is processed. Kubernetes returns the Job body on DELETE
+        // with the Complete condition set; the adapter must honor that terminal state
+        // rather than downgrade it to Cancelled.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-still-running", Active = 1 }
+            });
+        client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-completed-in-window",
+                    Succeeded = 1,
+                    CompleteCondition = true
+                }
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancel-win-success", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        observation.PercentComplete.Should().Be(100d);
+        observation.ProviderOperationId.Should().Be("uid-completed-in-window");
+    }
+
+    [Fact]
+    public async Task CancelAsync_JobFailsBetweenGetAndDelete_PreservesFailedWithPodDetail()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-still-running", Active = 1 }
+            });
+        client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-failed-in-window",
+                    Failed = 1,
+                    FailedCondition = true,
+                    TerminalReason = "BackoffLimitExceeded"
+                }
+            });
+        client.ListPodsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<KubernetesPodStatusSnapshot>
+            {
+                new()
+                {
+                    Name = "pod-delete-race",
+                    Phase = "Failed",
+                    ContainerTerminationMessage = "worker exited in delete window",
+                    ContainerExitCode = 137
+                }
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancel-win-fail", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("worker exited in delete window");
+        observation.ProviderOperationId.Should().Be("uid-failed-in-window");
+    }
+
+    [Fact]
+    public async Task CancelAsync_DeleteReturnsStatusBody_StillReportsCancelled()
+    {
+        // Some clusters return a bare v1.Status on DELETE instead of the Job body.
+        // ParseJobStatus on that yields a zero snapshot that MapStatus classifies as
+        // non-terminal, so the adapter must still commit the Cancelled outcome.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-live", Active = 1 }
+            });
+        client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                // Empty snapshot simulates a v1.Status body where no job-status
+                // fields parsed through successfully.
+                Snapshot = new KubernetesJobStatusSnapshot()
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancel-status", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        observation.Message.Should().Contain("cascade deletion");
+    }
+
+    [Fact]
     public async Task CancelAsync_HttpFailure_PreservesCurrentStatus()
     {
         var client = Substitute.For<IKubernetesJobClient>();
@@ -531,6 +642,98 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         manifest.Name.Length.Should().BeLessThanOrEqualTo(63);
         manifest.Name.Should().StartWith("honua-");
+    }
+
+    [Fact]
+    public void BuildManifest_LongOperationId_ProducesLabelSafeValueAndPreservesRawInAnnotation()
+    {
+        // Labels cap at 63 chars and only allow [a-z0-9._-]; selectors pick up the same
+        // value. Long/non-label-safe OperationIds must sanitize consistently and keep
+        // the raw value in an annotation so operators can still trace Kubernetes
+        // resources back to the canonical OperationId.
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>());
+        var longId = new string('a', 120);
+        var job = CreateJob(longId, image: "honua/worker:1.0.0");
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        manifest.Labels.Should().ContainKey("honua.io/operation-id");
+        var labelValue = manifest.Labels["honua.io/operation-id"];
+        labelValue.Length.Should().BeLessThanOrEqualTo(63);
+        labelValue.Should().MatchRegex("^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$");
+        manifest.Annotations.Should().ContainKey("honua.io/operation-id-original");
+        manifest.Annotations["honua.io/operation-id-original"].Should().Be(longId);
+    }
+
+    [Fact]
+    public void BuildManifest_OperationIdWithInvalidCharacters_SanitizesLabelAndKeepsOriginal()
+    {
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>());
+        var job = CreateJob("Job/With Slash_Chars", image: "honua/worker:1.0.0");
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        var labelValue = manifest.Labels["honua.io/operation-id"];
+        labelValue.Should().Be("job-with-slash-chars");
+        manifest.Annotations["honua.io/operation-id-original"].Should().Be("Job/With Slash_Chars");
+    }
+
+    [Fact]
+    public void BuildManifest_AlreadyLabelSafeOperationId_DoesNotEmitOriginalAnnotation()
+    {
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>());
+        var job = CreateJob("job-already-safe", image: "honua/worker:1.0.0");
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        manifest.Labels["honua.io/operation-id"].Should().Be("job-already-safe");
+        manifest.Annotations.Should().NotContainKey("honua.io/operation-id-original");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_FailedJobWithLongOperationId_UsesSanitizedSelector()
+    {
+        // The pod selector used to surface container-termination detail must match the
+        // label value written at submission; a raw OperationId selector against a
+        // sanitized label value returns zero pods and strips the failure context.
+        var longId = new string('a', 120);
+        var expectedSelector = "honua.io/operation-id=" + new string('a', 63);
+
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-long",
+                    Failed = 1,
+                    FailedCondition = true,
+                    TerminalReason = "BackoffLimitExceeded"
+                }
+            });
+        client.ListPodsAsync(Arg.Any<string>(), expectedSelector, Arg.Any<CancellationToken>())
+            .Returns(new List<KubernetesPodStatusSnapshot>
+            {
+                new()
+                {
+                    Name = "pod-long",
+                    Phase = "Failed",
+                    ContainerTerminationMessage = "long-id pod exit"
+                }
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob(longId, image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("long-id pod exit");
+        await client.Received(1).ListPodsAsync(
+            Arg.Any<string>(),
+            expectedSelector,
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
