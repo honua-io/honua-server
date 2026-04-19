@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit;
@@ -549,6 +550,16 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
                     j.CancellationRequestedAt.HasValue &&
                     j.Status == ExecutionJobStatus.Running),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+
+            // Progress store must receive the nonterminal observation so clients polling
+            // the progress projection see "Cancellation pending" immediately after dismiss.
+            await progressStore.Received().SetProgressAsync(
+                JobId,
+                Arg.Is<GeoprocessingProgress>(p =>
+                    p.CurrentPhase == "Cancellation pending" &&
+                    p.WorkflowStatus == GeoprocessingWorkflowStatus.Running),
+                Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>());
         }
         finally

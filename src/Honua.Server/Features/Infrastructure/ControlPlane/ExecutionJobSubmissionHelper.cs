@@ -130,7 +130,7 @@ internal static partial class ExecutionJobSubmissionHelper
     /// Bridges geoprocessing progress when a backend submission returns a terminal status
     /// synchronously, before the job drops out of the active index.
     /// </summary>
-    public static async Task BridgeTerminalSubmissionProgressAsync(
+    public static Task BridgeTerminalSubmissionProgressAsync(
         IUniversalProgressStore progressStore,
         ExecutionJobRecord job,
         TimeSpan retention,
@@ -139,9 +139,25 @@ internal static partial class ExecutionJobSubmissionHelper
     {
         if (!ExecutionJobReconciler.IsTerminal(job.Status))
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        return BridgeExecutionJobProgressAsync(progressStore, job, retention, logger, cancellationToken);
+    }
+
+    /// <summary>
+    /// Bridges an execution-job record into the universal progress projection regardless
+    /// of terminal state. Use this after persisting any nonterminal observation (e.g., a
+    /// remote backend reporting "Cancellation pending") so admin progress clients can
+    /// observe the phase change without waiting for the reconciler.
+    /// </summary>
+    public static async Task BridgeExecutionJobProgressAsync(
+        IUniversalProgressStore progressStore,
+        ExecutionJobRecord job,
+        TimeSpan retention,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default)
+    {
         try
         {
             var existing = await progressStore
@@ -160,7 +176,7 @@ internal static partial class ExecutionJobSubmissionHelper
         {
             if (logger != null)
             {
-                Log.TerminalProgressBridgeFailed(logger, job.OperationId, ex);
+                Log.ExecutionJobProgressBridgeFailed(logger, job.OperationId, ex);
             }
         }
     }
@@ -170,7 +186,7 @@ internal static partial class ExecutionJobSubmissionHelper
         [LoggerMessage(9040, LogLevel.Warning, "Post-start CAS conflict for execution job {OperationId}: returning authoritative store record")]
         public static partial void PostStartCasConflict(ILogger logger, string operationId);
 
-        [LoggerMessage(9041, LogLevel.Warning, "Failed to bridge terminal submission progress for execution job {OperationId}")]
-        public static partial void TerminalProgressBridgeFailed(ILogger logger, string operationId, Exception exception);
+        [LoggerMessage(9041, LogLevel.Warning, "Failed to bridge execution-job progress for {OperationId}")]
+        public static partial void ExecutionJobProgressBridgeFailed(ILogger logger, string operationId, Exception exception);
     }
 }

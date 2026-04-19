@@ -808,6 +808,11 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
                     j.Status == ExecutionJobStatus.Running),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>());
+
+            var polled = await progressStore.GetProgressAsync<GeoprocessingProgress>(operationId);
+            polled.Should().NotBeNull();
+            polled!.CurrentPhase.Should().Be("Cancellation pending");
+            polled.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Running);
         }
         finally
         {

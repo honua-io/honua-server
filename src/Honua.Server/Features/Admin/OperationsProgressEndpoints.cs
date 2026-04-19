@@ -710,9 +710,10 @@ internal static partial class OperationsProgressEndpoints
                     if (ExecutionJobCancellationHelper.IsTerminal(updated.Status))
                     {
                         await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
-                        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                            progressStore, updated, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
                     }
+
+                    await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
+                        progressStore, updated, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     if (updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
                     {

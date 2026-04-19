@@ -773,7 +773,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+        await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
             _progressStore, updated, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed

@@ -1254,6 +1254,16 @@ public sealed class GeoprocessingJobServiceTests
                 job.Status == ExecutionJobStatus.Running),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+
+        // Progress store must receive the nonterminal observation so admin /operations polling
+        // reflects "Cancellation pending" without waiting for the reconciler.
+        await _progressStore.Received().SetProgressAsync(
+            "job-1",
+            Arg.Is<GeoprocessingProgress>(p =>
+                p.CurrentPhase == "Cancellation pending" &&
+                p.WorkflowStatus == GeoprocessingWorkflowStatus.Running),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
