@@ -89,6 +89,17 @@ public sealed class AzureBatchDataPlaneClientTests
         outputs.GetArrayLength().Should().BeGreaterOrEqualTo(2);
         outputs[0].GetProperty("destination").GetProperty("container").GetProperty("containerUrl").GetString()
             .Should().StartWith("https://acct.blob.core.windows.net/artifacts");
+
+        // Azure Batch wildcard output paths prepend to each blob name, so the per-job id
+        // must appear in both destinations to prevent same-named files (stdout.txt,
+        // stderr.txt, repeated artifacts) from overwriting across jobs when the SAS points
+        // at a shared container.
+        foreach (var output in outputs.EnumerateArray())
+        {
+            var path = output.GetProperty("destination").GetProperty("container").GetProperty("path").GetString();
+            path.Should().Contain(submission.JobId,
+                "wildcard Azure Batch output uploads must namespace by job id to avoid container-level blob collisions");
+        }
     }
 
     [Theory]

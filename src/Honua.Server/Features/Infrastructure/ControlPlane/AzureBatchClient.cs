@@ -649,9 +649,13 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
 
         if (!string.IsNullOrWhiteSpace(submission.OutputContainerUrl))
         {
+            // Azure Batch wildcard uploads prepend `path` to each matched blob name. A
+            // container-level SAS shared across jobs means literal prefixes like "stdlogs"
+            // or "artifacts" would collide on the common stdout.txt/stderr.txt names across
+            // jobs. Namespace by JobId to keep uploads disambiguated per task.
             writer.WriteStartArray("outputFiles");
-            WriteOutputFileEntry(writer, "../std*.txt", submission.OutputContainerUrl!, "stdlogs");
-            WriteOutputFileEntry(writer, "$AZ_BATCH_TASK_DIR/wd/**/*", submission.OutputContainerUrl!, "artifacts");
+            WriteOutputFileEntry(writer, "../std*.txt", submission.OutputContainerUrl!, $"{submission.JobId}/stdlogs");
+            WriteOutputFileEntry(writer, "$AZ_BATCH_TASK_DIR/wd/**/*", submission.OutputContainerUrl!, $"{submission.JobId}/artifacts");
             writer.WriteEndArray();
         }
 
