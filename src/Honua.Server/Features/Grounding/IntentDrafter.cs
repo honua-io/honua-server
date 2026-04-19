@@ -71,15 +71,15 @@ internal static class IntentDrafter
         GroundingRequest request,
         string intentId,
         IReadOnlyList<ArtifactKind> requestedOutputs) => new()
-    {
-        IntentId = intentId,
-        Goal = request.Goal,
-        Mode = request.WorkflowFamilyHint.HasValue ? "analysis" : null,
-        RequestedOutputs = requestedOutputs,
-        Constraints = request.Constraints,
-        Inputs = request.ExplicitInputs,
-        AssumptionPolicy = request.AssumptionPolicy
-    };
+        {
+            IntentId = intentId,
+            Goal = request.Goal,
+            Mode = request.WorkflowFamilyHint.HasValue ? "analysis" : null,
+            RequestedOutputs = requestedOutputs,
+            Constraints = request.Constraints,
+            Inputs = request.ExplicitInputs,
+            AssumptionPolicy = request.AssumptionPolicy
+        };
 
     private static PublishIntent? BuildPublishIntent(
         GroundingRequest request,
