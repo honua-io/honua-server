@@ -254,7 +254,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
-    public async Task ObserveAsync_JobDisappeared_TreatsAsFailedWhenNotSucceeded()
+    public async Task ObserveAsync_JobDisappeared_TreatsAsFailedWhenNotTerminal()
     {
         var client = Substitute.For<IKubernetesJobClient>();
         client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -267,6 +267,37 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         observation.Status.Should().Be(ExecutionJobStatus.Failed);
         observation.Message.Should().Contain("no longer present");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_JobDisappeared_PreservesSucceededAfterTtlCleanup()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-ttl", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Succeeded);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        observation.Message.Should().Contain("cleaned up");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_JobDisappeared_PreservesCancelledTerminalState()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancelled", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Cancelled);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
     }
 
     [Fact]
@@ -430,6 +461,101 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
 
         manifest.ActiveDeadlineSeconds.Should().Be(7200);
+    }
+
+    [Fact]
+    public void BuildManifest_ExplicitTtlBelowMinimum_IsClampedToSafeFloor()
+    {
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>(), new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            DefaultTtlSecondsAfterFinished = 3600
+        });
+        var job = CreateJob("job-ttl-clamp", image: "honua/worker:1.0.0") with
+        {
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = KubernetesJobBatchComputeBackend.BackendId,
+                WorkloadId = "wl",
+                WorkloadName = "workload",
+                Artifact = "honua/worker:1.0.0",
+                Parameters = new Dictionary<string, string>
+                {
+                    [KubernetesJobParameterKeys.TtlSecondsAfterFinished] = "0"
+                }
+            }
+        };
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        manifest.TtlSecondsAfterFinished.Should().Be(KubernetesJobBatchComputeBackend.MinimumTtlSecondsAfterFinished);
+    }
+
+    [Fact]
+    public void BuildManifest_DefaultTtlBelowMinimum_IsClampedToSafeFloor()
+    {
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>(), new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            DefaultTtlSecondsAfterFinished = 5
+        });
+        var job = CreateJob("job-ttl-default", image: "honua/worker:1.0.0");
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        manifest.TtlSecondsAfterFinished.Should().Be(KubernetesJobBatchComputeBackend.MinimumTtlSecondsAfterFinished);
+    }
+
+    [Fact]
+    public void BuildManifest_NullDefaultTtl_RemainsNull()
+    {
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>(), new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "default",
+            DefaultTtlSecondsAfterFinished = null
+        });
+        var job = CreateJob("job-ttl-null", image: "honua/worker:1.0.0");
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        manifest.TtlSecondsAfterFinished.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ObserveAsync_NoNamespaceConfigured_FallsBackToDefault()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync("default", "honua-job-observe-default", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-default", Active = 1 }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions { DefaultNamespace = null });
+        var job = CreateJob("job-observe-default", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Provisioning);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running);
+        observation.ProviderOperationId.Should().Be("uid-default");
+        await client.Received(1).GetJobAsync("default", "honua-job-observe-default", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CancelAsync_NoNamespaceConfigured_FallsBackToDefault()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.DeleteJobAsync("default", "honua-job-cancel-default", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.OK });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions { DefaultNamespace = null });
+        var job = CreateJob("job-cancel-default", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        await client.Received(1).DeleteJobAsync("default", "honua-job-cancel-default", Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -119,35 +119,16 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
             ControlPlaneTelemetry.Activities.ExecutionObserve, job);
 
-        var coordinates = ResolveCoordinates(job);
-        if (coordinates == null)
-        {
-            ControlPlaneTelemetry.RecordExecutionRequest(job, "observe", "unresolved");
-            return new BatchComputeObservation
-            {
-                Status = job.Status,
-                ProviderOperationId = job.ProviderOperationId,
-                PercentComplete = job.PercentComplete,
-                Message = job.CurrentPhase
-            };
-        }
+        var (namespaceName, jobName) = ResolveCoordinates(job);
 
         try
         {
-            var fetch = await jobClient.GetJobAsync(coordinates.Value.Namespace, coordinates.Value.Name, cancellationToken)
+            var fetch = await jobClient.GetJobAsync(namespaceName, jobName, cancellationToken)
                 .ConfigureAwait(false);
             if (fetch.NotFound || fetch.Snapshot == null)
             {
                 ControlPlaneTelemetry.RecordExecutionRequest(job, "observe", "not_found");
-                return new BatchComputeObservation
-                {
-                    Status = job.Status == ExecutionJobStatus.Succeeded
-                        ? ExecutionJobStatus.Succeeded
-                        : ExecutionJobStatus.Failed,
-                    ProviderOperationId = job.ProviderOperationId,
-                    PercentComplete = job.PercentComplete,
-                    Message = "Kubernetes Job is no longer present on the cluster."
-                };
+                return BuildObservationForMissingJob(job);
             }
 
             var snapshot = fetch.Snapshot;
@@ -158,7 +139,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             {
                 var pods = await jobClient
                     .ListPodsAsync(
-                        coordinates.Value.Namespace,
+                        namespaceName,
                         $"{OperationIdLabel}={job.OperationId}",
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -188,7 +169,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         }
         catch (Exception ex) when (IsTransportOrConfigFailure(ex))
         {
-            Log.ObservationFailed(logger, job.OperationId, coordinates.Value.Namespace, coordinates.Value.Name, ex);
+            Log.ObservationFailed(logger, job.OperationId, namespaceName, jobName, ex);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             ControlPlaneTelemetry.RecordExecutionRequest(job, "observe", ClassifyFailure(ex));
             return new BatchComputeObservation
@@ -210,26 +191,15 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
             ControlPlaneTelemetry.Activities.ExecutionCancel, job);
 
-        var coordinates = ResolveCoordinates(job);
-        if (coordinates == null)
-        {
-            ControlPlaneTelemetry.RecordExecutionRequest(job, "cancel", "unresolved");
-            return new BatchComputeObservation
-            {
-                Status = ExecutionJobStatus.Cancelled,
-                ProviderOperationId = job.ProviderOperationId,
-                PercentComplete = job.PercentComplete,
-                Message = "Cancelled before a Kubernetes Job could be resolved."
-            };
-        }
+        var (namespaceName, jobName) = ResolveCoordinates(job);
 
         try
         {
-            var result = await jobClient.DeleteJobAsync(coordinates.Value.Namespace, coordinates.Value.Name, cancellationToken)
+            var result = await jobClient.DeleteJobAsync(namespaceName, jobName, cancellationToken)
                 .ConfigureAwait(false);
             var message = result.NotFound
                 ? "Kubernetes Job was already absent; treating as cancelled."
-                : $"Requested cascade deletion of Kubernetes Job {coordinates.Value.Namespace}/{coordinates.Value.Name}.";
+                : $"Requested cascade deletion of Kubernetes Job {namespaceName}/{jobName}.";
             ControlPlaneTelemetry.RecordExecutionRequest(job, "cancel", result.NotFound ? "not_found" : "deleted");
             return new BatchComputeObservation
             {
@@ -241,7 +211,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         }
         catch (Exception ex) when (IsTransportOrConfigFailure(ex))
         {
-            Log.CancellationFailed(logger, job.OperationId, coordinates.Value.Namespace, coordinates.Value.Name, ex);
+            Log.CancellationFailed(logger, job.OperationId, namespaceName, jobName, ex);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             ControlPlaneTelemetry.RecordExecutionRequest(job, "cancel", ClassifyFailure(ex));
             return new BatchComputeObservation
@@ -305,11 +275,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var snapshot = options.CurrentValue;
         var parameters = job.Spec.Parameters;
 
-        var ns = Normalize(parameters.GetValueOrDefault(KubernetesJobParameterKeys.Namespace))
-            ?? Normalize(snapshot.DefaultNamespace)
-            ?? KubernetesJobClient.TryReadInClusterNamespace()
-            ?? "default";
-
+        var ns = ResolveNamespace(job, snapshot);
         var name = BuildJobName(job.OperationId);
 
         var labels = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -415,11 +381,46 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             int.TryParse(explicitValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
             parsed >= 0)
         {
-            return parsed;
+            return Math.Max(parsed, MinimumTtlSecondsAfterFinished);
         }
 
-        return snapshot.DefaultTtlSecondsAfterFinished;
+        var configured = snapshot.DefaultTtlSecondsAfterFinished;
+        return configured.HasValue
+            ? Math.Max(configured.Value, MinimumTtlSecondsAfterFinished)
+            : null;
     }
+
+    // The reconciler polls every 5 seconds (see ExecutionJobReconcilerBackgroundService).
+    // Clamp Kubernetes' ttlSecondsAfterFinished to at least six poll cycles so a Job cannot
+    // be garbage-collected before the adapter has a chance to observe its terminal state
+    // (and therefore cannot be downgraded from Succeeded to "not found" → Failed).
+    internal const int MinimumTtlSecondsAfterFinished = 30;
+
+    private static BatchComputeObservation BuildObservationForMissingJob(ExecutionJobRecord job)
+    {
+        // Preserve any terminal state we already reached: if a prior observation promoted
+        // the job to Succeeded/Failed/Cancelled, a later TTL-driven cleanup must not
+        // rewrite that outcome. Only jobs that never reached a terminal state are
+        // reported as Failed when the Kubernetes Job is no longer present.
+        var status = IsTerminal(job.Status) ? job.Status : ExecutionJobStatus.Failed;
+        return new BatchComputeObservation
+        {
+            Status = status,
+            ProviderOperationId = job.ProviderOperationId,
+            PercentComplete = job.PercentComplete,
+            Message = status == ExecutionJobStatus.Succeeded
+                ? "Kubernetes Job completed and was cleaned up per ttlSecondsAfterFinished."
+                : "Kubernetes Job is no longer present on the cluster."
+        };
+    }
+
+    private static bool IsTerminal(ExecutionJobStatus status) => status switch
+    {
+        ExecutionJobStatus.Succeeded => true,
+        ExecutionJobStatus.Failed => true,
+        ExecutionJobStatus.Cancelled => true,
+        _ => false
+    };
 
     private string? ResolveImage(ExecutionJobRecord job)
     {
@@ -438,20 +439,24 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         return Normalize(snapshot.DefaultImage);
     }
 
-    private (string Namespace, string Name)? ResolveCoordinates(ExecutionJobRecord job)
+    private (string Namespace, string Name) ResolveCoordinates(ExecutionJobRecord job)
     {
         var snapshot = options.CurrentValue;
-        var ns = Normalize(job.Spec.Parameters.GetValueOrDefault(KubernetesJobParameterKeys.Namespace))
-            ?? Normalize(snapshot.DefaultNamespace)
-            ?? KubernetesJobClient.TryReadInClusterNamespace();
-        if (string.IsNullOrWhiteSpace(ns))
-        {
-            return null;
-        }
-
+        var ns = ResolveNamespace(job, snapshot);
         var name = BuildJobName(job.OperationId);
-        return (ns!, name);
+        return (ns, name);
     }
+
+    // Single source of truth for namespace selection so submission, observation, and
+    // cancellation agree on the target Job. Fallback chain: spec parameter →
+    // configured DefaultNamespace → projected in-cluster namespace → "default".
+    // The final "default" tier matches the contract documented on
+    // KubernetesExecutionOptions.DefaultNamespace.
+    private static string ResolveNamespace(ExecutionJobRecord job, KubernetesExecutionOptions snapshot)
+        => Normalize(job.Spec.Parameters.GetValueOrDefault(KubernetesJobParameterKeys.Namespace))
+            ?? Normalize(snapshot.DefaultNamespace)
+            ?? KubernetesJobClient.TryReadInClusterNamespace()
+            ?? "default";
 
     internal static string BuildJobName(string operationId)
     {

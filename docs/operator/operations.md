@@ -207,7 +207,9 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > startup by `ControlPlaneOptions` validation; runtime adapter failures are
 > surfaced as failed submissions rather than 500s. Remote jobs are started
 > synchronously on submission and subsequently observed by the reconciler on
-> any Redis-enabled host.
+> any Redis-enabled host. `ttlSecondsAfterFinished` is clamped to a safe floor
+> (≥ 30 s, six reconciler poll cycles) so a completed Job cannot be
+> garbage-collected before the adapter has observed its terminal state.
 > Additional remote backends (AWS Batch, Azure Container Apps, etc.) are
 > defined by the pluggable `IBatchComputeBackend` contract but are not yet
 > registered; see provider tickets for implementation.

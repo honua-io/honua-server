@@ -272,7 +272,7 @@ internal sealed partial class KubernetesJobClient(
         CancellationToken cancellationToken)
     {
         var resolved = ResolveAuthentication();
-        var absoluteUri = new Uri(resolved.ApiServer, relativeUrl);
+        var absoluteUri = CombineApiServerUri(resolved.ApiServer, relativeUrl);
         var request = new HttpRequestMessage(method, absoluteUri);
 
         var token = await ReadTokenAsync(resolved, cancellationToken).ConfigureAwait(false);
@@ -291,6 +291,23 @@ internal sealed partial class KubernetesJobClient(
         }
 
         return request;
+    }
+
+    /// <summary>
+    /// Joins the API server base URL with a Kubernetes REST path while preserving any
+    /// non-root path on the base (e.g. when the API server sits behind a path-based
+    /// gateway at <c>https://proxy.example/k8s</c>). <see cref="Uri(Uri, string)"/> drops
+    /// the base path whenever the relative URL starts with "/", so build the string
+    /// explicitly instead.
+    /// </summary>
+    internal static Uri CombineApiServerUri(Uri apiServer, string relativeUrl)
+    {
+        ArgumentNullException.ThrowIfNull(apiServer);
+        ArgumentException.ThrowIfNullOrEmpty(relativeUrl);
+
+        var basePart = apiServer.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        var suffix = relativeUrl.StartsWith('/') ? relativeUrl : "/" + relativeUrl;
+        return new Uri(basePart + suffix, UriKind.Absolute);
     }
 
     private KubernetesAuthContext ResolveAuthentication()
@@ -401,11 +418,11 @@ internal sealed partial class KubernetesJobClient(
         {
             try
             {
-                var expected = LoadCaThumbprints(resolvedPath);
-                if (expected.Count > 0)
+                var trustedRoots = LoadCaBundle(resolvedPath);
+                if (trustedRoots.Count > 0)
                 {
-                    handler.ServerCertificateCustomValidationCallback = (_, _, chain, errors) =>
-                        ValidateAgainstTrustedCas(chain, errors, expected);
+                    handler.ServerCertificateCustomValidationCallback = (_, leaf, _, errors) =>
+                        ValidateAgainstTrustedCas(leaf, errors, trustedRoots);
                 }
             }
             catch (Exception)
@@ -418,43 +435,50 @@ internal sealed partial class KubernetesJobClient(
         return handler;
     }
 
-    private static HashSet<string> LoadCaThumbprints(string pemPath)
+    private static X509Certificate2Collection LoadCaBundle(string pemPath)
     {
-        var thumbprints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var collection = new X509Certificate2Collection();
         collection.ImportFromPemFile(pemPath);
-        foreach (var certificate in collection)
-        {
-            thumbprints.Add(certificate.Thumbprint);
-        }
-
-        return thumbprints;
+        return collection;
     }
 
-    private static bool ValidateAgainstTrustedCas(
-        X509Chain? chain,
+    /// <summary>
+    /// Validates the server certificate when a custom CA bundle is configured. Extends
+    /// trust to the configured custom root(s) via <see cref="X509ChainTrustMode.CustomRootTrust"/>
+    /// while preserving normal name-binding, expiry, and signature checks. Explicitly
+    /// rejects hostname mismatches and missing-certificate errors so a thumbprint match
+    /// alone cannot silence those policy failures.
+    /// </summary>
+    internal static bool ValidateAgainstTrustedCas(
+        X509Certificate2? leaf,
         SslPolicyErrors errors,
-        HashSet<string> expectedThumbprints)
+        X509Certificate2Collection trustedRoots)
     {
         if (errors == SslPolicyErrors.None)
         {
             return true;
         }
 
-        if (chain == null)
+        // Only soften chain-trust errors; hostname mismatches and missing certificates
+        // must continue to fail even though a custom CA is configured.
+        if ((errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != SslPolicyErrors.None)
         {
             return false;
         }
 
-        foreach (var element in chain.ChainElements)
+        if (leaf == null)
         {
-            if (expectedThumbprints.Contains(element.Certificate.Thumbprint))
-            {
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        using var customChain = new X509Chain();
+        customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        customChain.ChainPolicy.CustomTrustStore.AddRange(trustedRoots);
+        // Kubernetes API server certificates typically lack an accessible CRL/OCSP
+        // endpoint (private CA); skipping revocation keeps chain validation deterministic
+        // while expiry/signature checks still apply via Build().
+        customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        return customChain.Build(leaf);
     }
 
     /// <summary>
