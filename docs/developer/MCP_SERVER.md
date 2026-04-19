@@ -497,12 +497,17 @@ ETag and provenance conventions so agents can poll for lifecycle changes
 without subscribing. A subscription surface is not in scope today; the
 audit-trail plus monotonic ETag is the observability contract.
 
-- **Authorization.** Published-service reads require the
-  `published-service` grant with `read`; deployment reads require the
-  `deployment` grant; map/app-package reads and the package list roots
-  require the `package` grant. All of them go through
-  `IGeoprocessingJobService.EnsureCallerAuthorized` so the gRPC, GPServer,
-  and MCP protocols enforce identical grants.
+- **Authorization.** Every promotion-surface read goes through
+  `IGeoprocessingJobService.EnsureCallerAuthorized`, which routes to
+  `OperatorAuthorizationEvaluator`. The evaluator matches a grant's
+  `service` against the `OperatorResourceType` enum via
+  `Enum.TryParse`, so the accepted service tokens are the enum names
+  (case-insensitive, no hyphens): `PublishedService`, `Deployment`, and
+  `Package`. Published-service reads require `PublishedService` with
+  `Read`; deployment reads require `Deployment` with `Read`; map/app
+  package reads and the package list roots require `Package` with
+  `Read`. The same vocabulary and grants cover the gRPC, GPServer, and
+  MCP protocols.
 - **ETag.** Every promotion-surface read returns a weak ETag of the form
   `W/"{updatedAtTicks:hex}-{status}"`. For deployments the timestamp is
   the maximum of `updatedAt` and the last `transitions[*].at`, so a new

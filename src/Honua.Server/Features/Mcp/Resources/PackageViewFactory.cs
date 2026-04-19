@@ -14,6 +14,46 @@ namespace Honua.Server.Features.Mcp.Resources;
 /// </summary>
 internal static class PackageViewFactory
 {
+    // Packages are visible only through deployments that are still reachable, matching
+    // the active-deployment filter in IDeploymentStore.ListActiveAsync so detail and
+    // list-root reads agree on visibility.
+    public static IReadOnlyList<Deployment> FilterActive(IReadOnlyList<Deployment> deployments)
+    {
+        var firstInactive = -1;
+        for (var i = 0; i < deployments.Count; i++)
+        {
+            if (IsInactive(deployments[i]))
+            {
+                firstInactive = i;
+                break;
+            }
+        }
+
+        if (firstInactive < 0)
+        {
+            return deployments;
+        }
+
+        var active = new List<Deployment>(deployments.Count);
+        for (var i = 0; i < firstInactive; i++)
+        {
+            active.Add(deployments[i]);
+        }
+        for (var i = firstInactive + 1; i < deployments.Count; i++)
+        {
+            if (!IsInactive(deployments[i]))
+            {
+                active.Add(deployments[i]);
+            }
+        }
+
+        return active;
+    }
+
+    private static bool IsInactive(Deployment deployment) =>
+        deployment.Status == DeploymentStatus.Retired
+        || deployment.Status == DeploymentStatus.Superseded;
+
     public static McpPackageView Build(
         string packageKind,
         string packageId,

@@ -79,10 +79,11 @@ internal sealed class MapPackageResource : IMcpResource
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.MapPackage, packageId, cancellationToken)
             .ConfigureAwait(false);
+        deployments = PackageViewFactory.FilterActive(deployments);
 
         if (deployments.Count == 0)
         {
-            throw new GeoprocessingNotFoundException($"Map package '{packageId}' is not referenced by any deployment.");
+            throw new GeoprocessingNotFoundException($"Map package '{packageId}' is not referenced by any active deployment.");
         }
 
         McpLog.PackageRead(_logger, PackageKind, packageId, deployments.Count);

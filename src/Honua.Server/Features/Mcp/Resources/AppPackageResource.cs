@@ -77,10 +77,11 @@ internal sealed class AppPackageResource : IMcpResource
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.AppPackage, packageId, cancellationToken)
             .ConfigureAwait(false);
+        deployments = PackageViewFactory.FilterActive(deployments);
 
         if (deployments.Count == 0)
         {
-            throw new GeoprocessingNotFoundException($"App package '{packageId}' is not referenced by any deployment.");
+            throw new GeoprocessingNotFoundException($"App package '{packageId}' is not referenced by any active deployment.");
         }
 
         McpLog.PackageRead(_logger, PackageKind, packageId, deployments.Count);

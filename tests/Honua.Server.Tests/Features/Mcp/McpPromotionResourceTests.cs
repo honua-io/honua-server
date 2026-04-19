@@ -239,6 +239,49 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_OnlyRetiredDeployments_ThrowsNotFound()
+    {
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "retired-only", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-r1", DeploymentSource.FromMapPackage("retired-only"), status: DeploymentStatus.Retired),
+                BuildDeployment("dep-r2", DeploymentSource.FromMapPackage("retired-only"), status: DeploymentStatus.Superseded)
+            ]);
+
+        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/retired-only",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_Read_ExcludesRetiredDeploymentsFromCount()
+    {
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "mixed", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-retired", DeploymentSource.FromMapPackage("mixed"), status: DeploymentStatus.Retired),
+                BuildDeployment("dep-active", DeploymentSource.FromMapPackage("mixed"))
+            ]);
+
+        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/mixed",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
+        body.GetProperty("deploymentResourceUris")[0].GetString()
+            .Should().Be("honua://deployments/dep-active");
+    }
+
+    [UnitTest]
     [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
     public async Task AppPackageResource_Read_ReverseLooksUpDeployments()
     {
@@ -255,6 +298,25 @@ public sealed class McpPromotionResourceTests
         body.GetProperty("packageKind").GetString().Should().Be("app_package");
         body.GetProperty("packageId").GetString().Should().Be("app-9");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
+    public async Task AppPackageResource_OnlySupersededDeployments_ThrowsNotFound()
+    {
+        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "superseded", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-s", DeploymentSource.FromAppPackage("superseded"), status: DeploymentStatus.Superseded)
+            ]);
+
+        var resource = new AppPackageResource(_deployments, _jobService, NullLogger<AppPackageResource>.Instance);
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://app-packages/superseded",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
@@ -506,7 +568,8 @@ public sealed class McpPromotionResourceTests
     private static Deployment BuildDeployment(
         string deploymentId,
         DeploymentSource source,
-        IReadOnlyList<DeploymentTransition>? transitions = null)
+        IReadOnlyList<DeploymentTransition>? transitions = null,
+        DeploymentStatus status = DeploymentStatus.Active)
         => new()
         {
             DeploymentId = deploymentId,
@@ -517,7 +580,7 @@ public sealed class McpPromotionResourceTests
                 Kind = DeploymentKind.FeatureService,
                 HostingMode = HostingMode.ManagedService
             },
-            Status = DeploymentStatus.Active,
+            Status = status,
             PublicationState = DeploymentPublicationState.Published,
             CreatedAt = PublishedAt,
             UpdatedAt = UpdatedAt,
