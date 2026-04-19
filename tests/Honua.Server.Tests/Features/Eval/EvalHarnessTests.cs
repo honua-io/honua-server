@@ -129,6 +129,93 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
+    /// An approval-gated scenario must still exercise the canonical DryRun contract
+    /// (a Read operation that does not enforce executability or approval) while only
+    /// SubmitPlanJob is skipped because it is the RPC that actually enforces the
+    /// approval gate. Without the split, DryRun would record a synthetic skip and the
+    /// harness would never observe a real artifact-kind mismatch against the seeded
+    /// runtime for approval-gated plans.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task ApprovalRequiredScenario_RunsDryRun_SkipsOnlySubmitPlanJob()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperatorApprovalEvaluator>();
+                services.AddSingleton<IOperatorApprovalEvaluator>(new DestructiveOnlyApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var runner = new EvalRunner(approvalFixture, new LocalSeedFixtureSource());
+            var scenario = BuildDestructiveApprovalScenario();
+
+            var result = await runner.RunAsync(scenario, CancellationToken.None);
+
+            var dryRun = result.Stages.Single(stage => stage.Stage == EvalStageKind.DryRun);
+            dryRun.Status.Should().Be(EvalStageStatus.Passed,
+                because: "DryRun is authorized as a Read operation and must still run against approval-gated plans");
+            dryRun.Reason.Should().BeNull();
+
+            var submit = result.Stages.Single(stage => stage.Stage == EvalStageKind.SubmitPlanJob);
+            submit.Status.Should().Be(EvalStageStatus.Skipped,
+                because: "SubmitPlanJob is the execution-only RPC that enforces EnsureApproved");
+            submit.Reason.Should().Be("plan-approval-required");
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// HTTP parity probes must convert transport-level timeouts (e.g. <c>HttpClient.Timeout</c>
+    /// firing) into a deterministic <c>Failed(http-timeout)</c> probe rather than letting
+    /// the <c>TaskCanceledException</c> propagate and abort the scenario. This preserves
+    /// <see cref="EvalRunner.RunAsync"/>'s no-throw reporting contract.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task Probes_WhenHttpClientTimeoutFires_ReportFailedWithoutAbortingScenario()
+    {
+        var timeoutFixture = new WebAppFixture();
+
+        try
+        {
+            await timeoutFixture.InitializeAsync();
+            // Forcing an extreme client-level timeout guarantees the HTTP probes will
+            // surface OperationCanceledException unrelated to the caller's token. The
+            // fix converts that into a Failed(http-timeout) probe instead of aborting
+            // RunAsync.
+            timeoutFixture.Client.Timeout = TimeSpan.FromTicks(1);
+
+            var runner = new EvalRunner(timeoutFixture, new LocalSeedFixtureSource());
+            var scenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
+
+            var result = await runner.RunAsync(scenario, CancellationToken.None);
+
+            result.Should().NotBeNull();
+
+            var ogcProbe = result.ProtocolParity.Probes
+                .Single(probe => probe.Protocol == Protocols.OgcApiProcesses);
+            ogcProbe.Status.Should().Be(EvalStageStatus.Failed);
+            ogcProbe.Outcome.Should().Be("http-timeout");
+
+            var gpServerProbe = result.ProtocolParity.Probes
+                .Single(probe => probe.Protocol == Protocols.GPServer);
+            gpServerProbe.Status.Should().Be(EvalStageStatus.Failed);
+            gpServerProbe.Outcome.Should().Be("http-timeout");
+        }
+        finally
+        {
+            await timeoutFixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// Enumerates every scenario id under <c>tests/Eval/scenarios/</c> so the harness
     /// suite expands automatically as the corpus grows.
     /// </summary>

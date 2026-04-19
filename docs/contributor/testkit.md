@@ -422,14 +422,22 @@ stages break the gate today. `SubmitPlanJob` also degrades to
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
 
-When a scenario intentionally expects a rejected plan (`isExecutable: false`)
-or an approval-gated plan (`requiresApproval: true`) and `ValidatePlan` matches
-that expectation, `DryRun` and `SubmitPlanJob` are recorded as
-`Skipped(plan-non-executable)` / `Skipped(plan-approval-required)` rather than
-invoking the execution-only RPCs that are contractually guaranteed to reject
-(gRPC `InvalidArgument` for non-executable plans, `FailedPrecondition` for
-approval-gated plans). This keeps negative scenarios expressible without
-polluting the gate with false failures.
+`DryRun` is a read operation in the canonical runtime (the gRPC handler
+authorizes it as `OperatorOperation.Read`, and
+`GeoprocessingJobService.DryRunPlan` only enforces plan-structure and catalog
+validity — it does not gate on executability or approval). It therefore still
+runs for scenarios that expect `isExecutable: false` or
+`requiresApproval: true`, and the resulting `DryRun` outcome is scored against
+the scenario's declared `estimatedArtifactKinds` just like any other scenario.
+
+Only `SubmitPlanJob` enforces the execution-only invariants through
+`EnsurePlanExecutable` (rejects non-executable plans as `InvalidArgument`) and
+`EnsureApproved` (rejects approval-gated plans as `FailedPrecondition`). When a
+scenario intentionally expects one of those rejections and `ValidatePlan`
+matches that expectation, `SubmitPlanJob` is recorded as
+`Skipped(plan-non-executable)` or `Skipped(plan-approval-required)` rather
+than invoking the RPC that is contractually guaranteed to reject. This keeps
+negative scenarios expressible without polluting the gate with false failures.
 
 `ProtocolParity` cross-checks plan acceptance across gRPC and OGC API Processes
 against the scenario's expected state, and it probes the GPServer `submitJob`
@@ -447,9 +455,12 @@ otherwise. `503` / `501` remain environmental skips, and when OGC execution
 cannot enqueue because Redis is unavailable, that probe is recorded as
 `Skipped(service-unavailable)` rather than `Failed`. Because the GPServer
 adapter still lacks a formal task catalog binding, its probe is recorded as
-`Skipped(task-resolution-unavailable)` instead of a false `Passed`. Spans are
-emitted from the `Honua.Tests.Eval` `ActivitySource` (one span per scenario,
-one per stage).
+`Skipped(task-resolution-unavailable)` instead of a false `Passed`. When an
+HTTP probe is canceled for a reason other than the outer run's own
+`CancellationToken` (for example an `HttpClient.Timeout` firing), the probe is
+recorded as `Failed(http-timeout)` so the overall scenario keeps its no-throw
+reporting contract instead of aborting mid-run. Spans are emitted from the
+`Honua.Tests.Eval` `ActivitySource` (one span per scenario, one per stage).
 
 ### Fixture corpus
 

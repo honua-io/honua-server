@@ -68,32 +68,26 @@ public sealed class EvalRunner
             .ConfigureAwait(false);
         stages.Add(validateOutcome.Stage);
 
-        // When the scenario intentionally expects a non-executable or approval-gated plan and
-        // ValidatePlan matched that expectation, the downstream execution-only RPCs are
-        // contractually guaranteed to reject (InvalidArgument for non-executable plans,
-        // FailedPrecondition for approval-gated plans). Skip those stages with a deterministic
-        // reason so the matched outcome rolls up cleanly.
-        var executionSkip = ResolveExecutionSkipReason(scenario.ExpectedOutcome, validateOutcome);
-
-        if (executionSkip is { } dryRunSkip)
-        {
-            stages.Add(BuildSkipOutcome(EvalStageKind.DryRun, dryRunSkip.Reason, dryRunSkip.Detail));
-        }
-        else
-        {
-            var dryRunOutcome = await RunDryRunAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
-                .ConfigureAwait(false);
-            stages.Add(dryRunOutcome.Stage);
-        }
+        // DryRun is a Read operation in the canonical runtime
+        // (HonuaProcessService authorizes it as OperatorOperation.Read, and
+        // GeoprocessingJobService.DryRunPlan only enforces plan-structure and
+        // catalog validity). It does not gate on executability or approval, so
+        // DryRun still runs for scenarios that expect IsExecutable=false or
+        // RequiresApproval=true. Only SubmitPlanJob enforces those gates via
+        // EnsurePlanExecutable / EnsureApproved, so only it is skipped here.
+        var dryRunOutcome = await RunDryRunAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
+            .ConfigureAwait(false);
+        stages.Add(dryRunOutcome.Stage);
 
         var parityStopwatch = Stopwatch.StartNew();
         parity = await RunProtocolParityAsync(scenario, validateOutcome.Response, cancellationToken).ConfigureAwait(false);
         parityStopwatch.Stop();
         stages.Add(BuildProtocolParityStageOutcome(parity, parityStopwatch.ElapsedMilliseconds));
 
-        if (executionSkip is { } submitSkip)
+        var submitSkip = ResolveSubmitSkipReason(scenario.ExpectedOutcome, validateOutcome);
+        if (submitSkip is { } skip)
         {
-            stages.Add(BuildSkipOutcome(EvalStageKind.SubmitPlanJob, submitSkip.Reason, submitSkip.Detail));
+            stages.Add(BuildSkipOutcome(EvalStageKind.SubmitPlanJob, skip.Reason, skip.Detail));
         }
         else
         {
@@ -644,6 +638,26 @@ public sealed class EvalRunner
                 Status = EvalStageStatus.Failed
             };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The outer run was genuinely canceled; let it bubble up so RunAsync
+            // stops cleanly instead of reporting a false probe failure.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // HttpClient.Timeout (or any non-caller cancel) surfaces as a
+            // TaskCanceledException/OperationCanceledException. Convert it into
+            // a deterministic failed probe so RunAsync preserves its no-throw
+            // reporting contract for the surrounding scenario.
+            return new EvalProtocolProbe
+            {
+                Protocol = Constants.Protocols.OgcApiProcesses,
+                Assertion = "plan-shape-accepted",
+                Outcome = "http-timeout",
+                Status = EvalStageStatus.Failed
+            };
+        }
     }
 
     private async Task<EvalProtocolProbe> ProbeGPServerSubmitJobAsync(
@@ -687,6 +701,26 @@ public sealed class EvalRunner
                 Protocol = Constants.Protocols.GPServer,
                 Assertion = "service-info-reachable",
                 Outcome = $"http-error:{ex.Message}",
+                Status = EvalStageStatus.Failed
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The outer run was genuinely canceled; let it bubble up so RunAsync
+            // stops cleanly instead of reporting a false probe failure.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // HttpClient.Timeout (or any non-caller cancel) surfaces as a
+            // TaskCanceledException/OperationCanceledException. Convert it into
+            // a deterministic failed probe so RunAsync preserves its no-throw
+            // reporting contract for the surrounding scenario.
+            return new EvalProtocolProbe
+            {
+                Protocol = Constants.Protocols.GPServer,
+                Assertion = "submit-job-surface",
+                Outcome = "http-timeout",
                 Status = EvalStageStatus.Failed
             };
         }
@@ -740,7 +774,7 @@ public sealed class EvalRunner
             ElapsedMs = 0
         };
 
-    private static ExecutionSkipReason? ResolveExecutionSkipReason(
+    private static ExecutionSkipReason? ResolveSubmitSkipReason(
         EvalExpectedOutcome expected,
         (EvalStageOutcome Stage, Proto.ValidatePlanResponse? Response) validateOutcome)
     {
@@ -753,14 +787,14 @@ public sealed class EvalRunner
         {
             return new ExecutionSkipReason(
                 "plan-non-executable",
-                "Scenario expected IsExecutable=false; skipping DryRun and SubmitPlanJob because the canonical runtime rejects non-executable plans.");
+                "Scenario expected IsExecutable=false; skipping SubmitPlanJob because the canonical runtime rejects non-executable plans via EnsurePlanExecutable.");
         }
 
         if (expected.RequiresApproval && validateOutcome.Response.RequiresApproval)
         {
             return new ExecutionSkipReason(
                 "plan-approval-required",
-                "Scenario expected RequiresApproval=true; skipping DryRun and SubmitPlanJob because SubmitPlanJob enforces the approval gate.");
+                "Scenario expected RequiresApproval=true; skipping SubmitPlanJob because SubmitPlanJob enforces the approval gate via EnsureApproved.");
         }
 
         return null;
