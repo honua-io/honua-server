@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -8,6 +9,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -1209,6 +1211,49 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task StartOnRemoteBackendAsync_FailedSubmission_PersistsErrorMessageAndProgress()
+    {
+        var jobStore = new InMemoryExecutionJobStore(
+            CreateJobRecord(
+                operationId: "job-submit-fail",
+                status: ExecutionJobStatus.Queued,
+                backend: "aws-batch",
+                targetKind: BatchComputeTargetKind.AwsBatch));
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-submit-fail",
+            GeoprocessingProgress.CreateForSubmittedJob("job-submit-fail", "plan-submit-fail"));
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = "provider-submit-fail",
+                Message = "Backend rejected submission"
+            });
+
+        var queuedJob = await jobStore.GetAsync("job-submit-fail", CancellationToken.None);
+
+        var updated = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob!, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        updated.Status.Should().Be(ExecutionJobStatus.Failed);
+        updated.ProviderOperationId.Should().Be("provider-submit-fail");
+        updated.ErrorMessage.Should().Be("Backend rejected submission",
+            "terminal submission failures must retain the backend error for job and progress projections");
+
+        var stored = await jobStore.GetAsync("job-submit-fail", CancellationToken.None);
+        stored.Should().NotBeNull();
+        stored!.ErrorMessage.Should().Be("Backend rejected submission");
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-submit-fail");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
+        progress.ErrorMessage.Should().Be("Backend rejected submission");
+    }
+
+    [Fact]
     public void BuildProgress_NonterminalJobOverStaleTerminalProgress_ClearsTerminalMetadata()
     {
         var now = DateTimeOffset.UtcNow;
@@ -1289,6 +1334,84 @@ public sealed class ExecutionJobReconcilerTests
         await sut.ReconcileExecutionJobAsync(operationId);
 
         await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_EmitsReconcileCycleAndTransitionMetrics()
+    {
+        // Transition/cycle metrics are wired so dashboards and alerts can observe the
+        // execution-job lifecycle. Reconcile-cycle counts every accepted lease; transition
+        // counts each persisted status change (e.g., Queued -> Failed for missing backend).
+        var cycles = new List<long>();
+        var transitions = new List<(long Value, string? Status, string? PreviousStatus)>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name != HonuaTelemetry.ServiceName)
+                {
+                    return;
+                }
+
+                if (instrument.Name == "honua.execution.reconcile.cycle"
+                    || instrument.Name == "honua.execution.job.transitions_total")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
+        {
+            if (instrument.Name == "honua.execution.reconcile.cycle")
+            {
+                lock (cycles)
+                {
+                    cycles.Add(measurement);
+                }
+            }
+            else if (instrument.Name == "honua.execution.job.transitions_total")
+            {
+                string? status = null;
+                string? previous = null;
+                foreach (var tag in tags)
+                {
+                    if (tag.Key == "honua.controlplane.execution.status")
+                    {
+                        status = tag.Value as string;
+                    }
+                    else if (tag.Key == "honua.controlplane.execution.previous_status")
+                    {
+                        previous = tag.Value as string;
+                    }
+                }
+
+                lock (transitions)
+                {
+                    transitions.Add((measurement, status, previous));
+                }
+            }
+        });
+        listener.Start();
+
+        var job = CreateJobRecord(
+            operationId: "job-metrics",
+            status: ExecutionJobStatus.Queued,
+            backend: "missing-backend",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            Array.Empty<IBatchComputeBackend>(),
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-metrics");
+
+        cycles.Sum().Should().BeGreaterOrEqualTo(1, "every accepted lease bumps the reconcile-cycle counter");
+        transitions.Should().Contain(t =>
+            t.Value == 1 && t.PreviousStatus == nameof(ExecutionJobStatus.Queued) && t.Status == nameof(ExecutionJobStatus.Failed),
+            "missing-backend path persists Queued -> Failed and must emit a transition sample");
     }
 
     private static ExecutionJobRecord CreateJobRecord(

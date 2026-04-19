@@ -25,6 +25,7 @@ internal sealed partial class AzureBatchComputeBackend(
     ILogger<AzureBatchComputeBackend> logger) : IBatchComputeBackend
 {
     internal const string BackendIdentifier = "honua-azure-batch";
+    internal static TimeSpan MissingRegistrationGracePeriod => TimeSpan.FromMinutes(2);
 
     private const string ParamAccountUrl = "azure.batch.account_url";
     private const string ParamPoolId = "azure.batch.pool_id";
@@ -60,7 +61,7 @@ internal sealed partial class AzureBatchComputeBackend(
         var parameters = job.Spec.Parameters;
         var accountUrl = RequireParameter(parameters, ParamAccountUrl);
         var poolId = RequireParameter(parameters, ParamPoolId);
-        var commandLine = GetParameter(parameters, ParamCommandLine) ?? BuildDefaultCommandLine(job);
+        var commandLine = GetParameter(parameters, ParamCommandLine) ?? DefaultCommandLine;
 
         var submission = new AzureBatchJobSubmission
         {
@@ -75,6 +76,16 @@ internal sealed partial class AzureBatchComputeBackend(
             OutputContainerUrl = GetParameter(parameters, ParamOutputContainerUrl),
             EnvironmentSettings = CollectEnvironmentSettings(job, parameters)
         };
+
+        // Validate the pool up front: empty/non-resizing pools would otherwise cause the
+        // task to queue indefinitely in `preparing` with no operator signal. Design brief
+        // calls this out as the StartAsync mitigation for the zero-node pool risk.
+        var poolValidation = await ValidatePoolAsync(accountUrl, poolId, submission.JobId, cancellationToken)
+            .ConfigureAwait(false);
+        if (poolValidation != null)
+        {
+            return poolValidation;
+        }
 
         try
         {
@@ -97,6 +108,16 @@ internal sealed partial class AzureBatchComputeBackend(
             // Preserve the deterministic JobId even on failure: a timeout or late error may
             // still leave the job accepted at Azure Batch, and we need the id to observe or
             // cancel it during reconciliation rather than orphaning the provider resource.
+            if (IsSubmissionOutcomeUncertain(ex))
+            {
+                return new BatchComputeSubmissionResult
+                {
+                    Status = ExecutionJobStatus.Queued,
+                    ProviderOperationId = submission.JobId,
+                    Message = $"Azure Batch submission outcome is uncertain for job '{submission.JobId}': {ex.Message}. Reconciliation will verify whether the provider accepted the job."
+                };
+            }
+
             return new BatchComputeSubmissionResult
             {
                 Status = ExecutionJobStatus.Failed,
@@ -148,14 +169,22 @@ internal sealed partial class AzureBatchComputeBackend(
 
         try
         {
+            // Azure Batch `Job - Terminate` returns 202 Accepted and the job enters a
+            // `terminating` phase before `completed`. Issue the (idempotent) terminate
+            // request, then observe the current task state so the reconciler does not
+            // stamp the record terminal while Batch is still draining the task.
+            // MapObservation routes CompletedFailure back to Cancelled once the task
+            // finishes, because the cancellation intent is carried on the record.
             await batchClient.TerminateJobAsync(accountUrl, providerJobId, cancellationToken).ConfigureAwait(false);
             Log.JobCancelled(logger, job.OperationId, providerJobId);
-            return new BatchComputeObservation
+
+            var state = await batchClient.GetJobStateAsync(accountUrl, providerJobId, cancellationToken).ConfigureAwait(false);
+            var observed = MapObservation(job, providerJobId, state);
+            return observed with
             {
-                Status = ExecutionJobStatus.Cancelled,
-                ProviderOperationId = providerJobId,
-                PercentComplete = 100,
-                Message = $"Azure Batch job '{providerJobId}' terminated."
+                Message = IsTerminal(observed.Status)
+                    ? observed.Message
+                    : $"Azure Batch termination requested for job '{providerJobId}'; {observed.Message}"
             };
         }
         catch (HttpRequestException ex)
@@ -171,6 +200,11 @@ internal sealed partial class AzureBatchComputeBackend(
         }
     }
 
+    private static bool IsTerminal(ExecutionJobStatus status)
+        => status is ExecutionJobStatus.Succeeded
+            or ExecutionJobStatus.Failed
+            or ExecutionJobStatus.Cancelled;
+
     internal static BatchComputeObservation MapObservation(
         ExecutionJobRecord job,
         string providerJobId,
@@ -178,15 +212,7 @@ internal sealed partial class AzureBatchComputeBackend(
     {
         return state.ExecutionState switch
         {
-            AzureBatchTaskExecutionState.NotFound => new BatchComputeObservation
-            {
-                Status = job.Status is ExecutionJobStatus.Cancelled or ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed
-                    ? job.Status
-                    : ExecutionJobStatus.Queued,
-                ProviderOperationId = providerJobId,
-                PercentComplete = job.PercentComplete,
-                Message = $"Azure Batch job '{providerJobId}' has not yet registered with the scheduler."
-            },
+            AzureBatchTaskExecutionState.NotFound => MapMissingObservation(job, providerJobId),
             AzureBatchTaskExecutionState.Active => new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Queued,
@@ -222,9 +248,11 @@ internal sealed partial class AzureBatchComputeBackend(
                 PercentComplete = 100,
                 Message = BuildStatusMessage("cancelled", state)
             },
-            // CompletedFailure. If the canonical record already knows it was cancelled, keep
-            // that intent: Azure Batch represents user termination as a completed failure.
-            _ when job.Status == ExecutionJobStatus.Cancelled => new BatchComputeObservation
+            // CompletedFailure. If the canonical record already knows it was cancelled
+            // (or has an outstanding cancellation request), keep that intent: Azure Batch
+            // represents user termination as a completed failure, so the cancelled signal
+            // on the durable record is what distinguishes real failures from cancellations.
+            _ when job.Status == ExecutionJobStatus.Cancelled || job.CancellationRequestedAt.HasValue => new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Cancelled,
                 ProviderOperationId = providerJobId,
@@ -241,12 +269,136 @@ internal sealed partial class AzureBatchComputeBackend(
         };
     }
 
+    private static BatchComputeObservation MapMissingObservation(ExecutionJobRecord job, string providerJobId)
+    {
+        if (IsTerminal(job.Status))
+        {
+            return new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = providerJobId,
+                PercentComplete = job.PercentComplete,
+                Message = job.CurrentPhase ?? $"Azure Batch job '{providerJobId}' is no longer visible after reaching terminal state."
+            };
+        }
+
+        if (HasMissingRegistrationExpired(job))
+        {
+            return job.CancellationRequestedAt.HasValue
+                ? new BatchComputeObservation
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    ProviderOperationId = providerJobId,
+                    PercentComplete = 100,
+                    Message = $"Azure Batch job '{providerJobId}' never registered before cancellation completed."
+                }
+                : new BatchComputeObservation
+                {
+                    Status = ExecutionJobStatus.Failed,
+                    ProviderOperationId = providerJobId,
+                    PercentComplete = 100,
+                    Message = $"Azure Batch job '{providerJobId}' did not register with the scheduler after submission."
+                };
+        }
+
+        return new BatchComputeObservation
+        {
+            Status = job.Status switch
+            {
+                ExecutionJobStatus.Provisioning => ExecutionJobStatus.Provisioning,
+                ExecutionJobStatus.Running => ExecutionJobStatus.Running,
+                _ => ExecutionJobStatus.Queued
+            },
+            ProviderOperationId = providerJobId,
+            PercentComplete = job.PercentComplete,
+            Message = $"Azure Batch job '{providerJobId}' has not yet registered with the scheduler."
+        };
+    }
+
+    private static bool HasMissingRegistrationExpired(ExecutionJobRecord job)
+    {
+        if (string.IsNullOrWhiteSpace(job.ProviderOperationId) && job.AttemptCount == 0)
+        {
+            return false;
+        }
+
+        return DateTimeOffset.UtcNow - job.UpdatedAt >= MissingRegistrationGracePeriod;
+    }
+
+    private static bool IsSubmissionOutcomeUncertain(HttpRequestException ex)
+    {
+        if (ex.StatusCode is null)
+        {
+            return true;
+        }
+
+        return ex.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || (int)ex.StatusCode >= 500;
+    }
+
     private static string BuildStatusMessage(string canonicalStatus, AzureBatchJobState state)
     {
         var rawState = string.IsNullOrWhiteSpace(state.RawTaskState) ? "unknown" : state.RawTaskState;
         var retry = state.RetryCount is > 0 ? $" (retries consumed: {state.RetryCount})" : string.Empty;
         var exitCode = state.ExitCode is not null ? $" (exit code: {state.ExitCode})" : string.Empty;
         return $"Azure Batch task is {canonicalStatus}; raw state '{rawState}'{retry}{exitCode}.";
+    }
+
+    private async Task<BatchComputeSubmissionResult?> ValidatePoolAsync(
+        string accountUrl,
+        string poolId,
+        string submissionJobId,
+        CancellationToken cancellationToken)
+    {
+        AzureBatchPoolState poolState;
+        try
+        {
+            poolState = await batchClient.GetPoolStateAsync(accountUrl, poolId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            // Missing pool returns 404 and surfaces as HttpRequestException from the client.
+            // Treat any pool lookup failure as a hard submission error so the durable record
+            // records an actionable message instead of silently queuing a task that will
+            // never execute.
+            Log.PoolValidationFailed(logger, poolId, ex.Message);
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = submissionJobId,
+                Message = $"Azure Batch pool '{poolId}' is not reachable: {ex.Message}"
+            };
+        }
+
+        // `deleting`/`upgrading` pools cannot accept new task assignments, and a pool with
+        // no current or target nodes will never schedule work. Fail fast with a descriptive
+        // message instead of letting the task sit in `preparing` until the operator notices.
+        if (!string.IsNullOrWhiteSpace(poolState.State)
+            && !string.Equals(poolState.State, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.PoolValidationRejected(logger, poolId, poolState.State, poolState.AllocationState);
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = submissionJobId,
+                Message = $"Azure Batch pool '{poolId}' is in state '{poolState.State}' and cannot accept new tasks."
+            };
+        }
+
+        var currentNodes = poolState.DedicatedNodes + poolState.LowPriorityNodes;
+        var targetNodes = poolState.TargetDedicatedNodes + poolState.TargetLowPriorityNodes;
+        if (currentNodes == 0 && targetNodes == 0)
+        {
+            Log.PoolValidationRejected(logger, poolId, poolState.State ?? "unknown", poolState.AllocationState);
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = submissionJobId,
+                Message = $"Azure Batch pool '{poolId}' has no current or target nodes; submission would queue indefinitely."
+            };
+        }
+
+        return null;
     }
 
     private static string BuildJobId(string operationId)
@@ -258,8 +410,12 @@ internal sealed partial class AzureBatchComputeBackend(
         return id.Length <= 64 ? id : id[..64];
     }
 
-    private static string BuildDefaultCommandLine(ExecutionJobRecord job)
-        => $"/bin/bash -c \"/app/run-workload --workload {job.Spec.WorkloadName} --job {job.OperationId}\"";
+    // The default command line resolves workload/job identity from the task environment
+    // rather than string-interpolating them, so human-readable workload names (e.g.,
+    // "Python GP") do not split into multiple arguments via shell word-splitting.
+    // HONUA_WORKLOAD_NAME and HONUA_JOB_ID are always populated in CollectEnvironmentSettings.
+    private const string DefaultCommandLine =
+        "/bin/bash -c 'exec /app/run-workload --workload \"$HONUA_WORKLOAD_NAME\" --job \"$HONUA_JOB_ID\"'";
 
     private static Dictionary<string, string> CollectEnvironmentSettings(
         ExecutionJobRecord job,
@@ -360,5 +516,11 @@ internal sealed partial class AzureBatchComputeBackend(
 
         [LoggerMessage(9084, LogLevel.Information, "Cancelled execution job {OperationId} via Azure Batch job {JobId}")]
         public static partial void JobCancelled(ILogger logger, string operationId, string jobId);
+
+        [LoggerMessage(9085, LogLevel.Warning, "Azure Batch pool {PoolId} validation failed: {ErrorMessage}")]
+        public static partial void PoolValidationFailed(ILogger logger, string poolId, string errorMessage);
+
+        [LoggerMessage(9086, LogLevel.Warning, "Azure Batch pool {PoolId} rejected submission (state: {State}, allocationState: {AllocationState})")]
+        public static partial void PoolValidationRejected(ILogger logger, string poolId, string state, string? allocationState);
     }
 }

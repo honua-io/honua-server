@@ -44,6 +44,11 @@ internal sealed partial class ExecutionJobReconciler(
             return;
         }
 
+        // Count every reconciliation attempt that acquires the lease: the metric reflects
+        // how often this job is actually processed by the reconciler, not merely how often
+        // the background service surfaces it in the active list.
+        ControlPlaneTelemetry.ExecutionReconcileCycles.Add(1);
+
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
 
@@ -70,6 +75,7 @@ internal sealed partial class ExecutionJobReconciler(
                 };
                 if (await jobStore.TrySetAsync(missing, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
                 {
+                    ControlPlaneTelemetry.RecordExecutionTransition(job, missing);
                     await BridgeProgressAsync(job, missing, reconciliationCancellation.Token).ConfigureAwait(false);
                 }
 
@@ -113,6 +119,7 @@ internal sealed partial class ExecutionJobReconciler(
                     return;
                 }
 
+                ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
                 await BridgeProgressAsync(job, updated, reconciliationCancellation.Token).ConfigureAwait(false);
                 Log.ExecutionJobReconciled(logger, operationId, updated.Status.ToString(), updated.PercentComplete ?? double.NaN);
             }
@@ -138,6 +145,7 @@ internal sealed partial class ExecutionJobReconciler(
                 };
                 if (await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
+                    ControlPlaneTelemetry.RecordExecutionTransition(job, failed);
                     await BridgeProgressAsync(job, failed, cancellationToken).ConfigureAwait(false);
                 }
             }

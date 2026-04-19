@@ -63,7 +63,7 @@ public sealed class AzureBatchComputeBackendTests
     {
         var stub = new StubAzureBatchClient
         {
-            SubmissionException = new HttpRequestException("account denied")
+            SubmissionException = new HttpRequestException("account denied", null, HttpStatusCode.Forbidden)
         };
         var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
 
@@ -78,6 +78,24 @@ public sealed class AzureBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_KeepsAmbiguousSubmitActiveForReconciliation()
+    {
+        var stub = new StubAzureBatchClient
+        {
+            SubmissionException = new HttpRequestException("gateway timeout", null, HttpStatusCode.GatewayTimeout)
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Queued,
+            "transport-ambiguous submit failures must stay active so reconciliation can verify provider ownership");
+        submission.ProviderOperationId.Should().NotBeNullOrWhiteSpace();
+        submission.Message.Should().Contain("outcome is uncertain");
+        submission.Message.Should().Contain("Reconciliation will verify");
+    }
+
+    [Fact]
     public async Task StartAsync_ForwardsRuntimeProfileEnvVariable()
     {
         var stub = new StubAzureBatchClient();
@@ -89,6 +107,116 @@ public sealed class AzureBatchComputeBackendTests
             .WhoseValue.Should().Be("gdal-heavy");
         stub.LastSubmission.EnvironmentSettings.Should().ContainKey("HONUA_JOB_ID");
         stub.LastSubmission.EnvironmentSettings.Should().ContainKey("HONUA_WORKLOAD_NAME");
+    }
+
+    [Fact]
+    public async Task StartAsync_DefaultCommandLineDoesNotInterpolateWorkloadName()
+    {
+        // Human-readable workload names (e.g. "Python GP") must not be string-interpolated
+        // into the default shell command line: shell word-splitting would split the name
+        // across arguments and break the worker invocation. Use env-var expansion instead.
+        var stub = new StubAzureBatchClient();
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        await backend.StartAsync(CreateJob(workloadName: "Python GP"));
+
+        stub.LastSubmission!.CommandLine.Should().NotContain("Python GP",
+            "workload name must not be substituted into the shell command line verbatim");
+        stub.LastSubmission.CommandLine.Should().Contain("$HONUA_WORKLOAD_NAME",
+            "the default command line must resolve the workload name via environment variable expansion");
+        stub.LastSubmission.EnvironmentSettings["HONUA_WORKLOAD_NAME"].Should().Be("Python GP");
+    }
+
+    [Fact]
+    public async Task StartAsync_FailsFastWhenPoolHasNoCurrentOrTargetNodes()
+    {
+        // Pool with no current or target nodes would never schedule a task: fail fast so the
+        // durable record surfaces an actionable submission error instead of silently waiting
+        // in `preparing` for an operator to notice.
+        var stub = new StubAzureBatchClient
+        {
+            NextPoolState = new AzureBatchPoolState
+            {
+                PoolId = "empty-pool",
+                State = "active",
+                AllocationState = "steady",
+                DedicatedNodes = 0,
+                LowPriorityNodes = 0,
+                TargetDedicatedNodes = 0,
+                TargetLowPriorityNodes = 0
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Failed);
+        submission.Message.Should().Contain("no current or target nodes");
+        stub.LastSubmission.Should().BeNull("pool validation must fail before submission");
+    }
+
+    [Fact]
+    public async Task StartAsync_SubmitsWhenPoolIsResizingTowardTargetNodes()
+    {
+        // Resizing toward non-zero target nodes is valid: tasks queue briefly until nodes
+        // come up. Only empty-and-not-resizing pools are a hard failure.
+        var stub = new StubAzureBatchClient
+        {
+            NextPoolState = new AzureBatchPoolState
+            {
+                PoolId = "resizing-pool",
+                State = "active",
+                AllocationState = "resizing",
+                DedicatedNodes = 0,
+                TargetDedicatedNodes = 2
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Queued);
+        stub.LastSubmission.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task StartAsync_FailsWhenPoolIsDeletingOrNotActive()
+    {
+        var stub = new StubAzureBatchClient
+        {
+            NextPoolState = new AzureBatchPoolState
+            {
+                PoolId = "deleting-pool",
+                State = "deleting",
+                AllocationState = "stopping",
+                DedicatedNodes = 3
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Failed);
+        submission.Message.Should().Contain("deleting");
+        stub.LastSubmission.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StartAsync_FailsWithDescriptiveErrorWhenPoolLookupRejects()
+    {
+        // Missing pool (404) surfaces as HttpRequestException. Validation must convert that
+        // into a descriptive submission failure so the operator knows to reconfigure.
+        var stub = new StubAzureBatchClient
+        {
+            PoolStateException = new HttpRequestException("pool not found")
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Failed);
+        submission.Message.Should().Contain("not reachable");
+        submission.Message.Should().Contain("pool not found");
     }
 
     [Theory]
@@ -174,16 +302,175 @@ public sealed class AzureBatchComputeBackendTests
     }
 
     [Fact]
-    public async Task CancelAsync_TerminatesBatchJobAndReportsCancelled()
+    public async Task ObserveAsync_NotFoundBeforeGracePreservesRunningState()
     {
-        var stub = new StubAzureBatchClient();
+        var stub = new StubAzureBatchClient
+        {
+            NextState = new AzureBatchJobState
+            {
+                JobId = "honua-test",
+                ExecutionState = AzureBatchTaskExecutionState.NotFound
+            }
+        };
         var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
 
-        var observation = await backend.CancelAsync(CreateJob(providerJobId: "honua-test"));
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Running,
+            AttemptCount = 1,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running,
+            "a transient provider 404 must not demote an already-running job back to queued");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_NotFoundPastGraceFailsSubmittedJob()
+    {
+        var stub = new StubAzureBatchClient
+        {
+            NextState = new AzureBatchJobState
+            {
+                JobId = "honua-test",
+                ExecutionState = AzureBatchTaskExecutionState.NotFound
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Queued,
+            AttemptCount = 1,
+            UpdatedAt = DateTimeOffset.UtcNow - AzureBatchComputeBackend.MissingRegistrationGracePeriod - TimeSpan.FromSeconds(5)
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.PercentComplete.Should().Be(100);
+        observation.Message.Should().Contain("did not register with the scheduler");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_NotFoundPastGraceWithCancellationRequested_CancelsJob()
+    {
+        var stub = new StubAzureBatchClient
+        {
+            NextState = new AzureBatchJobState
+            {
+                JobId = "honua-test",
+                ExecutionState = AzureBatchTaskExecutionState.NotFound
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Queued,
+            AttemptCount = 1,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow - AzureBatchComputeBackend.MissingRegistrationGracePeriod - TimeSpan.FromSeconds(5)
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        observation.PercentComplete.Should().Be(100);
+        observation.Message.Should().Contain("never registered before cancellation completed");
+    }
+
+    [Fact]
+    public async Task CancelAsync_TerminatesBatchJobAndReportsTerminationInProgress()
+    {
+        // Azure Batch `Job - Terminate` returns 202 Accepted and the job first enters a
+        // `terminating` phase before `completed`. The adapter must keep the observation
+        // nonterminal until Batch confirms termination so the reconciler does not stamp
+        // the record Cancelled/100% while Batch is still draining the task.
+        var stub = new StubAzureBatchClient
+        {
+            NextState = new AzureBatchJobState
+            {
+                JobId = "honua-test",
+                ExecutionState = AzureBatchTaskExecutionState.Running,
+                RawTaskState = "running"
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Running,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running,
+            "terminate has been accepted but Batch has not yet drained the task");
+        observation.Message.Should().Contain("termination requested", Exactly.Once());
+        stub.TerminatedJobs.Should().ContainSingle().Which.Should().Be("honua-test");
+    }
+
+    [Fact]
+    public async Task CancelAsync_ReportsCancelledOnceBatchCompletesTermination()
+    {
+        // Once Batch finishes terminating, the task reaches CompletedFailure. Because the
+        // durable record carries CancellationRequestedAt, MapObservation routes the failure
+        // to Cancelled instead of Failed — the cancellation intent is preserved.
+        var stub = new StubAzureBatchClient
+        {
+            NextState = new AzureBatchJobState
+            {
+                JobId = "honua-test",
+                ExecutionState = AzureBatchTaskExecutionState.CompletedFailure,
+                RawTaskState = "completed",
+                FailureMessage = "Task was terminated by request"
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Running,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var observation = await backend.CancelAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
         observation.PercentComplete.Should().Be(100);
         stub.TerminatedJobs.Should().ContainSingle().Which.Should().Be("honua-test");
+    }
+
+    [Fact]
+    public async Task CancelAsync_IsIdempotentAcrossRetries()
+    {
+        // The reconciler will call CancelAsync on every cycle while CancellationRequestedAt
+        // is set. Repeated TerminateJobAsync calls must be safe (idempotent).
+        var stub = new StubAzureBatchClient
+        {
+            NextState = new AzureBatchJobState
+            {
+                JobId = "honua-test",
+                ExecutionState = AzureBatchTaskExecutionState.Running,
+                RawTaskState = "running"
+            }
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Running,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        await backend.CancelAsync(job);
+        await backend.CancelAsync(job);
+
+        stub.TerminatedJobs.Should().HaveCount(2);
     }
 
     [Fact]
@@ -220,7 +507,8 @@ public sealed class AzureBatchComputeBackendTests
     private static ExecutionJobRecord CreateJob(
         string? providerJobId = null,
         string? runtimeProfile = null,
-        IReadOnlyDictionary<string, string>? parameters = null)
+        IReadOnlyDictionary<string, string>? parameters = null,
+        string workloadName = "test-workload")
     {
         var operationId = $"job-{Guid.NewGuid():N}";
         parameters ??= new Dictionary<string, string>(StringComparer.Ordinal)
@@ -241,7 +529,7 @@ public sealed class AzureBatchComputeBackendTests
                 TargetKind = BatchComputeTargetKind.AzureBatch,
                 Backend = AzureBatchComputeBackend.BackendIdentifier,
                 Kind = ExecutionJobKind.Geoprocessing,
-                WorkloadName = "test-workload",
+                WorkloadName = workloadName,
                 WorkloadId = "wl-1",
                 RuntimeProfile = runtimeProfile,
                 Parameters = parameters
@@ -262,6 +550,8 @@ public sealed class AzureBatchComputeBackendTests
         public HttpRequestException? SubmissionException { get; set; }
 
         public HttpRequestException? TerminateException { get; set; }
+
+        public HttpRequestException? PoolStateException { get; set; }
 
         public List<string> TerminatedJobs { get; } = [];
 
@@ -306,6 +596,20 @@ public sealed class AzureBatchComputeBackendTests
             string accountUrl,
             string poolId,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(NextPoolState ?? new AzureBatchPoolState { PoolId = poolId });
+        {
+            if (PoolStateException != null)
+            {
+                throw PoolStateException;
+            }
+
+            return Task.FromResult(NextPoolState ?? new AzureBatchPoolState
+            {
+                PoolId = poolId,
+                State = "active",
+                AllocationState = "steady",
+                DedicatedNodes = 1,
+                TargetDedicatedNodes = 1
+            });
+        }
     }
 }
