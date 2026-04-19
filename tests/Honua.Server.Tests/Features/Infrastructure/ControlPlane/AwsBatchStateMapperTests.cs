@@ -67,4 +67,45 @@ public sealed class AwsBatchStateMapperTests
     {
         AwsBatchStateMapper.IsInFlight(awsStatus).Should().Be(expected);
     }
+
+    [Fact]
+    public void MapStatusWithReason_PromotesFailedWithCancelReasonToCancelled()
+    {
+        var mapped = AwsBatchStateMapper.MapStatusWithReason(
+            "FAILED",
+            statusReason: AwsBatchStateMapper.CancelReason + " (request id abc)");
+
+        mapped.Should().Be(ExecutionJobStatus.Cancelled);
+    }
+
+    [Fact]
+    public void MapStatusWithReason_LeavesFailedUnchangedWhenReasonIsWorkloadFailure()
+    {
+        var mapped = AwsBatchStateMapper.MapStatusWithReason(
+            "FAILED",
+            statusReason: "Container exited with non-zero status 137");
+
+        mapped.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [Fact]
+    public void MapStatusWithReason_IgnoresCancelReasonForNonTerminalStatuses()
+    {
+        var mapped = AwsBatchStateMapper.MapStatusWithReason(
+            "RUNNING",
+            statusReason: AwsBatchStateMapper.CancelReason);
+
+        mapped.Should().Be(ExecutionJobStatus.Running);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("Container failure", false)]
+    [InlineData("Cancelled by Honua control plane", true)]
+    [InlineData("Workflow abort: Cancelled by Honua control plane", true)]
+    public void MatchesCancelReason_DetectsHonuaCancelMarker(string? reason, bool expected)
+    {
+        AwsBatchStateMapper.MatchesCancelReason(reason).Should().Be(expected);
+    }
 }

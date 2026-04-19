@@ -154,16 +154,20 @@ public sealed class AwsBatchComputeBackendTests
     }
 
     [Fact]
-    public async Task CancelAsync_CallsCancelForQueuedJobs()
+    public async Task CancelAsync_CallsCancelForQueuedJobsAndReturnsCancelledWhenProviderReachesTerminalFailure()
     {
-        var client = new StubAwsBatchJobClient
+        var client = new StubAwsBatchJobClient();
+        client.DescribeResults.Enqueue(new AwsBatchJobState
         {
-            NextDescribeResult = new AwsBatchJobState
-            {
-                JobId = "aws-job-1",
-                Status = "RUNNABLE"
-            }
-        };
+            JobId = "aws-job-1",
+            Status = "RUNNABLE"
+        });
+        client.DescribeResults.Enqueue(new AwsBatchJobState
+        {
+            JobId = "aws-job-1",
+            Status = "FAILED",
+            StatusReason = AwsBatchStateMapper.CancelReason
+        });
         var backend = CreateBackend(client);
         var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Queued);
 
@@ -172,26 +176,57 @@ public sealed class AwsBatchComputeBackendTests
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
         client.CancelCallCount.Should().Be(1);
         client.TerminateCallCount.Should().Be(0);
+        client.DescribeCallCount.Should().Be(2);
     }
 
     [Fact]
-    public async Task CancelAsync_CallsTerminateForRunningJobs()
+    public async Task CancelAsync_CallsTerminateForRunningJobsAndReturnsNonTerminalWhileProviderTerminationIsInFlight()
     {
-        var client = new StubAwsBatchJobClient
+        var client = new StubAwsBatchJobClient();
+        // AWS Batch TerminateJob is asynchronous — the job is still RUNNING on re-describe.
+        client.DescribeResults.Enqueue(new AwsBatchJobState
         {
-            NextDescribeResult = new AwsBatchJobState
-            {
-                JobId = "aws-job-1",
-                Status = "RUNNING"
-            }
-        };
+            JobId = "aws-job-1",
+            Status = "RUNNING"
+        });
+        client.DescribeResults.Enqueue(new AwsBatchJobState
+        {
+            JobId = "aws-job-1",
+            Status = "RUNNING"
+        });
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running);
+        observation.Message.Should().Contain("cancellation requested");
+        client.CancelCallCount.Should().Be(0);
+        client.TerminateCallCount.Should().Be(1);
+        client.DescribeCallCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CancelAsync_ReturnsCancelledWhenTerminateTransitionsToFailedWithCancelReason()
+    {
+        var client = new StubAwsBatchJobClient();
+        client.DescribeResults.Enqueue(new AwsBatchJobState
+        {
+            JobId = "aws-job-1",
+            Status = "RUNNING"
+        });
+        client.DescribeResults.Enqueue(new AwsBatchJobState
+        {
+            JobId = "aws-job-1",
+            Status = "FAILED",
+            StatusReason = AwsBatchStateMapper.CancelReason
+        });
         var backend = CreateBackend(client);
         var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
 
         var observation = await backend.CancelAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
-        client.CancelCallCount.Should().Be(0);
         client.TerminateCallCount.Should().Be(1);
     }
 
@@ -214,6 +249,30 @@ public sealed class AwsBatchComputeBackendTests
         observation.Status.Should().Be(ExecutionJobStatus.Succeeded);
         client.CancelCallCount.Should().Be(0);
         client.TerminateCallCount.Should().Be(0);
+        client.DescribeCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CancelAsync_ReturnsCancelledWhenProviderAlreadyFailedDueToEarlierCancel()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextDescribeResult = new AwsBatchJobState
+            {
+                JobId = "aws-job-1",
+                Status = "FAILED",
+                StatusReason = AwsBatchStateMapper.CancelReason
+            }
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        client.CancelCallCount.Should().Be(0);
+        client.TerminateCallCount.Should().Be(0);
+        client.DescribeCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -229,6 +288,46 @@ public sealed class AwsBatchComputeBackendTests
         client.DescribeCallCount.Should().Be(0);
         client.CancelCallCount.Should().Be(0);
         client.TerminateCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_MapsFailedWithCancelReasonToCancelled()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextDescribeResult = new AwsBatchJobState
+            {
+                JobId = "aws-job-1",
+                Status = "FAILED",
+                StatusReason = AwsBatchStateMapper.CancelReason
+            }
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_MapsFailedWithRealWorkloadFailureToFailed()
+    {
+        var client = new StubAwsBatchJobClient
+        {
+            NextDescribeResult = new AwsBatchJobState
+            {
+                JobId = "aws-job-1",
+                Status = "FAILED",
+                StatusReason = "Container exited with exit code 137"
+            }
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
     }
 
     private static AwsBatchComputeBackend CreateBackend(IAwsBatchJobClient client)
@@ -280,6 +379,14 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
         Status = "RUNNING"
     };
 
+    /// <summary>
+    /// Optional queue of scripted describe results. Each describe call dequeues the next
+    /// entry; once empty, <see cref="NextDescribeResult"/> is returned. Lets tests model
+    /// sequential AWS Batch state transitions (for example, RUNNABLE then FAILED after a
+    /// cancel request).
+    /// </summary>
+    public Queue<AwsBatchJobState?> DescribeResults { get; } = new();
+
     public AwsBatchJobSubmission? LastSubmission { get; private set; }
 
     public string? LastRegion { get; private set; }
@@ -307,7 +414,8 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
     {
         DescribeCallCount++;
         LastRegion = region;
-        return Task.FromResult(NextDescribeResult);
+        var result = DescribeResults.Count > 0 ? DescribeResults.Dequeue() : NextDescribeResult;
+        return Task.FromResult(result);
     }
 
     public Task CancelJobAsync(

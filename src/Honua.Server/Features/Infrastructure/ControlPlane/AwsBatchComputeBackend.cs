@@ -28,6 +28,13 @@ internal static class AwsBatchParameterKeys
 /// </summary>
 internal static class AwsBatchStateMapper
 {
+    /// <summary>
+    /// Reason string attached to AWS Batch cancel and terminate requests. The reason surfaces
+    /// back via DescribeJobs.StatusReason once AWS reaches FAILED, letting the adapter distinguish
+    /// operator-initiated cancellation from real workload failures.
+    /// </summary>
+    public const string CancelReason = "Cancelled by Honua control plane";
+
     public static ExecutionJobStatus MapStatus(string? awsStatus)
     {
         if (string.IsNullOrWhiteSpace(awsStatus))
@@ -48,10 +55,34 @@ internal static class AwsBatchStateMapper
         };
     }
 
+    /// <summary>
+    /// Maps AWS Batch status, promoting FAILED to Cancelled when the provider's statusReason
+    /// indicates the failure was caused by a cancel/terminate request we issued.
+    /// </summary>
+    public static ExecutionJobStatus MapStatusWithReason(string? awsStatus, string? statusReason)
+    {
+        var mapped = MapStatus(awsStatus);
+        if (mapped == ExecutionJobStatus.Failed && MatchesCancelReason(statusReason))
+        {
+            return ExecutionJobStatus.Cancelled;
+        }
+
+        return mapped;
+    }
+
+    public static bool MatchesCancelReason(string? statusReason)
+        => !string.IsNullOrEmpty(statusReason)
+            && statusReason.Contains(CancelReason, StringComparison.Ordinal);
+
+    public static bool IsTerminal(ExecutionJobStatus status)
+        => status is ExecutionJobStatus.Succeeded
+            or ExecutionJobStatus.Failed
+            or ExecutionJobStatus.Cancelled;
+
     public static bool IsInFlight(string? awsStatus)
     {
         var mapped = MapStatus(awsStatus);
-        return mapped is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled);
+        return !IsTerminal(mapped);
     }
 
     public static bool CanCancelWithoutTerminate(string? awsStatus)
@@ -158,7 +189,7 @@ internal sealed partial class AwsBatchComputeBackend(
             };
         }
 
-        var mapped = AwsBatchStateMapper.MapStatus(state.Status);
+        var mapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
         var message = BuildObservationMessage(state);
         Log.BatchJobObserved(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN", mapped.ToString());
 
@@ -199,34 +230,52 @@ internal sealed partial class AwsBatchComputeBackend(
             };
         }
 
-        var mapped = AwsBatchStateMapper.MapStatus(state.Status);
-        if (mapped is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+        var currentMapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
+        if (AwsBatchStateMapper.IsTerminal(currentMapped))
         {
             return new BatchComputeObservation
             {
-                Status = mapped,
+                Status = currentMapped,
                 ProviderOperationId = providerId,
                 Message = BuildObservationMessage(state)
             };
         }
 
-        const string cancelReason = "Cancelled by Honua control plane";
         if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
         {
-            await batchClient.CancelJobAsync(providerId, cancelReason, region, cancellationToken).ConfigureAwait(false);
+            await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
             Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
         }
         else
         {
-            await batchClient.TerminateJobAsync(providerId, cancelReason, region, cancellationToken).ConfigureAwait(false);
+            await batchClient.TerminateJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
             Log.BatchJobTerminated(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
         }
 
+        // Re-observe so we only report terminal Cancelled once AWS has actually reached a
+        // terminal state. If AWS has not yet transitioned (e.g. TerminateJob is still propagating
+        // SIGTERM), surface the current non-terminal state so the reconciler keeps polling.
+        var postCancelState = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+        if (postCancelState == null)
+        {
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = providerId,
+                Message = $"AWS Batch job '{providerId}' disappeared after cancellation; treating as cancelled."
+            };
+        }
+
+        var postMapped = AwsBatchStateMapper.MapStatusWithReason(postCancelState.Status, postCancelState.StatusReason);
+        var message = AwsBatchStateMapper.IsTerminal(postMapped)
+            ? $"AWS Batch job '{providerId}' reached {postCancelState.Status ?? "UNKNOWN"} after cancellation from state {state.Status ?? "UNKNOWN"}."
+            : $"AWS Batch job '{providerId}' cancellation requested from state {state.Status ?? "UNKNOWN"}; provider still at {postCancelState.Status ?? "UNKNOWN"}.";
+
         return new BatchComputeObservation
         {
-            Status = ExecutionJobStatus.Cancelled,
+            Status = postMapped,
             ProviderOperationId = providerId,
-            Message = $"AWS Batch job '{providerId}' cancellation requested from state {state.Status ?? "UNKNOWN"}."
+            Message = message
         };
     }
 

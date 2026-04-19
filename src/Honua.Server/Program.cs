@@ -274,13 +274,15 @@ builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureC
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
-var awsBatchSection = builder.Configuration.GetSection("ControlPlane:AwsBatch");
-if (awsBatchSection.Exists())
-{
-    builder.Services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
-    builder.Services.AddSingleton<AwsBatchComputeBackend>();
-    builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());
-}
+
+// AWS Batch backend follows the unconditional registration pattern used by sibling AWS deploy
+// backends. Per-workload AWS Batch settings (job definition ARN, queue ARN, region, resource
+// overrides) are carried on each ExecutionJobSpec.Parameters entry via ControlPlane:ExecutionWorkloads,
+// so the adapter has no global options section it depends on. Registering unconditionally keeps
+// the backend visible to the reconciler whenever an operator targets Backend=honua-aws-batch.
+builder.Services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
+builder.Services.AddSingleton<AwsBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());
 
 if (connectedRedis != null)
 {
