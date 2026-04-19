@@ -30,7 +30,8 @@ internal static class IntentDrafter
         IReadOnlyList<string> clarificationQuestionIds,
         IReadOnlyCollection<string> clarificationsAnswered,
         IReadOnlyList<string> assumptions,
-        PublishTargetKind? publishTargetOverride = null)
+        PublishTargetKind? publishTargetOverride = null,
+        string? resolvedPublishSourceId = null)
     {
         var requestedOutputs = InferRequestedOutputs(classification.Value, request);
         var provenance = BuildProvenance(candidates, clarificationQuestionIds, clarificationsAnswered, assumptions);
@@ -54,7 +55,7 @@ internal static class IntentDrafter
                 WorkflowFamily = classification.Value,
                 RequestedOutputs = requestedOutputs,
                 AssumptionPolicy = request.AssumptionPolicy,
-                Publishing = BuildPublishIntent(request, intentId, candidates, publishTargetOverride),
+                Publishing = BuildPublishIntent(request, intentId, candidates, publishTargetOverride, resolvedPublishSourceId),
                 Provenance = provenance
             },
             _ => new DraftIntent
@@ -87,16 +88,23 @@ internal static class IntentDrafter
         GroundingRequest request,
         string intentId,
         CandidateRanking candidates,
-        PublishTargetKind? publishTargetOverride)
+        PublishTargetKind? publishTargetOverride,
+        string? resolvedPublishSourceId)
     {
-        // Draft a publish intent only when the caller has pinned a source
-        // via ExplicitInputs or when a high-confidence dataset leads the
-        // ranking. Otherwise the clarification envelope asks the source
-        // question and the caller comes back with a resolved input.
+        // Draft a publish intent when the caller has pinned a source via
+        // ExplicitInputs, when a high-confidence dataset leads the ranking,
+        // or when the caller answered the publish.source clarification on a
+        // prior turn. Otherwise the clarification envelope keeps asking for
+        // the source so the flow cannot terminate with a null publishing
+        // block.
         string? sourceId = null;
         if (request.ExplicitInputs.Count > 0)
         {
             sourceId = request.ExplicitInputs[0];
+        }
+        else if (!string.IsNullOrWhiteSpace(resolvedPublishSourceId))
+        {
+            sourceId = resolvedPublishSourceId;
         }
         else if (candidates.Datasets.Count > 0
                  && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High)

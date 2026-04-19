@@ -166,7 +166,8 @@ internal sealed class GroundingService : IGroundingService
             clarificationQuestionIds,
             appliedIds,
             assumptions,
-            applied.PublishTargetOverride);
+            applied.PublishTargetOverride,
+            applied.ResolvedPublishSourceId);
 
         // 6. Build the clarification envelope (if any).
         var clarification = BuildClarification(intentId, findings);

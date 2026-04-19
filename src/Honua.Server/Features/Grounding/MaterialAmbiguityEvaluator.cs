@@ -100,6 +100,35 @@ internal static class MaterialAmbiguityEvaluator
         // outputs include a published surface.
         if (classification.Value == WorkflowFamily.PublishData)
         {
+            // A publish draft needs a source id. If the caller has not pinned an
+            // explicit input and the top dataset is not high-confidence, ask for
+            // the source. Without this question, answering publish.target alone
+            // on a follow-up turn can leave draftIntent.publishing == null with
+            // no clarification to escape — a terminal dead state.
+            if (!IsPublishSourceResolved(request, candidates))
+            {
+                var sourceOptions = candidates.Datasets.Count > 0
+                    ? candidates.Datasets
+                        .Select(c => new ClarificationOption
+                        {
+                            Id = c.Id,
+                            Label = c.DisplayName ?? c.Id
+                        })
+                        .ToArray()
+                    : null;
+
+                findings.Add(new MaterialAmbiguityFinding
+                {
+                    ReasonCode = ClarificationReasonCode.MissingRequiredInput,
+                    QuestionId = "publish.source",
+                    QuestionKind = sourceOptions is null
+                        ? ClarificationQuestionKind.FreeText
+                        : ClarificationQuestionKind.SingleSelect,
+                    Prompt = "Which dataset should be published?",
+                    Options = sourceOptions
+                });
+            }
+
             findings.Add(new MaterialAmbiguityFinding
             {
                 ReasonCode = ClarificationReasonCode.PublishAction,
@@ -129,6 +158,23 @@ internal static class MaterialAmbiguityEvaluator
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// Source is resolved when the caller has pinned at least one explicit
+    /// input or the top-ranked dataset is high-confidence. Mirrors the
+    /// predicate <see cref="IntentDrafter"/> uses to decide whether to emit
+    /// a <c>publishing</c> block so the evaluator and drafter stay aligned.
+    /// </summary>
+    private static bool IsPublishSourceResolved(GroundingRequest request, CandidateRanking candidates)
+    {
+        if (request.ExplicitInputs.Count > 0)
+        {
+            return true;
+        }
+
+        return candidates.Datasets.Count > 0
+            && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High;
     }
 
     private static bool IsAmbiguous(

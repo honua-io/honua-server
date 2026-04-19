@@ -37,9 +37,14 @@ internal static class GroundingToolMapper
             WorkflowFamilyHint = ParseWorkflowFamilyHint(argument.WorkflowFamilyHint),
             AssumptionPolicy = ParseAssumptionPolicy(argument.AssumptionPolicy),
             Constraints = ToDomain(argument.Constraints),
-            ExplicitInputs = argument.ExplicitInputs ?? [],
+            ExplicitInputs = NormalizeExplicitInputs(argument.ExplicitInputs),
             Context = ToDomain(argument.Context),
-            IntentId = argument.IntentId
+            // Treat blank/whitespace `intentId` as "omitted" on the initial grounding
+            // call so GroundingService allocates a fresh id instead of propagating an
+            // empty string into the draft + clarification envelope (which the clarify
+            // tool would then reject). Intent parity for clarification turns is
+            // enforced separately in ToDomain(McpClarifyIntentArgument).
+            IntentId = string.IsNullOrWhiteSpace(argument.IntentId) ? null : argument.IntentId
         };
     }
 
@@ -88,7 +93,7 @@ internal static class GroundingToolMapper
             WorkflowFamilyHint = ParseWorkflowFamilyHint(argument.WorkflowFamilyHint),
             AssumptionPolicy = ParseAssumptionPolicy(argument.AssumptionPolicy),
             Constraints = ToDomain(argument.Constraints),
-            ExplicitInputs = argument.ExplicitInputs ?? [],
+            ExplicitInputs = NormalizeExplicitInputs(argument.ExplicitInputs),
             Context = ToDomain(argument.Context),
             IntentId = argument.IntentId,
             ClarificationResponse = clarification
@@ -108,6 +113,29 @@ internal static class GroundingToolMapper
             Clarification = result.Clarification is { } clarification ? ToWire(clarification) : null,
             Engine = result.Engine
         };
+    }
+
+    private static List<string> NormalizeExplicitInputs(IReadOnlyList<string>? inputs)
+    {
+        // Drop blank / whitespace-only entries so IntentDrafter cannot pick them as
+        // `sourceId` for a draft publish intent (PublishIntent.CreateDraft keeps
+        // whatever it is handed). Treat the overall field as optional — fully blank
+        // lists collapse to an empty list exactly like an omitted field.
+        if (inputs is null || inputs.Count == 0)
+        {
+            return [];
+        }
+
+        var normalized = new List<string>(inputs.Count);
+        for (var i = 0; i < inputs.Count; i++)
+        {
+            var value = inputs[i];
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                normalized.Add(value);
+            }
+        }
+        return normalized;
     }
 
     private static WorkflowFamily? ParseWorkflowFamilyHint(string? hint)

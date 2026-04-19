@@ -728,6 +728,88 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_PublishWithoutSource_AnsweringOnlyPublishTarget_StillRequestsSource()
+    {
+        // Regression for Finding #2 (codex_local): previously, answering
+        // publish.target without any explicit inputs or high-confidence
+        // datasets terminated with draftIntent.publishing == null AND a null
+        // clarification — the caller could not escape. With the publish.source
+        // finding, the follow-up pass keeps asking for the source until it is
+        // pinned.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish my data",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["publish.target"] = ["TileService"]
+                    }
+                }
+            },
+            Principal);
+
+        result.DraftIntent.Publishing.Should().BeNull("no source was supplied yet");
+        result.Clarification.Should().NotBeNull(
+            "the publish flow cannot terminate silently when the source is still unresolved");
+        result.Clarification!.Questions.Should().Contain(q => q.QuestionId == "publish.source");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_PublishSourceAnswer_ProducesDraftPublishingWithResolvedSource()
+    {
+        // publish.source answers must flow into the drafted PublishIntent.SourceId
+        // so the caller can complete the publish flow without ever setting
+        // ExplicitInputs.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish my data",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["publish.source"] = ["parcels-layer"],
+                        ["publish.target"] = ["TileService"]
+                    }
+                }
+            },
+            Principal);
+
+        result.DraftIntent.Publishing.Should().NotBeNull();
+        result.DraftIntent.Publishing!.SourceId.Should().Be("parcels-layer");
+        result.DraftIntent.Publishing.TargetKind.Should().Be(PublishTargetKind.TileService);
+        result.DraftIntent.Provenance.ClarificationsAnswered.Should().Contain("publish.source");
+
+        if (result.Clarification is not null)
+        {
+            result.Clarification.Questions.Should().NotContain(q => q.QuestionId == "publish.source");
+            result.Clarification.Questions.Should().NotContain(q => q.QuestionId == "publish.target");
+        }
+    }
+
+    [UnitTest]
     public async Task GroundAsync_ExposesClarificationEnvelopeWhenAmbiguityDetected()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification

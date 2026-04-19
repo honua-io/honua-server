@@ -55,7 +55,7 @@ Source: `Honua.Core.Features.Grounding.Domain.WorkflowFamily`.
 | Family | Status | Draft intent shape |
 |--------|--------|--------------------|
 | `Analyze` | Functional | `DraftAnalysisIntent` with scored process + dataset candidates |
-| `PublishData` | Functional | `DraftPublishingIntent` (source kind, target kind, draft status) when a source is pinned via `explicitInputs` or the top dataset is `High` confidence; otherwise the `publishing` block is omitted and the clarification envelope asks for the source |
+| `PublishData` | Functional | `DraftPublishingIntent` (source kind, target kind, draft status) when a source is pinned via `explicitInputs`, the top dataset is `High` confidence, or a prior `publish.source` answer has been supplied; otherwise the `publishing` block is omitted and the clarification envelope asks for the source via `publish.source` |
 | `BuildApp` | Envelope-only | `EnvelopeStub` + `PolicyBoundary` clarification |
 | `AutomateDeploy` | Envelope-only | `EnvelopeStub` + `PolicyBoundary` clarification |
 
@@ -95,13 +95,15 @@ finding so the caller can answer them in one turn.
 | 3 | `AmbiguousDataset` | Two or more dataset candidates at `≥ HighConfidenceFloor` within `MaterialSpread` | Single-select over the tied candidates |
 | 4 | `AmbiguousProcess` | Two or more process candidates at `≥ HighConfidenceFloor` within `MaterialSpread` | Single-select over the tied candidates |
 | 5 | `DestructiveAction` | Top process candidate is flagged destructive by `ProcessDestructiveClassifier` | Confirmation |
-| 6 | `PublishAction` | Classified as `PublishData` | Single-select over publish target kinds |
-| 7 | `PolicyBoundary` | Classified as `BuildApp` or `AutomateDeploy` | Confirmation (proceed with envelope-only stub) |
+| 6 | `MissingRequiredInput` (`publish.source`) | Classified as `PublishData` but no `explicitInputs` and the top dataset is not `High` confidence | Single-select over ranked datasets when available, free-text fallback otherwise |
+| 7 | `PublishAction` | Classified as `PublishData` | Single-select over publish target kinds |
+| 8 | `PolicyBoundary` | Classified as `BuildApp` or `AutomateDeploy` | Confirmation (proceed with envelope-only stub) |
 
 Each finding carries a stable `QuestionId` (e.g. `workflow_family`,
 `param.<name>`, `dataset.selection`, `process.selection`,
-`destructive.confirm`, `publish.target`, `workflow_family.blocked`) that
-the caller echoes back in `honua_clarify_intent`.
+`destructive.confirm`, `publish.source`, `publish.target`,
+`workflow_family.blocked`) that the caller echoes back in
+`honua_clarify_intent`.
 
 ### Answer application
 
@@ -115,6 +117,7 @@ reshapes the result, not just the acknowledged-question set:
 | `workflow_family` | Overrides the classifier. Confidence reports as `1.0` with evidence `clarification`. Unknown values raise `invalid_argument`. |
 | `dataset.selection` | Reorders the post-authorization dataset ranking so the pinned id is first. Unknown ids raise `invalid_argument`. |
 | `process.selection` | Same pin semantics as `dataset.selection`, applied to the process ranking. |
+| `publish.source` | Treated as the draft `PublishIntent.SourceId` when no `explicitInputs` or high-confidence dataset is available. Free-text or an option id from the ranked dataset list. |
 | `publish.target` | Flows into the drafted `PublishIntent.TargetKind`. Unknown values raise `invalid_argument`. |
 | `param.<name>` | Skips the matching `MissingRequiredInput` clarification and records `param.<name>=<value>` on `provenance.assumptions`. |
 | `destructive.confirm`, `workflow_family.blocked` | Confirmation-only; any non-blank value counts as acknowledgement. |

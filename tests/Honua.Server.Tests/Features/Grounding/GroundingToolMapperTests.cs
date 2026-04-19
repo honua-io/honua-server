@@ -100,6 +100,61 @@ public sealed class GroundingToolMapperTests
     }
 
     [UnitTest]
+    public void GroundCandidatesToDomain_WhitespaceIntentId_NormalizesToNullSoServiceAllocatesFreshId()
+    {
+        // A whitespace intentId must not leak into draftIntent.intentId /
+        // clarification.intentId — the clarify tool rejects blank intentIds,
+        // which would strand the caller. Treat it as omitted.
+        var request = GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+        {
+            Goal = "buffer",
+            IntentId = "   "
+        });
+
+        request.IntentId.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void GroundCandidatesToDomain_BlankExplicitInputs_AreFilteredOut()
+    {
+        // Blank entries must not become sourceId candidates for the drafted
+        // publish intent — PublishIntent.CreateDraft preserves whatever it is
+        // given, so filtering must happen at the MCP boundary.
+        var request = GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+        {
+            Goal = "publish parcels",
+            ExplicitInputs = ["   ", "parcels", ""]
+        });
+
+        request.ExplicitInputs.Should().ContainSingle().Which.Should().Be("parcels");
+    }
+
+    [UnitTest]
+    public void GroundCandidatesToDomain_AllBlankExplicitInputs_CollapseToEmptyList()
+    {
+        var request = GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+        {
+            Goal = "publish parcels",
+            ExplicitInputs = ["   ", ""]
+        });
+
+        request.ExplicitInputs.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void GroundCandidatesArgumentSchema_RequiresMinLengthOnIdentifierFields()
+    {
+        // Schema-driven clients rely on the advertised contract to prevent
+        // whitespace-only identifier payloads from reaching the server.
+        var schema = GroundingToolSchemas.GroundCandidatesArgumentSchema;
+        var properties = schema.GetProperty("properties");
+
+        properties.GetProperty("intentId").GetProperty("minLength").GetInt32().Should().Be(1);
+        properties.GetProperty("explicitInputs").GetProperty("items")
+            .GetProperty("minLength").GetInt32().Should().Be(1);
+    }
+
+    [UnitTest]
     public void GroundCandidatesToDomain_DefaultsAssumptionPolicyToAskWhenMaterial()
     {
         var request = GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument

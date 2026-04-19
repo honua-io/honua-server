@@ -63,7 +63,8 @@ internal static class GroundingToolSchemas
                 },
                 "intentId": {
                   "type": "string",
-                  "description": "Intent identifier. Required for clarification turns; optional on the initial grounding call."
+                  "minLength": 1,
+                  "description": "Intent identifier. Required for clarification turns; optional on the initial grounding call. Whitespace-only values are rejected."
                 },
                 "workflowFamilyHint": {
                   "type": "string",
@@ -77,8 +78,8 @@ internal static class GroundingToolSchemas
                 },
                 "explicitInputs": {
                   "type": "array",
-                  "items": { "type": "string" },
-                  "description": "Dataset, layer, or artifact identifiers the caller has already pinned."
+                  "items": { "type": "string", "minLength": 1 },
+                  "description": "Dataset, layer, or artifact identifiers the caller has already pinned. Entries must be non-empty strings; blank entries are filtered server-side."
                 },
                 "constraints": {
                   "type": "object",

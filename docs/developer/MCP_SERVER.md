@@ -442,6 +442,10 @@ catalog discovery on top of the same authorization graph via
   `workflowFamily.value` is one of `Analyze`, `PublishData`, `BuildApp`,
   `AutomateDeploy`. `draftIntent` carries a canonical intent envelope with
   optional `analysis` and `publishing` blocks per the drafted family.
+  `workflowFamilyHint` and `assumptionPolicy` accept the case-insensitive
+  enum names only; numeric strings (e.g. `"999"`) and any other unknown
+  value are rejected with `invalid_argument` so out-of-contract enum
+  values cannot leak onto `workflowFamily.value` or the drafted intent.
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
   published schema also marks `goal` as required and requires at least

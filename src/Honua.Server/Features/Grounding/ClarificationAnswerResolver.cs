@@ -41,6 +41,15 @@ internal sealed record AppliedClarificationAnswers
     public PublishTargetKind? PublishTargetOverride { get; init; }
 
     /// <summary>
+    /// Source identifier the operator supplied via <c>publish.source</c> when
+    /// the initial pass could not resolve a source from <c>ExplicitInputs</c>
+    /// or a high-confidence dataset. Feeds the draft publish intent on the
+    /// follow-up pass so the PublishData flow cannot terminate with a null
+    /// <c>publishing</c> block.
+    /// </summary>
+    public string? ResolvedPublishSourceId { get; init; }
+
+    /// <summary>
     /// Resolved values for <c>param.&lt;name&gt;</c> answers, keyed by the
     /// parameter name. Empty dictionary when no parameter answers were
     /// supplied.
@@ -72,6 +81,7 @@ internal static class ClarificationAnswerResolver
     private const string DatasetSelectionQuestionId = "dataset.selection";
     private const string ProcessSelectionQuestionId = "process.selection";
     private const string PublishTargetQuestionId = "publish.target";
+    private const string PublishSourceQuestionId = "publish.source";
     private const string DestructiveConfirmQuestionId = "destructive.confirm";
     private const string WorkflowFamilyBlockedQuestionId = "workflow_family.blocked";
     private const string ParameterQuestionPrefix = "param.";
@@ -91,6 +101,7 @@ internal static class ClarificationAnswerResolver
         string? pinnedDatasetId = null;
         string? pinnedProcessId = null;
         PublishTargetKind? publishTargetOverride = null;
+        string? resolvedPublishSourceId = null;
         var resolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal);
         var appliedIds = new HashSet<string>(StringComparer.Ordinal);
 
@@ -118,6 +129,15 @@ internal static class ClarificationAnswerResolver
                 case PublishTargetQuestionId:
                     publishTargetOverride = ParseEnumOrThrow<PublishTargetKind>(
                         questionId, value, "publish target");
+                    appliedIds.Add(questionId);
+                    break;
+
+                case PublishSourceQuestionId:
+                    // Free-text or picked-from-options source id. The drafter
+                    // treats it as the sourceId for the publish intent so the
+                    // follow-up pass can produce a non-null `publishing` block
+                    // even when `ExplicitInputs` is still empty.
+                    resolvedPublishSourceId = value;
                     appliedIds.Add(questionId);
                     break;
 
@@ -157,6 +177,7 @@ internal static class ClarificationAnswerResolver
             PinnedDatasetId = pinnedDatasetId,
             PinnedProcessId = pinnedProcessId,
             PublishTargetOverride = publishTargetOverride,
+            ResolvedPublishSourceId = resolvedPublishSourceId,
             ResolvedParameters = resolvedParameters,
             AppliedQuestionIds = appliedIds
         };

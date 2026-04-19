@@ -248,6 +248,111 @@ public sealed class MaterialAmbiguityEvaluatorTests
     // -----------------------------------------------------------------------
 
     [UnitTest]
+    public void Evaluate_PublishWithNoResolvableSource_SurfacesPublishSourceFreeText()
+    {
+        // Finding #2 regression: when PublishData has no ExplicitInputs and
+        // no high-confidence dataset lead, the evaluator must ask for the
+        // source. Without this, answering publish.target on a follow-up turn
+        // leaves draftIntent.publishing == null with no clarification — a
+        // terminal dead state.
+        var classification = new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            classification,
+            new CandidateRanking(),
+            requiredParameterGaps: [],
+            _options);
+
+        var sourceFinding = findings.FirstOrDefault(f => f.QuestionId == "publish.source");
+        sourceFinding.Should().NotBeNull();
+        sourceFinding!.ReasonCode.Should().Be(ClarificationReasonCode.MissingRequiredInput);
+        sourceFinding.QuestionKind.Should().Be(ClarificationQuestionKind.FreeText);
+        sourceFinding.Options.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void Evaluate_PublishWithDatasetCandidates_SurfacesPublishSourceAsSingleSelect()
+    {
+        // When dataset candidates exist but none reached the high-confidence
+        // floor, publish.source is a single-select picker over the current
+        // ranking so the operator can pin a candidate in a single turn.
+        var classification = new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        };
+
+        var ranking = new CandidateRanking
+        {
+            Datasets =
+            [
+                Candidate("ds-a", 0.5, CandidateKind.Dataset) with { ConfidenceBand = ConfidenceBand.Medium },
+                Candidate("ds-b", 0.4, CandidateKind.Dataset) with { ConfidenceBand = ConfidenceBand.Medium }
+            ]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            classification,
+            ranking,
+            requiredParameterGaps: [],
+            _options);
+
+        var sourceFinding = findings.First(f => f.QuestionId == "publish.source");
+        sourceFinding.QuestionKind.Should().Be(ClarificationQuestionKind.SingleSelect);
+        sourceFinding.Options.Should().NotBeNull();
+        sourceFinding.Options!.Select(o => o.Id).Should().ContainInOrder("ds-a", "ds-b");
+    }
+
+    [UnitTest]
+    public void Evaluate_PublishWithHighConfidenceDataset_DoesNotAskForSource()
+    {
+        var classification = new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        };
+
+        var ranking = new CandidateRanking
+        {
+            Datasets = [Candidate("ds-a", 0.95, CandidateKind.Dataset)]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            BaselineRequest,
+            classification,
+            ranking,
+            requiredParameterGaps: [],
+            _options);
+
+        findings.Should().NotContain(f => f.QuestionId == "publish.source");
+    }
+
+    [UnitTest]
+    public void Evaluate_PublishWithExplicitInput_DoesNotAskForSource()
+    {
+        var classification = new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            new GroundingRequest { Goal = "Publish parcels", ExplicitInputs = ["parcels"] },
+            classification,
+            new CandidateRanking(),
+            requiredParameterGaps: [],
+            _options);
+
+        findings.Should().NotContain(f => f.QuestionId == "publish.source");
+    }
+
+    [UnitTest]
     public void Evaluate_PublishWorkflowFamily_SurfacesPublishActionWithAllTargets()
     {
         var classification = new WorkflowFamilyClassification
