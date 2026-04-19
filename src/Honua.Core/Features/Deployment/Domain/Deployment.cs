@@ -351,7 +351,11 @@ public sealed record Deployment
 
     /// <summary>
     /// Transitions the deployment to <see cref="DeploymentStatus.Superseded"/>, recording
-    /// the successor that replaced it.
+    /// the successor that replaced it. When superseded mid-rollout, the in-flight rollout is
+    /// marked <see cref="Domain.RolloutState.Cancelled"/> so the durable record never reports
+    /// a contradictory <see cref="Domain.RolloutState.InProgress"/> alongside a terminal
+    /// status; rollouts already at a terminal state (e.g. <see cref="Domain.RolloutState.Promoted"/>
+    /// after <see cref="DeploymentStatus.Active"/>) are preserved.
     /// </summary>
     public Deployment WithSuperseded(
         string successorDeploymentId,
@@ -369,6 +373,7 @@ public sealed record Deployment
         var now = DateTimeOffset.UtcNow;
         return ApplyTransition(
             DeploymentStatus.Superseded,
+            rolloutState: ResolveTerminalRolloutState(),
             publicationState: DeploymentPublicationState.Unpublished,
             clearSchedule: true,
             supersededBy: successorDeploymentId,
@@ -379,7 +384,10 @@ public sealed record Deployment
     }
 
     /// <summary>
-    /// Transitions the deployment to <see cref="DeploymentStatus.Retired"/>.
+    /// Transitions the deployment to <see cref="DeploymentStatus.Retired"/>. When retired
+    /// mid-rollout, the in-flight rollout is marked <see cref="Domain.RolloutState.Cancelled"/>
+    /// so the durable record never reports a contradictory <see cref="Domain.RolloutState.InProgress"/>
+    /// alongside a terminal status; rollouts already at a terminal state are preserved.
     /// </summary>
     public Deployment WithRetired(string? reason = null, OperationAuditInfo? audit = null)
     {
@@ -395,6 +403,7 @@ public sealed record Deployment
         var now = DateTimeOffset.UtcNow;
         return ApplyTransition(
             DeploymentStatus.Retired,
+            rolloutState: ResolveTerminalRolloutState(),
             publicationState: DeploymentPublicationState.Retired,
             clearSchedule: true,
             retiredAt: RetiredAt ?? now,
@@ -562,6 +571,11 @@ public sealed record Deployment
         next.Add(entry);
         return next;
     }
+
+    private RolloutState? ResolveTerminalRolloutState()
+        => Status == DeploymentStatus.RollingOut && RolloutState == Domain.RolloutState.InProgress
+            ? Domain.RolloutState.Cancelled
+            : null;
 
     private void EnsureValidRolloutStep(int? step)
     {

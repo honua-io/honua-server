@@ -447,6 +447,36 @@ public class DeploymentTests
     }
 
     [UnitTest]
+    public void WithSuperseded_FromActive_ShouldPreservePromotedRolloutState()
+    {
+        var deployment = CreateTestDeployment().WithProvisioning().WithRollingOut().WithActive();
+        deployment.RolloutState.Should().Be(RolloutState.Promoted);
+
+        var superseded = deployment.WithSuperseded("dep-002");
+
+        superseded.RolloutState.Should().Be(RolloutState.Promoted);
+        superseded.Transitions[^1].RolloutState.Should().Be(RolloutState.Promoted);
+    }
+
+    [UnitTest]
+    public void WithSuperseded_MidRollout_ShouldCancelInFlightRolloutState()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(1);
+        deployment.RolloutState.Should().Be(RolloutState.InProgress);
+
+        var superseded = deployment.WithSuperseded("dep-002", reason: "Replaced mid-rollout");
+
+        superseded.Status.Should().Be(DeploymentStatus.Superseded);
+        superseded.RolloutState.Should().Be(RolloutState.Cancelled);
+        superseded.CurrentRolloutStep.Should().Be(1);
+        superseded.SupersededByDeploymentId.Should().Be("dep-002");
+        superseded.Transitions[^1].RolloutState.Should().Be(RolloutState.Cancelled);
+    }
+
+    [UnitTest]
     public void WithSuperseded_WithoutSuccessor_ShouldThrow()
     {
         var deployment = CreateTestDeployment().WithProvisioning().WithRollingOut().WithActive();
@@ -466,6 +496,48 @@ public class DeploymentTests
         retired.Status.Should().Be(DeploymentStatus.Retired);
         retired.PublicationState.Should().Be(DeploymentPublicationState.Retired);
         retired.RetiredAt.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void WithRetired_FromActive_ShouldPreservePromotedRolloutState()
+    {
+        var deployment = CreateTestDeployment().WithProvisioning().WithRollingOut().WithActive();
+        deployment.RolloutState.Should().Be(RolloutState.Promoted);
+
+        var retired = deployment.WithRetired("End of campaign");
+
+        retired.RolloutState.Should().Be(RolloutState.Promoted);
+        retired.Transitions[^1].RolloutState.Should().Be(RolloutState.Promoted);
+    }
+
+    [UnitTest]
+    public void WithRetired_MidRollout_ShouldCancelInFlightRolloutState()
+    {
+        var deployment = CreateTestDeployment(rollout: RolloutPlan.Canary([25, 75, 100]))
+            .WithProvisioning()
+            .WithRollingOut()
+            .WithRolloutStep(1);
+        deployment.RolloutState.Should().Be(RolloutState.InProgress);
+
+        var retired = deployment.WithRetired("Aborted mid-rollout");
+
+        retired.Status.Should().Be(DeploymentStatus.Retired);
+        retired.RolloutState.Should().Be(RolloutState.Cancelled);
+        retired.CurrentRolloutStep.Should().Be(1);
+        retired.PublicationState.Should().Be(DeploymentPublicationState.Retired);
+        retired.Transitions[^1].RolloutState.Should().Be(RolloutState.Cancelled);
+    }
+
+    [UnitTest]
+    public void WithRetired_FromFailed_ShouldPreserveFailedRolloutState()
+    {
+        var deployment = CreateTestDeployment().WithProvisioning().WithFailed("Hosting quota exceeded");
+        deployment.RolloutState.Should().Be(RolloutState.Failed);
+
+        var retired = deployment.WithRetired("Cleanup after failure");
+
+        retired.Status.Should().Be(DeploymentStatus.Retired);
+        retired.RolloutState.Should().Be(RolloutState.Failed);
     }
 
     [UnitTest]
