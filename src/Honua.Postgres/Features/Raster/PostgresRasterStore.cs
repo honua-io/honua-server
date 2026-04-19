@@ -926,6 +926,14 @@ internal sealed class PostgresRasterStore : IRasterStore
             rasterSrid = Convert.ToInt32(sridScalar, System.Globalization.CultureInfo.InvariantCulture);
         }
 
+        // Reject rasters with an unknown CRS up front: ST_Transform(geometry, 0) aborts
+        // the whole query in PostGIS, so surface this as a controlled error instead.
+        if (rasterSrid <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Raster {rasterId} in layer {layerId} has unknown SRID ({rasterSrid}); assign a CRS before computing zonal statistics.");
+        }
+
         await using var command = connection.CreateCommand();
         // Normalize each zone geometry to the raster SRID up front (reject zones with
         // unknown SRIDs explicitly) so ST_Intersects and ST_Clip operate on matched

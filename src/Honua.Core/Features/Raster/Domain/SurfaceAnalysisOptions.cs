@@ -109,12 +109,12 @@ public readonly record struct SurfaceAnalysisResult
 }
 
 /// <summary>
-/// Zonal statistics row: one aggregate row per input zone feature.
+/// Zonal statistics row: one aggregate row per eligible input zone feature.
 /// </summary>
 /// <remarks>
-/// The stats map keys match the stat names requested by the caller (e.g. "mean",
-/// "sum"). Missing keys indicate the stat could not be computed for the zone
-/// (for example, an empty intersection).
+/// The stats map always contains every requested stat name (case-insensitive,
+/// canonicalized to lowercase). Values are <c>null</c> when the stat could not
+/// be computed for the zone (for example, an empty intersection with the raster).
 /// </remarks>
 public readonly record struct RasterZonalStatisticsRow
 {

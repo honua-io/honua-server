@@ -128,7 +128,7 @@ public interface IRasterStore
 
     /// <summary>
     /// Computes zonal aggregates by intersecting a raster with the geometries
-    /// of a zones feature layer, producing one row per zone.
+    /// of a zones feature layer, producing one row per eligible zone.
     /// </summary>
     /// <param name="layerId">Layer identifier containing the raster.</param>
     /// <param name="rasterId">Raster identifier to aggregate.</param>
@@ -141,8 +141,11 @@ public interface IRasterStore
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// One row per zone feature, containing the requested stats. Empty
-    /// intersections still emit a row with <c>PixelCount = 0</c>.
+    /// One row per zone feature whose geometry is non-null and has a known SRID.
+    /// Zones with missing geometry or unknown SRID are skipped. Empty intersections
+    /// still emit a row with <c>PixelCount = 0</c> and <c>null</c> aggregate values.
+    /// Throws <see cref="InvalidOperationException"/> when the source raster is
+    /// missing or has an unknown SRID.
     /// </returns>
     Task<RasterZonalStatisticsRow[]> ComputeZonalStatisticsAsync(
         int layerId,

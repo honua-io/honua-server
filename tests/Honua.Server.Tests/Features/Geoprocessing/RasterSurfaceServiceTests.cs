@@ -155,6 +155,31 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
             .WithMessage("*was not found*");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
+    public async Task ComputeZonalStatisticsAsync_WhenSourceRasterSridIsUnknown_ThrowsInvalidOperation()
+    {
+        const int sourceLayerId = 7501;
+        const int zonesLayerId = 7502;
+        // Raster import leaves SRID=0 when CRS detection fails (see PostgresRasterImportService).
+        // ST_Transform(geometry, 0) aborts the zonal query; the store must fail fast instead.
+        var sourceRasterId = await InsertTestRasterWithSridAsync(sourceLayerId, "zonal-unknown-srid", srid: 0);
+        await InsertZoneFeaturesAsync(zonesLayerId);
+
+        var rasterStore = CreateRasterStore();
+
+        var act = async () => await rasterStore.ComputeZonalStatisticsAsync(
+            sourceLayerId,
+            sourceRasterId,
+            zonesLayerId,
+            band: 1,
+            statistics: ["count", "mean"]);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*unknown SRID*");
+    }
+
     private async Task EnsureRasterTablesAsync()
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
@@ -231,6 +256,41 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
             """;
         command.Parameters.Add(new NpgsqlParameter("@layerId", layerId));
         command.Parameters.Add(new NpgsqlParameter("@name", name));
+
+        var result = await command.ExecuteScalarAsync();
+        return (long)result!;
+    }
+
+    private async Task<long> InsertTestRasterWithSridAsync(int layerId, string name, int srid)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, description, raster)
+            VALUES (
+                @layerId,
+                @name,
+                'test-dem',
+                ST_SetValues(
+                    ST_AddBand(
+                        ST_MakeEmptyRaster(3, 3, 0, 3, 1, -1, 0, 0, @srid),
+                        1,
+                        '32BF',
+                        0,
+                        -9999),
+                    1,
+                    1,
+                    1,
+                    ARRAY[
+                        ARRAY[1.0::float8, 2.0::float8, 3.0::float8],
+                        ARRAY[4.0::float8, 5.0::float8, 6.0::float8],
+                        ARRAY[7.0::float8, 8.0::float8, 9.0::float8]
+                    ]))
+            RETURNING id;
+            """;
+        command.Parameters.Add(new NpgsqlParameter("@layerId", layerId));
+        command.Parameters.Add(new NpgsqlParameter("@name", name));
+        command.Parameters.Add(new NpgsqlParameter("@srid", srid));
 
         var result = await command.ExecuteScalarAsync();
         return (long)result!;
