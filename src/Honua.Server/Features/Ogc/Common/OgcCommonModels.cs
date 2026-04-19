@@ -207,6 +207,12 @@ public static class RelationTypes
     /// Indicates the link target provides the geospatial data resource.
     /// </summary>
     public const string Geodata = "http://www.opengis.net/def/rel/ogc/1.0/geodata";
+
+    /// <summary>
+    /// Indicates the link target provides the results of a completed OGC API
+    /// Processes job (Part 1 §7.11.1).
+    /// </summary>
+    public const string OgcResults = "http://www.opengis.net/def/rel/ogc/1.0/results";
 }
 
 /// <summary>

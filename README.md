@@ -98,7 +98,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 
-**Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, and dismiss over the canonical geoprocessing runtime. V1 keeps `/ogc/processes/jobs/{jobId}/results` stubbed until execution-engine result storage is wired.
+**Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, dismiss, and job results over the canonical geoprocessing runtime. `/ogc/processes/jobs/{jobId}/results` returns `200 OK` with a document-mode JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is wired).
 
 **AI operator workflows** — MCP JSON-RPC on `/mcp` exposes plan validation, dry runs, execution submission, cancellation, and job/result resource reads over the same canonical geoprocessing runtime used by gRPC and GPServer. Planning, grounding, clarification, workspace, and catalog contracts are already discoverable as authenticated `not_implemented` placeholders so clients can bind before the upstream services land.
 

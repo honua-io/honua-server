@@ -251,10 +251,11 @@ The critical adapter difference is result access pattern:
   output parameter name and the artifact, using `ArtifactRef.Metadata`
   with a well-known key or a follow-on field addition to `ArtifactRef`
 - **OGC adapter** (#529): v1 targets document-mode, by-value results — a single
-  `/jobs/{jobId}/results` JSON response keyed by output identifier. V1 currently
-  stubs the endpoint (successful jobs return `404` until the execution engine
-  populates result storage). Raw-mode responses, reference-based transmission,
-  and multipart output are deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
+  `/jobs/{jobId}/results` JSON response keyed by output identifier. Successful
+  jobs return `200 OK` with an empty body (`{}`) until the canonical process
+  declares value-typed outputs and the execution engine populates result storage.
+  Raw-mode responses, reference-based transmission, and multipart output are
+  deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
 
 ## Cancellation Semantics
 
@@ -362,7 +363,7 @@ API Processes Part 1 Core contract. Key mappings:
 | `POST /processes/{id}/execution` (sync) | Not implemented in V1; synchronous execution returns `501 Not Implemented` |
 | `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
 | `GET /jobs/{jobId}` | `IExecutionJobStore` → `ExecutionJobRecord` projected to OGC `StatusInfo` |
-| `GET /jobs/{jobId}/results` | V1 stub: non-terminal `404`, successful `404`, failed `500`, dismissed `410`. Planned successful shape: document-mode, by-value output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
+| `GET /jobs/{jobId}/results` | Succeeded `200` with document-mode JSON body keyed by output identifier (empty `{}` until the canonical process declares value-typed outputs); non-terminal `404`, failed `500`, dismissed `410`. Planned successful shape: output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
 | `DELETE /jobs/{jobId}` | `IJobCancellationNotifier` → remote backend `CancelAsync` (if applicable) → `ExecutionJobCancellationHelper` + durable job store cancellation mapping to OGC `dismissed` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
 | `jobControlOptions` | V1 fixed capability declaration for the canonical process stub: `async-execute`, `dismiss` |
@@ -372,7 +373,7 @@ Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Input/output schema translation to JSON Schema is the adapter's responsibility
-3. V1 targets document-mode, by-value successful results only: the planned shape is a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. The current implementation still stubs `/results` until the execution engine populates result packages. Raw-mode and reference-based transmission are deferred
+3. V1 targets document-mode, by-value successful results only: the shape is a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. The canonical process declares no value-typed outputs yet, so `/results` returns `200 OK` with an empty body (`{}`) on success until the execution engine populates result packages. Raw-mode and reference-based transmission are deferred
 4. `DELETE /jobs/{jobId}` maps to cancellation, not resource deletion — the canonical job record persists
 
 ## Backlog Guidance
@@ -407,7 +408,7 @@ This **protocol adapter** is implemented. The adapter:
 - Validates canonical plan structure at the adapter boundary before durable job creation
 - Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above
 - V1 is async-only: `Prefer: respond-async` is required, successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`, and sync execution returns `501`
-- V1: result storage is pending; the `/results` endpoint stubs `404` for non-terminal and successful jobs, `500` for failed jobs, and `410` for dismissed jobs (target: document-mode, by-value JSON; raw-mode and reference transmission deferred)
+- V1: `/results` returns `200 OK` with a document-mode, by-value JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is populated), `404` for non-terminal jobs, `500` for failed jobs, and `410` for dismissed jobs (raw-mode and reference transmission deferred)
 - Does not add internal domain types or lifecycle states
 
 See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for endpoint and conformance details.
