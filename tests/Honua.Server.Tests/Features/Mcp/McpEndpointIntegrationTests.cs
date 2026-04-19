@@ -174,6 +174,47 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    public async Task NotificationsInitialized_WithId_IsRejectedAsInvalidRequest()
+    {
+        // JSON-RPC 2.0 and the MCP 2025-03-26 schema forbid an id on
+        // notifications; a `notifications/*` method that carries an id is
+        // not a real notification and must be surfaced as invalid_request
+        // rather than silently dropped with HTTP 202.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":42,"method":"notifications/initialized"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetInt32().Should().Be(42);
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32600);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("notifications");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task UnknownNotification_WithId_IsRejectedAsInvalidRequest()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"n-1","method":"notifications/unknown"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetString().Should().Be("n-1");
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     public async Task UnknownMethod_ReturnsMethodNotFoundJsonRpcError()
     {
         var response = await PostRpcAsync("""
@@ -425,6 +466,38 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         root.ValueKind.Should().Be(JsonValueKind.Object);
         root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
         root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task BatchContainingInitialize_IsRejectedAsInvalidRequest()
+    {
+        // MCP 2025-03-26 lifecycle: the `initialize` request MUST NOT be
+        // part of a JSON-RPC batch. The server rejects the entire batch
+        // with a single invalid_request response object whose id is null
+        // rather than dispatching other elements alongside it.
+        var response = await PostRpcAsync("""
+            [
+              {"jsonrpc":"2.0","id":"init-1","method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+              }},
+              {"jsonrpc":"2.0","id":1,"method":"tools/list"}
+            ]
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32600);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("initialize");
     }
 
     [IntegrationTest]

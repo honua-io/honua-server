@@ -139,11 +139,19 @@ JSON-RPC 2.0 batch array. Batch handling follows §6 of the spec:
   with no body instead of an empty JSON array.
 - Mixed batches return a JSON array whose length equals the number of
   non-notification requests.
+- Per MCP 2025-03-26 lifecycle, the `initialize` request MUST NOT be part
+  of a JSON-RPC batch. If any element of the batch carries
+  `"method": "initialize"`, the server rejects the entire batch with a
+  single `invalid_request` response object whose `id` is `null`.
 
 Per MCP 2025-03-26 a JSON-RPC request `id` MUST be either a string or an
 integer. Explicit `null`, booleans, fractional numbers, arrays, and objects
 are rejected with `invalid_request` (`-32600`). Absent `id` marks the
 message as a notification, which MUST NOT receive a response body.
+Conversely, JSON-RPC notifications (including every `notifications/*`
+method) MUST NOT include an `id` field; a `notifications/*` message that
+carries an `id` is rejected with `invalid_request` rather than silently
+accepted.
 
 ### Lifecycle and version negotiation
 
@@ -153,7 +161,9 @@ The MCP lifecycle is `initialize` (request/response) followed by
 1. **`initialize`** — the client MUST send `params` containing
    `protocolVersion`, `capabilities`, and `clientInfo.name`. Missing or
    non-object `capabilities`, blank `protocolVersion`, or missing
-   `clientInfo.name` returns `invalid_argument`.
+   `clientInfo.name` returns `invalid_argument`. The `initialize` request
+   MUST NOT be part of a JSON-RPC batch; see
+   [Request framing and ids](#request-framing-and-ids).
 2. The server negotiates the protocol revision: if the client's
    `protocolVersion` matches one the server supports it is echoed back;
    otherwise the server replies with its latest supported revision so the

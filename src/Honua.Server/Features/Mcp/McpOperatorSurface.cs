@@ -59,12 +59,15 @@ internal sealed class McpOperatorSurface
 
     /// <summary>
     /// Dispatches a JSON-RPC request and returns a response envelope, or
-    /// <c>null</c> when the input is a JSON-RPC notification (no <c>id</c> or a
-    /// <c>notifications/*</c> method) and therefore must not receive a reply
-    /// per the JSON-RPC 2.0 and MCP HTTP transport rules. Callers are expected
-    /// to validate the shape of the request id (string or integer) before
-    /// calling this method; invalid ids must be surfaced as JSON-RPC
-    /// <c>invalid_request</c> errors by the transport layer.
+    /// <c>null</c> when the input is a JSON-RPC notification (no <c>id</c>)
+    /// and therefore must not receive a reply per the JSON-RPC 2.0 and MCP
+    /// HTTP transport rules. A <c>notifications/*</c> method that carries an
+    /// <c>id</c> is not a real notification — JSON-RPC 2.0 and the MCP
+    /// schema forbid ids on notifications — so it is rejected with
+    /// <c>invalid_request</c>. Callers are expected to validate the shape of
+    /// the request id (string or integer) before calling this method;
+    /// invalid ids must be surfaced as JSON-RPC <c>invalid_request</c>
+    /// errors by the transport layer.
     /// </summary>
     public async Task<McpJsonRpcResponse?> DispatchAsync(
         HttpContext httpContext,
@@ -90,10 +93,18 @@ internal sealed class McpOperatorSurface
         // MCP lifecycle notifications carry no response per JSON-RPC 2.0.
         // `notifications/initialized` is required after a successful initialize;
         // unknown notifications are dropped silently rather than erroring so
-        // forward-compatible clients can layer in new notification types.
+        // forward-compatible clients can layer in new notification types. A
+        // `notifications/*` message that carries an id violates the JSON-RPC
+        // 2.0 / MCP schema (notifications MUST NOT include an id), so it must
+        // be surfaced as invalid_request rather than silently accepted.
         if (request.Method.StartsWith("notifications/", StringComparison.Ordinal))
         {
-            return null;
+            return isNotification
+                ? null
+                : ErrorResponse(
+                    request.Id,
+                    McpErrorMapper.InvalidRequest(
+                        "notifications/* messages MUST NOT include an id per JSON-RPC 2.0 and MCP 2025-03-26."));
         }
 
         if (isNotification)

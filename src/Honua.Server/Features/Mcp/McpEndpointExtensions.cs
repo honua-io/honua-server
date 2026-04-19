@@ -128,6 +128,24 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        // MCP 2025-03-26 lifecycle: the `initialize` request MUST NOT be part
+        // of a JSON-RPC batch because the server cannot negotiate a protocol
+        // version mid-batch. Reject the entire batch with a single
+        // invalid_request envelope whose id is null — the batch as a whole is
+        // malformed, so echoing any individual element's id would be
+        // misleading.
+        if (BatchContainsInitialize(batch))
+        {
+            await WriteSingleAsync(
+                context,
+                ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.InvalidRequest(
+                        "The initialize request MUST NOT be part of a JSON-RPC batch per MCP 2025-03-26.")),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var responses = new List<McpJsonRpcResponse>();
         foreach (var element in batch.EnumerateArray())
         {
@@ -235,6 +253,33 @@ internal static class McpEndpointExtensions
         Id = id,
         Error = error
     };
+
+    /// <summary>
+    /// Returns <c>true</c> when any element of the batch carries the
+    /// <c>initialize</c> method. MCP 2025-03-26 forbids batching
+    /// <c>initialize</c> because the server cannot negotiate a protocol
+    /// version mid-batch, so the whole batch must be rejected before any
+    /// element is dispatched.
+    /// </summary>
+    private static bool BatchContainsInitialize(JsonElement batch)
+    {
+        foreach (var element in batch.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (element.TryGetProperty("method", out var methodElement)
+                && methodElement.ValueKind == JsonValueKind.String
+                && string.Equals(methodElement.GetString(), "initialize", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Classifies the <c>id</c> property of a JSON-RPC message per MCP
