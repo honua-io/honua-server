@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 using Honua.Server.Features.Mcp.Tools;
 using Honua.TestKit.Attributes;
@@ -68,9 +69,68 @@ public sealed class McpStubToolTests
         }
     }
 
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task Stub_RejectsArrayArguments_AsInvalidArgument()
+    {
+        var tool = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance);
+
+        var invoke = async () => await InvokeWithAsync(tool, """["not","an","object"]""");
+
+        await invoke.Should()
+            .ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*object*");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
+    public async Task Stub_RejectsScalarArguments_AsInvalidArgument()
+    {
+        var tool = new GroundCandidatesTool(NullLogger<GroundCandidatesTool>.Instance);
+
+        var invoke = async () => await InvokeWithAsync(tool, "\"just-a-string\"");
+
+        await invoke.Should()
+            .ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*object*");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
+    public async Task Stub_RejectsObjectWithUnexpectedProperties_AsInvalidArgument()
+    {
+        var tool = new ClarifyIntentTool(NullLogger<ClarifyIntentTool>.Instance);
+
+        var invoke = async () => await InvokeWithAsync(tool, """{"unexpected":"value"}""");
+
+        await invoke.Should()
+            .ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*unexpected*");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task Stub_AcceptsMissingArguments_AsEmptyObject()
+    {
+        var tool = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance);
+
+        var result = await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            arguments: null,
+            CancellationToken.None);
+
+        AssertNotImplemented(result, expectedTool: PlanAnalysisTool.ToolName, expectedBlocker: "honua.planner.service");
+    }
+
     private static async Task<McpToolsCallResult> InvokeAsync(IMcpTool tool)
     {
         JsonElement? arguments = McpTestFactory.ParseJson("{}");
+        return await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+    }
+
+    private static async Task<McpToolsCallResult> InvokeWithAsync(IMcpTool tool, string argumentsJson)
+    {
+        JsonElement? arguments = McpTestFactory.ParseJson(argumentsJson);
         return await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
     }
 

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 
 namespace Honua.Server.Features.Mcp.Tools;
@@ -50,6 +51,8 @@ internal abstract class NotImplementedToolBase : IMcpTool
 
         _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
 
+        ValidateEmptyObjectArguments(arguments);
+
         var output = new McpNotImplementedOutput
         {
             Status = "not_implemented",
@@ -60,5 +63,25 @@ internal abstract class NotImplementedToolBase : IMcpTool
         };
 
         return Task.FromResult(McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpNotImplementedOutput));
+    }
+
+    private static void ValidateEmptyObjectArguments(JsonElement? arguments)
+    {
+        if (arguments is null || arguments.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return;
+        }
+
+        if (arguments.Value.ValueKind is not JsonValueKind.Object)
+        {
+            throw new GeoprocessingValidationException(
+                $"Tool arguments must be an object; received '{arguments.Value.ValueKind}'.");
+        }
+
+        foreach (var property in arguments.Value.EnumerateObject())
+        {
+            throw new GeoprocessingValidationException(
+                $"Unexpected property '{property.Name}' for tool arguments (schema forbids additional properties).");
+        }
     }
 }

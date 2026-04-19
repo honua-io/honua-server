@@ -96,6 +96,29 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         using var document = await ReadJsonAsync(response);
         var root = document.RootElement;
 
+        // JSON-RPC 2.0 requires the response id to be explicit null when the
+        // server cannot determine the client's original id.
+        root.TryGetProperty("id", out var id).Should().BeTrue();
+        id.ValueKind.Should().Be(JsonValueKind.Null);
+
+        var error = root.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task EmptyBody_ReturnsInvalidArgumentWithNullId()
+    {
+        var response = await PostRpcAsync(string.Empty);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.TryGetProperty("id", out var id).Should().BeTrue();
+        id.ValueKind.Should().Be(JsonValueKind.Null);
+
         var error = root.GetProperty("error");
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
     }

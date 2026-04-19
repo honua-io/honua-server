@@ -20,6 +20,16 @@ internal static class McpEndpointExtensions
     private const string JsonMimeType = "application/json";
 
     /// <summary>
+    /// Explicit JSON <c>null</c> element used as the response <c>id</c> when the
+    /// request could not be parsed. JSON-RPC 2.0 requires the id field on error
+    /// responses even when the server cannot determine the client's original id,
+    /// in which case it MUST be <c>null</c>. Assigning this element to
+    /// <see cref="McpJsonRpcResponse.Id"/> prevents the
+    /// <c>WhenWritingNull</c> ignore condition from dropping the property.
+    /// </summary>
+    private static readonly JsonElement JsonNullId = CreateJsonNullElement();
+
+    /// <summary>
     /// Maps <c>POST /mcp</c> for JSON-RPC dispatch.
     /// </summary>
     public static IEndpointRouteBuilder MapMcpOperatorSurface(this IEndpointRouteBuilder endpoints)
@@ -56,6 +66,7 @@ internal static class McpEndpointExtensions
                 context,
                 new McpJsonRpcResponse
                 {
+                    Id = JsonNullId,
                     Error = McpErrorMapper.InvalidArgument($"Request body is not valid JSON-RPC: {ex.Message}")
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -68,6 +79,7 @@ internal static class McpEndpointExtensions
                 context,
                 new McpJsonRpcResponse
                 {
+                    Id = JsonNullId,
                     Error = McpErrorMapper.InvalidArgument("Request body is required.")
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -90,5 +102,11 @@ internal static class McpEndpointExtensions
         await JsonSerializer
             .SerializeAsync(context.Response.Body, response, McpJsonContext.Default.McpJsonRpcResponse, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static JsonElement CreateJsonNullElement()
+    {
+        using var document = JsonDocument.Parse("null");
+        return document.RootElement.Clone();
     }
 }
