@@ -441,13 +441,13 @@ grant receive a `permission_denied` error, matching the functional tools.
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
-| `honua://published-services` | `resources/list` | functional | Capped list of active published services with summary fields and ETags. |
+| `honua://published-services` | `resources/list` | functional | Capped list of published services whose status is `Active` (serving requests), with summary fields and ETags. |
 | `honua://published-services/{serviceId}` | `resources/templates/list` | functional | Published-service record with provenance edges back to the originating intent, result package, and hosted deployments. |
-| `honua://deployments` | `resources/list` | functional | Capped list of active deployments with publication state, source kind, target, and ETags. |
+| `honua://deployments` | `resources/list` | functional | Capped list of deployments whose publication state is `Published` (currently routable), with source kind, target, and ETags. |
 | `honua://deployments/{deploymentId}` | `resources/templates/list` | functional | Deployment record including publication state, rollout state, runtime health, and the append-only transition audit trail. |
-| `honua://map-packages` | `resources/list` | functional | Capped list of map packages visible through currently-active deployments (reverse lookup). |
+| `honua://map-packages` | `resources/list` | functional | Capped list of map packages referenced by at least one currently-published deployment (reverse lookup). |
 | `honua://map-packages/{packageId}` | `resources/templates/list` | functional | Map-package surface derived from deployments that reference the package. Packages have no standalone store; the view is limited to provenance edges. |
-| `honua://app-packages` | `resources/list` | functional | Capped list of app packages visible through currently-active deployments (reverse lookup). |
+| `honua://app-packages` | `resources/list` | functional | Capped list of app packages referenced by at least one currently-published deployment (reverse lookup). |
 | `honua://app-packages/{packageId}` | `resources/templates/list` | functional | App-package surface derived from deployments that reference the package. |
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
@@ -524,10 +524,24 @@ audit-trail plus monotonic ETag is the observability contract.
   and `deploymentResourceUris` rather than a single-parent edge, since
   there is no canonical single parent deployment.
 - **Hosted-deployment lists.** `deploymentResourceUris` on published-service
-  and package detail views is filtered to deployments whose status is not
-  `Retired` or `Superseded` and is sorted by resource URI (stable ordinal
-  order) so reads are deterministic regardless of the store's reverse-lookup
-  ordering. `deploymentCount` reflects the same filtered set.
+  and package detail views is filtered to deployments whose
+  `publicationState` is `Published` — the single state the Deployment
+  lifecycle uses to mark a deployment as currently routable — and is sorted
+  by resource URI (stable ordinal order) so reads are deterministic
+  regardless of the store's reverse-lookup ordering. `deploymentCount`
+  reflects the same filtered set. Draft, Scheduled, Provisioning, and
+  RollingOut deployments are still in flight and therefore excluded;
+  Retired, Superseded, Failed, and Cancelled deployments are terminal and
+  therefore excluded. The same filter drives the list-root and detail
+  contracts so index visibility and `not_found` decisions agree.
+- **Active-only list roots.** The service and deployment list roots
+  narrow past their store-side `ListActiveAsync` semantics (which excludes
+  only decommissioned services / retired+superseded deployments) to the
+  truly live subsets — `PublishedServiceStatus.Active` and
+  `DeploymentPublicationState.Published`. Map/app package roots group over
+  the same published-deployment projection, so a package backed only by
+  Failed, Cancelled, or pre-serving deployments does not appear in the
+  index and returns `not_found` when read directly.
 - **Pagination.** List-root reads cap results at 50 items by default
   (max 200). When the canonical store returns more items, the response
   sets `truncated: true`; a scrolling cursor is not part of v1 — agents
@@ -536,9 +550,10 @@ audit-trail plus monotonic ETag is the observability contract.
 
 - `honua://published-services/{serviceId}` returns
   `{ serviceId, resourceUri, status, sourceKind, sourceId, targetKind, endpoint?, publishedAt, lastRefreshedAt?, updatedAt, etag, artifacts, warnings, deploymentCount, deploymentResourceUris, provenance }`.
-  A service with no active hosted deployments returns `deploymentCount: 0`
-  and an empty `deploymentResourceUris`; the record still reads so agents
-  can inspect suspended or draft services.
+  A service with no currently-published hosted deployments returns
+  `deploymentCount: 0` and an empty `deploymentResourceUris`; the record
+  still reads so agents can inspect suspended, refresh-failed, or
+  in-provisioning services.
 - `honua://published-services` returns
   `{ resourceUri, count, truncated, items: [{ serviceId, resourceUri, status, targetKind, updatedAt, etag }] }`.
 - `honua://deployments/{deploymentId}` returns
@@ -552,7 +567,9 @@ audit-trail plus monotonic ETag is the observability contract.
   `{ packageKind, packageId, resourceUri, deploymentCount, deploymentResourceUris, provenance }`.
   Packages have no standalone record on the server; the read is a reverse
   lookup against the deployment store. A package that is referenced by no
-  active deployment returns `not_found`.
+  currently-published deployment (`publicationState = Published`) returns
+  `not_found` — Failed, Cancelled, Draft, Scheduled, Provisioning, and
+  RollingOut deployments do not satisfy the visibility contract.
 - `honua://map-packages` and `honua://app-packages` return
   `{ resourceUri, packageKind, count, truncated, items: [{ packageId, resourceUri, deploymentCount }] }`.
 

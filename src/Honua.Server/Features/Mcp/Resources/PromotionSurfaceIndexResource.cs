@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 
@@ -15,11 +16,17 @@ namespace Honua.Server.Features.Mcp.Resources;
 /// surfaces without a trailing identifier:
 /// <c>honua://published-services</c>, <c>honua://deployments</c>,
 /// <c>honua://map-packages</c>, and <c>honua://app-packages</c>. Each returns
-/// a capped summary list drawn from the canonical store — active published
-/// services, active deployments, or packages derived from the deployment
-/// reverse-lookup. The cap (<see cref="DefaultPageSize"/>) is applied so agents
-/// never download unbounded catalogs; a <c>truncated</c> flag signals when
-/// results were clipped.
+/// a capped summary list drawn from the canonical store. Services and
+/// deployments are narrowed past the store's broader "non-decommissioned" /
+/// "non-retired-non-superseded" semantics to the truly live subsets — services
+/// with <see cref="PublishedServiceStatus.Active"/> and deployments with
+/// <see cref="DeploymentPublicationState.Published"/> — so the advertised
+/// "active" descriptors match the wire contract. Package roots reuse the same
+/// published-deployment filter from <see cref="PackageViewFactory.IsPublished"/>
+/// so map/app packages only appear when at least one deployment is currently
+/// serving them. The cap (<see cref="DefaultPageSize"/>) is applied after
+/// filtering so agents never download unbounded catalogs; a <c>truncated</c>
+/// flag signals when results were clipped.
 /// </summary>
 internal sealed class PromotionSurfaceIndexResource : IMcpResource
 {
@@ -63,28 +70,28 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         {
             Uri = McpResourceUris.PublishedServicesRoot,
             Name = "Published services index",
-            Description = "Active published services produced by the promotion lifecycle.",
+            Description = "Published services whose status is Active (serving requests).",
             MimeType = McpResourceHelpers.JsonMimeType
         },
         new McpResourceDescriptor
         {
             Uri = McpResourceUris.DeploymentsRoot,
             Name = "Deployments index",
-            Description = "Active deployments hosted by the promotion lifecycle.",
+            Description = "Deployments whose publication state is Published (currently routable).",
             MimeType = McpResourceHelpers.JsonMimeType
         },
         new McpResourceDescriptor
         {
             Uri = McpResourceUris.MapPackagesRoot,
             Name = "Map packages index",
-            Description = "Map packages visible through currently-active deployments.",
+            Description = "Map packages referenced by at least one currently-published deployment.",
             MimeType = McpResourceHelpers.JsonMimeType
         },
         new McpResourceDescriptor
         {
             Uri = McpResourceUris.AppPackagesRoot,
             Name = "App packages index",
-            Description = "App packages visible through currently-active deployments.",
+            Description = "App packages referenced by at least one currently-published deployment.",
             MimeType = McpResourceHelpers.JsonMimeType
         }
     };
@@ -135,9 +142,21 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         _jobService.EnsureCallerAuthorized(
             principal, OperatorResourceType.PublishedService, OperatorOperation.Read);
 
+        // ListActiveAsync only excludes decommissioned services, so we narrow to the
+        // Active subset here to match the "active published services" descriptor
+        // and keep the list root consistent with what agents expect when they ask
+        // for the currently-serving catalog.
         var records = await _services.ListActiveAsync(cancellationToken).ConfigureAwait(false);
-        var truncated = records.Count > _pageSize;
-        var items = records
+        var active = new List<PublishedServiceRecord>(records.Count);
+        for (var i = 0; i < records.Count; i++)
+        {
+            if (records[i].Status == PublishedServiceStatus.Active)
+            {
+                active.Add(records[i]);
+            }
+        }
+        var truncated = active.Count > _pageSize;
+        var items = active
             .Take(_pageSize)
             .Select(record => new McpPublishedServiceSummary
             {
@@ -171,9 +190,16 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         _jobService.EnsureCallerAuthorized(
             principal, OperatorResourceType.Deployment, OperatorOperation.Read);
 
+        // ListActiveAsync excludes Retired and Superseded but still surfaces
+        // Failed, Cancelled, Draft, Scheduled, Provisioning, and RollingOut
+        // deployments. Narrow to PublicationState == Published so the list-root
+        // contract ("active deployments") matches the set of deployments that
+        // are currently routable, consistent with the package visibility filter
+        // in PackageViewFactory.
         var records = await _deployments.ListActiveAsync(cancellationToken).ConfigureAwait(false);
-        var truncated = records.Count > _pageSize;
-        var items = records
+        var published = PackageViewFactory.FilterPublished(records);
+        var truncated = published.Count > _pageSize;
+        var items = published
             .Take(_pageSize)
             .Select(deployment => new McpDeploymentSummary
             {
@@ -214,9 +240,14 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         _jobService.EnsureCallerAuthorized(
             principal, OperatorResourceType.Package, OperatorOperation.Read);
 
+        // Packages are visible only through currently-published deployments so the
+        // list root agrees with the package detail 404 contract — a package that
+        // is referenced by no published deployment must not appear in the index.
         var deployments = await _deployments.ListActiveAsync(cancellationToken).ConfigureAwait(false);
         var grouped = deployments
-            .Where(deployment => deployment.Source.Kind == packageKind)
+            .Where(deployment =>
+                deployment.Source.Kind == packageKind
+                && PackageViewFactory.IsPublished(deployment))
             .GroupBy(deployment => deployment.Source.SourceId, StringComparer.Ordinal)
             .ToList();
 

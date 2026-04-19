@@ -107,7 +107,7 @@ public sealed class McpPromotionResourceTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
-    public async Task PublishedServiceResource_Read_ExcludesRetiredAndSupersededDeployments()
+    public async Task PublishedServiceResource_Read_ExcludesNonPublishedDeployments()
     {
         var service = BuildPublishedService("svc-mix");
         _services.GetAsync("svc-mix", Arg.Any<CancellationToken>()).Returns(service);
@@ -118,7 +118,10 @@ public sealed class McpPromotionResourceTests
             [
                 BuildDeployment("dep-retired", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Retired),
                 BuildDeployment("dep-active", DeploymentSource.FromPublishedService("svc-mix")),
-                BuildDeployment("dep-superseded", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Superseded)
+                BuildDeployment("dep-superseded", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Superseded),
+                BuildDeployment("dep-failed", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Failed),
+                BuildDeployment("dep-cancelled", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Cancelled),
+                BuildDeployment("dep-draft", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Draft)
             ]);
 
         var resource = BuildPublishedServiceResource();
@@ -325,6 +328,56 @@ public sealed class McpPromotionResourceTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_OnlyFailedOrCancelledDeployments_ThrowsNotFound()
+    {
+        // Failed and Cancelled deployments land on PublicationState.Unpublished per
+        // the Deployment state machine, so a map package whose only backings are in
+        // those terminal-but-not-retired states must not surface through the MCP
+        // reverse lookup. The previous filter only excluded Retired/Superseded and
+        // erroneously advertised such packages as visible.
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "failed-only", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-f1", DeploymentSource.FromMapPackage("failed-only"), status: DeploymentStatus.Failed),
+                BuildDeployment("dep-c1", DeploymentSource.FromMapPackage("failed-only"), status: DeploymentStatus.Cancelled)
+            ]);
+
+        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/failed-only",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_OnlyPreServingDeployments_ThrowsNotFound()
+    {
+        // Draft/Scheduled/Provisioning/RollingOut deployments are not yet publishing
+        // the package; the visibility contract requires a currently-published
+        // backing.
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "pre-serving", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-draft", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.Draft),
+                BuildDeployment("dep-scheduled", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.Scheduled),
+                BuildDeployment("dep-provisioning", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.Provisioning),
+                BuildDeployment("dep-rolling-out", DeploymentSource.FromMapPackage("pre-serving"), status: DeploymentStatus.RollingOut)
+            ]);
+
+        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/pre-serving",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
     public async Task MapPackageResource_Read_ExcludesRetiredDeploymentsFromCount()
     {
         _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "mixed", Arg.Any<CancellationToken>())
@@ -379,6 +432,25 @@ public sealed class McpPromotionResourceTests
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://app-packages/superseded",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://app-packages/{packageId}")]
+    public async Task AppPackageResource_OnlyFailedDeployments_ThrowsNotFound()
+    {
+        _deployments.ListBySourceAsync(DeploymentSourceKind.AppPackage, "failed-app", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-f", DeploymentSource.FromAppPackage("failed-app"), status: DeploymentStatus.Failed)
+            ]);
+
+        var resource = new AppPackageResource(_deployments, _jobService, NullLogger<AppPackageResource>.Instance);
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://app-packages/failed-app",
             CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
@@ -485,6 +557,97 @@ public sealed class McpPromotionResourceTests
         packageIds.Should().Contain(["map-a", "map-b"]);
         // Ensure app-package deployments are not mixed in.
         packageIds.Should().NotContain("app-c");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task PromotionIndex_PublishedServices_ExcludesNonActiveStatuses()
+    {
+        // ListActiveAsync only excludes Decommissioned services, but the list-root
+        // descriptor advertises Active-only services. Non-Active lifecycle states
+        // (Provisioning/Suspended/RefreshFailed) must be filtered here so agents
+        // polling the root see only the currently-serving catalog.
+        _services.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildPublishedService("svc-active"),
+            BuildPublishedService("svc-provisioning", status: PublishedServiceStatus.Provisioning),
+            BuildPublishedService("svc-suspended", status: PublishedServiceStatus.Suspended),
+            BuildPublishedService("svc-refresh-failed", status: PublishedServiceStatus.RefreshFailed)
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("count").GetInt32().Should().Be(1);
+        body.GetProperty("items")[0].GetProperty("serviceId").GetString().Should().Be("svc-active");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://deployments")]
+    public async Task PromotionIndex_Deployments_ExcludesNonPublishedStates()
+    {
+        // ListActiveAsync excludes only Retired and Superseded, so Failed,
+        // Cancelled, Draft, Scheduled, Provisioning, and RollingOut deployments
+        // still reach the MCP layer. The list-root tightens to
+        // PublicationState == Published to match the wire contract.
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildDeployment("dep-active", DeploymentSource.FromPublishedService("svc-1")),
+            BuildDeployment("dep-failed", DeploymentSource.FromPublishedService("svc-1"), status: DeploymentStatus.Failed),
+            BuildDeployment("dep-cancelled", DeploymentSource.FromPublishedService("svc-1"), status: DeploymentStatus.Cancelled),
+            BuildDeployment("dep-draft", DeploymentSource.FromPublishedService("svc-1"), status: DeploymentStatus.Draft),
+            BuildDeployment("dep-scheduled", DeploymentSource.FromPublishedService("svc-1"), status: DeploymentStatus.Scheduled),
+            BuildDeployment("dep-provisioning", DeploymentSource.FromPublishedService("svc-1"), status: DeploymentStatus.Provisioning),
+            BuildDeployment("dep-rolling-out", DeploymentSource.FromPublishedService("svc-1"), status: DeploymentStatus.RollingOut)
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://deployments",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("count").GetInt32().Should().Be(1);
+        body.GetProperty("items")[0].GetProperty("deploymentId").GetString().Should().Be("dep-active");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    public async Task PromotionIndex_MapPackages_ExcludesPackagesWithoutPublishedDeployments()
+    {
+        // A map package backed only by Failed/Cancelled/Draft deployments must
+        // not appear in the list root — the detail read would 404 on the same
+        // package, so the index and detail contracts agree.
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildDeployment("dep-published", DeploymentSource.FromMapPackage("map-live")),
+            BuildDeployment("dep-failed", DeploymentSource.FromMapPackage("map-failed"), status: DeploymentStatus.Failed),
+            BuildDeployment("dep-draft", DeploymentSource.FromMapPackage("map-draft"), status: DeploymentStatus.Draft)
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("count").GetInt32().Should().Be(1);
+        body.GetProperty("items")[0].GetProperty("packageId").GetString().Should().Be("map-live");
     }
 
     [UnitTest]
@@ -634,7 +797,8 @@ public sealed class McpPromotionResourceTests
         string deploymentId,
         DeploymentSource source,
         IReadOnlyList<DeploymentTransition>? transitions = null,
-        DeploymentStatus status = DeploymentStatus.Active)
+        DeploymentStatus status = DeploymentStatus.Active,
+        DeploymentPublicationState? publicationState = null)
         => new()
         {
             DeploymentId = deploymentId,
@@ -646,7 +810,20 @@ public sealed class McpPromotionResourceTests
                 HostingMode = HostingMode.ManagedService
             },
             Status = status,
-            PublicationState = DeploymentPublicationState.Published,
+            // Mirror the Deployment state machine: only Active produces Published,
+            // terminal non-active states (Retired/Superseded/Failed/Cancelled)
+            // land on Retired/Unpublished, and pre-serving states stay Draft.
+            // Tests can override when they need to probe mismatched pairings.
+            PublicationState = publicationState ?? status switch
+            {
+                DeploymentStatus.Active => DeploymentPublicationState.Published,
+                DeploymentStatus.Retired => DeploymentPublicationState.Retired,
+                DeploymentStatus.Superseded => DeploymentPublicationState.Unpublished,
+                DeploymentStatus.Failed => DeploymentPublicationState.Unpublished,
+                DeploymentStatus.Cancelled => DeploymentPublicationState.Unpublished,
+                DeploymentStatus.Scheduled => DeploymentPublicationState.Scheduled,
+                _ => DeploymentPublicationState.Draft
+            },
             CreatedAt = PublishedAt,
             UpdatedAt = UpdatedAt,
             Transitions = transitions ?? []

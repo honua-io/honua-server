@@ -10,49 +10,55 @@ namespace Honua.Server.Features.Mcp.Resources;
 /// Shared builder for <see cref="McpPackageView"/> payloads returned by
 /// <see cref="MapPackageResource"/> and <see cref="AppPackageResource"/>. Both
 /// resources derive their view from the same deployment reverse-lookup, so the
-/// factory centralizes the reachable-deployments projection.
+/// factory centralizes the published-deployments projection that governs
+/// package visibility, package list membership, and the
+/// <c>deploymentResourceUris</c> field returned on the published-service
+/// detail view.
 /// </summary>
 internal static class PackageViewFactory
 {
-    // Packages are visible only through deployments that are still reachable, matching
-    // the active-deployment filter in IDeploymentStore.ListActiveAsync so detail and
-    // list-root reads agree on visibility.
-    public static IReadOnlyList<Deployment> FilterActive(IReadOnlyList<Deployment> deployments)
+    // Packages (and the hosted-deployment list on a published service) are only
+    // considered active when a deployment's PublicationState is Published —
+    // i.e. the deployment is currently routable. Draft/Scheduled/Provisioning/
+    // RollingOut pre-serving states, Unpublished terminal states (Failed,
+    // Cancelled, Superseded), and Retired are all excluded so the MCP
+    // resources never advertise a package, service, or deployment edge that is
+    // not currently serving traffic.
+    public static IReadOnlyList<Deployment> FilterPublished(IReadOnlyList<Deployment> deployments)
     {
-        var firstInactive = -1;
+        var firstExcluded = -1;
         for (var i = 0; i < deployments.Count; i++)
         {
-            if (IsInactive(deployments[i]))
+            if (!IsPublished(deployments[i]))
             {
-                firstInactive = i;
+                firstExcluded = i;
                 break;
             }
         }
 
-        if (firstInactive < 0)
+        if (firstExcluded < 0)
         {
             return deployments;
         }
 
-        var active = new List<Deployment>(deployments.Count);
-        for (var i = 0; i < firstInactive; i++)
+        var published = new List<Deployment>(deployments.Count);
+        for (var i = 0; i < firstExcluded; i++)
         {
-            active.Add(deployments[i]);
+            published.Add(deployments[i]);
         }
-        for (var i = firstInactive + 1; i < deployments.Count; i++)
+        for (var i = firstExcluded + 1; i < deployments.Count; i++)
         {
-            if (!IsInactive(deployments[i]))
+            if (IsPublished(deployments[i]))
             {
-                active.Add(deployments[i]);
+                published.Add(deployments[i]);
             }
         }
 
-        return active;
+        return published;
     }
 
-    private static bool IsInactive(Deployment deployment) =>
-        deployment.Status == DeploymentStatus.Retired
-        || deployment.Status == DeploymentStatus.Superseded;
+    public static bool IsPublished(Deployment deployment) =>
+        deployment.PublicationState == DeploymentPublicationState.Published;
 
     public static McpPackageView Build(
         string packageKind,
