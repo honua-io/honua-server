@@ -133,14 +133,14 @@ public sealed record ExecutionAdmissionDecision
         string reason,
         int retryAfterSeconds,
         ExecutionAdmissionSnapshot snapshot) => new()
-    {
-        Outcome = ExecutionAdmissionOutcome.Throttled,
-        DenyingDimension = dimension,
-        PolicyRef = policyRef,
-        Reason = reason,
-        RetryAfterSeconds = retryAfterSeconds,
-        Snapshot = snapshot
-    };
+        {
+            Outcome = ExecutionAdmissionOutcome.Throttled,
+            DenyingDimension = dimension,
+            PolicyRef = policyRef,
+            Reason = reason,
+            RetryAfterSeconds = retryAfterSeconds,
+            Snapshot = snapshot
+        };
 
     /// <summary>
     /// Creates a denied decision for the given dimension.
@@ -151,12 +151,12 @@ public sealed record ExecutionAdmissionDecision
         string reason,
         int retryAfterSeconds,
         ExecutionAdmissionSnapshot snapshot) => new()
-    {
-        Outcome = ExecutionAdmissionOutcome.Denied,
-        DenyingDimension = dimension,
-        PolicyRef = policyRef,
-        Reason = reason,
-        RetryAfterSeconds = retryAfterSeconds,
-        Snapshot = snapshot
-    };
+        {
+            Outcome = ExecutionAdmissionOutcome.Denied,
+            DenyingDimension = dimension,
+            PolicyRef = policyRef,
+            Reason = reason,
+            RetryAfterSeconds = retryAfterSeconds,
+            Snapshot = snapshot
+        };
 }
