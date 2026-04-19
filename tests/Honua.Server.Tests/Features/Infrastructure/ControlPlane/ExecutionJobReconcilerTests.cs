@@ -658,6 +658,178 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_RemoteFailureWithRetryBudget_RequeuesForRetry()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(KubernetesJobBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(BatchComputeTargetKind.KubernetesJob);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsRetry = true });
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = "provider-failed",
+                PercentComplete = 80,
+                Message = "Pod OOMKilled"
+            });
+
+        var retryPolicy = new JobRetryPolicy
+        {
+            MaxAttempts = 3,
+            Strategy = BackoffStrategy.Fixed,
+            BaseDelay = TimeSpan.FromSeconds(15),
+            MaxDelay = TimeSpan.FromSeconds(15)
+        };
+        var job = CreateJobRecord(
+            operationId: "job-remote-retry",
+            status: ExecutionJobStatus.Running,
+            backend: KubernetesJobBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            percentComplete: 80,
+            currentPhase: "Attempt 1 failed") with
+        {
+            AttemptCount = 1,
+            ProviderOperationId = "provider-failed",
+            RetryPolicy = retryPolicy
+        };
+
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-remote-retry",
+            GeoprocessingProgress.CreateForSubmittedJob("job-remote-retry", "plan-remote") with
+            {
+                WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+                CurrentStageStatus = GeoprocessingStageStatus.Pending,
+                CurrentPhase = "Attempt 1 failed"
+            });
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+        var before = DateTimeOffset.UtcNow;
+
+        await sut.ReconcileExecutionJobAsync("job-remote-retry");
+
+        var stored = await jobStore.GetAsync("job-remote-retry");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+        stored.AttemptCount.Should().Be(1, "requeue preserves completed-attempt count until the next submission starts");
+        stored.ProviderOperationId.Should().BeNull();
+        stored.PercentComplete.Should().BeNull();
+        stored.ErrorMessage.Should().BeNull();
+        stored.CurrentPhase.Should().Be("Retrying (attempt 2/3)");
+        stored.NextRetryAt.Should().NotBeNull();
+        stored.NextRetryAt!.Value.Should().BeCloseTo(before.AddSeconds(15), TimeSpan.FromSeconds(3));
+
+        await backend.Received(1).ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-remote-retry");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution);
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Pending);
+        progress.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_QueuedRemoteRetryBeforeNextRetryAt_WaitsWithoutBackendCall()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(KubernetesJobBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(BatchComputeTargetKind.KubernetesJob);
+
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        var job = CreateJobRecord(
+            operationId: "job-remote-wait",
+            status: ExecutionJobStatus.Queued,
+            backend: KubernetesJobBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            currentPhase: "Retrying (attempt 2/3)") with
+        {
+            AttemptCount = 1,
+            NextRetryAt = nextRetryAt
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-remote-wait");
+
+        var stored = await jobStore.GetAsync("job-remote-wait");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+        stored.NextRetryAt.Should().Be(nextRetryAt);
+
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_QueuedRemoteRetryWhenDue_StartsNextAttemptAndClearsRetryMarker()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(KubernetesJobBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(BatchComputeTargetKind.KubernetesJob);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "provider-attempt-2",
+                Message = "Submitted retry attempt"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-remote-due",
+            status: ExecutionJobStatus.Queued,
+            backend: KubernetesJobBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            currentPhase: "Retrying (attempt 2/3)") with
+        {
+            AttemptCount = 1,
+            NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-remote-due");
+
+        await backend.Received(1).StartAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.Status == ExecutionJobStatus.Provisioning &&
+                record.AttemptCount == 1 &&
+                record.NextRetryAt == job.NextRetryAt),
+            Arg.Any<CancellationToken>());
+
+        var stored = await jobStore.GetAsync("job-remote-due");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        stored.AttemptCount.Should().Be(2);
+        stored.ProviderOperationId.Should().Be("provider-attempt-2");
+        stored.CurrentPhase.Should().Be("Submitted retry attempt");
+        stored.NextRetryAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_RemoteProvisioningJob_ObservesInsteadOfRestarting()
     {
         var backend = Substitute.For<IBatchComputeBackend>();

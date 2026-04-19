@@ -108,7 +108,8 @@ internal static partial class ExecutionJobSubmissionHelper
             CompletedAt = ExecutionJobReconciler.IsTerminal(submission.Status) ? now : provisioning.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
             CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
-            AttemptCount = provisioning.AttemptCount + 1
+            AttemptCount = provisioning.AttemptCount + 1,
+            NextRetryAt = null
         };
 
         if (!await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))

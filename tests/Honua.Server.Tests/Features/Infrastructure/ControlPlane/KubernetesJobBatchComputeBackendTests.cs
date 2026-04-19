@@ -33,8 +33,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         capabilities.SupportsCancellation.Should().BeTrue();
         capabilities.SupportsProgressPolling.Should().BeTrue();
-        // Remote retry orchestration is not wired yet; see KubernetesJobBatchComputeBackend XML doc.
-        capabilities.SupportsRetry.Should().BeFalse();
+        capabilities.SupportsRetry.Should().BeTrue();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
     }
@@ -735,13 +734,24 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
-    public async Task ObserveAsync_FailedJobWithLongOperationId_UsesSanitizedSelector()
+    public void BuildManifest_RetryAttempt_UsesAttemptSpecificJobName()
     {
-        // The pod selector used to surface container-termination detail must match the
-        // label value written at submission; a raw OperationId selector against a
-        // sanitized label value returns zero pods and strips the failure context.
+        var backend = CreateBackend(Substitute.For<IKubernetesJobClient>());
+        var job = CreateJob("job-retry", image: "honua/worker:1.0.0") with
+        {
+            AttemptCount = 1
+        };
+
+        var manifest = backend.BuildManifest(job, "honua/worker:1.0.0");
+
+        manifest.Name.Should().Be("honua-job-retry-a2");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_FailedJobWithLongOperationId_UsesSanitizedJobSelector()
+    {
         var longId = new string('a', 120);
-        var expectedSelector = "honua.io/operation-id=" + new string('a', 63);
+        var expectedSelector = "job-name=" + KubernetesJobBatchComputeBackend.BuildJobName(longId);
 
         var client = Substitute.For<IKubernetesJobClient>();
         client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -751,6 +761,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
                 Snapshot = new KubernetesJobStatusSnapshot
                 {
                     Uid = "uid-long",
+                    Name = KubernetesJobBatchComputeBackend.BuildJobName(longId),
                     Failed = 1,
                     FailedCondition = true,
                     TerminalReason = "BackoffLimitExceeded"
@@ -777,6 +788,50 @@ public sealed class KubernetesJobBatchComputeBackendTests
         await client.Received(1).ListPodsAsync(
             Arg.Any<string>(),
             expectedSelector,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ObserveAsync_FailedRetryAttempt_UsesAttemptSpecificJobSelector()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync("default", "honua-job-retry-attempt-a2", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-retry-2",
+                    Name = "honua-job-retry-attempt-a2",
+                    Failed = 1,
+                    FailedCondition = true,
+                    TerminalReason = "Error"
+                }
+            });
+        client.ListPodsAsync("default", "job-name=honua-job-retry-attempt-a2", Arg.Any<CancellationToken>())
+            .Returns(new List<KubernetesPodStatusSnapshot>
+            {
+                new()
+                {
+                    Name = "pod-retry-2",
+                    Phase = "Failed",
+                    ContainerTerminationMessage = "attempt two failed"
+                }
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-retry-attempt", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running) with
+        {
+            AttemptCount = 2
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("attempt two failed");
+        await client.Received(1).ListPodsAsync(
+            "default",
+            "job-name=honua-job-retry-attempt-a2",
             Arg.Any<CancellationToken>());
     }
 

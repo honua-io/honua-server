@@ -15,12 +15,10 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 /// <c>batch/v1</c> Job and projecting Job + Pod lifecycle back onto
 /// <see cref="ExecutionJobStatus"/>. The adapter keeps Jobs at
 /// <c>backoffLimit: 0</c> so a failed Pod surfaces terminally rather than being
-/// silently retried inside the cluster. Retry orchestration for remote
-/// <c>Failed</c> observations is not yet implemented in the canonical
-/// <see cref="ExecutionJobReconciler"/>; the adapter therefore advertises
-/// <see cref="BatchComputeBackendCapabilities.SupportsRetry"/> as <c>false</c>
-/// until the reconciler grows a remote-requeue path keyed off
-/// <c>JobRetryPolicy</c>.
+/// silently retried inside the cluster. Canonical retry orchestration remains in
+/// the shared <see cref="ExecutionJobReconciler"/>; the adapter uses
+/// attempt-specific Job names so each retry starts a fresh Kubernetes Job rather
+/// than colliding with the failed attempt's retained provider object.
 /// </summary>
 internal sealed partial class KubernetesJobBatchComputeBackend(
     IKubernetesJobClient jobClient,
@@ -50,12 +48,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             SupportsCancellation = true,
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
-            // Remote-failure retry orchestration does not yet exist in the reconciler
-            // (Queued/local retries live in JobReconciliationService; ObserveJobAsync
-            // persists provider Failed observations as terminal). Advertise false until
-            // that orchestration lands so callers treating SupportsRetry as a contract
-            // do not get stranded expectations.
-            SupportsRetry = false,
+            SupportsRetry = true,
             SupportsArtifactStaging = true
         });
 
@@ -155,7 +148,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 var pods = await jobClient
                     .ListPodsAsync(
                         namespaceName,
-                        BuildOperationIdSelector(job.OperationId),
+                        BuildJobPodSelector(jobName),
                         cancellationToken)
                     .ConfigureAwait(false);
                 message = BuildFailureMessage(snapshot, pods);
@@ -249,7 +242,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             if (result.Snapshot is { } deleteSnapshot)
             {
                 var postDelete = await BuildTerminalObservationFromSnapshotAsync(
-                        job, namespaceName, deleteSnapshot, cancellationToken)
+                        job, namespaceName, jobName, deleteSnapshot, cancellationToken)
                     .ConfigureAwait(false);
                 if (postDelete != null)
                 {
@@ -297,13 +290,14 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         }
 
         return await BuildTerminalObservationFromSnapshotAsync(
-                job, namespaceName, fetch.Snapshot, cancellationToken)
+                job, namespaceName, jobName, fetch.Snapshot, cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task<BatchComputeObservation?> BuildTerminalObservationFromSnapshotAsync(
         ExecutionJobRecord job,
         string namespaceName,
+        string jobName,
         KubernetesJobStatusSnapshot snapshot,
         CancellationToken cancellationToken)
     {
@@ -319,7 +313,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             var pods = await jobClient
                 .ListPodsAsync(
                     namespaceName,
-                    BuildOperationIdSelector(job.OperationId),
+                    BuildJobPodSelector(snapshot.Name ?? jobName),
                     cancellationToken)
                 .ConfigureAwait(false);
             message = BuildFailureMessage(snapshot, pods);
@@ -390,7 +384,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var parameters = job.Spec.Parameters;
 
         var ns = ResolveNamespace(job, snapshot);
-        var name = BuildJobName(job.OperationId);
+        var attemptNumber = ResolveSubmissionAttempt(job);
+        var name = BuildJobName(job.OperationId, attemptNumber);
 
         var operationIdLabel = BuildOperationIdLabelValue(job.OperationId);
         var labels = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -565,7 +560,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     {
         var snapshot = options.CurrentValue;
         var ns = ResolveNamespace(job, snapshot);
-        var name = BuildJobName(job.OperationId);
+        var name = BuildJobName(job.OperationId, ResolveObservedAttempt(job));
         return (ns, name);
     }
 
@@ -583,7 +578,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             ?? (snapshot.InClusterAutoDetect ? KubernetesJobClient.TryReadInClusterNamespace() : null)
             ?? "default";
 
-    internal static string BuildJobName(string operationId)
+    internal static string BuildJobName(string operationId, int attemptNumber = 1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
 
@@ -591,7 +586,18 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var candidate = sanitized.StartsWith("honua-", StringComparison.Ordinal)
             ? sanitized
             : $"honua-{sanitized}";
-        if (candidate.Length > 63)
+        if (attemptNumber > 1)
+        {
+            var suffix = $"-a{attemptNumber.ToString(CultureInfo.InvariantCulture)}";
+            var maxBaseLength = 63 - suffix.Length;
+            if (candidate.Length > maxBaseLength)
+            {
+                candidate = candidate[..maxBaseLength].TrimEnd('-', '.');
+            }
+
+            candidate += suffix;
+        }
+        else if (candidate.Length > 63)
         {
             candidate = candidate[..63].TrimEnd('-', '.');
         }
@@ -610,6 +616,9 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
     internal static string BuildOperationIdSelector(string operationId)
         => $"{OperationIdLabel}={BuildOperationIdLabelValue(operationId)}";
+
+    internal static string BuildJobPodSelector(string jobName)
+        => $"job-name={jobName}";
 
     internal static string SanitizeLabelValue(string value)
     {
@@ -670,6 +679,12 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static int ResolveSubmissionAttempt(ExecutionJobRecord job)
+        => Math.Max(job.AttemptCount + 1, 1);
+
+    private static int ResolveObservedAttempt(ExecutionJobRecord job)
+        => Math.Max(job.AttemptCount, 1);
 
     private static Dictionary<string, string>? ParseMap(string? encoded)
     {
