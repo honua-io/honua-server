@@ -117,6 +117,15 @@ reshapes the result, not just the acknowledged-question set:
 Unknown question ids are tolerated (forward compatibility) and simply
 left out of `provenance.clarificationsAnswered`.
 
+`GroundingService.GroundAsync` also enforces intent-id parity before
+applying any answers: when a `ClarificationResponse` is supplied, the
+request's `IntentId` and the response's `IntentId` must both be
+non-empty and identical. Missing or mismatched ids fail with
+`invalid_argument` so answers cannot be silently rebound to a
+different intent. The MCP tool mapper preserves parity by copying
+`honua_clarify_intent.intentId` into both fields; direct callers of
+`IGroundingService` are held to the same contract.
+
 ## Configuration
 
 Options live under the `Operator:Grounding` configuration section and are
@@ -194,8 +203,10 @@ catalog. The fixtures are consumed by:
   — an xUnit `Theory` that replays every scenario through the real
   `GroundingService` + `DeterministicGroundingEngine` +
   `BuiltInProcessCatalog` stack on every CI run.
-- The honua-server-734 eval harness (once it lands) for cross-engine
-  conformance scoring.
+- The honua-server-734 eval harness for cross-engine conformance scoring
+  once grounding scenarios are added to `tests/Eval/scenarios/` — the
+  harness is landed (`tests/Honua.Server.Tests/Features/Eval/`), and its
+  current scenarios target analyst and publishing workflows.
 
 **Edit rule**: a change to `DeterministicGroundingEngine` or
 `BuiltInProcessCatalog` should trip the replay. Update the fixtures and

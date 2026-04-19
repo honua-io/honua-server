@@ -445,10 +445,18 @@ catalog discovery on top of the same authorization graph via
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
   published schema also marks `goal` as required, matching the server
-  mapper which rejects blank goals with `invalid_argument`. The service
-  is stateless — callers carry `goal`, `constraints`, and
-  `explicitInputs` forward across turns. Answers are *applied* rather
-  than merely acknowledged: `workflow_family` overrides the classifier
+  mapper which rejects blank goals with `invalid_argument`. The tool
+  requires the same `(Catalog, Discover)` authorization grant as
+  `honua_ground_candidates` — both halves of the grounding flow
+  delegate to `IGroundingService.GroundAsync`, so asymmetric permissions
+  would let a caller start grounding but fail to answer its own
+  clarification envelope. The service is stateless — callers carry
+  `goal`, `constraints`, and `explicitInputs` forward across turns; the
+  tool mapper copies `intentId` into both `request.intentId` and
+  `response.intentId` so `IGroundingService` can enforce intent-id
+  parity and reject answers targeting a different intent with
+  `invalid_argument`. Answers are *applied* rather than merely
+  acknowledged: `workflow_family` overrides the classifier
   (confidence `1.0`, evidence `clarification`), `dataset.selection` and
   `process.selection` pin the chosen candidate to the front of its
   ranking (unknown ids fail with `invalid_argument`), `publish.target`

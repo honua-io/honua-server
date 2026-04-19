@@ -57,7 +57,11 @@ internal sealed class ClarifyIntentTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
+        // Clarification is the continuation of the grounding pass and delegates
+        // to the same IGroundingService.GroundAsync flow, so the gate must match
+        // honua_ground_candidates — otherwise callers can start grounding but be
+        // blocked from answering their own clarification envelope.
+        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Catalog, OperatorOperation.Discover);
 
         var argument = McpToolHelpers.ParseArguments(arguments, GroundingJsonContext.Default.McpClarifyIntentArgument);
         var request = GroundingToolMapper.ToDomain(argument);

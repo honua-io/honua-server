@@ -674,6 +674,85 @@ public sealed class GroundingServiceTests
         result.Clarification.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task GroundAsync_ClarificationResponse_IntentIdMismatch_ThrowsInvalidArgument()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer the roads",
+                IntentId = "intent-request",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-other",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["workflow_family"] = ["Analyze"]
+                    }
+                }
+            },
+            Principal);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("intent-other").And.Contain("intent-request");
+        _engine.DidNotReceive().Classify(Arg.Any<GroundingRequest>());
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_ClarificationResponse_MissingRequestIntentId_ThrowsInvalidArgument()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer the roads",
+                IntentId = null,
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["workflow_family"] = ["Analyze"]
+                    }
+                }
+            },
+            Principal);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("intentId");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_ClarificationResponse_BlankResponseIntentId_ThrowsInvalidArgument()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer the roads",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "   ",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["workflow_family"] = ["Analyze"]
+                    }
+                }
+            },
+            Principal);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("intentId");
+    }
+
     private static WorkflowFamilyClassification HighAnalyze => new()
     {
         Value = WorkflowFamily.Analyze,

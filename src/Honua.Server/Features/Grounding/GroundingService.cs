@@ -8,6 +8,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
+using Honua.Server.Features.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -75,6 +76,14 @@ internal sealed class GroundingService : IGroundingService
             GroundingLog.PassRejected(_logger, nameof(GroundingErrorKind.EmptyGoal), "empty goal");
             throw new GroundingException(GroundingErrorKind.EmptyGoal, "Grounding request goal must be non-empty.");
         }
+
+        // Clarification turns must carry matching request + response intent ids
+        // so answers cannot be applied to a different intent. The MCP tool
+        // mapper copies the same value into both fields, but IGroundingService
+        // is the public abstraction for future adapters — enforce the contract
+        // here so callers receive invalid_argument instead of silently rebinding
+        // one intent's answers onto another.
+        EnsureClarificationIntentIdMatches(request);
 
         var tokens = GroundingTokenizer.Tokenize(request.Goal);
         GroundingLog.PassStarted(_logger, _engine.Name, tokens.Count, request.WorkflowFamilyHint.HasValue);
@@ -342,6 +351,34 @@ internal sealed class GroundingService : IGroundingService
         }
 
         return gaps;
+    }
+
+    private static void EnsureClarificationIntentIdMatches(GroundingRequest request)
+    {
+        if (request.ClarificationResponse is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.IntentId))
+        {
+            throw new GeoprocessingValidationException(
+                "Clarification turn requires a non-empty intentId on the grounding request.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ClarificationResponse.IntentId))
+        {
+            throw new GeoprocessingValidationException(
+                "Clarification response is missing an intentId; it must identify the intent being clarified.");
+        }
+
+        if (!string.Equals(request.IntentId, request.ClarificationResponse.IntentId, StringComparison.Ordinal))
+        {
+            throw new GeoprocessingValidationException(
+                $"Clarification response intentId '{request.ClarificationResponse.IntentId}' does not match "
+                + $"request intentId '{request.IntentId}'. Clarification answers can only be applied to the "
+                + "intent they were requested for.");
+        }
     }
 
     private static IReadOnlyList<MaterialAmbiguityFinding> FilterAnsweredFindings(
