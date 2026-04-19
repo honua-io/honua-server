@@ -89,6 +89,11 @@ internal sealed class ODataMetadataHandler(
             return queryValidation;
         }
 
+        if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+        {
+            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+        }
+
         ODataUtilityService.SetODataHeaders(context);
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
         var layers = await _layerCatalog.ListLayersAsync(effectiveToken);

@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Parsing;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite;
@@ -114,42 +115,64 @@ internal sealed partial class OgcFilterProcessor
                 layer,
                 _crsRegistry,
                 cancellationToken).ConfigureAwait(false);
-            if (!OgcFeaturesUtilities.TryResolveCrs(crs, supportedCrs, out var crsDefinition, out var crsError))
+            var crsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
+                crs,
+                supportedCrs,
+                _crsRegistry,
+                cancellationToken).ConfigureAwait(false);
+            if (!crsResolution.IsSuccess)
             {
-                return FilterProcessingResult.Failure(crsError!);
+                return FilterProcessingResult.Failure(crsResolution.Error!);
             }
+
+            var crsDefinition = crsResolution.Definition;
 
             if (!string.IsNullOrWhiteSpace(filterCrs) && string.IsNullOrWhiteSpace(filter))
             {
                 return FilterProcessingResult.Failure("filter-crs requires a filter parameter.");
             }
 
-            if (!OgcFeaturesUtilities.TryResolveCrs(
-                    OgcFeaturesUtilities.Crs84Uri,
-                    supportedCrs,
-                    out var defaultFilterCrsDefinition,
-                    out var defaultFilterCrsError))
+            var defaultFilterCrsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
+                OgcFeaturesUtilities.Crs84Uri,
+                supportedCrs,
+                _crsRegistry,
+                cancellationToken).ConfigureAwait(false);
+            if (!defaultFilterCrsResolution.IsSuccess)
             {
                 return FilterProcessingResult.Failure(
-                    defaultFilterCrsError ?? "Unable to resolve default filter CRS.");
+                    defaultFilterCrsResolution.Error ?? "Unable to resolve default filter CRS.");
             }
 
-            var filterCrsDefinition = defaultFilterCrsDefinition;
+            var filterCrsDefinition = defaultFilterCrsResolution.Definition;
             if (!string.IsNullOrWhiteSpace(filterCrs))
             {
-                if (!OgcFeaturesUtilities.TryResolveCrs(filterCrs, supportedCrs, out filterCrsDefinition, out var filterCrsError))
+                var filterCrsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
+                    filterCrs,
+                    supportedCrs,
+                    _crsRegistry,
+                    cancellationToken).ConfigureAwait(false);
+                if (!filterCrsResolution.IsSuccess)
                 {
-                    return FilterProcessingResult.Failure(filterCrsError!);
+                    return FilterProcessingResult.Failure(filterCrsResolution.Error!);
                 }
+
+                filterCrsDefinition = filterCrsResolution.Definition;
             }
 
-            var bboxCrsDefinition = defaultFilterCrsDefinition;
+            var bboxCrsDefinition = defaultFilterCrsResolution.Definition;
             if (!string.IsNullOrWhiteSpace(bboxCrs))
             {
-                if (!OgcFeaturesUtilities.TryResolveCrs(bboxCrs, supportedCrs, out bboxCrsDefinition, out var bboxCrsError))
+                var bboxCrsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
+                    bboxCrs,
+                    supportedCrs,
+                    _crsRegistry,
+                    cancellationToken).ConfigureAwait(false);
+                if (!bboxCrsResolution.IsSuccess)
                 {
-                    return FilterProcessingResult.Failure(bboxCrsError!);
+                    return FilterProcessingResult.Failure(bboxCrsResolution.Error!);
                 }
+
+                bboxCrsDefinition = bboxCrsResolution.Definition;
             }
 
             // Process CQL filters
@@ -175,6 +198,18 @@ internal sealed partial class OgcFilterProcessor
                 }
                 filterExpression = textResult.FilterExpression;
                 combinedFilter = textResult.CombinedFilter;
+            }
+
+            if (filterExpression != null)
+            {
+                foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(filterExpression))
+                {
+                    if (!await _crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))
+                    {
+                        return FilterProcessingResult.Failure(
+                            $"{InvalidCqlFilterPrefix}: Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}' for this collection.");
+                    }
+                }
             }
 
             if (filterExpression != null && !string.IsNullOrWhiteSpace(filterCrs))
@@ -405,7 +440,7 @@ internal sealed partial class OgcFilterProcessor
         return new BinaryExpression(left, BinaryOperator.And, right);
     }
 
-    private static FilterExpression NormalizeFilterAxisOrder(
+    internal static FilterExpression NormalizeFilterAxisOrder(
         FilterExpression filterExpression,
         AxisOrder axisOrder)
     {
@@ -420,7 +455,7 @@ internal sealed partial class OgcFilterProcessor
         return SwapAxisOrder(filterExpression, preserveExplicitGeometryCrs: true);
     }
 
-    private static FilterExpression ApplyFilterCrs(
+    internal static FilterExpression ApplyFilterCrs(
         FilterExpression filterExpression,
         CrsDefinition crsDefinition)
     {
@@ -474,7 +509,7 @@ internal sealed partial class OgcFilterProcessor
         GeometryLiteral geometry,
         CrsDefinition crsDefinition)
     {
-        if (HasExplicitCrs(geometry))
+        if (FilterGeometryCrsValidator.HasExplicitCrs(geometry))
         {
             return geometry;
         }
@@ -482,22 +517,6 @@ internal sealed partial class OgcFilterProcessor
         return geometry with { Srid = crsDefinition.Srid };
     }
 
-    private static bool HasExplicitCrs(GeometryLiteral geometry)
-    {
-        if (string.IsNullOrWhiteSpace(geometry.OriginalFormat))
-        {
-            return false;
-        }
-
-        if (geometry.OriginalFormat.Contains("SRID=", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var trimmed = geometry.OriginalFormat.TrimStart();
-        return trimmed.StartsWith('{') &&
-               geometry.OriginalFormat.Contains("\"crs\"", StringComparison.OrdinalIgnoreCase);
-    }
 
     private static FilterExpression SwapAxisOrder(
         FilterExpression filterExpression,
@@ -505,7 +524,7 @@ internal sealed partial class OgcFilterProcessor
     {
         return filterExpression switch
         {
-            GeometryLiteral geometry => preserveExplicitGeometryCrs && HasExplicitCrs(geometry)
+            GeometryLiteral geometry => preserveExplicitGeometryCrs && FilterGeometryCrsValidator.HasExplicitCrs(geometry)
                 ? geometry
                 : SwapGeometryLiteral(geometry),
             BinaryExpression binary => binary with

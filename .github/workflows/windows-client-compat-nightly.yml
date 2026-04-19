@@ -14,6 +14,10 @@ env:
   CLIENT_COMPAT_LAYER_ID: '0'
   CLIENT_COMPAT_SEED_SOURCE: 'tests/seed/client-compat-v1.sql'
 
+concurrency:
+  group: windows-client-compat-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   client-compat:
     name: Client Compatibility Smoke

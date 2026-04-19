@@ -6,6 +6,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Wfs20.Models;
 using Honua.Server.Features.Wfs20.Services;
 
@@ -198,6 +199,11 @@ internal static class Wfs20DispatcherEndpoint
             }
         }
 
+        // GetCapabilities is inherently XML-only; reject on the Accept header would
+        // break clients that set a broad default like `application/json` as a
+        // catch-all (common in test fixtures and OpenAPI-typed SDK clients).
+        // The server will still respond with application/xml regardless.
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var sections = parameters.Get(Wfs20Utilities.ParameterNames.Sections);
         if (!Wfs20Utilities.TryParseSections(sections, out var requestedSections, out var sectionsError))
@@ -263,6 +269,12 @@ internal static class Wfs20DispatcherEndpoint
                     $"Unsupported output format '{outputFormat}'. DescribeFeatureType requires XML-based formats.",
                     "outputFormat");
             }
+
+            // DescribeFeatureType's outputFormat check above already enforces an
+            // XML-compatible format. Don't also reject on the Accept header —
+            // test fixtures and catch-all SDK clients routinely set
+            // `Accept: application/json` and the server always emits XML here
+            // regardless.
 
             // Handle the request
             var schema = await handler.HandleDescribeFeatureTypeAsync(

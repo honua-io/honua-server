@@ -50,12 +50,12 @@ Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.
 | `properties` | Implemented | Comma-separated property projection list (`*` keeps default behavior). |
 | `sortby` | Implemented | Comma-separated sort expressions (supports `+field`, `-field`, and `field asc|desc`). |
 | `bbox` | Implemented | 4 or 6 comma-separated values; anti-meridian supported for geographic CRS. |
-| `bbox-crs` | Implemented | CRS for interpreting `bbox`; must be in collection `crs` list. |
-| `crs` | Implemented | Output CRS; must be in collection `crs` list. Response includes `Content-Crs`. |
+| `bbox-crs` | Implemented | CRS for interpreting `bbox`; accepts collection defaults plus any EPSG identifier resolved by the CRS registry. |
+| `crs` | Implemented | Output CRS; accepts collection defaults plus any EPSG identifier resolved by the CRS registry. Response includes `Content-Crs`. |
 | `datetime` | Implemented | RFC 3339 instant or interval; requires temporal fields on the layer. |
 | `filter` | Partial | CQL2-Text and CQL2-JSON supported; function/operator coverage is limited to the implemented CQL subset. |
 | `filter-lang` | Partial | Supports `cql2-text` (default) and `cql2-json` only. |
-| `filter-crs` | Partial | CRS for filter geometries; requires `filter` and a supported CRS. |
+| `filter-crs` | Partial | CRS for filter geometries; requires `filter` and accepts collection defaults plus any EPSG identifier resolved by the CRS registry. |
 | Queryable properties | Partial | Simple queryables (string, numeric, boolean, date/time, UUID) are supported as equality filters. |
 
 ## CQL2 operator coverage

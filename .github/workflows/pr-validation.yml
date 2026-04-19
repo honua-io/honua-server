@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+concurrency:
+  group: pr-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-pr:
     name: Validate PR Template Compliance

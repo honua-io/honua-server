@@ -83,7 +83,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                         ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
                         ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
                         ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
-                        ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH")
+                        ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
+                        ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
                     });
                 });
 
@@ -357,6 +358,30 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         Assert.Equal(401, (int)response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("requires HTTPS", content);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_TrustedForwardedHttps_AllowsAccess()
+    {
+        const string adminPassword = TestBasicPassword;
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
+            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
+            builder.UseSetting("ForwardedHeaders:Enabled", "true");
+        });
+        using var client = factory.CreateClient();
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
+        request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
+        var response = await client.SendAsync(request);
+
+        Assert.NotEqual(401, (int)response.StatusCode);
     }
 
     [IntegrationTest]

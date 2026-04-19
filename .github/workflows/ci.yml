@@ -134,7 +134,7 @@ jobs:
         run: bash scripts/check-instructions-sync.sh
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -201,7 +201,7 @@ jobs:
           docker system df || true
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -224,14 +224,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: tests/js/package-lock.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Restore
         run: dotnet restore Honua.sln
@@ -261,10 +253,12 @@ jobs:
       - name: Build .NET test binaries
         timeout-minutes: 20
         run: |
+          # Use MSBuild default parallelism (-m with no value = runner CPU count).
+          # The prior `-m:1` serialized project compiles for no documented reason
+          # and cost ~2 min of PR wall-clock on the 2-core runner.
           dotnet build Honua.sln \
             --no-restore \
-            --configuration Release \
-            -m:1
+            --configuration Release
 
       - name: Run .NET Tests (Core/Postgres)
         timeout-minutes: 20
@@ -275,8 +269,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=core-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
           dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
             --no-build \
@@ -284,8 +277,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=load-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
           dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --no-build \
@@ -293,8 +285,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=postgres-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
       - name: Run .NET Tests (Server - Core)
         timeout-minutes: 20
@@ -309,7 +300,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-core.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-core.log 2>&1 &
           test_pid=$!
 
@@ -338,7 +328,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-feature-apis.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-feature-apis.log 2>&1 &
           test_pid=$!
 
@@ -367,7 +356,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-map-imagery.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-map-imagery.log 2>&1 &
           test_pid=$!
 
@@ -396,7 +384,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-infra-security.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-infra-security.log 2>&1 &
           test_pid=$!
 
@@ -421,8 +408,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=architecture-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
       - name: Install GDAL tools
         run: |
@@ -1009,7 +995,10 @@ jobs:
     needs: [build, test-all]
     timeout-minutes: 30
     strategy:
-      fail-fast: true
+      # Report every PG version's status independently so a PG 16 regression does
+      # not hide PG 17/18 results. Each version is worth ~6 min; fail-fast saves
+      # little and costs triage signal.
+      fail-fast: false
       matrix:
         pg_image:
           - "postgis/postgis:16-3.4-alpine"   # Aurora PG 16.x baseline
@@ -1033,7 +1022,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -1063,7 +1052,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -1107,7 +1096,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -1226,7 +1215,6 @@ jobs:
         run: |
           docker stop honua-test || true
           docker rm honua-test || true
-
 
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.

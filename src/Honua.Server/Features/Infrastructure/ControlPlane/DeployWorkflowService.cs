@@ -153,6 +153,8 @@ internal sealed class DeployWorkflowService
         var operationId = CreateOperationId(idempotencyKey);
         var requestFingerprint = CreateRequestFingerprint(
             targetId,
+            planningResult.Target.Backend,
+            planningResult.Target.TargetKind,
             desiredRevision,
             currentRevision,
             priority,
@@ -480,6 +482,8 @@ internal sealed class DeployWorkflowService
 
     private static string CreateRequestFingerprint(
         string targetId,
+        string backend,
+        DeployTargetKind targetKind,
         string desiredRevision,
         string? currentRevision,
         OperationPriority priority,
@@ -501,6 +505,12 @@ internal sealed class DeployWorkflowService
             new DeployRequestFingerprintPayload
             {
                 TargetId = targetId.Trim(),
+                // Backend + TargetKind participate in the fingerprint: two targets
+                // may share a TargetId string but route to different backends (e.g.
+                // kubernetes vs. cloud-run). Excluding them lets a replay for one
+                // backend be accepted as idempotent for another.
+                Backend = backend?.Trim(),
+                TargetKind = targetKind.ToString(),
                 DesiredRevision = desiredRevision.Trim(),
                 CurrentRevision = currentRevision?.Trim(),
                 Priority = priority.ToString(),
@@ -603,6 +613,8 @@ internal sealed class DeployWorkflowService
 internal sealed record DeployRequestFingerprintPayload
 {
     public required string TargetId { get; init; }
+    public string? Backend { get; init; }
+    public string? TargetKind { get; init; }
     public required string DesiredRevision { get; init; }
     public string? CurrentRevision { get; init; }
     public required string Priority { get; init; }

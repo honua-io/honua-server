@@ -18,6 +18,10 @@ env:
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
   TRIVY_IMAGE: aquasec/trivy:0.68.1
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})

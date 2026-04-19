@@ -887,7 +887,11 @@ internal sealed partial class JobExecutionContext(
                     if (job.CancellationRequestedAt.HasValue && durableCancellationCts != null)
                     {
                         try { durableCancellationCts.Cancel(); }
-                        catch (ObjectDisposedException) { }
+                        catch (ObjectDisposedException)
+                        {
+                            // Expected race: the execution task completed and disposed
+                            // the CTS between the read above and this cancel. Benign.
+                        }
                         break;
                     }
 

@@ -33,6 +33,19 @@ Admin-only diagnostics:
 | `GET /api/v1/admin/observability/telemetry` | Tracing status |
 | `GET /api/v1/admin/performance/database/query-cache/statistics` | Prepared statement cache health |
 
+Detailed operational diagnostics (also admin-authenticated):
+
+| Endpoint | What it shows |
+|----------|---------------|
+| `GET /monitoring/health/production` | Combined health snapshot built from live request/cache/connection telemetry |
+| `GET /monitoring/health/comprehensive` | Sanitized ASP.NET health check report for critical dependencies |
+| `GET /monitoring/metrics/connection-pool` | Connection pool utilization, failures, and timeouts |
+| `GET /monitoring/metrics/cache` | Cache health summary with hit ratio |
+| `GET /monitoring/metrics/resources` | Process memory and GC snapshot |
+| `GET /monitoring/metrics/upload-queue` | Upload queue depth and utilization |
+| `GET /monitoring/metrics/database-resilience` | Database resilience summary and active alerts |
+| `GET /monitoring/alerts` | Current alert conditions derived from production thresholds |
+
 ---
 
 ## Job Orchestration Observability

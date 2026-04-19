@@ -174,8 +174,18 @@ internal sealed class ImageServerExportHandler
     {
         try
         {
-            if (request.Size.HasValue &&
-                (request.Size.Value < MinOutputDimension || request.Size.Value > MaxAllowedOutputDimension))
+            // renderingRule and mosaicRule are not yet wired into the raster pipeline.
+            // Accepting them silently produces unrendered/un-mosaicked imagery that
+            // looks wrong to the client without any indication why. Reject explicitly
+            // so callers know to drop the parameter until the raster function runtime
+            // is available.
+            if (!string.IsNullOrWhiteSpace(request.RenderingRule)
+                || !string.IsNullOrWhiteSpace(request.MosaicRule))
+            {
+                return null;
+            }
+
+            if (!TryParseRequestedSize(request.Size, out var requestedWidth, out var requestedHeight))
             {
                 return null;
             }
@@ -269,6 +279,45 @@ internal sealed class ImageServerExportHandler
         }
     }
 
+    // Parses Esri /exportImage size values: either "W" (width only, height inferred
+    // from the raster's aspect ratio) or "W,H" (explicit pair). Returns false when
+    // either component is outside the permitted output range.
+    private static bool TryParseRequestedSize(string? size, out int? width, out int? height)
+    {
+        width = null;
+        height = null;
+
+        if (string.IsNullOrWhiteSpace(size))
+        {
+            return true;
+        }
+
+        var parts = size.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length is not 1 and not 2)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var w)
+            || w < MinOutputDimension || w > MaxAllowedOutputDimension)
+        {
+            return false;
+        }
+
+        width = w;
+        if (parts.Length == 2)
+        {
+            if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h)
+                || h < MinOutputDimension || h > MaxAllowedOutputDimension)
+            {
+                return false;
+            }
+            height = h;
+        }
+
+        return true;
+    }
+
     private static async Task<(int width, int height)> CalculateOutputDimensionsAsync(
         ExportImageRequest request,
         Core.Features.Raster.Domain.RasterInfo raster,
@@ -277,9 +326,22 @@ internal sealed class ImageServerExportHandler
     {
         var aspectRatio = await GetOutputAspectRatioAsync(request, raster, coordinateTransformService, cancellationToken).ConfigureAwait(false);
 
-        if (request.Size.HasValue)
+        if (!TryParseRequestedSize(request.Size, out var width, out var height))
         {
-            return ScaleWidthToAspectRatio(request.Size.Value, aspectRatio, MaxAllowedOutputDimension);
+            // Input is already filtered by ParseExportParameters; fall through to defaults.
+            width = null;
+            height = null;
+        }
+
+        if (width.HasValue && height.HasValue)
+        {
+            // Both dimensions supplied — honor the client's exact request.
+            return (width.Value, height.Value);
+        }
+
+        if (width.HasValue)
+        {
+            return ScaleWidthToAspectRatio(width.Value, aspectRatio, MaxAllowedOutputDimension);
         }
 
         var sourceWidth = raster.Width > 0 ? raster.Width : DefaultMaxOutputDimension;

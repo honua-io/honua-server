@@ -98,6 +98,22 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
         content.Should().NotContain("evil.example");
     }
 
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0, text/html;q=1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]

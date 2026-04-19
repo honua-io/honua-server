@@ -280,6 +280,28 @@ public sealed class GrpcProcessServiceTests
             Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WhenRequestIsCancelled_ThrowsCancelled()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromCanceled<bool>(cts.Token));
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = CreateValidPlan(),
+            IdempotencyKey = "idem-cancelled"
+        };
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext(cts.Token));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Cancelled);
+    }
+
     // -----------------------------------------------------------------------
     // GetJob
     // -----------------------------------------------------------------------
@@ -949,7 +971,7 @@ public sealed class GrpcProcessServiceTests
         };
     }
 
-    private static TestServerCallContext CreateCallContext()
+    private static TestServerCallContext CreateCallContext(CancellationToken cancellationToken = default)
     {
         var httpContext = new DefaultHttpContext
         {
@@ -957,24 +979,37 @@ public sealed class GrpcProcessServiceTests
                 [new Claim(ClaimTypes.Name, "test-user")], "Test"))
         };
 
-        var ctx = new TestServerCallContext();
+        var ctx = new TestServerCallContext(cancellationToken);
         ctx.UserState["__HttpContext"] = httpContext;
         return ctx;
     }
 
     private sealed class TestServerCallContext : ServerCallContext, IDisposable
     {
-        private readonly CancellationTokenSource _cts = new();
+        private readonly CancellationTokenSource? _cts;
+        private readonly CancellationToken _cancellationToken;
         private readonly Metadata _responseTrailers = new();
 
-        public void Dispose() => _cts.Dispose();
+        public TestServerCallContext(CancellationToken cancellationToken)
+        {
+            if (cancellationToken.CanBeCanceled)
+            {
+                _cancellationToken = cancellationToken;
+                return;
+            }
+
+            _cts = new CancellationTokenSource();
+            _cancellationToken = _cts.Token;
+        }
+
+        public void Dispose() => _cts?.Dispose();
 
         protected override string MethodCore => "/geospatial.v1.ProcessService/ValidatePlan";
         protected override string HostCore => "localhost";
         protected override string PeerCore => "127.0.0.1";
         protected override DateTime DeadlineCore => DateTime.UtcNow.AddMinutes(5);
         protected override Metadata RequestHeadersCore => new();
-        protected override CancellationToken CancellationTokenCore => _cts.Token;
+        protected override CancellationToken CancellationTokenCore => _cancellationToken;
         protected override Metadata ResponseTrailersCore => _responseTrailers;
         protected override Status StatusCore { get; set; }
         protected override WriteOptions? WriteOptionsCore { get; set; }

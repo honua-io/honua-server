@@ -43,11 +43,6 @@ public sealed class ProductionMonitoringEndpointSecurityTests
         using var client = CreateAdminClient(factory);
 
         var response = await client.GetAsync("/monitoring/health/comprehensive");
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return;
-        }
-
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -69,11 +64,6 @@ public sealed class ProductionMonitoringEndpointSecurityTests
         using var client = CreateAdminClient(factory);
 
         var response = await client.GetAsync("/monitoring/health/comprehensive");
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return;
-        }
-
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

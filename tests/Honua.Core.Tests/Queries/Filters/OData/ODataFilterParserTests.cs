@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.OData;
@@ -192,6 +193,31 @@ public class ODataFilterParserTests
         var negate = (UnaryExpression)addExpr.Right;
         negate.Operator.Should().Be(UnaryOperator.Negate);
         ((PropertyReference)negate.Operand).PropertyName.Should().Be("discount");
+    }
+
+    [Fact]
+    public void Parse_GeometryLiteral_WithTooManyVertices_ThrowsODataFilterParseException()
+    {
+        var points = string.Join(",", Enumerable.Range(0, 50_001).Select(i => $"{i} 0"));
+        var filter = $"geo.intersects(geom, geography'LINESTRING({points})')";
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage("*maximum geometry complexity*");
+    }
+
+    [Fact]
+    public void Parse_WithNestedParenthesesBeyondLimit_ThrowsODataFilterParseException()
+    {
+        var filter = string.Concat(Enumerable.Repeat("(", FilterParserGuard.MaxExpressionDepth + 1)) +
+            "Name eq 'deep'" +
+            string.Concat(Enumerable.Repeat(")", FilterParserGuard.MaxExpressionDepth + 1));
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
     #endregion

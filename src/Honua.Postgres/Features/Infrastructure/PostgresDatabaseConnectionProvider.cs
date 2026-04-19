@@ -96,15 +96,25 @@ internal sealed class PostgresDatabaseConnectionProvider(
             throw new ServiceUnavailableException("Database connection failed.", ex);
         }
 
-        // Apply schema context if specified
-        if (_schemaContext?.CurrentSchema != null)
+        // Apply schema context if specified. Any failure here must dispose the open
+        // connection — otherwise a misconfigured schema path leaks a pooled connection
+        // per request until the pool drains.
+        try
         {
-            activity?.SetTag("db.schema", _schemaContext.CurrentSchema);
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (_schemaContext?.CurrentSchema != null)
+            {
+                activity?.SetTag("db.schema", _schemaContext.CurrentSchema);
+                await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
         }
-        else
+        catch
         {
-            await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
         }
 
         DbConnectionTracking.Track(connection, _activeDbConnectionTracker);

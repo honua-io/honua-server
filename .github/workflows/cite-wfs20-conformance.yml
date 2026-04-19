@@ -29,6 +29,10 @@ permissions:
 env:
   CITE_PROFILE: ${{ github.event.inputs.profile || 'basic' }}
 
+concurrency:
+  group: cite-wfs20-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   wfs20-cite-conformance:
     name: WFS 2.0 CITE Conformance
@@ -85,16 +89,15 @@ jobs:
         echo "CITE Profile: ${{ matrix.profile }}"
 
     - name: Build Honua Server image
-      run: |
-        echo "Building Honua Server Docker image for CITE testing..."
-        docker build \
-          --tag honua-server:latest \
-          --build-arg BUILDKIT_INLINE_CACHE=1 \
-          --cache-from honua-server:latest \
-          .
-
-        echo "Honua Server image built successfully"
-        docker images honua-server:latest
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        load: true
+        tags: honua-server:latest
+        cache-from: type=gha,scope=cite-wfs20
+        cache-to: type=gha,mode=max,scope=cite-wfs20
 
     - name: Pre-pull CITE images
       run: |
@@ -195,7 +198,7 @@ jobs:
       with:
         name: wfs20-cite-results-${{ matrix.profile }}-${{ github.run_number }}
         path: cite-wfs20-results/
-        retention-days: 90
+        retention-days: 30
         if-no-files-found: warn
 
     - name: Generate compliance report comment

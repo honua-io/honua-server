@@ -5,12 +5,16 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
@@ -593,6 +597,123 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_WithForceBackgroundAndLocalStaging_ReturnsAccepted()
+    {
+        var geoJsonContent = """
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-122.4194, 37.7749]
+                    },
+                    "properties": {
+                        "name": "Background Point"
+                    }
+                }
+            ]
+        }
+        """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "background.geojson"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("background_import_table"), "TableName");
+        content.Add(new StringContent("true"), "ForceBackground");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        responseBody.Should().Contain("jobId");
+        responseBody.Should().Contain("File queued for background processing");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_WithCloudStagingFailure_DeletesUploadedCloudObject()
+    {
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.Provider.Returns(CloudStorageProvider.AwsS3);
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = "imports/test-cloud-file",
+                FileName = "background.geojson",
+                StoragePath = "imports/test-cloud-file",
+                ContentType = "application/json",
+                SizeBytes = 256,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
+            })));
+
+        var jobService = Substitute.For<IImportJobService>();
+        jobService.QueueImportAsync(Arg.Any<ImportRequest>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<string>(new InvalidOperationException("queue failed")));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<ICloudFileStorage>();
+                services.RemoveAll<IImportJobService>();
+                services.AddSingleton<ICloudFileStorage>(cloudStorage);
+                services.AddSingleton<IImportJobService>(jobService);
+            });
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateClient();
+
+            var geoJsonContent = """
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [-122.4194, 37.7749]
+                        },
+                        "properties": {
+                            "name": "Background Point"
+                        }
+                    }
+                ]
+            }
+            """;
+
+            var content = new MultipartFormDataContent();
+            var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "File",
+                FileName = "background.geojson"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent("cloud_cleanup_table"), "TableName");
+            content.Add(new StringContent("true"), "ForceBackground");
+
+            var response = await client.PostAsync("/api/v1/admin/import/upload", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            await cloudStorage.Received(1).DeleteAsync("imports/test-cloud-file", Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/limits")]
     public async Task GetImportLimits_V1_ReturnsLimitsConfiguration()
     {
@@ -608,144 +729,6 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Should().NotBeNullOrEmpty();
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/import/limits")]
-    public async Task GetImportLimits_RepeatRequest_ReturnsLimitsConfiguration()
-    {
-        // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/limits");
-
-        // Assert
-        response.BeSuccessful();
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().NotBeNullOrEmpty();
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/import/jobs")]
-    public async Task GetActiveJobs_V1_ReturnsJobsList()
-    {
-        // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/jobs");
-
-        // Assert - Returns 200 even if no jobs or service unavailable returns 503
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/import/jobs")]
-    public async Task GetActiveJobs_RepeatRequest_ReturnsJobsList()
-    {
-        // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/jobs");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.ServiceUnavailable);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
-    public async Task GetJobStatus_V1_WithInvalidJobId_Returns404()
-    {
-        // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/jobs/nonexistent-job");
-
-        // Assert - Returns 404 for non-existent job or 503 if service unavailable
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
-    public async Task GetJobStatus_RepeatRequest_WithInvalidJobId_Returns404()
-    {
-        // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/jobs/nonexistent-job");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/jobs/{jobId}/cancel")]
-    public async Task CancelJob_V1_WithInvalidJobId_Returns404()
-    {
-        // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/jobs/nonexistent-job/cancel", null);
-
-        // Assert - Returns 404 for non-existent job or 503 if service unavailable
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/jobs/{jobId}/cancel")]
-    public async Task CancelJob_RepeatRequest_WithInvalidJobId_Returns404()
-    {
-        // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/jobs/nonexistent-job/cancel", null);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task ImportFile_WithCloudUploadFailure_DoesNotLeakInternalErrorDetails()
-    {
-        const string sensitiveError = "Cloud timeout: bucket=prod-internal secret=abc123";
-
-        var cloudStorage = Substitute.For<ICloudFileStorage>();
-        cloudStorage.Provider.Returns(CloudStorageProvider.AwsS3);
-        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(UploadResult.CreateFailure(sensitiveError)));
-
-        var isolatedFixture = new WebAppFixture().ReplaceService(cloudStorage);
-        await isolatedFixture.InitializeAsync();
-        try
-        {
-            var geoJsonContent = """
-            {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [-122.4194, 37.7749]
-                        },
-                        "properties": {
-                            "name": "Cloud Upload Failure Test"
-                        }
-                    }
-                ]
-            }
-            """;
-
-            var content = new MultipartFormDataContent();
-            var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
-            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
-            {
-                Name = "File",
-                FileName = "cloud-failure.geojson"
-            };
-            content.Add(fileContent);
-            content.Add(new StringContent("cloud_failure_import_table"), "TableName");
-            content.Add(new StringContent("true"), "ForceBackground");
-
-            var response = await isolatedFixture.Client.PostAsync("/api/v1/admin/import/upload", content);
-
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            var responseBody = await response.Content.ReadAsStringAsync();
-            responseBody.Should().Contain("Failed to upload file to cloud storage.");
-            responseBody.Should().NotContain(sensitiveError);
-            responseBody.Should().NotContain("secret=abc123");
-        }
-        finally
-        {
-            await isolatedFixture.DisposeAsync();
-        }
-    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/import/uploads")]

@@ -7,11 +7,14 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
+using Honua.Server.Features.OgcFeatures.Services;
 using Honua.Server.Features.Stac.Models;
 using Honua.Server.Features.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -105,6 +108,7 @@ internal static class SearchEndpoints
             deps.FeatureReader,
             deps.FilterExpressionService,
             deps.GeometryService,
+            deps.CrsRegistry,
             defaultFilterLangIsText: true,
             deps.Logger);
     }
@@ -122,6 +126,7 @@ internal static class SearchEndpoints
             deps.FeatureReader,
             deps.FilterExpressionService,
             deps.GeometryService,
+            deps.CrsRegistry,
             defaultFilterLangIsText: false,
             deps.Logger);
     }
@@ -134,6 +139,7 @@ internal static class SearchEndpoints
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
         IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
         bool defaultFilterLangIsText,
         ILogger logger)
     {
@@ -182,6 +188,7 @@ internal static class SearchEndpoints
                     featureReader,
                     filterExpressionService,
                     geometryService,
+                    crsRegistry,
                     defaultFilterLangIsText,
                     logger,
                     layerList,
@@ -197,6 +204,7 @@ internal static class SearchEndpoints
                 featureReader,
                 filterExpressionService,
                 geometryService,
+                crsRegistry,
                 defaultFilterLangIsText,
                 logger,
                 targetLayers.ToArray(),
@@ -224,6 +232,7 @@ internal static class SearchEndpoints
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
         IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
         bool defaultFilterLangIsText,
         ILogger logger,
         Core.Features.Catalog.Domain.LayerDefinition[] layerList,
@@ -244,20 +253,22 @@ internal static class SearchEndpoints
                 break;
             }
 
-            if (!TryBuildLayerQuery(
-                    request,
-                    layer,
-                    parsedObjectIds,
-                    filterExpressionService,
-                    geometryService,
-                    defaultFilterLangIsText,
-                    out var query,
-                    out var selectedProperties,
-                    out var queryError))
+            var layerQueryResult = await TryBuildLayerQuery(
+                request,
+                layer,
+                parsedObjectIds,
+                filterExpressionService,
+                geometryService,
+                crsRegistry,
+                defaultFilterLangIsText,
+                cancellationToken);
+            if (!layerQueryResult.IsSuccess)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, queryError ?? "Invalid search parameters.");
+                return StandardErrorHelpers.CreateBadRequest(context, layerQueryResult.Error ?? "Invalid search parameters.");
             }
 
+            var query = layerQueryResult.Query;
+            var selectedProperties = layerQueryResult.SelectedProperties;
             layerSelections[layer.Id] = selectedProperties;
 
             if (remainingSkip > 0)
@@ -337,40 +348,39 @@ internal static class SearchEndpoints
         return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
     }
 
-    private static bool TryBuildLayerQuery(
+    private static async Task<(bool IsSuccess, FeatureQuery Query, IReadOnlySet<string>? SelectedProperties, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
         Core.Features.Catalog.Domain.LayerDefinition layer,
         ImmutableArray<long>? parsedObjectIds,
         IFilterExpressionService filterExpressionService,
         IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
         bool defaultFilterLangIsText,
-        out FeatureQuery query,
-        out IReadOnlySet<string>? selectedProperties,
-        out string? error)
+        CancellationToken cancellationToken)
     {
-        query = new FeatureQuery();
-        selectedProperties = null;
-        error = null;
+        var query = new FeatureQuery();
+        IReadOnlySet<string>? selectedProperties = null;
+        string? error = null;
 
         if (request.Bbox is { IsDefault: false } bboxArr)
         {
             if (bboxArr.Length != 4)
             {
                 error = "3D bbox values are not supported.";
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             if (!StacFilterHelpers.TryValidateBboxCoordinates(
                     bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3],
                     out error))
             {
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             query = query with
@@ -389,7 +399,7 @@ internal static class SearchEndpoints
                     out var intersectsError))
             {
                 error = intersectsError;
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             if (intersectsSpatialFilter.HasValue)
@@ -404,7 +414,7 @@ internal static class SearchEndpoints
             if (temporalFilter is null)
             {
                 error = "Invalid datetime parameter.";
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             query = query with { TemporalFilter = temporalFilter };
@@ -415,15 +425,22 @@ internal static class SearchEndpoints
             query = query with { ObjectIds = objectIds };
         }
 
-        if (!TryResolveFilterQuery(request, layer, filterExpressionService, defaultFilterLangIsText, out var sqlFilter, out var filterError))
+        var filterQueryResult = await TryResolveFilterQuery(
+            request,
+            layer,
+            filterExpressionService,
+            crsRegistry,
+            defaultFilterLangIsText,
+            cancellationToken);
+        if (!filterQueryResult.IsSuccess)
         {
-            error = filterError;
-            return false;
+            error = filterQueryResult.Error;
+            return (false, query, selectedProperties, error);
         }
 
-        if (sqlFilter is not null)
+        if (filterQueryResult.SqlFilter is not null)
         {
-            query = query with { SqlFilter = sqlFilter };
+            query = query with { SqlFilter = filterQueryResult.SqlFilter };
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
@@ -431,7 +448,7 @@ internal static class SearchEndpoints
             if (!TryBuildSortOrder(layer, sortby, out var orderBy, out var sortError))
             {
                 error = sortError;
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             query = query with { OrderBy = orderBy };
@@ -442,51 +459,40 @@ internal static class SearchEndpoints
             if (!TryBuildFieldSelection(layer, request.Fields, out var outFields, out selectedProperties, out var fieldError))
             {
                 error = fieldError;
-                return false;
+                return (false, query, selectedProperties, error);
             }
 
             query = query with { OutFields = outFields };
         }
 
-        return true;
+        return (true, query, selectedProperties, null);
     }
 
-    private static bool TryResolveFilterQuery(
+    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, string? Error)> TryResolveFilterQuery(
         StacSearchRequest request,
         Core.Features.Catalog.Domain.LayerDefinition layer,
         IFilterExpressionService filterExpressionService,
+        ICrsRegistry crsRegistry,
         bool defaultFilterLangIsText,
-        out SqlFragment? sqlFilter,
-        out string? error)
+        CancellationToken cancellationToken)
     {
-        sqlFilter = null;
-        error = null;
-
         var hasFilter = request.Filter.HasValue;
         var hasFilterLang = !string.IsNullOrWhiteSpace(request.FilterLang);
         var hasFilterCrs = !string.IsNullOrWhiteSpace(request.FilterCrs);
         if (!hasFilter && !hasFilterLang && !hasFilterCrs)
         {
-            return true;
+            return (true, null, null);
         }
 
         if (!hasFilter)
         {
-            error = "filter requires a filter expression.";
-            return false;
-        }
-
-        if (hasFilterCrs && !IsCrs84(request.FilterCrs))
-        {
-            error = $"Unsupported filter-crs '{request.FilterCrs}'.";
-            return false;
+            return (false, null, "filter requires a filter expression.");
         }
 
         var filterLanguage = ResolveFilterLanguage(request.FilterLang, request.Filter, defaultFilterLangIsText);
         if (filterLanguage is null)
         {
-            error = "Invalid filter-lang parameter.";
-            return false;
+            return (false, null, "Invalid filter-lang parameter.");
         }
 
         var filterElement = request.Filter!.Value;
@@ -498,33 +504,54 @@ internal static class SearchEndpoints
 
         if (filterLanguage.Value == FilterLanguage.Cql2Text && filterElement.ValueKind != JsonValueKind.String)
         {
-            error = "filter must be a string when filter-lang is cql2-text.";
-            return false;
+            return (false, null, "filter must be a string when filter-lang is cql2-text.");
         }
 
         if (filterLanguage.Value == FilterLanguage.Cql2Json &&
             filterElement.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array)
         {
-            error = "filter must be a JSON object when filter-lang is cql2-json.";
-            return false;
+            return (false, null, "filter must be a JSON object when filter-lang is cql2-json.");
         }
 
         var parseResult = filterExpressionService.Parse(filterLanguage.Value, filterText);
         if (!parseResult.IsSuccess)
         {
-            error = parseResult.ErrorMessage ?? "Invalid filter expression.";
-            return false;
+            return (false, null, parseResult.ErrorMessage ?? "Invalid filter expression.");
         }
 
-        var translationResult = filterExpressionService.Translate(parseResult.Expression, layer);
+        var parsedExpression = parseResult.Expression;
+        if (parsedExpression is null)
+        {
+            return (false, null, "Invalid filter expression.");
+        }
+
+        if (hasFilterCrs)
+        {
+            var filterCrsDefinition = await crsRegistry.ResolveAsync(request.FilterCrs, cancellationToken).ConfigureAwait(false);
+            if (!filterCrsDefinition.HasValue)
+            {
+                return (false, null, $"Unsupported filter-crs '{request.FilterCrs}'.");
+            }
+
+            parsedExpression = OgcFilterProcessor.ApplyFilterCrs(parsedExpression, filterCrsDefinition.Value);
+            parsedExpression = OgcFilterProcessor.NormalizeFilterAxisOrder(parsedExpression, filterCrsDefinition.Value.AxisOrder);
+        }
+
+        foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(parsedExpression))
+        {
+            if (!await crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))
+            {
+                return (false, null, $"Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}'.");
+            }
+        }
+
+        var translationResult = filterExpressionService.Translate(parsedExpression, layer);
         if (!translationResult.IsSuccess)
         {
-            error = translationResult.ErrorMessage ?? "Invalid filter expression.";
-            return false;
+            return (false, null, translationResult.ErrorMessage ?? "Invalid filter expression.");
         }
 
-        sqlFilter = translationResult.SqlFilter;
-        return true;
+        return (true, translationResult.SqlFilter, null);
     }
 
     private static FilterLanguage? ResolveFilterLanguage(
@@ -826,7 +853,7 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(filter))
         {
-            var resolvedFilterLang = ResolveFilterLanguage(filterLang, null, defaultFilterLangIsText);
+            var resolvedFilterLang = ResolveFilterLanguage(filterLang, CreateJsonStringElement(filter), defaultFilterLangIsText);
             if (resolvedFilterLang is null)
             {
                 error = $"Invalid filter-lang '{filterLang}'.";
@@ -1155,12 +1182,6 @@ internal static class SearchEndpoints
     private static bool IsPropertiesSentinel(string name)
         => name.Equals("properties", StringComparison.OrdinalIgnoreCase) ||
            name.Equals("*", StringComparison.Ordinal);
-
-    private static bool IsCrs84(string? crs)
-        => string.IsNullOrWhiteSpace(crs) ||
-           crs.Equals(SpatialReferenceHelpers.Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
-           crs.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
-           crs.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildSearchQuery(int limit, int offset, StacSearchRequest request, bool defaultFilterLangIsText)
     {

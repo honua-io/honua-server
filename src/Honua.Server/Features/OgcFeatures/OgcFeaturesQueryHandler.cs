@@ -517,10 +517,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 layer,
                 _crsRegistry,
                 cancellationToken);
-            if (!OgcFeaturesUtilities.TryResolveCrs(crs, supportedCrs, out var crsDefinition, out var crsError))
+            var crsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
+                crs,
+                supportedCrs,
+                _crsRegistry,
+                cancellationToken);
+            if (!crsResolution.IsSuccess)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, crsError!);
+                return StandardErrorHelpers.CreateBadRequest(context, crsResolution.Error!);
             }
+
+            var crsDefinition = crsResolution.Definition;
 
             var cacheableFormat = string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase) ||
                                   string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase);

@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,6 +143,11 @@ internal static partial class MapServerEndpoints
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
+                if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+                {
+                    return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+                }
+
                 MapServerLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
                 var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl).ConfigureAwait(false);

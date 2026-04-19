@@ -154,6 +154,38 @@
       ]
     },
     {
+      "surfaceId": "detailed-monitoring",
+      "displayName": "Detailed operational monitoring endpoints",
+      "surfaceKind": "http-route-family",
+      "protocol": "Monitoring",
+      "canonicalIdentifier": "/monitoring/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/monitoring/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus monitoring endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/DatabasePerformanceEndpointsTests.cs",
+            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/ProductionMonitoringEndpointSecurityTests.cs",
+            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/UploadQueueMonitoringEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "geoservices-catalog",
       "displayName": "GeoServices REST catalog",
       "surfaceKind": "http-route-family",
@@ -440,7 +472,7 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification — pending a real WMS 1.3 client lane (OpenLayers ol/source/TileWMS, QGIS WMS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/services/{serviceId}/wms.",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification \u2014 pending a real WMS 1.3 client lane (OpenLayers ol/source/TileWMS, QGIS WMS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/services/{serviceId}/wms.",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -499,7 +531,7 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification — pending a real WMTS 1.0 client lane (ol/source/WMTS, QGIS WMTS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Tiles render paths (ol/source/OGCVectorTile) and does not exercise /ogc/services/{serviceId}/wmts.",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification \u2014 pending a real WMTS 1.0 client lane (ol/source/WMTS, QGIS WMTS provider, or equivalent). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Tiles render paths (ol/source/OGCVectorTile) and does not exercise /ogc/services/{serviceId}/wmts.",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
@@ -935,7 +967,7 @@
         },
         {
           "proofClass": "real-client-certification",
-          "proofMechanism": "Browser visual/render proof for OGC API Maps clients — pending a real OGC API Maps client lane (for example ol/source/ImageWMS targeting /ogc/maps, or a QGIS WMS provider pointed at the static rendering surface). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/maps or /static/.",
+          "proofMechanism": "Browser visual/render proof for OGC API Maps clients \u2014 pending a real OGC API Maps client lane (for example ol/source/ImageWMS targeting /ogc/maps, or a QGIS WMS provider pointed at the static rendering surface). The visual / style slice added in ticket #478 substantiates only adjacent OGC API Features / Tiles / FeatureServer render paths and does not exercise /ogc/maps or /static/.",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
             "docs/gis/visual-style-certification-slice.md",

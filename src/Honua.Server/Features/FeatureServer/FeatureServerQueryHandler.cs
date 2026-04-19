@@ -619,8 +619,22 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var queryStopwatch = Stopwatch.StartNew();
-                string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
-                    [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
+                string[]? outFields;
+                if (string.IsNullOrEmpty(validatedParams.OutFields))
+                {
+                    outFields = null;
+                }
+                else
+                {
+                    var parsed = validatedParams.OutFields
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(f => f.Trim())
+                        .Where(f => f.Length > 0)
+                        .ToArray();
+                    // An input that collapses to an empty array after parsing (e.g. "outFields=,,")
+                    // must be treated as "all fields" per Esri semantics, NOT as "no fields".
+                    outFields = parsed.Length == 0 ? null : parsed;
+                }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
                 var queryForExecution = shouldApplyDistinct
                     ? query with { Limit = null, Offset = null }
@@ -1325,6 +1339,13 @@ internal sealed class FeatureServerQueryHandler(
         return double.IsFinite(metersPerUnit) && metersPerUnit > 0;
     }
 
+    // Parameters that change *result semantics* — rejecting them is correct because
+    // silently ignoring would return output that differs from what the client asked for.
+    //
+    // Compatibility parameters that ArcGIS clients routinely send by default
+    // (gdbVersion, quantizationParameters, datumTransformation, unknown resultType)
+    // are silently accepted to preserve interop; a fail-closed response here would
+    // break out-of-the-box connections from ArcGIS Pro and the JS API.
     private static bool TryValidateUnsupportedParameters(QueryParameters queryParams, out string? errorMessage)
     {
         var unsupported = new List<string>();
@@ -1339,13 +1360,6 @@ internal sealed class FeatureServerQueryHandler(
             unsupported.Add("returnExceededLimitFeatures");
         }
 
-        if (!string.IsNullOrWhiteSpace(queryParams.ResultType) &&
-            !string.Equals(queryParams.ResultType, "standard", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(queryParams.ResultType, "tile", StringComparison.OrdinalIgnoreCase))
-        {
-            unsupported.Add("resultType");
-        }
-
         if (!string.IsNullOrWhiteSpace(queryParams.Having))
         {
             unsupported.Add("having");
@@ -1356,24 +1370,9 @@ internal sealed class FeatureServerQueryHandler(
             unsupported.Add("sqlFormat");
         }
 
-        if (!string.IsNullOrWhiteSpace(queryParams.GdbVersion))
-        {
-            unsupported.Add("gdbVersion");
-        }
-
-        if (!string.IsNullOrWhiteSpace(queryParams.QuantizationParameters))
-        {
-            unsupported.Add("quantizationParameters");
-        }
-
         if (queryParams.ReturnCentroid)
         {
             unsupported.Add("returnCentroid");
-        }
-
-        if (!string.IsNullOrWhiteSpace(queryParams.DatumTransformation))
-        {
-            unsupported.Add("datumTransformation");
         }
 
         if (unsupported.Count == 0)

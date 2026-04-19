@@ -36,7 +36,11 @@ internal sealed class ExecutionJobCancellationTokens : IJobCancellationNotifier
         _tokens.AddOrUpdate(jobId, newEntry, (_, existing) =>
         {
             try { existing.Cts.Cancel(); }
-            catch (ObjectDisposedException) { }
+            catch (ObjectDisposedException)
+            {
+                // Expected race: existing CTS was disposed by the prior job-completion
+                // path between AddOrUpdate lookup and Cancel. Benign and documented.
+            }
             return newEntry;
         });
         return cts;

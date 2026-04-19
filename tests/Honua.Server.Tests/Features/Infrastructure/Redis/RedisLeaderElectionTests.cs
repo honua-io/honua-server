@@ -179,6 +179,47 @@ public sealed class RedisLeaderElectionTests : IDisposable
         election.Dispose();
     }
 
+    [UnitTest]
+    public async Task Dispose_WhenLeader_ReleasesLeadershipBeforeDisposal()
+    {
+        _mockDatabase.Setup(db => db.LockTakeAsync("test-key", It.IsAny<RedisValue>(), It.IsAny<TimeSpan>()))
+            .ReturnsAsync(true);
+        _mockDatabase.Setup(db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()))
+            .ReturnsAsync(true);
+
+        var election = CreateElection("test-key");
+        await election.TryAcquireOrExtendLeadershipAsync();
+
+        election.Dispose();
+
+        _mockDatabase.Verify(
+            db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()),
+            Times.Once);
+    }
+
+    [UnitTest]
+    public async Task Dispose_WhenReleaseDoesNotComplete_ReturnsAfterTimeout()
+    {
+        _mockDatabase.Setup(db => db.LockTakeAsync("test-key", It.IsAny<RedisValue>(), It.IsAny<TimeSpan>()))
+            .ReturnsAsync(true);
+
+        var hangingRelease = new TaskCompletionSource<bool>();
+        _mockDatabase.Setup(db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()))
+            .Returns(hangingRelease.Task);
+
+        var election = CreateElection("test-key");
+        await election.TryAcquireOrExtendLeadershipAsync();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        election.Dispose();
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        _mockDatabase.Verify(
+            db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()),
+            Times.Once);
+    }
+
     private RedisLeaderElection CreateElection(string key, TimeSpan? leaseDuration = null)
     {
         return new RedisLeaderElection(

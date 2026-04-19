@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -29,11 +30,14 @@ internal static class ProductionHealthChecks
     {
         var healthChecksBuilder = services.AddHealthChecks();
 
-        // Database health check with connection pool monitoring
-        healthChecksBuilder.AddCheck<DatabaseHealthCheck>(
-            "database",
-            HealthStatus.Degraded,
-            new[] { "db", "sql", "postgres" });
+        if (UsesPostgresProvider(configuration))
+        {
+            // Database health check with connection pool monitoring
+            healthChecksBuilder.AddCheck<DatabaseHealthCheck>(
+                "database",
+                HealthStatus.Degraded,
+                new[] { "db", "sql", "postgres" });
+        }
 
         // Redis cache health check (if Redis is configured)
         var redisConnectionString = configuration.GetConnectionString("Redis");
@@ -65,6 +69,19 @@ internal static class ProductionHealthChecks
 
         return services;
     }
+
+    private static bool UsesPostgresProvider(IConfiguration configuration)
+    {
+        var provider = configuration.GetValue<string>("DataSource:Provider");
+
+        return string.IsNullOrWhiteSpace(provider)
+            || provider.Equals("postgres", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
+            || provider.Equals("postgis", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string FormatPercentage(double value)
+        => value.ToString("0.00%", CultureInfo.InvariantCulture);
 }
 
 /// <summary>
@@ -72,7 +89,7 @@ internal static class ProductionHealthChecks
 /// </summary>
 internal sealed class DatabaseHealthCheck : IHealthCheck
 {
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly NpgsqlDataSource? _dataSource;
     private readonly ConnectionPoolMetrics _connectionPoolMetrics;
     private readonly IActiveDbConnectionTracker _connectionTracker;
     private readonly ILogger<DatabaseHealthCheck> _logger;
@@ -85,15 +102,15 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
     /// <param name="connectionTracker">Connection tracker.</param>
     /// <param name="logger">Logger instance.</param>
     public DatabaseHealthCheck(
-        NpgsqlDataSource dataSource,
         ConnectionPoolMetrics connectionPoolMetrics,
         IActiveDbConnectionTracker connectionTracker,
-        ILogger<DatabaseHealthCheck> logger)
+        ILogger<DatabaseHealthCheck> logger,
+        NpgsqlDataSource? dataSource = null)
     {
-        _dataSource = dataSource;
         _connectionPoolMetrics = connectionPoolMetrics;
         _connectionTracker = connectionTracker;
         _logger = logger;
+        _dataSource = dataSource;
     }
 
     /// <inheritdoc/>
@@ -103,9 +120,25 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
     {
         try
         {
-            var startTime = DateTimeOffset.UtcNow;
             var poolUtilization = _connectionPoolMetrics.GetPoolUtilization();
             var activeConnections = _connectionTracker.GetActiveCount();
+
+            if (_dataSource is null)
+            {
+                return HealthCheckResult.Degraded(
+                    "Database telemetry is unavailable because no PostgreSQL data source is registered",
+                    data: new Dictionary<string, object>
+                    {
+                        ["poolUtilization"] = poolUtilization,
+                        ["poolUtilizationPercentage"] = ProductionHealthChecks.FormatPercentage(poolUtilization),
+                        ["activeConnections"] = activeConnections,
+                        ["connectionFailures"] = _connectionPoolMetrics.GetTotalFailures(),
+                        ["connectionTimeouts"] = _connectionPoolMetrics.GetTotalTimeouts(),
+                        ["dataSourceRegistered"] = false
+                    });
+            }
+
+            var startTime = DateTimeOffset.UtcNow;
 
             // Test database connectivity with a simple query
             await using var connection = _dataSource.CreateConnection();
@@ -121,7 +154,7 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
             {
                 ["connectionLatencyMs"] = connectionLatency.TotalMilliseconds,
                 ["poolUtilization"] = poolUtilization,
-                ["poolUtilizationPercentage"] = $"{poolUtilization:P2}",
+                ["poolUtilizationPercentage"] = ProductionHealthChecks.FormatPercentage(poolUtilization),
                 ["activeConnections"] = activeConnections,
                 ["connectionFailures"] = _connectionPoolMetrics.GetTotalFailures(),
                 ["connectionTimeouts"] = _connectionPoolMetrics.GetTotalTimeouts()
@@ -293,7 +326,7 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
                 ["activeUploads"] = queueSnapshot.ActiveUploads,
                 ["maxConcurrentUploads"] = queueSnapshot.MaxConcurrentUploads,
                 ["queueUtilization"] = queueUtilization,
-                ["queueUtilizationPercentage"] = $"{queueUtilization:P2}"
+                ["queueUtilizationPercentage"] = ProductionHealthChecks.FormatPercentage(queueUtilization)
             };
 
             // Determine health status based on queue metrics

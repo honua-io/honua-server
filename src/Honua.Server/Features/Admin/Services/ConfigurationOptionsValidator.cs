@@ -128,10 +128,24 @@ internal static class ConfigurationOptionsValidator
         {
             var apiKeyOptions = serviceProvider.GetRequiredService<IOptions<ApiKeyAuthenticationOptions>>().Value;
 
-            // In production, admin password must be set
+            // In production the platform requires at least one usable authentication path
+            // before accepting traffic: either HONUA_ADMIN_PASSWORD is set, or an OIDC
+            // provider is enabled. Starting without either leaves admin endpoints silently
+            // inaccessible and masks a misconfiguration rather than failing fast.
             if (!isDevelopment && string.IsNullOrWhiteSpace(apiKeyOptions.AdminPassword))
             {
-                errors.Add("HONUA_ADMIN_PASSWORD environment variable is required in production environments");
+                var oidcOptions = serviceProvider.GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
+                var oidcEnabled =
+                    oidcOptions.AzureAd?.Enabled == true
+                    || oidcOptions.Google?.Enabled == true
+                    || oidcOptions.Generic?.Enabled == true;
+
+                if (!oidcEnabled)
+                {
+                    errors.Add(
+                        "HONUA_ADMIN_PASSWORD is required in production environments unless an OIDC provider "
+                        + "(AzureAd, Google, or Generic) is enabled under OidcAuthentication.");
+                }
             }
 
             // Dev auth bypass is ignored outside development/test environments by the auth handler.

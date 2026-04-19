@@ -85,15 +85,19 @@ Review the inventory artifact before proceeding. Start with `summary`, `scanComp
 > **Note:** The GeoServer import endpoint currently supports **dry-run mode only**. A dry run validates connectivity, discovers resources, and reports what would be imported without making changes.
 
 ```bash
+export GEOSERVER_PASSWORD='geoserver'
+
 curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
   -H "Content-Type: application/json" \
   -d '{
     "geoServerRestUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
-    "password": "geoserver",
+    "passwordSecretReference": "env:GEOSERVER_PASSWORD",
     "dryRun": true
   }'
 ```
+
+Queued GeoServer imports no longer accept plaintext credentials because the request is persisted in distributed job state before the worker runs. Use a secret reference such as `env:GEOSERVER_PASSWORD` for the GeoServer password and `honuaApiKeySecretReference` when a future non-dry-run workflow needs a Honua API key.
 
 This returns a job ID for tracking progress.
 

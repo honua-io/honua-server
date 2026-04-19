@@ -19,98 +19,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: cite-kml22-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  cite-kml22-conformance:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Cache Docker layers
-        uses: actions/cache@v5
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-cite-kml22-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-cite-kml22-
-            ${{ runner.os }}-buildx-cite-
-            ${{ runner.os }}-buildx-
-
-      - name: Build Honua Server image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          tags: honua-server:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl jq
-
-      - name: Run KML 2.2 CITE conformance tests
-        env:
-          CITE_PROFILE: ${{ github.event.inputs.profile || 'default' }}
-        run: |
-          timeout 1800 ./scripts/run-cite-kml22-tests.sh --profile "$CITE_PROFILE" --verbose || cite_exit_code=$?
-
-          if [[ ${cite_exit_code:-0} -eq 124 ]]; then
-            echo "CITE tests timed out after 30 minutes"
-            exit 1
-          elif [[ ${cite_exit_code:-0} -ne 0 ]]; then
-            echo "CITE tests failed with exit code: ${cite_exit_code:-0}"
-            exit 1
-          fi
-
-      - name: Parse CITE results
-        id: parse-results
-        run: |
-          if [ -f cite-kml22-results/cite-kml22-summary.md ]; then
-            TOTAL_TESTS=$(grep "Total Tests" cite-kml22-results/cite-kml22-summary.md | grep -o '[0-9]\+' || echo "0")
-            PASSED_TESTS=$(grep "Passed" cite-kml22-results/cite-kml22-summary.md | grep -o '[0-9]\+' | head -1 || echo "0")
-            FAILED_TESTS=$(grep "Failed" cite-kml22-results/cite-kml22-summary.md | grep -o '[0-9]\+' | head -1 || echo "0")
-            SUCCESS_RATE=$(grep "Success Rate" cite-kml22-results/cite-kml22-summary.md | grep -o '[0-9]\+' || echo "0")
-
-            echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
-            echo "passed_tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
-            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
-            echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
-            echo "results_available=true" >> $GITHUB_OUTPUT
-          else
-            echo "results_available=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload CITE test results
-        uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: cite-kml22-conformance-results-${{ github.run_number }}
-          path: |
-            cite-kml22-results/
-          retention-days: 30
-
-      - name: Fail on conformance issues
-        if: steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0'
-        run: |
-          if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
-            echo "KML 2.2 CITE conformance results were not produced"
-            exit 1
-          fi
-
-          echo "KML 2.2 CITE conformance tests failed"
-          echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
-          echo "Review the test results and fix conformance issues"
-          exit 1
+  cite:
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: kml22
+      display-name: KML 2.2
+      runner-script: ./scripts/run-cite-kml22-tests.sh
+      results-dir: cite-kml22-results
+      summary-file: cite-kml22-summary.md
+      cite-profile: ${{ inputs.profile || 'default' }}

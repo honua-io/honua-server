@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -181,6 +182,29 @@ public class FileUploadSecurityTests
         Assert.Contains("dangerous script content", result.ErrorMessage);
 
         _output.WriteLine($"Script content detection: {result.ErrorMessage}");
+    }
+
+
+    [Fact]
+    [SecurityTest]
+    public async Task ValidateFileContent_ScriptContentPastConfiguredBinaryScanLimit_RejectsFile()
+    {
+        // Arrange - malicious text beyond the binary signature scan prefix must still be detected.
+        const int scanLimit = 1024;
+        var prefix = new string('A', scanLimit + 128);
+        var payload = Encoding.UTF8.GetBytes(prefix + "<script>alert('late')</script>");
+
+        // Act
+        var result = await FileUploadSecurity.ValidateFileContentAsync(
+            "data.csv",
+            "text/csv",
+            payload.Length,
+            () => new MemoryStream(payload, writable: false),
+            scanLimit);
+
+        // Assert
+        Assert.False(result.IsValid);
+        Assert.Contains("dangerous script content", result.ErrorMessage);
     }
 
     [Fact]

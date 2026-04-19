@@ -40,6 +40,11 @@ public sealed record GeoServerDiscoveryRequest
     /// Whether to include SLD style content in discovery.
     /// </summary>
     public bool IncludeStyleContent { get; init; }
+
+    /// <summary>
+    /// Whether test-only unsafe local GeoServer URLs are allowed for this request.
+    /// </summary>
+    public bool AllowUnsafeLocalUrls { get; init; }
 }
 
 /// <summary>
@@ -68,6 +73,11 @@ public sealed record GeoServerImportRequest
     public string? Password { get; init; }
 
     /// <summary>
+    /// Optional secret reference that resolves the GeoServer password at execution time.
+    /// </summary>
+    public string? PasswordSecretReference { get; init; }
+
+    /// <summary>
     /// Target Honua server base URL for the migration.
     /// </summary>
     public required string TargetHonuaUrl { get; init; }
@@ -76,6 +86,11 @@ public sealed record GeoServerImportRequest
     /// Honua API key for authentication (if required).
     /// </summary>
     public string? HonuaApiKey { get; init; }
+
+    /// <summary>
+    /// Optional secret reference that resolves the Honua API key at execution time.
+    /// </summary>
+    public string? HonuaApiKeySecretReference { get; init; }
 
     /// <summary>
     /// Specific workspaces to import (null imports all).
@@ -139,6 +154,11 @@ public sealed record GeoServerImportRequest
     /// Options for handling unsupported resources.
     /// </summary>
     public GeoServerImportOptions? ImportOptions { get; init; }
+
+    /// <summary>
+    /// Whether test-only unsafe local GeoServer URLs are allowed for this request.
+    /// </summary>
+    public bool AllowUnsafeLocalUrls { get; init; }
 }
 
 /// <summary>

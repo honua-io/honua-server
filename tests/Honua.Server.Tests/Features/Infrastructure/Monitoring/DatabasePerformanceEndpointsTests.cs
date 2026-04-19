@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.TestKit;
@@ -43,6 +44,7 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
     [Operation(Operations.Performance)]
     [Endpoint("GET /monitoring/health/production")]
     [Endpoint("GET /monitoring/health/comprehensive")]
+    [Endpoint("GET /monitoring/metrics/connection-pool")]
     [Endpoint("GET /monitoring/metrics/database-resilience")]
     public async Task ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown()
     {
@@ -68,11 +70,6 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             using var adminClient = _fixture.CreateAdminClient();
 
             var connectionPoolResponse = await adminClient.GetAsync("/monitoring/metrics/connection-pool");
-            if (connectionPoolResponse.StatusCode == HttpStatusCode.NotFound)
-            {
-                return;
-            }
-
             connectionPoolResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using (var document = JsonDocument.Parse(await connectionPoolResponse.Content.ReadAsStringAsync()))
@@ -88,22 +85,20 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             }
 
             var resilienceResponse = await adminClient.GetAsync("/monitoring/metrics/database-resilience");
-            if (resilienceResponse.StatusCode != HttpStatusCode.NotFound)
-            {
-                resilienceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            resilienceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-                using var resilienceDocument = JsonDocument.Parse(await resilienceResponse.Content.ReadAsStringAsync());
-                var pool = resilienceDocument.RootElement.GetProperty("connectionPool");
-                pool.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-                pool.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-                pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
-                resilienceDocument.RootElement
-                    .GetProperty("alerts")
-                    .EnumerateArray()
-                    .Select(static alert => alert.GetString())
-                    .Should()
-                    .Contain("Warning: Database connection pool utilization telemetry is unavailable.");
-            }
+            using var resilienceDocument = JsonDocument.Parse(await resilienceResponse.Content.ReadAsStringAsync());
+            var pool = resilienceDocument.RootElement.GetProperty("connectionPool");
+            pool.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
+            pool.GetProperty("healthStatus").GetString().Should().Be("Unknown");
+            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
+            resilienceDocument.RootElement
+                .GetProperty("alerts")
+                .EnumerateArray()
+                .Select(static alert => alert.GetString())
+                .Should()
+                .Contain("Warning: Database connection pool utilization telemetry is unavailable.");
+
 
             var healthResponse = await adminClient.GetAsync("/monitoring/health/comprehensive");
             healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -145,16 +140,86 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 
         using var adminClient = _fixture.CreateAdminClient();
         var cacheResponse = await adminClient.GetAsync("/monitoring/metrics/cache");
-        if (cacheResponse.StatusCode == HttpStatusCode.NotFound)
-        {
-            return;
-        }
-
         cacheResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await cacheResponse.Content.ReadAsStringAsync());
         var root = document.RootElement;
         root.GetProperty("hitRatio").GetDouble().Should().BeApproximately(expectedHitRatio, 0.000001);
         root.GetProperty("isHealthy").GetBoolean().Should().Be(expectedHitRatio >= 0.8);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Performance)]
+    [Endpoint("GET /monitoring/health/production")]
+    public async Task ProductionHealthMetrics_ReflectLiveHttpRequestTelemetry()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var metricsCollector = scope.ServiceProvider.GetRequiredService<ProductionMetricsCollector>();
+        var performanceMonitor = scope.ServiceProvider.GetRequiredService<IPerformanceMonitor>();
+        var httpRequestSnapshotProvider = scope.ServiceProvider.GetRequiredService<IHttpRequestMetricsSnapshotProvider>();
+        var baseline = httpRequestSnapshotProvider.GetHttpRequestMetricsSnapshot();
+
+        performanceMonitor.RecordHttpRequest("GET", "/collections", StatusCodes.Status200OK, TimeSpan.FromMilliseconds(12));
+        performanceMonitor.RecordHttpRequest("GET", "/collections/places/items", StatusCodes.Status500InternalServerError, TimeSpan.FromMilliseconds(37));
+        performanceMonitor.RecordHttpRequest("GET", "/collections/places/items", StatusCodes.Status404NotFound, TimeSpan.FromMilliseconds(19));
+
+        var expectedTotalRequests = baseline.TotalRequests + 3;
+        var expectedServerErrors = baseline.TotalServerErrors + 1;
+        var expectedErrorRate = (double)expectedServerErrors / expectedTotalRequests;
+
+        var directHealthMetrics = metricsCollector.GetHealthMetrics();
+        directHealthMetrics.TotalQueries.Should().Be(expectedTotalRequests);
+        directHealthMetrics.TotalErrors.Should().Be(expectedServerErrors);
+        directHealthMetrics.ErrorRate.Should().BeApproximately(expectedErrorRate, 0.000001);
+
+        using var adminClient = _fixture.CreateAdminClient();
+        var response = await adminClient.GetAsync("/monitoring/health/production");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var metrics = document.RootElement.GetProperty("metrics");
+        metrics.GetProperty("totalQueries").GetInt64().Should().Be(expectedTotalRequests);
+        metrics.GetProperty("totalErrors").GetInt64().Should().Be(expectedServerErrors);
+        metrics.GetProperty("errorRate").GetDouble().Should().BeApproximately(expectedErrorRate, 0.000001);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Performance)]
+    [Endpoint("GET /monitoring/metrics/resources")]
+    public async Task ResourceMetrics_ReturnsProcessSnapshot()
+    {
+        using var adminClient = _fixture.CreateAdminClient();
+        var response = await adminClient.GetAsync("/monitoring/metrics/resources");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("memoryUsageBytes").GetInt64().Should().BeGreaterThan(0);
+        root.GetProperty("memoryUsageMB").GetInt64().Should().BeGreaterOrEqualTo(0);
+        root.GetProperty("memoryPressureLevel").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("gcInfo").GetProperty("totalMemory").GetInt64().Should().BeGreaterThan(0);
+        root.GetProperty("isHealthy").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /monitoring/alerts")]
+    public async Task AlertsEndpoint_ReturnsConsistentAlertSnapshot()
+    {
+        using var adminClient = _fixture.CreateAdminClient();
+        var response = await adminClient.GetAsync("/monitoring/alerts");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        var hasActiveAlerts = root.GetProperty("hasActiveAlerts").GetBoolean();
+        var alertCount = root.GetProperty("alertCount").GetInt32();
+        var alerts = root.GetProperty("alerts").EnumerateArray().ToArray();
+
+        alertCount.Should().Be(alerts.Length);
+        hasActiveAlerts.Should().Be(alertCount > 0);
+        root.GetProperty("timestamp").GetDateTimeOffset().Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-5));
     }
 }

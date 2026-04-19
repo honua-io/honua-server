@@ -93,16 +93,16 @@ internal static class ShapefileExportWriter
             // Create ZIP archive to temp file to avoid sync I/O on response body
             var zipPath = Path.Combine(scratchDir, "export.zip");
             {
-                using var zipStream = File.Create(zipPath);
+                await using var zipStream = File.Create(zipPath);
                 using var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: false);
                 foreach (var file in Directory.EnumerateFiles(scratchDir))
                 {
                     if (file == zipPath) continue;
                     cancellationToken.ThrowIfCancellationRequested();
                     var entry = zip.CreateEntry(Path.GetFileName(file), CompressionLevel.Optimal);
-                    using var entryStream = entry.Open();
-                    using var fileStream = File.OpenRead(file);
-                    fileStream.CopyTo(entryStream);
+                    await using var entryStream = entry.Open();
+                    await using var fileStream = File.OpenRead(file);
+                    await fileStream.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
                 }
             }
 

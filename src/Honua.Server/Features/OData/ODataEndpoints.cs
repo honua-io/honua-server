@@ -414,6 +414,7 @@ internal static partial class ODataEndpoints
             .WithSummary("Execute multiple operations in a single request with optional atomicity groups")
             .WithTags("OData")
             .Produces<Models.ODataBatchResponse>(200, "application/json")
+            .Produces<string>(200, "multipart/mixed")
             .Produces(400);
         batch.AllowAnonymous();
 

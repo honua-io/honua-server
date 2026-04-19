@@ -56,6 +56,7 @@ internal static class VectorTileExecution
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
+            context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptions.CacheMaxAge}";
             return Results.NoContent();
         }
 

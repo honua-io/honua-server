@@ -529,8 +529,86 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private static void ValidatePlanStructure(AnalysisPlan plan)
     {
-        // Domain-level structural validation; proto-level validation is handled
-        // by the conversion layer (invalid enum values throw during ToDomainPlan).
+        // Proto-level enum validation happens in the conversion layer. The remaining
+        // domain-level invariant is that the step dependency graph be acyclic and that
+        // every dependency refer to a real step — the executor assumes topological
+        // ordering, so a cycle or dangling reference deadlocks the run.
+        if (plan.Steps.Count == 0)
+        {
+            return;
+        }
+
+        var stepIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var step in plan.Steps)
+        {
+            if (string.IsNullOrWhiteSpace(step.StepId))
+            {
+                throw new GeoprocessingValidationException("Every step requires a non-empty stepId.");
+            }
+
+            if (!stepIds.Add(step.StepId))
+            {
+                throw new GeoprocessingValidationException(
+                    $"Duplicate step identifier '{step.StepId}'.");
+            }
+        }
+
+        foreach (var step in plan.Steps)
+        {
+            foreach (var dep in step.DependsOn)
+            {
+                if (!stepIds.Contains(dep))
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId}' depends on unknown step '{dep}'.");
+                }
+
+                if (string.Equals(dep, step.StepId, StringComparison.Ordinal))
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId}' cannot depend on itself.");
+                }
+            }
+        }
+
+        // Kahn's algorithm: iteratively remove nodes with zero in-degree; if any remain,
+        // the remaining subgraph contains a cycle.
+        var inDegree = plan.Steps.ToDictionary(s => s.StepId, _ => 0, StringComparer.Ordinal);
+        var edges = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var step in plan.Steps)
+        {
+            edges[step.StepId] = new List<string>();
+        }
+
+        foreach (var step in plan.Steps)
+        {
+            foreach (var dep in step.DependsOn)
+            {
+                edges[dep].Add(step.StepId);
+                inDegree[step.StepId]++;
+            }
+        }
+
+        var ready = new Queue<string>(inDegree.Where(p => p.Value == 0).Select(p => p.Key));
+        var visited = 0;
+        while (ready.Count > 0)
+        {
+            var current = ready.Dequeue();
+            visited++;
+            foreach (var next in edges[current])
+            {
+                if (--inDegree[next] == 0)
+                {
+                    ready.Enqueue(next);
+                }
+            }
+        }
+
+        if (visited != plan.Steps.Count)
+        {
+            throw new GeoprocessingValidationException(
+                "Plan step dependency graph contains a cycle.");
+        }
     }
 
     private static void EnsurePlanExecutable(AnalysisPlan plan)

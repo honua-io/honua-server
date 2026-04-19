@@ -366,7 +366,7 @@ Content-Type: application/json
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/v1/admin/version` | GET | Get legacy server + metadata API version info |
+| `/api/v1/admin/version` | GET | Get current control-plane and metadata schema version info |
 | `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities and the SDK compatibility contract |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |

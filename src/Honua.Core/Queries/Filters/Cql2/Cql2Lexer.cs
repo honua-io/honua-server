@@ -266,6 +266,12 @@ public sealed class Cql2Lexer
             }
             else
             {
+                // Enforce the string-literal length cap early so an unbounded literal
+                // cannot pin a multi-megabyte StringBuilder in memory before validation.
+                if (value.Length >= FilterParserGuard.MaxStringLiteralLength)
+                {
+                    FilterParserGuard.EnsureStringLiteralLength(value.Length + 1, "CQL2 string literal");
+                }
                 value.Append(ch);
                 _position++;
             }
@@ -284,9 +290,23 @@ public sealed class Cql2Lexer
         var start = _position;
         _position++; // Skip opening quote
 
+        // Quoted identifiers escape an internal double-quote by doubling it (SQL-standard form).
+        // Without this, `"My""Field"` terminates at the first inner quote and loses the rest.
         var value = new StringBuilder();
-        while (_position < _input.Length && _input[_position] != '"')
+        while (_position < _input.Length)
         {
+            if (_input[_position] == '"')
+            {
+                if (_position + 1 < _input.Length && _input[_position + 1] == '"')
+                {
+                    value.Append('"');
+                    _position += 2;
+                    continue;
+                }
+
+                break;
+            }
+
             value.Append(_input[_position]);
             _position++;
         }

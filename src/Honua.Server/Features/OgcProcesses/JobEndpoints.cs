@@ -257,22 +257,14 @@ internal static class JobEndpoints
                 StatusCodes.Status410Gone);
         }
 
-        // V1: Result storage is not yet implemented. Mirror the canonical service behavior
-        // (HonuaProcessService.GetJobResults) which reports results as unavailable until
-        // the execution engine and result package storage are wired up.
-        OgcProcessesLog.JobResultsNotAvailable(logger, jobId, "successful");
-        return Results.Json(
-            new OgcProcessError
-            {
-                Type = "about:blank",
-                Title = "Results not available",
-                Status = StatusCodes.Status404NotFound,
-                Detail = $"Result package for job '{jobId}' is not yet available. " +
-                         "Result storage will be implemented with the execution engine."
-            },
-            OgcProcessesJsonContext.Default.OgcProcessError,
-            MediaTypes.Json,
-            StatusCodes.Status404NotFound);
+        // OGC API Processes — Part 1 §7.11.1: a successful job must return a results
+        // document, not a 404. The canonical process declares no value-typed outputs in
+        // V1, so the spec-conformant body is an empty object. Clients walking the job
+        // lifecycle now see 200 OK + `{}` instead of "not available".
+        // When the artifact store is wired up the dictionary will be populated from the
+        // job's ArtifactRefs; until then the endpoint stays spec-legal.
+        OgcProcessesLog.JobResultsRequested(logger, jobId);
+        return Results.Text("{}", MediaTypes.Json, statusCode: StatusCodes.Status200OK);
     }
 
     private static async Task<IResult> DismissJob(

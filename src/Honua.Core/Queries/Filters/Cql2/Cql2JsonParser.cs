@@ -16,6 +16,12 @@ namespace Honua.Core.Queries.Filters.Cql2;
 /// </summary>
 public sealed class Cql2JsonParser
 {
+    // Per-parse recursion counter so that deeply nested CQL2-JSON documents
+    // (`{"op":"not","args":[{"op":"not","args":[...]}]}` × thousands) cannot blow
+    // the native call stack. Matches the MaxExpressionDepth guard the text parser
+    // enforces via Cql2Parser.ParseWithDepth.
+    private int _expressionDepth;
+
     private const int DefaultSrid = 4326;
     private const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
     private static readonly Regex EpsgCodePattern = new(
@@ -49,6 +55,7 @@ public sealed class Cql2JsonParser
 
         try
         {
+            _expressionDepth = 0;
             using var document = JsonDocument.Parse(cql2Json);
             return ParseExpression(document.RootElement);
         }
@@ -60,20 +67,29 @@ public sealed class Cql2JsonParser
 
     private FilterExpression ParseExpression(JsonElement element)
     {
-        switch (element.ValueKind)
+        _expressionDepth++;
+        FilterParserGuard.EnsureExpressionDepth(_expressionDepth);
+        try
         {
-            case JsonValueKind.Object:
-                return ParseObjectExpression(element);
-            case JsonValueKind.Array:
-                return ParseArrayLiteral(element);
-            case JsonValueKind.String:
-            case JsonValueKind.Number:
-            case JsonValueKind.True:
-            case JsonValueKind.False:
-            case JsonValueKind.Null:
-                return ParseLiteral(element);
-            default:
-                throw new ArgumentException($"Unsupported JSON token in CQL2-JSON: {element.ValueKind}");
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    return ParseObjectExpression(element);
+                case JsonValueKind.Array:
+                    return ParseArrayLiteral(element);
+                case JsonValueKind.String:
+                case JsonValueKind.Number:
+                case JsonValueKind.True:
+                case JsonValueKind.False:
+                case JsonValueKind.Null:
+                    return ParseLiteral(element);
+                default:
+                    throw new ArgumentException($"Unsupported JSON token in CQL2-JSON: {element.ValueKind}");
+            }
+        }
+        finally
+        {
+            _expressionDepth--;
         }
     }
 
@@ -590,11 +606,9 @@ public sealed class Cql2JsonParser
 
         try
         {
-            var reader = new GeoJsonReader();
-            var geometry = reader.Read<Geometry>(geoJson)
-                ?? throw new ArgumentException("Geometry could not be parsed");
-
+            var geometry = FilterParserGuard.ParseGeoJsonGeometry(geoJson, "CQL2-JSON geometry literal");
             var srid = ResolveGeometrySrid(element, geometry);
+            geometry.SRID = srid;
             var writer = new WKBWriter();
             var wkb = writer.Write(geometry);
 
