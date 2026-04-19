@@ -1,0 +1,52 @@
+{
+  "id": "publish-refresh-roads",
+  "name": "Refresh the 'roads' publication with updated features",
+  "mode": "Publish",
+  "fixtureProfile": "ogc",
+  "intent": {
+    "intentId": "intent-publish-refresh-roads",
+    "goal": "Re-simplify the roads layer and republish the canonical layer.",
+    "mode": "publish",
+    "requestedOutputs": ["FeatureLayer"],
+    "constraints": {
+      "spatialReferenceId": 4326,
+      "units": "meters"
+    },
+    "inputs": ["roads"],
+    "assumptionPolicy": "UseDefaults"
+  },
+  "precompiledPlan": {
+    "planId": "plan-publish-refresh-roads",
+    "intentId": "intent-publish-refresh-roads",
+    "steps": [
+      {
+        "stepId": "query-roads",
+        "kind": "QueryFeatures",
+        "inputs": { "layer": "roads" },
+        "dependsOn": []
+      },
+      {
+        "stepId": "simplify-roads",
+        "kind": "Geoprocess",
+        "processId": "generalization.simplify-layer",
+        "inputs": { "layerId": "0", "tolerance": "0.001" },
+        "dependsOn": ["query-roads"]
+      },
+      {
+        "stepId": "export-roads",
+        "kind": "Export",
+        "inputs": { "format": "geojson", "layer": "roads" },
+        "dependsOn": ["simplify-roads"]
+      }
+    ],
+    "outputs": ["FeatureLayer"]
+  },
+  "expectedOutcome": {
+    "isExecutable": true,
+    "requiresApproval": false,
+    "estimatedArtifactKinds": ["FeatureLayer"],
+    "terminalWorkflowStatus": "Completed",
+    "expectsMapPackage": false,
+    "expectsAppPackage": false
+  }
+}

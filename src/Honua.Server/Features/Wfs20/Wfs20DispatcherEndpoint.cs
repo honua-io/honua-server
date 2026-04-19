@@ -199,10 +199,14 @@ internal static class Wfs20DispatcherEndpoint
             }
         }
 
-        // GetCapabilities is inherently XML-only; reject on the Accept header would
-        // break clients that set a broad default like `application/json` as a
-        // catch-all (common in test fixtures and OpenAPI-typed SDK clients).
-        // The server will still respond with application/xml regardless.
+        // GetCapabilities is inherently XML-only. Tolerate catch-all Accept
+        // headers, but honor an explicit rejection of XML (e.g. `q=0` on
+        // application/xml): there is no non-XML representation to fall back on,
+        // so surface 406 Not Acceptable per RFC 9110.
+        if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+        {
+            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+        }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var sections = parameters.Get(Wfs20Utilities.ParameterNames.Sections);
@@ -271,10 +275,14 @@ internal static class Wfs20DispatcherEndpoint
             }
 
             // DescribeFeatureType's outputFormat check above already enforces an
-            // XML-compatible format. Don't also reject on the Accept header —
-            // test fixtures and catch-all SDK clients routinely set
-            // `Accept: application/json` and the server always emits XML here
-            // regardless.
+            // XML-compatible format. Tolerate catch-all Accept headers, but
+            // honor an explicit rejection of XML (e.g. `q=0` on
+            // application/xml): there is no non-XML representation to fall back
+            // on, so surface 406 Not Acceptable per RFC 9110.
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+            }
 
             // Handle the request
             var schema = await handler.HandleDescribeFeatureTypeAsync(
