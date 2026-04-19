@@ -90,8 +90,15 @@ internal sealed partial class AzureBatchComputeBackend(
         try
         {
             var status = await batchClient.CreateJobAsync(submission, cancellationToken).ConfigureAwait(false);
-            Log.JobSubmitted(logger, job.OperationId, submission.JobId, poolId);
-            ControlPlaneTelemetry.RecordExecutionSubmission(job);
+            if (status == HttpStatusCode.Conflict)
+            {
+                Log.JobAlreadyExists(logger, job.OperationId, submission.JobId, poolId);
+            }
+            else
+            {
+                Log.JobSubmitted(logger, job.OperationId, submission.JobId, poolId);
+                ControlPlaneTelemetry.RecordExecutionSubmission(job);
+            }
 
             return new BatchComputeSubmissionResult
             {
@@ -522,5 +529,8 @@ internal sealed partial class AzureBatchComputeBackend(
 
         [LoggerMessage(9086, LogLevel.Warning, "Azure Batch pool {PoolId} rejected submission (state: {State}, allocationState: {AllocationState})")]
         public static partial void PoolValidationRejected(ILogger logger, string poolId, string state, string? allocationState);
+
+        [LoggerMessage(9087, LogLevel.Information, "Execution job {OperationId} already exists as Azure Batch job {JobId} in pool {PoolId}; resuming observation")]
+        public static partial void JobAlreadyExists(ILogger logger, string operationId, string jobId, string poolId);
     }
 }

@@ -160,6 +160,48 @@ public sealed class AzureBatchDataPlaneClientTests
         capturedPaths.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task CreateJobAsync_DeletesFreshJobWhenTaskCreationReturnsFailure()
+    {
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths)
+            .Enqueue(HttpStatusCode.Created, string.Empty)
+            .Enqueue(HttpStatusCode.BadGateway, """{"code":"TaskCreateFailed"}""")
+            .Enqueue(HttpStatusCode.Accepted, string.Empty);
+
+        var client = CreateClient(handler);
+        var act = () => client.CreateJobAsync(SampleSubmission());
+
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .Where(ex => ex.StatusCode == HttpStatusCode.BadGateway);
+
+        capturedPaths.Should().HaveCount(3);
+        capturedPaths[0].Should().Contain("/jobs?");
+        capturedPaths[1].Should().Contain("/jobs/honua-job-1/tasks?");
+        capturedPaths[2].Should().Contain("/jobs/honua-job-1?");
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_DeletesFreshJobWhenTaskRequestThrows()
+    {
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths)
+            .Enqueue(HttpStatusCode.Created, string.Empty)
+            .Enqueue(new HttpRequestException("task send failed"))
+            .Enqueue(HttpStatusCode.Accepted, string.Empty);
+
+        var client = CreateClient(handler);
+        var act = () => client.CreateJobAsync(SampleSubmission());
+
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .Where(ex => ex.Message.Contains("task send failed", StringComparison.Ordinal));
+
+        capturedPaths.Should().HaveCount(3);
+        capturedPaths[0].Should().Contain("/jobs?");
+        capturedPaths[1].Should().Contain("/jobs/honua-job-1/tasks?");
+        capturedPaths[2].Should().Contain("/jobs/honua-job-1?");
+    }
+
     private static AzureBatchDataPlaneClient CreateClient(HttpMessageHandler handler)
         => new(
             new SingletonHttpClientFactory(new HttpClient(handler)),
@@ -182,7 +224,7 @@ public sealed class AzureBatchDataPlaneClientTests
 
     private sealed class QueuedHttpMessageHandler(List<string> capturedPaths) : HttpMessageHandler
     {
-        private readonly Queue<HttpResponseMessage> _responses = new();
+        private readonly Queue<object> _responses = new();
 
         public QueuedHttpMessageHandler Enqueue(HttpStatusCode status, string body)
         {
@@ -193,10 +235,22 @@ public sealed class AzureBatchDataPlaneClientTests
             return this;
         }
 
+        public QueuedHttpMessageHandler Enqueue(Exception exception)
+        {
+            _responses.Enqueue(exception);
+            return this;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             capturedPaths.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
-            return Task.FromResult(_responses.Dequeue());
+            var next = _responses.Dequeue();
+            if (next is Exception exception)
+            {
+                return Task.FromException<HttpResponseMessage>(exception);
+            }
+
+            return Task.FromResult((HttpResponseMessage)next);
         }
     }
 

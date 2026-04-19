@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -44,6 +45,37 @@ public sealed class AzureBatchComputeBackendTests
 
         submission.Status.Should().Be(ExecutionJobStatus.Queued);
         submission.Message.Should().Contain("already exists");
+    }
+
+    [Fact]
+    public async Task StartAsync_RecordsSubmissionMetricOnlyForFreshSubmissions()
+    {
+        var samples = new List<long>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, currentListener) =>
+            {
+                if (instrument.Name == "honua.execution.job.submitted")
+                {
+                    currentListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.Start();
+
+        var freshBackend = new AzureBatchComputeBackend(
+            new StubAzureBatchClient(),
+            NullLogger<AzureBatchComputeBackend>.Instance);
+        var resumedBackend = new AzureBatchComputeBackend(
+            new StubAzureBatchClient { ReturnStatus = HttpStatusCode.Conflict },
+            NullLogger<AzureBatchComputeBackend>.Instance);
+
+        await freshBackend.StartAsync(CreateJob());
+        await resumedBackend.StartAsync(CreateJob());
+
+        samples.Should().ContainSingle().Which.Should().Be(1,
+            "idempotent resume paths must not inflate the fresh submission counter");
     }
 
     [Fact]

@@ -235,6 +235,7 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
     public const string HttpClientName = "control-plane-azure-batch";
 
     private const string ApiVersion = "2024-07-01.20.0";
+    private static readonly TimeSpan IncompleteJobCleanupTimeout = TimeSpan.FromSeconds(5);
     private static readonly Uri DataPlaneScope = new("https://batch.core.windows.net/.default");
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -295,16 +296,37 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var taskResponse = await client.SendAsync(taskRequest, cancellationToken).ConfigureAwait(false);
-        if (taskResponse.StatusCode == HttpStatusCode.Conflict)
+        var cleanupAttempted = false;
+        HttpStatusCode taskStatus;
+        try
         {
-            Log.TaskAlreadyExists(_logger, submission.JobId);
-            return HttpStatusCode.Conflict;
+            using var taskResponse = await client.SendAsync(taskRequest, cancellationToken).ConfigureAwait(false);
+            taskStatus = taskResponse.StatusCode;
+            if (taskResponse.StatusCode == HttpStatusCode.Conflict)
+            {
+                Log.TaskAlreadyExists(_logger, submission.JobId);
+                return HttpStatusCode.Conflict;
+            }
+
+            if (!taskResponse.IsSuccessStatusCode)
+            {
+                if (!jobAlreadyExists)
+                {
+                    cleanupAttempted = true;
+                    await TryDeleteIncompleteJobAsync(client, submission.AccountUrl, submission.JobId).ConfigureAwait(false);
+                }
+
+                await EnsureSuccessAsync(taskResponse, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch when (!jobAlreadyExists && !cleanupAttempted)
+        {
+            await TryDeleteIncompleteJobAsync(client, submission.AccountUrl, submission.JobId).ConfigureAwait(false);
+            throw;
         }
 
-        await EnsureSuccessAsync(taskResponse, cancellationToken).ConfigureAwait(false);
         Log.JobSubmitted(_logger, submission.JobId, submission.PoolId);
-        return jobAlreadyExists ? HttpStatusCode.Conflict : taskResponse.StatusCode;
+        return jobAlreadyExists ? HttpStatusCode.Conflict : taskStatus;
     }
 
     public async Task<AzureBatchJobState> GetJobStateAsync(
@@ -384,6 +406,35 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
         return ParsePoolState(poolId, document.RootElement);
+    }
+
+    private async Task TryDeleteIncompleteJobAsync(HttpClient client, string accountUrl, string jobId)
+    {
+        using var cleanupCancellation = new CancellationTokenSource(IncompleteJobCleanupTimeout);
+
+        try
+        {
+            using var request = await CreateRequestAsync(
+                    HttpMethod.Delete,
+                    BuildJobUrl(accountUrl, jobId),
+                    null,
+                    cleanupCancellation.Token)
+                .ConfigureAwait(false);
+
+            using var response = await client.SendAsync(request, cleanupCancellation.Token).ConfigureAwait(false);
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
+            {
+                Log.IncompleteJobCleanupNoOp(_logger, jobId, (int)response.StatusCode);
+                return;
+            }
+
+            await EnsureSuccessAsync(response, cleanupCancellation.Token).ConfigureAwait(false);
+            Log.IncompleteJobCleanupSucceeded(_logger, jobId);
+        }
+        catch (Exception ex)
+        {
+            Log.IncompleteJobCleanupFailed(_logger, jobId, ex.Message);
+        }
     }
 
     private async Task<HttpRequestMessage> CreateRequestAsync(
@@ -635,6 +686,9 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
     private static string BuildJobTerminateUrl(string accountUrl, string jobId)
         => $"{NormalizeAccountUrl(accountUrl)}/jobs/{Uri.EscapeDataString(jobId)}/terminate?api-version={ApiVersion}";
 
+    private static string BuildJobUrl(string accountUrl, string jobId)
+        => $"{NormalizeAccountUrl(accountUrl)}/jobs/{Uri.EscapeDataString(jobId)}?api-version={ApiVersion}";
+
     private static string BuildPoolUrl(string accountUrl, string poolId)
         => $"{NormalizeAccountUrl(accountUrl)}/pools/{Uri.EscapeDataString(poolId)}?api-version={ApiVersion}";
 
@@ -654,5 +708,14 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
 
         [LoggerMessage(9074, LogLevel.Debug, "Azure Batch terminate for job {JobId} is a no-op (status {StatusCode})")]
         public static partial void TerminateNoOp(ILogger logger, string jobId, int statusCode);
+
+        [LoggerMessage(9075, LogLevel.Information, "Deleted incomplete Azure Batch job {JobId} after task creation failed")]
+        public static partial void IncompleteJobCleanupSucceeded(ILogger logger, string jobId);
+
+        [LoggerMessage(9076, LogLevel.Debug, "Incomplete Azure Batch job cleanup for {JobId} is a no-op (status {StatusCode})")]
+        public static partial void IncompleteJobCleanupNoOp(ILogger logger, string jobId, int statusCode);
+
+        [LoggerMessage(9077, LogLevel.Warning, "Failed to delete incomplete Azure Batch job {JobId} after task creation failed: {ErrorMessage}")]
+        public static partial void IncompleteJobCleanupFailed(ILogger logger, string jobId, string errorMessage);
     }
 }

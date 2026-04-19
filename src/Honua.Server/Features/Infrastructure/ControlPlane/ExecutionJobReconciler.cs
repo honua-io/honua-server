@@ -222,19 +222,7 @@ internal sealed partial class ExecutionJobReconciler(
         }
 
         var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-        return job with
-        {
-            Status = observation.Status,
-            UpdatedAt = now,
-            CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
-            ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
-            PercentComplete = observation.PercentComplete ?? job.PercentComplete,
-            CurrentPhase = observation.Message ?? job.CurrentPhase,
-            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                ? observation.Message ?? job.ErrorMessage
-                : job.ErrorMessage
-        };
+        return ApplyObservation(job, observation);
     }
 
     private static async Task<ExecutionJobRecord> ObserveJobAsync(
@@ -243,7 +231,11 @@ internal sealed partial class ExecutionJobReconciler(
         CancellationToken cancellationToken)
     {
         var observation = await backend.ObserveAsync(job, cancellationToken).ConfigureAwait(false);
+        return ApplyObservation(job, observation);
+    }
 
+    private static ExecutionJobRecord ApplyObservation(ExecutionJobRecord job, BatchComputeObservation observation)
+    {
         var newProviderOpId = observation.ProviderOperationId ?? job.ProviderOperationId;
         var newPercent = observation.PercentComplete ?? job.PercentComplete;
         var newPhase = observation.Message ?? job.CurrentPhase;

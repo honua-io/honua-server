@@ -865,6 +865,59 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task ReconcileExecutionJob_QueuedRemoteCancelWithoutObservationChange_PreservesUpdatedAt()
+    {
+        const string providerOperationId = "provider-cancel-queued";
+        const string phase = "Azure Batch termination requested for job 'provider-cancel-queued'; Azure Batch job 'provider-cancel-queued' has not yet registered with the scheduler.";
+        var originalUpdatedAt = DateTimeOffset.UtcNow - AzureBatchComputeBackend.MissingRegistrationGracePeriod - TimeSpan.FromSeconds(5);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(AzureBatchComputeBackend.BackendIdentifier);
+        backend.TargetKind.Returns(BatchComputeTargetKind.AzureBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsCancellation = true });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Queued,
+                ProviderOperationId = providerOperationId,
+                Message = phase
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-queued-azure-cancel",
+            status: ExecutionJobStatus.Queued,
+            backend: AzureBatchComputeBackend.BackendIdentifier,
+            targetKind: BatchComputeTargetKind.AzureBatch,
+            currentPhase: phase) with
+        {
+            ProviderOperationId = providerOperationId,
+            AttemptCount = 1,
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = originalUpdatedAt
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-queued-azure-cancel");
+
+        var stored = await jobStore.GetAsync("job-queued-azure-cancel");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+        stored.UpdatedAt.Should().Be(originalUpdatedAt,
+            "identical cancel observations must not refresh the missing-registration grace window");
+
+        await backend.Received(1).CancelAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ReconcileExecutionJob_ExceptionDuringReconciliation_BridgesProgressOnFailure()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
