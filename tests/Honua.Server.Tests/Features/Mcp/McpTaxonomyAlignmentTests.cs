@@ -283,8 +283,8 @@ public sealed class McpTaxonomyAlignmentTests
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new PlanAnalysisTool(jobService, NullLogger<PlanAnalysisTool>.Instance),
-            new GroundCandidatesTool(groundingService, NullLogger<GroundCandidatesTool>.Instance),
-            new ClarifyIntentTool(groundingService, NullLogger<ClarifyIntentTool>.Instance)
+            new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),
+            new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance)
         ];
     }
 

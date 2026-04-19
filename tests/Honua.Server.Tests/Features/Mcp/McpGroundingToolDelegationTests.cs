@@ -29,6 +29,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 public sealed class McpGroundingToolDelegationTests
 {
     private readonly IGroundingService _groundingService = Substitute.For<IGroundingService>();
+    private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
     [UnitTest]
     [Operation(Operations.Query)]
@@ -39,7 +40,7 @@ public sealed class McpGroundingToolDelegationTests
             .GroundAsync(Arg.Any<GroundingRequest>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(SamplePublishResult());
 
-        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""
             {"goal":"Publish the parcels layer"}
             """);
@@ -67,7 +68,7 @@ public sealed class McpGroundingToolDelegationTests
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
     public async Task GroundCandidates_EmptyGoal_SurfacesValidationBeforeDelegation()
     {
-        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"   "}""");
 
         var act = async () => await tool.InvokeAsync(
@@ -82,7 +83,7 @@ public sealed class McpGroundingToolDelegationTests
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
     public async Task GroundCandidates_NullArguments_SurfacesValidation()
     {
-        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
 
         var act = async () => await tool.InvokeAsync(
             McpTestFactory.AuthenticatedHttpContext(), arguments: null, CancellationToken.None);
@@ -99,7 +100,7 @@ public sealed class McpGroundingToolDelegationTests
         _groundingService
             .GroundAsync(Arg.Any<GroundingRequest>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(SampleAnalyzeResult());
-        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
         using var cts = new CancellationTokenSource();
         JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer parcels"}""");
 
@@ -118,7 +119,7 @@ public sealed class McpGroundingToolDelegationTests
             .GroundAsync(Arg.Any<GroundingRequest>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(SampleAnalyzeResult());
 
-        var tool = new ClarifyIntentTool(_groundingService, NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""
             {
                 "intentId":"intent-1",
@@ -147,7 +148,7 @@ public sealed class McpGroundingToolDelegationTests
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
     public async Task ClarifyIntent_MissingIntentId_SurfacesValidationBeforeDelegation()
     {
-        var tool = new ClarifyIntentTool(_groundingService, NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""
             {"goal":"Buffer","response":{"answers":{"q1":["a"]}}}
             """);
@@ -164,7 +165,7 @@ public sealed class McpGroundingToolDelegationTests
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
     public async Task ClarifyIntent_MissingAnswers_SurfacesValidationBeforeDelegation()
     {
-        var tool = new ClarifyIntentTool(_groundingService, NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""
             {"intentId":"intent-1","goal":"Buffer"}
             """);
@@ -185,7 +186,7 @@ public sealed class McpGroundingToolDelegationTests
             .GroundAsync(Arg.Any<GroundingRequest>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(SampleResultWithClarification());
 
-        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
         JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Do something vague"}""");
 
         var result = await tool.InvokeAsync(

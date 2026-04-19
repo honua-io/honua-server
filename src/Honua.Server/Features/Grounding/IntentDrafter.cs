@@ -28,10 +28,11 @@ internal static class IntentDrafter
         WorkflowFamilyClassification classification,
         CandidateRanking candidates,
         IReadOnlyList<string> clarificationQuestionIds,
+        IReadOnlyCollection<string> clarificationsAnswered,
         IReadOnlyList<string> assumptions)
     {
         var requestedOutputs = InferRequestedOutputs(classification.Value, request);
-        var provenance = BuildProvenance(candidates, clarificationQuestionIds, assumptions);
+        var provenance = BuildProvenance(candidates, clarificationQuestionIds, clarificationsAnswered, assumptions);
 
         return classification.Value switch
         {
@@ -166,6 +167,7 @@ internal static class IntentDrafter
     private static ProvenanceRecord BuildProvenance(
         CandidateRanking candidates,
         IReadOnlyList<string> clarificationQuestionIds,
+        IReadOnlyCollection<string> clarificationsAnswered,
         IReadOnlyList<string> assumptions)
     {
         var sources = new List<ProvenanceSource>();
@@ -184,12 +186,17 @@ internal static class IntentDrafter
             processIds.Add(process.Id);
         }
 
+        IReadOnlyList<string> answered = clarificationsAnswered.Count == 0
+            ? []
+            : clarificationsAnswered as IReadOnlyList<string> ?? clarificationsAnswered.ToArray();
+
         return new ProvenanceRecord
         {
             Sources = sources,
             ProcessDefinitions = processIds,
             Assumptions = assumptions,
-            ClarificationsAsked = clarificationQuestionIds
+            ClarificationsAsked = clarificationQuestionIds,
+            ClarificationsAnswered = answered
         };
     }
 }

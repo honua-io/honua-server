@@ -70,8 +70,11 @@ envelope-only mode before the caller proceeds.
 | `High` | `score ≥ HighConfidenceFloor` (default `≥ 0.70`) |
 
 A classification whose confidence is below `WorkflowFamilyFloor` (default
-`0.60`) triggers a `LowConfidence` clarification; the service does not emit
-a typed draft intent until the operator resolves the family.
+`0.60`) always triggers a `LowConfidence` clarification. The service still
+emits a provisional draft intent based on the top-scoring family — callers
+surface the draft alongside the clarification envelope so operators can
+preview the current best guess and either confirm it or pick a different
+family through the `workflow_family` question.
 
 ## Material-ambiguity rule set
 

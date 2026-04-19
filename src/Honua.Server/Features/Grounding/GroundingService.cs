@@ -8,6 +8,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Grounding;
@@ -23,23 +24,41 @@ internal sealed class GroundingService : IGroundingService
     private readonly IGroundingEngine _engine;
     private readonly IProcessCatalog _processCatalog;
     private readonly ILayerCatalog? _layerCatalog;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly IGroundingAuthorizationFilter _authorizationFilter;
     private readonly GroundingOptions _options;
     private readonly ILogger<GroundingService> _logger;
 
+    // Preferred constructor used by DI: the service stays a singleton and
+    // resolves the scoped ILayerCatalog per call via IServiceScopeFactory.
     public GroundingService(
         IGroundingEngine engine,
         IProcessCatalog processCatalog,
         IGroundingAuthorizationFilter authorizationFilter,
         IOptions<GroundingOptions> options,
         ILogger<GroundingService> logger,
-        ILayerCatalog? layerCatalog = null)
+        IServiceScopeFactory serviceScopeFactory)
+        : this(engine, processCatalog, authorizationFilter, options, logger, serviceScopeFactory, layerCatalog: null)
+    {
+    }
+
+    // Direct-catalog constructor retained for unit tests that supply a
+    // substituted ILayerCatalog without wiring a scope factory.
+    internal GroundingService(
+        IGroundingEngine engine,
+        IProcessCatalog processCatalog,
+        IGroundingAuthorizationFilter authorizationFilter,
+        IOptions<GroundingOptions> options,
+        ILogger<GroundingService> logger,
+        IServiceScopeFactory? serviceScopeFactory,
+        ILayerCatalog? layerCatalog)
     {
         _engine = engine;
         _processCatalog = processCatalog;
         _authorizationFilter = authorizationFilter;
         _options = options.Value;
         _logger = logger;
+        _serviceScopeFactory = serviceScopeFactory;
         _layerCatalog = layerCatalog;
     }
 
@@ -59,6 +78,13 @@ internal sealed class GroundingService : IGroundingService
 
         var tokens = GroundingTokenizer.Tokenize(request.Goal);
         GroundingLog.PassStarted(_logger, _engine.Name, tokens.Count, request.WorkflowFamilyHint.HasValue);
+
+        // Normalize prior-turn clarification answers. A non-empty answer
+        // resolves the corresponding finding: we skip it during parameter-gap
+        // probing and drop it from the evaluator output so the next turn does
+        // not replay the same ambiguity. Provenance still records the ids so
+        // downstream planners can audit what the operator supplied.
+        var answeredQuestionIds = CollectAnsweredQuestionIds(request.ClarificationResponse);
 
         // 1. Classify the workflow family.
         var classification = _engine.Classify(request);
@@ -88,14 +114,17 @@ internal sealed class GroundingService : IGroundingService
 
         // 4. Evaluate material ambiguity against the post-filter ranking so
         // the clarification envelope only names candidates the caller can
-        // actually see.
-        var requiredParameterGaps = CollectRequiredParameterGaps(request, ranking);
+        // actually see. Parameter-gap probing consumes answered param.<name>
+        // questions; the finding filter below consumes the remaining kinds
+        // (workflow_family, dataset.selection, process.selection, etc.).
+        var requiredParameterGaps = CollectRequiredParameterGaps(request, ranking, answeredQuestionIds);
         var findings = MaterialAmbiguityEvaluator.Evaluate(
             request,
             classification,
             ranking,
             requiredParameterGaps,
             _options);
+        findings = FilterAnsweredFindings(findings, answeredQuestionIds);
 
         // 5. Build draft intent.
         var intentId = request.IntentId ?? $"grounding-{Guid.NewGuid():N}";
@@ -107,6 +136,7 @@ internal sealed class GroundingService : IGroundingService
             classification,
             ranking,
             clarificationQuestionIds,
+            answeredQuestionIds,
             assumptions);
 
         // 6. Build the clarification envelope (if any).
@@ -133,17 +163,42 @@ internal sealed class GroundingService : IGroundingService
         GroundingRequest request,
         CancellationToken cancellationToken)
     {
-        if (_layerCatalog is null)
+        // Direct-catalog path for unit tests that inject a substituted
+        // ILayerCatalog without a scope factory.
+        if (_layerCatalog is not null)
+        {
+            return await ScoreDatasetsFromCatalogAsync(_layerCatalog, request, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Production path: resolve the scoped ILayerCatalog inside a fresh
+        // DI scope so database connections cycle per request instead of
+        // being captured by the singleton GroundingService.
+        if (_serviceScopeFactory is null)
         {
             return [];
         }
 
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetService<ILayerCatalog>();
+        if (catalog is null)
+        {
+            return [];
+        }
+
+        return await ScoreDatasetsFromCatalogAsync(catalog, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<GroundingCandidate>> ScoreDatasetsFromCatalogAsync(
+        ILayerCatalog catalog,
+        GroundingRequest request,
+        CancellationToken cancellationToken)
+    {
         LayerDefinition[] layerDefs;
         ServiceDefinition[] serviceDefs;
         try
         {
-            layerDefs = await _layerCatalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
-            serviceDefs = await _layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
+            layerDefs = await catalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
+            serviceDefs = await catalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -219,7 +274,8 @@ internal sealed class GroundingService : IGroundingService
 
     private List<ProcessParameterSpec> CollectRequiredParameterGaps(
         GroundingRequest request,
-        CandidateRanking ranking)
+        CandidateRanking ranking,
+        HashSet<string> answeredQuestionIds)
     {
         // Only probe the top process candidate: if the operator has not
         // settled on a process, the AmbiguousProcess finding handles it,
@@ -260,10 +316,64 @@ internal sealed class GroundingService : IGroundingService
                 continue;
             }
 
+            if (answeredQuestionIds.Contains($"param.{parameter.Name}"))
+            {
+                continue;
+            }
+
             gaps.Add(parameter);
         }
 
         return gaps;
+    }
+
+    private static HashSet<string> CollectAnsweredQuestionIds(ClarificationResponse? response)
+    {
+        if (response?.Answers is not { Count: > 0 } answers)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var ids = new HashSet<string>(answers.Count, StringComparer.Ordinal);
+        foreach (var (questionId, values) in answers)
+        {
+            if (string.IsNullOrWhiteSpace(questionId) || values is null)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(values[i]))
+                {
+                    ids.Add(questionId);
+                    break;
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    private static IReadOnlyList<MaterialAmbiguityFinding> FilterAnsweredFindings(
+        IReadOnlyList<MaterialAmbiguityFinding> findings,
+        HashSet<string> answeredQuestionIds)
+    {
+        if (answeredQuestionIds.Count == 0 || findings.Count == 0)
+        {
+            return findings;
+        }
+
+        var retained = new List<MaterialAmbiguityFinding>(findings.Count);
+        foreach (var finding in findings)
+        {
+            if (!answeredQuestionIds.Contains(finding.QuestionId))
+            {
+                retained.Add(finding);
+            }
+        }
+
+        return retained;
     }
 
     private static bool IsSatisfiedByConstraints(
@@ -294,11 +404,13 @@ internal sealed class GroundingService : IGroundingService
         {
             assumptions.Add($"srid={srid}");
         }
-        else if (request.Constraints is not null)
+        else if (!string.IsNullOrWhiteSpace(request.Constraints?.AreaOfInterest))
         {
             // AOI supplied without an SRID defaults to EPSG:4326 per
             // IntentConstraints semantics — record it as an assumption so
-            // downstream planning can flag divergence.
+            // downstream planning can flag divergence. Constraints without a
+            // spatial input (units-only, time-only) stay silent so the
+            // assumption list reflects the caller's actual spatial footprint.
             assumptions.Add("srid=4326 (default)");
         }
 

@@ -115,7 +115,7 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
     public async Task GroundCandidates_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
 
         JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer the parcels"}""");
         var act = async () => await tool.InvokeAsync(
@@ -130,7 +130,7 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
     public async Task ClarifyIntent_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new ClarifyIntentTool(_groundingService, NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
 
         JsonElement? arguments = McpTestFactory.ParseJson("""
             {"intentId":"intent-1","goal":"Buffer the parcels","response":{"answers":{"q1":["a"]}}}
@@ -225,6 +225,46 @@ public sealed class McpAuthorizationTests
 
         (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
             .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
+    public async Task GroundCandidates_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new GroundCandidatesTool(_groundingService, _jobService, NullLogger<GroundCandidatesTool>.Instance);
+        JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer the parcels"}""");
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
+    public async Task ClarifyIntent_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new ClarifyIntentTool(_groundingService, _jobService, NullLogger<ClarifyIntentTool>.Instance);
+        JsonElement? arguments = McpTestFactory.ParseJson("""
+            {"intentId":"intent-1","goal":"Buffer the parcels","response":{"answers":{"q1":["a"]}}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
     }
 
     [UnitTest]

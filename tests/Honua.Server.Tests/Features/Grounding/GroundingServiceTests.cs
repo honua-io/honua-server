@@ -366,6 +366,76 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_UnitsOnlyConstraints_DoesNotAddDefaultSridAssumption()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer",
+                Constraints = new IntentConstraints { Units = "meters" }
+            },
+            Principal);
+
+        result.DraftIntent.Provenance.Assumptions.Should().NotContain(a => a.Contains("srid="));
+        result.DraftIntent.Provenance.Assumptions.Should().Contain("units=meters");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_ClarificationAnswer_RemovesCorrespondingFollowUpQuestion()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns([Candidate("geometry.buffer", 0.9, CandidateKind.Process)]);
+        _processCatalog.GetProcess("geometry.buffer").Returns(new ProcessDefinition
+        {
+            ProcessId = "geometry.buffer",
+            Title = "Buffer",
+            Description = "Buffers geometries.",
+            Category = "geometry",
+            Parameters =
+            [
+                new ProcessParameterSpec
+                {
+                    Name = "distance",
+                    DisplayName = "Buffer distance",
+                    Description = "meters",
+                    ValueType = ProcessParameterValueType.FloatingPoint,
+                    Required = true
+                }
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "Buffer the roads",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["param.distance"] = ["50"]
+                    }
+                }
+            },
+            Principal);
+
+        if (result.Clarification is not null)
+        {
+            result.Clarification.Questions.Should().NotContain(q => q.QuestionId == "param.distance");
+        }
+
+        result.DraftIntent.Provenance.ClarificationsAnswered.Should().Contain("param.distance");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_MergesLayerAndServiceScoresIntoSortedDatasetList()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
@@ -430,6 +500,7 @@ public sealed class GroundingServiceTests
         _authorizationFilter,
         Options.Create(_options),
         NullLogger<GroundingService>.Instance,
+        serviceScopeFactory: null,
         _layerCatalog);
 
     private GroundingService CreateServiceWithoutLayerCatalog() => new(
@@ -438,5 +509,6 @@ public sealed class GroundingServiceTests
         _authorizationFilter,
         Options.Create(_options),
         NullLogger<GroundingService>.Instance,
+        serviceScopeFactory: null,
         layerCatalog: null);
 }

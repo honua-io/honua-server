@@ -7,10 +7,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Server.Features.Grounding;
 
 /// <summary>
-/// DI registration for the grounding feature slice. All services are
-/// stateless — the engine and authorization filter are compiled against frozen
-/// catalogs and the evaluator respectively, so registering them as singletons
-/// keeps the hot path allocation-free.
+/// DI registration for the grounding feature slice. The engine and
+/// authorization filter are stateless and compiled against frozen catalogs,
+/// so they register as singletons. <see cref="IGroundingService"/> is also a
+/// singleton; it consumes <see cref="Honua.Core.Features.Catalog.Abstractions.ILayerCatalog"/>
+/// per call through <see cref="IServiceScopeFactory"/> so each request binds
+/// to a fresh scoped catalog (and its scoped database dependencies) without
+/// capturing one for the lifetime of the root provider.
 /// </summary>
 internal static class GroundingServiceCollectionExtensions
 {

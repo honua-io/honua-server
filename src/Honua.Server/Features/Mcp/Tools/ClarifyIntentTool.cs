@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Grounding.Mcp;
 using Honua.Server.Features.Mcp.Models;
 
@@ -22,11 +24,16 @@ internal sealed class ClarifyIntentTool : IMcpTool
     private static readonly JsonElement InputSchemaElement = GroundingToolSchemas.ClarifyIntentArgumentSchema;
 
     private readonly IGroundingService _groundingService;
+    private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<ClarifyIntentTool> _logger;
 
-    public ClarifyIntentTool(IGroundingService groundingService, ILogger<ClarifyIntentTool> logger)
+    public ClarifyIntentTool(
+        IGroundingService groundingService,
+        IGeoprocessingJobService jobService,
+        ILogger<ClarifyIntentTool> logger)
     {
         _groundingService = groundingService;
+        _jobService = jobService;
         _logger = logger;
     }
 
@@ -50,6 +57,7 @@ internal sealed class ClarifyIntentTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
 
         var argument = McpToolHelpers.ParseArguments(arguments, GroundingJsonContext.Default.McpClarifyIntentArgument);
         var request = GroundingToolMapper.ToDomain(argument);

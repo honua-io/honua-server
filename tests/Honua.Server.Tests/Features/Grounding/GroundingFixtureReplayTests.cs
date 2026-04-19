@@ -124,7 +124,9 @@ public sealed class GroundingFixtureReplayTests
             catalog,
             authFilter,
             options,
-            NullLogger<GroundingService>.Instance);
+            NullLogger<GroundingService>.Instance,
+            serviceScopeFactory: null,
+            layerCatalog: null);
     }
 
     private static ClaimsPrincipal BuildPrincipal()

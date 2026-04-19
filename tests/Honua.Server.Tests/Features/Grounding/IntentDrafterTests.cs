@@ -36,6 +36,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.Analyze, 0.9),
             candidates: new CandidateRanking(),
             clarificationQuestionIds: ["workflow_family"],
+            clarificationsAnswered: [],
             assumptions: ["srid=3857"]);
 
         draft.IntentId.Should().Be("intent-abc");
@@ -66,6 +67,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.PublishData, 1.0),
             candidates: new CandidateRanking(),
             clarificationQuestionIds: [],
+            clarificationsAnswered: [],
             assumptions: []);
 
         draft.WorkflowFamily.Should().Be(WorkflowFamily.PublishData);
@@ -101,6 +103,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.PublishData, 1.0),
             candidates: candidates,
             clarificationQuestionIds: [],
+            clarificationsAnswered: [],
             assumptions: []);
 
         draft.Publishing.Should().NotBeNull();
@@ -118,6 +121,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.PublishData, 1.0),
             candidates: new CandidateRanking(),
             clarificationQuestionIds: [],
+            clarificationsAnswered: [],
             assumptions: []);
 
         draft.Publishing.Should().BeNull();
@@ -135,6 +139,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.BuildApp, 1.0),
             candidates: new CandidateRanking(),
             clarificationQuestionIds: [],
+            clarificationsAnswered: [],
             assumptions: []);
 
         draft.WorkflowFamily.Should().Be(WorkflowFamily.BuildApp);
@@ -154,6 +159,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.AutomateDeploy, 1.0),
             candidates: new CandidateRanking(),
             clarificationQuestionIds: [],
+            clarificationsAnswered: [],
             assumptions: []);
 
         draft.WorkflowFamily.Should().Be(WorkflowFamily.AutomateDeploy);
@@ -165,15 +171,15 @@ public sealed class IntentDrafterTests
     public void Draft_InfersRequestedOutputsFromGoalTokens()
     {
         var mapRequest = new GroundingRequest { Goal = "Produce a map of incidents" };
-        IntentDrafter.Draft(mapRequest, "i1", Classification(WorkflowFamily.Analyze, 0.9), new CandidateRanking(), [], [])
+        IntentDrafter.Draft(mapRequest, "i1", Classification(WorkflowFamily.Analyze, 0.9), new CandidateRanking(), [], [], [])
             .RequestedOutputs.Should().Contain(ArtifactKind.Map);
 
         var countRequest = new GroundingRequest { Goal = "Count the incidents" };
-        IntentDrafter.Draft(countRequest, "i2", Classification(WorkflowFamily.Analyze, 0.9), new CandidateRanking(), [], [])
+        IntentDrafter.Draft(countRequest, "i2", Classification(WorkflowFamily.Analyze, 0.9), new CandidateRanking(), [], [], [])
             .RequestedOutputs.Should().Contain(ArtifactKind.Scalar);
 
         var reportRequest = new GroundingRequest { Goal = "Produce a report of incidents" };
-        IntentDrafter.Draft(reportRequest, "i3", Classification(WorkflowFamily.Analyze, 0.9), new CandidateRanking(), [], [])
+        IntentDrafter.Draft(reportRequest, "i3", Classification(WorkflowFamily.Analyze, 0.9), new CandidateRanking(), [], [], [])
             .RequestedOutputs.Should().Contain(ArtifactKind.Report);
     }
 
@@ -211,6 +217,7 @@ public sealed class IntentDrafterTests
             classification: Classification(WorkflowFamily.Analyze, 0.9),
             candidates: candidates,
             clarificationQuestionIds: ["q1", "q2"],
+            clarificationsAnswered: ["q1"],
             assumptions: ["srid=4326 (default)"]);
 
         draft.Provenance.Sources.Should().ContainSingle()
@@ -218,6 +225,8 @@ public sealed class IntentDrafterTests
         draft.Provenance.ProcessDefinitions.Should().ContainSingle()
             .Which.Should().Be("geometry.buffer");
         draft.Provenance.ClarificationsAsked.Should().BeEquivalentTo("q1", "q2");
+        draft.Provenance.ClarificationsAnswered.Should().ContainSingle()
+            .Which.Should().Be("q1");
         draft.Provenance.Assumptions.Should().ContainSingle()
             .Which.Should().Be("srid=4326 (default)");
     }
