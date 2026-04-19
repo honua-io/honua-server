@@ -24,8 +24,9 @@ namespace Honua.Server.Tests.Features.Grounding;
 /// End-to-end unit tests for <see cref="GroundingService"/>. The engine and
 /// authorization filter are stubbed so each test pins one orchestration
 /// concern — banding/capping, authorization filtering, parameter-gap probing,
-/// clarification envelope wiring, layer catalog outage handling, and error
-/// translation.
+/// clarification envelope wiring, layer catalog outage handling (unregistered
+/// catalog falls back to empty datasets; injected catalog failures surface
+/// <see cref="GroundingErrorKind.CatalogUnavailable"/>), and error translation.
 /// </summary>
 [Protocol(Protocols.Mcp)]
 public sealed class GroundingServiceTests
@@ -295,7 +296,7 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
-    public async Task GroundAsync_LayerCatalogThrows_ReturnsEmptyDatasetsWithoutPropagatingException()
+    public async Task GroundAsync_LayerCatalogListLayersThrows_ThrowsCatalogUnavailable()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
         _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
@@ -303,9 +304,27 @@ public sealed class GroundingServiceTests
 
         var service = CreateService();
 
-        var result = await service.GroundAsync(new GroundingRequest { Goal = "incidents" }, Principal);
+        var act = async () => await service.GroundAsync(new GroundingRequest { Goal = "incidents" }, Principal);
 
-        result.Candidates.Datasets.Should().BeEmpty();
+        var ex = (await act.Should().ThrowAsync<GroundingException>()).Which;
+        ex.Kind.Should().Be(GroundingErrorKind.CatalogUnavailable);
+        ex.InnerException.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_LayerCatalogListServicesThrows_ThrowsCatalogUnavailable()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<ServiceDefinition[]>>(_ => throw new InvalidOperationException("services unavailable"));
+
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(new GroundingRequest { Goal = "incidents" }, Principal);
+
+        var ex = (await act.Should().ThrowAsync<GroundingException>()).Which;
+        ex.Kind.Should().Be(GroundingErrorKind.CatalogUnavailable);
+        ex.InnerException.Should().BeOfType<InvalidOperationException>();
     }
 
     [UnitTest]

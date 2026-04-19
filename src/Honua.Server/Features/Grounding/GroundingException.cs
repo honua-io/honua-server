@@ -23,4 +23,10 @@ internal sealed class GroundingException : Exception
     {
         Kind = kind;
     }
+
+    public GroundingException(GroundingErrorKind kind, string message, Exception innerException)
+        : base(message, innerException)
+    {
+        Kind = kind;
+    }
 }

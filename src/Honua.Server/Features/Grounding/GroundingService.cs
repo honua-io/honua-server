@@ -219,6 +219,13 @@ internal sealed class GroundingService : IGroundingService
         GroundingRequest request,
         CancellationToken cancellationToken)
     {
+        // An injected ILayerCatalog is the caller's contract that a catalog
+        // exists. When it is present but the backing store fails, surface
+        // GroundingException(CatalogUnavailable) so MCP returns a retryable
+        // `unavailable` error (see docs/developer/MCP_SERVER.md error table)
+        // instead of silently returning a successful empty ranking. The
+        // no-catalog-registered fallback in RankDatasetsAsync still returns
+        // `[]` because that is a configuration shape, not an outage.
         LayerDefinition[] layerDefs;
         ServiceDefinition[] serviceDefs;
         try
@@ -233,7 +240,10 @@ internal sealed class GroundingService : IGroundingService
         catch (Exception ex)
         {
             GroundingLog.PassRejected(_logger, nameof(GroundingErrorKind.CatalogUnavailable), ex.Message);
-            return [];
+            throw new GroundingException(
+                GroundingErrorKind.CatalogUnavailable,
+                $"Layer catalog is unavailable: {ex.Message}",
+                ex);
         }
 
         var layerCandidates = layerDefs

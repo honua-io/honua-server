@@ -9,8 +9,13 @@ namespace Honua.Core.Features.Grounding.Abstractions;
 /// <summary>
 /// Entry point for the grounding + intent-drafting capability. Consumed by the
 /// <c>honua_ground_candidates</c> and <c>honua_clarify_intent</c> MCP tools.
-/// Implementations must be deterministic for a given engine + catalog snapshot
-/// so honua-server-734 eval fixtures stay stable across runs.
+/// Workflow-family classification, candidate ranking, and clarification
+/// emission must be deterministic for a given engine + catalog snapshot so
+/// honua-server-734 eval fixtures stay stable across runs. Initial intent-id
+/// allocation (when <see cref="GroundingRequest.IntentId"/> is omitted) is
+/// intentionally unique so independent callers never collide; supply the same
+/// <c>IntentId</c> across turns to make the full result — including the
+/// drafted intent id — stable.
 /// </summary>
 public interface IGroundingService
 {

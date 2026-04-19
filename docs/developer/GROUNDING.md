@@ -7,9 +7,14 @@ the front door for the server-owned AI operator MCP surface described in
 [MCP_SERVER.md](MCP_SERVER.md) and the canonical implementation of the
 grounding contract in [ADR-0027](../contributor/adr/0027-deterministic-intent-clarification-workflow.md).
 
-The pipeline is deterministic by default. Model-backed engines can plug in
-through the same interface without touching the service, the authorization
-graph, or the tool surface.
+The pipeline is deterministic by default: for a given engine + catalog
+snapshot the classification, ranking, and clarification envelope are pure
+functions of the request. Initial `intentId` allocation (when the caller
+omits `request.intentId`) is intentionally unique per call so independent
+callers never collide — supply the same `intentId` across turns to make
+the full result, including the drafted intent id, stable. Model-backed
+engines can plug in through the same interface without touching the service,
+the authorization graph, or the tool surface.
 
 ## Pipeline
 
@@ -163,8 +168,9 @@ is the engine the conformance harness pins against.
 - **Layer / service rankers**: name + description overlap.
 
 Every candidate carries an `Evidence` list (e.g. `title:buffer`,
-`category:analysis`) for explainability. Output is deterministic and pure
-given `(request, catalog snapshot)`.
+`category:analysis`) for explainability. Classification, ranking, and
+clarification emission are deterministic and pure given `(request, catalog
+snapshot)`; initial `intentId` allocation is intentionally unique per call.
 
 ## Pluggable engine extension point
 
