@@ -402,12 +402,13 @@ reflection). Each scenario declares:
   validated against runtime outputs yet (`expectsAppPackage` is the only one
   that currently affects stage scoping)
 
-The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, the
-`tests/Eval/scenarios/` directory under `Honua.sln`, then the directory next to
-the test binary. When `HONUA_EVAL_SCENARIO_ROOT` is set but points at a
-directory that does not exist, the loader raises `EvalScenarioException`
-instead of silently falling back to the bundled corpus so a typoed override
-cannot mask itself as a green run.
+The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, then
+the `tests/Eval/scenarios/` directory under `Honua.sln`. When
+`HONUA_EVAL_SCENARIO_ROOT` is set but points at a directory that does not
+exist, the loader raises `EvalScenarioException` instead of silently falling
+back to the bundled corpus so a typoed override cannot mask itself as a green
+run. If the loader cannot locate a scenario under either root it also raises
+`EvalScenarioException` with both search locations in the message.
 
 ### Stages and protocol parity
 

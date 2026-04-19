@@ -216,6 +216,28 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
+    /// Caller cancellation of the scenario's <see cref="CancellationToken"/> must abort
+    /// <see cref="EvalRunner.RunAsync"/> with an <see cref="OperationCanceledException"/>
+    /// rather than being swallowed into <c>Failed(grpc-cancelled)</c> stage outcomes.
+    /// gRPC surfaces caller cancellation as <c>StatusCode.Cancelled</c>, so each gRPC
+    /// stage helper must distinguish caller cancel from a server-side cancel status
+    /// and propagate the former unchanged.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task RunAsync_WhenCallerTokenIsCancelled_PropagatesCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var scenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
+
+        var act = async () => await _fixture.Runner.RunAsync(scenario, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>
     /// Enumerates every scenario id under <c>tests/Eval/scenarios/</c> so the harness
     /// suite expands automatically as the corpus grows.
     /// </summary>

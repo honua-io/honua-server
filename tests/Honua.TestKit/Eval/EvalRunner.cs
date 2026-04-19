@@ -268,6 +268,12 @@ public sealed class EvalRunner
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             }, response);
         }
+        catch (RpcException ex) when (IsCallerCancellation(ex, cancellationToken))
+        {
+            // gRPC surfaces caller cancellation as StatusCode.Cancelled. Rethrow
+            // so RunAsync aborts cleanly instead of recording a false stage failure.
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
         catch (RpcException ex)
         {
             stopwatch.Stop();
@@ -356,6 +362,10 @@ public sealed class EvalRunner
                 Status = EvalStageStatus.Passed,
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             }, response);
+        }
+        catch (RpcException ex) when (IsCallerCancellation(ex, cancellationToken))
+        {
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
         }
         catch (RpcException ex)
         {
@@ -468,6 +478,10 @@ public sealed class EvalRunner
                 Status = EvalStageStatus.Passed,
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             }, job);
+        }
+        catch (RpcException ex) when (IsCallerCancellation(ex, cancellationToken))
+        {
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
         {
@@ -749,6 +763,9 @@ public sealed class EvalRunner
         }
         return headers;
     }
+
+    private static bool IsCallerCancellation(RpcException ex, CancellationToken cancellationToken)
+        => ex.StatusCode == StatusCode.Cancelled && cancellationToken.IsCancellationRequested;
 
     private static EvalOverallStatus RollupScenarioStatus(
         IReadOnlyList<EvalStageOutcome> stages,

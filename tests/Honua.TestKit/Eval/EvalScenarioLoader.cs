@@ -8,7 +8,7 @@ namespace Honua.TestKit.Eval;
 /// <summary>
 /// AOT-safe loader that deserializes <see cref="EvalScenario"/> documents through the
 /// source-generated <see cref="EvalJsonContext"/>. Resolves scenario paths relative
-/// to the nearest <c>Honua.sln</c> or <c>tests/Eval/scenarios/</c> root.
+/// to the nearest <c>Honua.sln</c> root.
 /// </summary>
 public static class EvalScenarioLoader
 {
@@ -19,7 +19,6 @@ public static class EvalScenarioLoader
     /// <list type="number">
     ///   <item>Override path from the <c>HONUA_EVAL_SCENARIO_ROOT</c> environment variable.</item>
     ///   <item>Co-located scenarios under the solution's <c>tests/Eval/scenarios/</c> directory.</item>
-    ///   <item>Co-located scenarios next to the test binary.</item>
     /// </list>
     /// When <c>HONUA_EVAL_SCENARIO_ROOT</c> is set but the directory does not exist, the loader
     /// fails closed with <see cref="EvalScenarioException"/> rather than falling back to the
@@ -34,7 +33,8 @@ public static class EvalScenarioLoader
 
         var path = ResolveScenarioPath(scenarioId)
             ?? throw new EvalScenarioException(
-                $"Scenario '{scenarioId}' not found. Searched {ScenarioRootSegment} relative to the solution root and test binary.");
+                $"Scenario '{scenarioId}' not found. Searched {ScenarioRootSegment} under the solution root (Honua.sln). " +
+                "Set HONUA_EVAL_SCENARIO_ROOT to override, or run the tests from inside the repo tree so the loader can locate Honua.sln.");
 
         try
         {
@@ -107,17 +107,13 @@ public static class EvalScenarioLoader
         }
 
         var solutionRoot = FindAncestorContaining("Honua.sln");
-        if (solutionRoot != null)
+        if (solutionRoot == null)
         {
-            var fromSolution = Path.Combine(solutionRoot, ScenarioRootSegment.Replace('/', Path.DirectorySeparatorChar));
-            if (Directory.Exists(fromSolution))
-            {
-                return fromSolution;
-            }
+            return null;
         }
 
-        var localRoot = Path.Combine(AppContext.BaseDirectory, ScenarioRootSegment.Replace('/', Path.DirectorySeparatorChar));
-        return Directory.Exists(localRoot) ? localRoot : null;
+        var fromSolution = Path.Combine(solutionRoot, ScenarioRootSegment.Replace('/', Path.DirectorySeparatorChar));
+        return Directory.Exists(fromSolution) ? fromSolution : null;
     }
 
     private static string? FindAncestorContaining(string marker)
