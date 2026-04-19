@@ -16,6 +16,8 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
 
+    [RequiresDynamicCode("Calls PostgresDataSourceFactory.ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
+    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     public SecureConnectionDataSourceCache(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

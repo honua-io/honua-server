@@ -9,6 +9,8 @@ namespace Honua.Postgres.Features.Infrastructure;
 
 internal static class PostgresDataSourceFactory
 {
+    [RequiresDynamicCode("Calls ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
+    [RequiresUnreferencedCode("Calls ResolveConnectionLimits which binds configuration via ConfigurationBinder.Bind(Object).")]
     public static NpgsqlDataSource Create(string connectionString, IConfiguration configuration, bool schemaHeadersEnabled)
     {
         ArgumentNullException.ThrowIfNull(configuration);

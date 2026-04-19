@@ -47,6 +47,7 @@ public static partial class Extensions
     /// </summary>
     /// <param name="builder">The application builder being configured.</param>
     /// <returns>The application builder for chaining.</returns>
+    [RequiresUnreferencedCode("Calls AddAdaptiveSampling which binds configuration via Configure<TOptions>(IConfiguration).")]
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         // Adaptive sampling configuration
@@ -76,6 +77,7 @@ public static partial class Extensions
     /// </summary>
     /// <param name="builder">The application builder being configured.</param>
     /// <returns>The application builder for chaining.</returns>
+    [RequiresUnreferencedCode("Calls AddAdaptiveSampling which binds configuration via Configure<TOptions>(IConfiguration).")]
     public static IHostApplicationBuilder AddTelemetryDefaults(this IHostApplicationBuilder builder)
     {
         builder.AddAdaptiveSampling();
