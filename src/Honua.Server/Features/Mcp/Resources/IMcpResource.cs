@@ -20,6 +20,15 @@ internal interface IMcpResource
     string Family { get; }
 
     /// <summary>
+    /// Resolves the resource-family tag for counter telemetry on the specific
+    /// URI being read. Defaults to <see cref="Family"/>; multi-root handlers
+    /// override this to return a URI-specific family so dashboards preserve
+    /// per-root success/error observability instead of collapsing to a single
+    /// rolled-up tag.
+    /// </summary>
+    string ResolveFamily(string uri) => Family;
+
+    /// <summary>
     /// Concrete URI descriptors advertised via <c>resources/list</c>. Resources
     /// whose only addressable form is a template (e.g. <c>honua://jobs/{jobId}</c>)
     /// return an empty list here and publish themselves through

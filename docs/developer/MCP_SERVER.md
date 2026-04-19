@@ -441,6 +441,31 @@ grant receive a `permission_denied` error, matching the functional tools.
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
+| `honua://published-services` | `resources/list` | gated (opt-in) | Reads `IPublishedServiceStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://published-services/{serviceId}` | `resources/templates/list` | gated (opt-in) | Reads `IPublishedServiceStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind once the surface is wired. |
+| `honua://deployments` | `resources/list` | gated (opt-in) | Reads `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://deployments/{deploymentId}` | `resources/templates/list` | gated (opt-in) | Reads `IDeploymentStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind once the surface is wired. |
+| `honua://map-packages` | `resources/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://map-packages/{packageId}` | `resources/templates/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`; returns `not_found` when no currently-published deployment references the package. Packages have no standalone store; the view is derived from deployments that reference the package. |
+| `honua://app-packages` | `resources/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://app-packages/{packageId}` | `resources/templates/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`; returns `not_found` when no currently-published deployment references the package. |
+
+The promotion-surface resources are functional handlers — they do not implement
+`IStubMcpResource`, and when advertised the dispatcher tags successful reads as
+`status=ok` on `honua.mcp.resource.read`, distinct from the
+`status=not_implemented` emitted by true contract stubs such as
+`honua://workspaces/{workspaceId}` and `honua://catalog/processes`. Handler
+code, URIs, payload shapes, and authorization are fixed so agents and
+`honua-devops-29` can integrate against the wire contract. The handlers are
+not wired into the default composition today, because canonical
+`IPublishedServiceStore` and `IDeploymentStore` persistence has not shipped
+yet — wiring them against empty process-local state would advertise a URI
+surface that returns nothing useful and risks masking the gap. Hosts that have
+registered canonical persistence call `services.AddMcpPromotionSurface()`
+after `AddMcpOperatorSurface()` to register the five promotion resource
+handlers; `AddMcpPromotionSurface` does not register any fallback stores, so
+an unwired composition cannot accidentally advertise an empty promotion
+surface.
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
 map-package artifact. The wire shape is stable so clients can bind today;
@@ -481,6 +506,100 @@ second lifecycle model.
   workspace store lands.
 - `honua://catalog/processes` returns
   `{ catalogVersion, status: "not_implemented", processes: [], notImplementedReason }`.
+
+#### Promotion-surface payload notes
+
+The published-service, deployment, and package resources share provenance
+conventions, and published-service / deployment resources additionally carry
+monotonic ETags so agents can poll those surfaces for lifecycle changes
+without subscribing. A subscription surface is not in scope today; the
+audit-trail plus monotonic ETag (where exposed) is the observability contract.
+
+- **Authorization.** Every promotion-surface read goes through
+  `IGeoprocessingJobService.EnsureCallerAuthorized`, which routes to
+  `OperatorAuthorizationEvaluator`. The evaluator matches a grant's
+  `service` against the `OperatorResourceType` enum via
+  `Enum.TryParse`, so the accepted service tokens are the enum names
+  (case-insensitive, no hyphens): `PublishedService`, `Deployment`, and
+  `Package`. Published-service reads require `PublishedService` with
+  `Read`; deployment reads require `Deployment` with `Read`; map/app
+  package reads and the package list roots require `Package` with
+  `Read`. The same vocabulary and grants cover the gRPC, GPServer, and
+  MCP protocols.
+- **ETag.** Published-service and deployment reads — both the detail views
+  and the summary items returned inside `honua://published-services` /
+  `honua://deployments` list envelopes — return a weak ETag of the form
+  `W/"{updatedAtTicks:hex}-{status}"`. For deployments the timestamp is
+  the maximum of `updatedAt` and the last `transitions[*].at`, so a new
+  audit entry always advances the tag. Status is included so lifecycle
+  flips (e.g. `Active` → `Suspended`) invalidate clients even when the
+  record's timestamp clock hasn't advanced yet. Map/app package views,
+  package summary items, and the list-root envelopes themselves do not
+  carry an ETag: packages are derived from deployment reverse-lookups
+  with no canonical lifecycle timestamp of their own, and list envelopes
+  expose per-item ETags so agents poll the individual service or
+  deployment resource rather than a rolled-up digest. Full MCP
+  `notifications/resources/updated` is deferred.
+- **Provenance edges** live under `provenance` on the detail views and
+  mirror `McpHostedProvenance`: `originatingIntentId`, `resultPackageId`,
+  `publishedServiceResourceUri`, and `supersededByDeploymentResourceUri`.
+  Edges not applicable to the surface (e.g. no superseding deployment) are
+  omitted. The full hosted-deployment set reachable from a published
+  service or package is exposed on the view itself via `deploymentCount`
+  and `deploymentResourceUris` rather than a single-parent edge, since
+  there is no canonical single parent deployment.
+- **Hosted-deployment lists.** `deploymentResourceUris` on published-service
+  and package detail views is filtered to deployments whose
+  `publicationState` is `Published` — the single state the Deployment
+  lifecycle uses to mark a deployment as currently routable — and is sorted
+  by resource URI (stable ordinal order) so reads are deterministic
+  regardless of the store's reverse-lookup ordering. `deploymentCount`
+  reflects the same filtered set. Draft, Scheduled, Provisioning, and
+  RollingOut deployments are still in flight and therefore excluded;
+  Retired, Superseded, Failed, and Cancelled deployments are terminal and
+  therefore excluded. The same filter drives the list-root and detail
+  contracts so index visibility and `not_found` decisions agree.
+- **Active-only list roots.** The service and deployment list roots
+  narrow past their store-side `ListActiveAsync` semantics (which excludes
+  only decommissioned services / retired+superseded deployments) to the
+  truly live subsets — `PublishedServiceStatus.Active` and
+  `DeploymentPublicationState.Published`. Map/app package roots group over
+  the same published-deployment projection, so a package backed only by
+  Failed, Cancelled, or pre-serving deployments does not appear in the
+  index and returns `not_found` when read directly.
+- **Pagination.** List-root reads cap results at 50 items by default
+  (max 200). When the canonical store returns more items, the response
+  sets `truncated: true`; a scrolling cursor is not part of v1 — agents
+  requiring full enumeration should filter server-side via the canonical
+  publishing / deployment APIs. Items are ordinal-sorted by their
+  identifier (`serviceId`, `deploymentId`, or package id) before the cap
+  is applied so the truncated prefix is stable across calls regardless
+  of the backing store's iteration order.
+
+- `honua://published-services/{serviceId}` returns
+  `{ serviceId, resourceUri, status, sourceKind, sourceId, targetKind, endpoint?, publishedAt, lastRefreshedAt?, updatedAt, etag, artifacts, warnings, deploymentCount, deploymentResourceUris, provenance }`.
+  A service with no currently-published hosted deployments returns
+  `deploymentCount: 0` and an empty `deploymentResourceUris`; the record
+  still reads so agents can inspect suspended, refresh-failed, or
+  in-provisioning services.
+- `honua://published-services` returns
+  `{ resourceUri, count, truncated, items: [{ serviceId, resourceUri, status, targetKind, updatedAt, etag }] }`.
+- `honua://deployments/{deploymentId}` returns
+  `{ deploymentId, resourceUri, status, publicationState, rolloutState, sourceKind, sourceId, sourceResourceUri?, targetId, targetKind, hostingMode, environment?, routePrefix?, publicUrl?, runtimeHealth, createdAt, updatedAt, activatedAt?, retiredAt?, failureReason?, etag, transitions, provenance }`.
+  `transitions[*]` includes `{ from, to, at, rolloutState?, reason? }` in
+  append-only order.
+- `honua://deployments` returns
+  `{ resourceUri, count, truncated, items: [{ deploymentId, resourceUri, status, publicationState, sourceKind, targetId, updatedAt, etag }] }`.
+- `honua://map-packages/{packageId}` and
+  `honua://app-packages/{packageId}` return
+  `{ packageKind, packageId, resourceUri, deploymentCount, deploymentResourceUris, provenance }`.
+  Packages have no standalone record on the server; the read is a reverse
+  lookup against the deployment store. A package that is referenced by no
+  currently-published deployment (`publicationState = Published`) returns
+  `not_found` — Failed, Cancelled, Draft, Scheduled, Provisioning, and
+  RollingOut deployments do not satisfy the visibility contract.
+- `honua://map-packages` and `honua://app-packages` return
+  `{ resourceUri, packageKind, count, truncated, items: [{ packageId, resourceUri, deploymentCount }] }`.
 
 ### Error envelope
 

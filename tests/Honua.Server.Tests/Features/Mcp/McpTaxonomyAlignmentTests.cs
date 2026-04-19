@@ -3,7 +3,9 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.Mcp.Resources;
@@ -39,7 +41,15 @@ public sealed class McpTaxonomyAlignmentTests
         "honua://jobs/{jobId}",
         "honua://jobs/{jobId}/results",
         "honua://workspaces/{workspaceId}",
-        "honua://catalog/processes"
+        "honua://catalog/processes",
+        "honua://published-services",
+        "honua://published-services/{serviceId}",
+        "honua://deployments",
+        "honua://deployments/{deploymentId}",
+        "honua://map-packages",
+        "honua://map-packages/{packageId}",
+        "honua://app-packages",
+        "honua://app-packages/{packageId}"
     };
 
     [UnitTest]
@@ -115,7 +125,12 @@ public sealed class McpTaxonomyAlignmentTests
             McpTelemetry.ResourceFamily.Jobs,
             McpTelemetry.ResourceFamily.JobResults,
             McpTelemetry.ResourceFamily.Workspaces,
-            McpTelemetry.ResourceFamily.Catalog
+            McpTelemetry.ResourceFamily.Catalog,
+            McpTelemetry.ResourceFamily.PublishedServices,
+            McpTelemetry.ResourceFamily.Deployments,
+            McpTelemetry.ResourceFamily.MapPackages,
+            McpTelemetry.ResourceFamily.AppPackages,
+            McpTelemetry.ResourceFamily.PromotionIndex
         });
     }
 
@@ -274,12 +289,23 @@ public sealed class McpTaxonomyAlignmentTests
     private static IMcpResource[] BuildResources()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
+        var services = Substitute.For<IPublishedServiceStore>();
+        var deployments = Substitute.For<IDeploymentStore>();
         return
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
             new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
-            new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance)
+            new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance),
+            new PublishedServiceResource(
+                services, deployments, jobService,
+                NullLogger<PublishedServiceResource>.Instance),
+            new DeploymentResource(deployments, jobService, NullLogger<DeploymentResource>.Instance),
+            new MapPackageResource(deployments, jobService, NullLogger<MapPackageResource>.Instance),
+            new AppPackageResource(deployments, jobService, NullLogger<AppPackageResource>.Instance),
+            new PromotionSurfaceIndexResource(
+                services, deployments, jobService,
+                NullLogger<PromotionSurfaceIndexResource>.Instance)
         ];
     }
 }

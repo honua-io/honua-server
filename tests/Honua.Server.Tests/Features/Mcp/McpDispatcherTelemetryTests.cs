@@ -4,6 +4,10 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
+using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Deployment.Domain;
+using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.Mcp.Models;
@@ -28,6 +32,8 @@ namespace Honua.Server.Tests.Features.Mcp;
 public sealed class McpDispatcherTelemetryTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+    private readonly IPublishedServiceStore _services = Substitute.For<IPublishedServiceStore>();
+    private readonly IDeploymentStore _deployments = Substitute.For<IDeploymentStore>();
 
     [UnitTest]
     [Endpoint("POST /mcp initialize")]
@@ -169,6 +175,72 @@ public sealed class McpDispatcherTelemetryTests
         GetTagString(tags, "status").Should().Be(McpTelemetry.Status.Error);
     }
 
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task DispatchAsync_PromotionIndex_PublishedServicesRoot_EmitsPublishedServicesFamily()
+    {
+        _services.ListActiveAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<PublishedServiceRecord>());
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Deployment>());
+
+        var samples = new List<MeasurementSample>();
+        using var listener = CreateListener(
+            "honua.mcp.resource.read",
+            tags => GetTagString(tags, "resource_family") == McpTelemetry.ResourceFamily.PublishedServices,
+            samples);
+
+        var surface = BuildPromotionSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"ps-1\""),
+            Method = "resources/read",
+            Params = McpTestFactory.ParseJson("""{"uri":"honua://published-services"}""")
+        };
+
+        await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(), request, CancellationToken.None);
+
+        samples.Should().ContainSingle();
+        var tags = samples[0].Tags;
+        GetTagString(tags, "resource_family").Should().Be(McpTelemetry.ResourceFamily.PublishedServices);
+        GetTagString(tags, "status").Should().Be(McpTelemetry.Status.Ok);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://deployments")]
+    public async Task DispatchAsync_PromotionIndex_DeploymentsRoot_EmitsDeploymentsFamily()
+    {
+        _services.ListActiveAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<PublishedServiceRecord>());
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Deployment>());
+
+        var samples = new List<MeasurementSample>();
+        using var listener = CreateListener(
+            "honua.mcp.resource.read",
+            tags => GetTagString(tags, "resource_family") == McpTelemetry.ResourceFamily.Deployments,
+            samples);
+
+        var surface = BuildPromotionSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"dep-1\""),
+            Method = "resources/read",
+            Params = McpTestFactory.ParseJson("""{"uri":"honua://deployments"}""")
+        };
+
+        await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(), request, CancellationToken.None);
+
+        samples.Should().ContainSingle();
+        var tags = samples[0].Tags;
+        GetTagString(tags, "resource_family").Should().Be(McpTelemetry.ResourceFamily.Deployments);
+        GetTagString(tags, "status").Should().Be(McpTelemetry.Status.Ok);
+    }
+
     /// <summary>
     /// Subscribes a <see cref="MeterListener"/> to <paramref name="instrumentName"/>
     /// that appends matching measurements to <paramref name="samples"/>. Callers
@@ -234,6 +306,18 @@ public sealed class McpDispatcherTelemetryTests
             new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance),
             new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance)
+        };
+        return new McpOperatorSurface(tools, resources, NullLogger<McpOperatorSurface>.Instance);
+    }
+
+    private McpOperatorSurface BuildPromotionSurface()
+    {
+        var tools = Array.Empty<IMcpTool>();
+        var resources = new IMcpResource[]
+        {
+            new PromotionSurfaceIndexResource(
+                _services, _deployments, _jobService,
+                NullLogger<PromotionSurfaceIndexResource>.Instance)
         };
         return new McpOperatorSurface(tools, resources, NullLogger<McpOperatorSurface>.Instance);
     }

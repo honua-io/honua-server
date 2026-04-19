@@ -369,6 +369,10 @@ internal sealed class McpOperatorSurface
                 McpErrorMapper.ResourceNotFound($"Unknown MCP resource '{parameters.Uri}'."));
         }
 
+        // Resolve the family from the requested URI so multi-root handlers
+        // (e.g. the promotion-surface index) report per-root families rather
+        // than collapsing into one rolled-up tag on the counter.
+        var resourceFamily = handler.ResolveFamily(parameters.Uri);
         try
         {
             var result = await handler
@@ -382,7 +386,7 @@ internal sealed class McpOperatorSurface
                 : McpTelemetry.Status.Ok;
             McpTelemetry.ResourceReadCount.Add(
                 1,
-                new KeyValuePair<string, object?>("resource_family", handler.Family),
+                new KeyValuePair<string, object?>("resource_family", resourceFamily),
                 new KeyValuePair<string, object?>("status", completionStatus));
             return SuccessResponse(request.Id, result, McpJsonContext.Default.McpResourcesReadResult);
         }
@@ -391,7 +395,7 @@ internal sealed class McpOperatorSurface
             var error = McpErrorMapper.Map(ex);
             McpTelemetry.ResourceReadCount.Add(
                 1,
-                new KeyValuePair<string, object?>("resource_family", handler.Family),
+                new KeyValuePair<string, object?>("resource_family", resourceFamily),
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
             return ErrorResponse(request.Id, error);
         }

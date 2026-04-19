@@ -77,6 +77,11 @@ internal static class McpTelemetry
         public const string JobResults = "job-results";
         public const string Workspaces = "workspaces";
         public const string Catalog = "catalog";
+        public const string PublishedServices = "published-services";
+        public const string Deployments = "deployments";
+        public const string MapPackages = "map-packages";
+        public const string AppPackages = "app-packages";
+        public const string PromotionIndex = "promotion-index";
         public const string Unknown = "unknown";
     }
 

@@ -35,4 +35,16 @@ internal static partial class McpLog
 
     [LoggerMessage(8158, LogLevel.Warning, "MCP request parse failed: Error={Error}")]
     public static partial void RequestParseFailed(ILogger logger, string error);
+
+    [LoggerMessage(8159, LogLevel.Debug, "MCP published-service read: ServiceId={ServiceId}, Status={Status}")]
+    public static partial void PublishedServiceRead(ILogger logger, string serviceId, string status);
+
+    [LoggerMessage(8160, LogLevel.Debug, "MCP deployment read: DeploymentId={DeploymentId}, Status={Status}")]
+    public static partial void DeploymentRead(ILogger logger, string deploymentId, string status);
+
+    [LoggerMessage(8161, LogLevel.Debug, "MCP package read: PackageKind={PackageKind}, PackageId={PackageId}, DeploymentCount={DeploymentCount}")]
+    public static partial void PackageRead(ILogger logger, string packageKind, string packageId, int deploymentCount);
+
+    [LoggerMessage(8162, LogLevel.Debug, "MCP promotion list read: ResourceFamily={ResourceFamily}, Count={Count}, Truncated={Truncated}")]
+    public static partial void PromotionListRead(ILogger logger, string resourceFamily, int count, bool truncated);
 }
