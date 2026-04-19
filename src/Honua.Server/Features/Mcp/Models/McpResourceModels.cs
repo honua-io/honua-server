@@ -46,10 +46,16 @@ internal sealed class McpJobResource
 }
 
 /// <summary>
-/// Response body for reads of <c>honua://jobs/{jobId}/results</c>.
+/// Response body for reads of <c>honua://jobs/{jobId}/results</c>. The resource
+/// currently returns a <c>not_implemented</c> stub envelope until result
+/// storage ships with the execution engine; the real package fields are
+/// reserved so clients can bind the wire today.
 /// </summary>
 internal sealed class McpJobResultsResource
 {
+    [JsonPropertyName("jobId")]
+    public string JobId { get; set; } = string.Empty;
+
     [JsonPropertyName("resultPackageId")]
     public string ResultPackageId { get; set; } = string.Empty;
 
@@ -79,6 +85,9 @@ internal sealed class McpJobResultsResource
 
     [JsonPropertyName("errors")]
     public IReadOnlyList<McpGeoprocessingError> Errors { get; set; } = [];
+
+    [JsonPropertyName("notImplementedReason")]
+    public string? NotImplementedReason { get; set; }
 }
 
 internal sealed class McpResultSummary

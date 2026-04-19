@@ -918,7 +918,7 @@ implementations are registered and `EnableAutomaticCleanup` is true (default).
 MCP is the interaction and orchestration plane. The server-side implementation
 of the planning, execution, and lifecycle families lives in
 `src/Honua.Server/Features/Mcp/` and is documented in
-[MCP Server — Operator Surface](MCP_SERVER.md#operator-surface). Tool names on
+[MCP Server — Operator Surface](../../developer/MCP_SERVER.md#operator-surface). Tool names on
 the wire carry a `honua_` prefix (for example, `honua_validate_plan`) so they
 namespace cleanly alongside other MCP servers in a client registry; the
 taxonomy names below refer to the contract families themselves.
@@ -935,7 +935,7 @@ taxonomy names below refer to the contract families themselves.
 - saved result package resources
 
 Server-implemented resource URIs are listed in
-[MCP Server — Resources](MCP_SERVER.md#resources-1).
+[MCP Server — Resources](../../developer/MCP_SERVER.md#resources-1).
 
 ### Tools
 
@@ -954,7 +954,7 @@ Server-implemented resource URIs are listed in
 - `publish_result`
 
 Server-implemented tool names, statuses, and the domain delegates they bind
-to are listed in [MCP Server — Tools](MCP_SERVER.md#tools-1). Stub tools
+to are listed in [MCP Server — Tools](../../developer/MCP_SERVER.md#tools-1). Stub tools
 return a structured `not_implemented` envelope with `blockedBy` pointers so
 clients can bind the wire today.
 

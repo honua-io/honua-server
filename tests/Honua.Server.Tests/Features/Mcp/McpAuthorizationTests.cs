@@ -150,13 +150,12 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
     public async Task JobResultsResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+        var resource = new JobResultsResource(NullLogger<JobResultsResource>.Instance);
 
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AnonymousHttpContext(), "honua://jobs/job-1/results", CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
-        await _jobService.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
     }
 
     [UnitTest]

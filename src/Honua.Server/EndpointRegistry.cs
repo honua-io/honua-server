@@ -560,6 +560,9 @@ public static class EndpointRegistry
 
         // Hosted samples
         new("GET", "/samples/stac-ops"),
+
+        // MCP operator surface (#728) — JSON-RPC dispatch over a single route.
+        new("POST", "/mcp"),
     ];
 }
 

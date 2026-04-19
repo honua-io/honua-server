@@ -73,81 +73,31 @@ public sealed class McpResourceSerializationTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
-    public async Task JobResultsResource_SerializesPackageIncludingMapPackageAndProvenance()
+    public async Task JobResultsResource_ReturnsNotImplementedEnvelopeWithJobId()
     {
-        var package = new AnalysisResultPackage
-        {
-            ResultPackageId = "pkg-1",
-            Status = GeoprocessingWorkflowStatus.Completed,
-            Summary = new ResultSummary { Title = "Buffer result", Description = "200m buffer" },
-            MapPackageId = "map-pkg-42",
-            AppPackageId = "app-pkg-42",
-            Assumptions = new[] { "Input CRS assumed EPSG:3857" },
-            Artifacts = new[]
-            {
-                new ArtifactRef
-                {
-                    ArtifactId = "artifact-1",
-                    Kind = ArtifactKind.FeatureLayer,
-                    Label = "Buffered parcels",
-                    Uri = "s3://outputs/buffered.geojson",
-                    ContentType = "application/geo+json",
-                    Metadata = new Dictionary<string, string> { ["featureCount"] = "42" }
-                }
-            },
-            WorkspaceRefs = new[]
-            {
-                new WorkspaceRef
-                {
-                    WorkspaceId = "ws-1",
-                    Kind = WorkspaceKind.Scratch,
-                    Label = "scratch",
-                    Uri = "s3://scratch/ws-1",
-                    ExpiresAt = DateTimeOffset.Parse("2026-04-19T00:00:00Z", CultureInfo.InvariantCulture)
-                }
-            },
-            Provenance = new ProvenanceRecord
-            {
-                Sources = new[]
-                {
-                    new ProvenanceSource { SourceId = "parcels", Version = "2026.04" }
-                },
-                ProcessDefinitions = new[] { "buffer" },
-                ExecutedAt = DateTimeOffset.Parse("2026-04-18T12:30:00Z", CultureInfo.InvariantCulture),
-                GeneratedArtifactIds = new[] { "artifact-1" }
-            },
-            Errors = []
-        };
+        var resource = new JobResultsResource(NullLogger<JobResultsResource>.Instance);
 
-        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .Returns(package);
-
-        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
             "honua://jobs/job-xyz/results",
             CancellationToken.None);
 
-        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("resultPackageId").GetString().Should().Be("pkg-1");
-        body.GetProperty("status").GetString().Should().Be("Completed");
-        body.GetProperty("mapPackageId").GetString().Should().Be("map-pkg-42");
-        body.GetProperty("appPackageId").GetString().Should().Be("app-pkg-42");
-        body.GetProperty("summary").GetProperty("title").GetString().Should().Be("Buffer result");
+        result.Contents.Should().HaveCount(1);
+        var content = result.Contents[0];
+        content.Uri.Should().Be("honua://jobs/job-xyz/results");
+        content.MimeType.Should().Be("application/json");
 
-        var artifacts = body.GetProperty("artifacts");
-        artifacts.GetArrayLength().Should().Be(1);
-        artifacts[0].GetProperty("artifactId").GetString().Should().Be("artifact-1");
-        artifacts[0].GetProperty("kind").GetString().Should().Be("FeatureLayer");
-        artifacts[0].GetProperty("contentType").GetString().Should().Be("application/geo+json");
+        var body = McpTestFactory.ParseJson(content.Text);
+        body.GetProperty("jobId").GetString().Should().Be("job-xyz");
+        body.GetProperty("status").GetString().Should().Be("not_implemented");
+        body.GetProperty("notImplementedReason").GetString().Should().NotBeNullOrEmpty();
 
-        var workspaces = body.GetProperty("workspaceRefs");
-        workspaces[0].GetProperty("workspaceId").GetString().Should().Be("ws-1");
-        workspaces[0].GetProperty("resourceUri").GetString().Should().Be("honua://workspaces/ws-1");
-
-        var provenance = body.GetProperty("provenance");
-        provenance.GetProperty("processDefinitions")[0].GetString().Should().Be("buffer");
-        provenance.GetProperty("sources")[0].GetProperty("sourceId").GetString().Should().Be("parcels");
+        // Package fields are reserved on the wire until result storage ships.
+        body.GetProperty("resultPackageId").GetString().Should().BeEmpty();
+        body.GetProperty("artifacts").GetArrayLength().Should().Be(0);
+        body.GetProperty("workspaceRefs").GetArrayLength().Should().Be(0);
+        // mapPackageId is nullable; the context omits null properties.
+        body.TryGetProperty("mapPackageId", out _).Should().BeFalse();
     }
 
     [UnitTest]
@@ -201,7 +151,7 @@ public sealed class McpResourceSerializationTests
     [Endpoint("POST /mcp resources/read")]
     public void JobResultsResource_CanHandle_MatchesOnlyJobResultsUris()
     {
-        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+        var resource = new JobResultsResource(NullLogger<JobResultsResource>.Instance);
 
         resource.CanHandle("honua://jobs/job-1/results").Should().BeTrue();
         resource.CanHandle("honua://jobs/job-1").Should().BeFalse();

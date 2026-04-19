@@ -137,13 +137,16 @@ service lands.
 | URI template | Status | Description |
 |--------------|--------|-------------|
 | `honua://jobs/{jobId}` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
-| `honua://jobs/{jobId}/results` | functional | `AnalysisResultPackage` including artifacts, workspaces, provenance, errors, and `mapPackageId` |
+| `honua://jobs/{jobId}/results` | contract stub | Reserved URI and `AnalysisResultPackage` envelope. Returns `status: "not_implemented"` with the requested `jobId` until the execution engine's result store ships. |
 | `honua://workspaces/{workspaceId}` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | contract stub | Stable URI pending catalog service |
 
-`honua://jobs/{jobId}/results` is the canonical output channel for the
-map-package artifact — `mapPackageId` flows through directly from
-`AnalysisResultPackage` when a run composes a map.
+`honua://jobs/{jobId}/results` is the reserved output channel for the
+map-package artifact. The wire shape is stable so clients can bind today;
+`mapPackageId`, `artifacts`, `workspaceRefs`, and `provenance` will flow
+through from `AnalysisResultPackage` once result storage lands alongside
+the execution engine. Until then, the resource returns a
+`not_implemented` envelope that echoes the requested `jobId`.
 
 ### Error envelope
 
