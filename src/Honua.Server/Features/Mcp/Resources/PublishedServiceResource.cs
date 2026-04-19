@@ -90,6 +90,7 @@ internal sealed class PublishedServiceResource : IMcpResource
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.PublishedService, serviceId, cancellationToken)
             .ConfigureAwait(false);
+        deployments = PackageViewFactory.FilterActive(deployments);
 
         McpLog.PublishedServiceRead(_logger, serviceId, record.Status.ToString());
 
@@ -102,9 +103,13 @@ internal sealed class PublishedServiceResource : IMcpResource
         PublishIntent? intent,
         IReadOnlyList<Deployment> deployments)
     {
-        var parentDeployment = deployments.Count > 0
-            ? McpResourceUris.DeploymentUri(deployments[0].DeploymentId)
-            : null;
+        // Sort by deployment id so multi-deployment services produce stable output
+        // regardless of the store's reverse-lookup ordering. A published service has no
+        // canonical single parent deployment; DeploymentResourceUris is the full set.
+        var deploymentUris = deployments
+            .Select(deployment => McpResourceUris.DeploymentUri(deployment.DeploymentId))
+            .OrderBy(uri => uri, StringComparer.Ordinal)
+            .ToList();
 
         return new McpPublishedServiceView
         {
@@ -131,12 +136,13 @@ internal sealed class PublishedServiceResource : IMcpResource
                 })
                 .ToList(),
             Warnings = record.Warnings,
+            DeploymentCount = deploymentUris.Count,
+            DeploymentResourceUris = deploymentUris,
             Provenance = new McpHostedProvenance
             {
                 OriginatingIntentId = record.IntentId,
                 ResultPackageId = intent?.SourceKind == PublishSourceKind.ResultPackage ? intent.SourceId : null,
-                PublishedServiceResourceUri = McpResourceUris.PublishedServiceUri(record.ServiceId),
-                ParentDeploymentResourceUri = parentDeployment
+                PublishedServiceResourceUri = McpResourceUris.PublishedServiceUri(record.ServiceId)
             }
         };
     }

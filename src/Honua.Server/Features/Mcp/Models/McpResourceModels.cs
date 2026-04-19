@@ -274,9 +274,6 @@ internal sealed class McpHostedProvenance
     [JsonPropertyName("publishedServiceResourceUri")]
     public string? PublishedServiceResourceUri { get; set; }
 
-    [JsonPropertyName("parentDeploymentResourceUri")]
-    public string? ParentDeploymentResourceUri { get; set; }
-
     [JsonPropertyName("supersededByDeploymentResourceUri")]
     public string? SupersededByDeploymentResourceUri { get; set; }
 }
@@ -324,6 +321,12 @@ internal sealed class McpPublishedServiceView
 
     [JsonPropertyName("warnings")]
     public IReadOnlyList<string> Warnings { get; set; } = [];
+
+    [JsonPropertyName("deploymentCount")]
+    public int DeploymentCount { get; set; }
+
+    [JsonPropertyName("deploymentResourceUris")]
+    public IReadOnlyList<string> DeploymentResourceUris { get; set; } = [];
 
     [JsonPropertyName("provenance")]
     public McpHostedProvenance Provenance { get; set; } = new();

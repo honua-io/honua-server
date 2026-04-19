@@ -66,11 +66,71 @@ public sealed class McpPromotionResourceTests
         body.GetProperty("status").GetString().Should().Be("Active");
         body.GetProperty("targetKind").GetString().Should().Be("FeatureService");
         body.GetProperty("etag").GetString().Should().StartWith("W/\"");
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
+        body.GetProperty("deploymentResourceUris")[0].GetString()
+            .Should().Be("honua://deployments/dep-1");
         var provenance = body.GetProperty("provenance");
         provenance.GetProperty("originatingIntentId").GetString().Should().Be("intent-1");
         provenance.GetProperty("resultPackageId").GetString().Should().Be("pkg-7");
-        provenance.GetProperty("parentDeploymentResourceUri").GetString()
-            .Should().Be("honua://deployments/dep-1");
+        provenance.TryGetProperty("parentDeploymentResourceUri", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task PublishedServiceResource_Read_ExposesAllActiveDeploymentsSortedStably()
+    {
+        var service = BuildPublishedService("svc-multi");
+        _services.GetAsync("svc-multi", Arg.Any<CancellationToken>()).Returns(service);
+        _intents.GetAsync("intent-1", Arg.Any<CancellationToken>())
+            .Returns(BuildIntent("intent-1"));
+        // Return in reverse alphabetical order to verify sort is applied.
+        _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-multi", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-z", DeploymentSource.FromPublishedService("svc-multi")),
+                BuildDeployment("dep-a", DeploymentSource.FromPublishedService("svc-multi"))
+            ]);
+
+        var resource = BuildPublishedServiceResource();
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services/svc-multi",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(2);
+        var uris = body.GetProperty("deploymentResourceUris").EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        uris.Should().Equal("honua://deployments/dep-a", "honua://deployments/dep-z");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task PublishedServiceResource_Read_ExcludesRetiredAndSupersededDeployments()
+    {
+        var service = BuildPublishedService("svc-mix");
+        _services.GetAsync("svc-mix", Arg.Any<CancellationToken>()).Returns(service);
+        _intents.GetAsync("intent-1", Arg.Any<CancellationToken>())
+            .Returns(BuildIntent("intent-1"));
+        _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-mix", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                BuildDeployment("dep-retired", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Retired),
+                BuildDeployment("dep-active", DeploymentSource.FromPublishedService("svc-mix")),
+                BuildDeployment("dep-superseded", DeploymentSource.FromPublishedService("svc-mix"), status: DeploymentStatus.Superseded)
+            ]);
+
+        var resource = BuildPublishedServiceResource();
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services/svc-mix",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("deploymentCount").GetInt32().Should().Be(1);
+        body.GetProperty("deploymentResourceUris")[0].GetString()
+            .Should().Be("honua://deployments/dep-active");
     }
 
     [UnitTest]
@@ -200,11 +260,13 @@ public sealed class McpPromotionResourceTests
     [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
     public async Task MapPackageResource_Read_ReverseLooksUpDeployments()
     {
+        // Return in reverse order to verify the view sorts deployment uris stably
+        // regardless of store reverse-lookup ordering.
         _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map-55", Arg.Any<CancellationToken>())
             .Returns(
             [
-                BuildDeployment("dep-a", DeploymentSource.FromMapPackage("map-55")),
-                BuildDeployment("dep-b", DeploymentSource.FromMapPackage("map-55"))
+                BuildDeployment("dep-b", DeploymentSource.FromMapPackage("map-55")),
+                BuildDeployment("dep-a", DeploymentSource.FromMapPackage("map-55"))
             ]);
 
         var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
@@ -217,9 +279,12 @@ public sealed class McpPromotionResourceTests
         body.GetProperty("packageKind").GetString().Should().Be("map_package");
         body.GetProperty("packageId").GetString().Should().Be("map-55");
         body.GetProperty("deploymentCount").GetInt32().Should().Be(2);
-        body.GetProperty("deploymentResourceUris").GetArrayLength().Should().Be(2);
-        body.GetProperty("provenance").GetProperty("parentDeploymentResourceUri").GetString()
-            .Should().Be("honua://deployments/dep-a");
+        var uris = body.GetProperty("deploymentResourceUris").EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        uris.Should().Equal("honua://deployments/dep-a", "honua://deployments/dep-b");
+        body.GetProperty("provenance").TryGetProperty("parentDeploymentResourceUri", out _)
+            .Should().BeFalse();
     }
 
     [UnitTest]

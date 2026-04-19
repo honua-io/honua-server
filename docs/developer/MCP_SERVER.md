@@ -517,9 +517,17 @@ audit-trail plus monotonic ETag is the observability contract.
   `notifications/resources/updated` is deferred.
 - **Provenance edges** live under `provenance` on the detail views and
   mirror `McpHostedProvenance`: `originatingIntentId`, `resultPackageId`,
-  `publishedServiceResourceUri`, `parentDeploymentResourceUri`, and
-  `supersededByDeploymentResourceUri`. Edges not applicable to the surface
-  (e.g. no superseding deployment) are omitted.
+  `publishedServiceResourceUri`, and `supersededByDeploymentResourceUri`.
+  Edges not applicable to the surface (e.g. no superseding deployment) are
+  omitted. The full hosted-deployment set reachable from a published
+  service or package is exposed on the view itself via `deploymentCount`
+  and `deploymentResourceUris` rather than a single-parent edge, since
+  there is no canonical single parent deployment.
+- **Hosted-deployment lists.** `deploymentResourceUris` on published-service
+  and package detail views is filtered to deployments whose status is not
+  `Retired` or `Superseded` and is sorted by resource URI (stable ordinal
+  order) so reads are deterministic regardless of the store's reverse-lookup
+  ordering. `deploymentCount` reflects the same filtered set.
 - **Pagination.** List-root reads cap results at 50 items by default
   (max 200). When the canonical store returns more items, the response
   sets `truncated: true`; a scrolling cursor is not part of v1 — agents
@@ -527,7 +535,10 @@ audit-trail plus monotonic ETag is the observability contract.
   publishing / deployment APIs.
 
 - `honua://published-services/{serviceId}` returns
-  `{ serviceId, resourceUri, status, sourceKind, sourceId, targetKind, endpoint?, publishedAt, lastRefreshedAt?, updatedAt, etag, artifacts, warnings, provenance }`.
+  `{ serviceId, resourceUri, status, sourceKind, sourceId, targetKind, endpoint?, publishedAt, lastRefreshedAt?, updatedAt, etag, artifacts, warnings, deploymentCount, deploymentResourceUris, provenance }`.
+  A service with no active hosted deployments returns `deploymentCount: 0`
+  and an empty `deploymentResourceUris`; the record still reads so agents
+  can inspect suspended or draft services.
 - `honua://published-services` returns
   `{ resourceUri, count, truncated, items: [{ serviceId, resourceUri, status, targetKind, updatedAt, etag }] }`.
 - `honua://deployments/{deploymentId}` returns

@@ -60,13 +60,13 @@ internal static class PackageViewFactory
         string resourceUri,
         IReadOnlyList<Deployment> deployments)
     {
+        // Sort by deployment id so list-root and detail reads produce stable output
+        // regardless of the store's reverse-lookup ordering. Packages have no canonical
+        // parent deployment, so DeploymentResourceUris is the canonical access path.
         var deploymentUris = deployments
             .Select(deployment => McpResourceUris.DeploymentUri(deployment.DeploymentId))
+            .OrderBy(uri => uri, StringComparer.Ordinal)
             .ToList();
-
-        var parentDeployment = deployments.Count > 0
-            ? McpResourceUris.DeploymentUri(deployments[0].DeploymentId)
-            : null;
 
         return new McpPackageView
         {
@@ -75,10 +75,7 @@ internal static class PackageViewFactory
             ResourceUri = resourceUri,
             DeploymentCount = deployments.Count,
             DeploymentResourceUris = deploymentUris,
-            Provenance = new McpHostedProvenance
-            {
-                ParentDeploymentResourceUri = parentDeployment
-            }
+            Provenance = new McpHostedProvenance()
         };
     }
 }
