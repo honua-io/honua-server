@@ -5,7 +5,7 @@
   "fixtureProfile": "core",
   "intent": {
     "intentId": "intent-publish-refresh-roads",
-    "goal": "Re-run the roads layer projection and republish the canonical layer.",
+    "goal": "Re-simplify the roads layer and republish the canonical layer.",
     "mode": "publish",
     "requestedOutputs": ["FeatureLayer"],
     "constraints": {
@@ -26,17 +26,17 @@
         "dependsOn": []
       },
       {
-        "stepId": "reproject-roads",
+        "stepId": "simplify-roads",
         "kind": "Geoprocess",
-        "processId": "honua.geoprocess.project",
-        "inputs": { "targetSrid": "3857" },
+        "processId": "generalization.simplify-layer",
+        "inputs": { "layerId": "0", "tolerance": "0.001" },
         "dependsOn": ["query-roads"]
       },
       {
         "stepId": "export-roads",
         "kind": "Export",
         "inputs": { "format": "geojson", "layer": "roads" },
-        "dependsOn": ["reproject-roads"]
+        "dependsOn": ["simplify-roads"]
       }
     ],
     "outputs": ["FeatureLayer"]

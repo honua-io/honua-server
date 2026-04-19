@@ -498,6 +498,16 @@ The evaluation suite should measure:
 - provenance completeness
 - failure recovery behavior
 
+Phase 1 of this strategy is implemented by the end-to-end operator eval harness
+in `tests/Honua.TestKit/Eval/` (see
+[TestKit → Operator Eval Harness](testkit.md#end-to-end-operator-eval-harness)).
+Scenarios declared under `tests/Eval/scenarios/` drive the canonical runtime
+and every protocol adapter through the deterministic stage model and emit a
+versioned `eval-report.json` that `honua-devops-31` consumes as the canonical
+server-side integration gate. Execution-, publish-, package-, and deploy-dependent
+assertions surface as `Skipped(reason)` rows until #730 / #731 / #732 land, so
+the report stays honest about what is proven end-to-end today.
+
 ## Non-Goals
 
 This document does not define:

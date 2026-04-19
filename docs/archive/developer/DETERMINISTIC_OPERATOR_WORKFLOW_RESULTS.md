@@ -298,6 +298,19 @@ Claude and Codex evaluations should score:
 - whether a usable `MapPackage` was produced
 - whether provenance recorded assumptions and clarifications correctly
 
+The deterministic assertions behind these scores are exercised by the
+end-to-end operator eval harness (`tests/Honua.TestKit/Eval/` plus scenarios
+in `tests/Eval/scenarios/`). Each scenario captures `AnalysisIntent`, compiles
+to an `AnalysisPlan`, validates and dry-runs the plan across gRPC / OGC API
+Processes / GeoServices GPServer, and asserts the expected outcome envelope
+(`isExecutable`, `requiresApproval`, `estimatedArtifactKinds`,
+`terminalWorkflowStatus`, `expectsMapPackage`, `expectsAppPackage`). Results
+are emitted as a versioned `eval-report.json`
+(`reportSchemaVersion = "1"`) so downstream automation can treat the harness
+as a stable gate. See the
+[TestKit Operator Eval Harness](../contributor/testkit.md#end-to-end-operator-eval-harness)
+section for scenario authoring and report contract details.
+
 ## Progress Tracking
 
 Geoprocessing workflows report progress through the unified operation progress

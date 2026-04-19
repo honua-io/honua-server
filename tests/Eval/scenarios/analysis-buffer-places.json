@@ -29,8 +29,8 @@
       {
         "stepId": "buffer-places",
         "kind": "Geoprocess",
-        "processId": "honua.geoprocess.buffer",
-        "inputs": { "distance": "500", "units": "meters" },
+        "processId": "analytics.buffer-aggregate",
+        "inputs": { "layerId": "0", "distance": "500", "unit": "meters" },
         "dependsOn": ["query-places"]
       },
       {

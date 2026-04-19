@@ -364,6 +364,99 @@ dotnet test --filter "Protocol=Health"
 dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
 ```
 
+## End-to-End Operator Eval Harness
+
+The `Honua.TestKit.Eval` namespace hosts the end-to-end operator-workflow eval
+harness. It drives the canonical `HonuaProcessService` runtime and both
+compatibility adapters (gRPC, OGC API Processes, GeoServices GPServer) through a
+single fixture-backed scenario suite and emits a versioned report that
+`honua-devops-31` treats as the canonical server-side integration gate.
+
+### Authoring scenarios
+
+Scenarios are JSON documents under `tests/Eval/scenarios/*.json`, deserialized
+through the source-generated `EvalJsonContext` (AOT-safe, no runtime
+reflection). Each scenario declares:
+
+- `id`, `name`, `mode` (`Analysis` | `Publish` | `Package` | `Deploy`)
+- `fixtureProfile` (shared-corpus key)
+- `intent` — shape of `AnalysisIntent` (goal, inputs, constraints, requested
+  outputs, `assumptionPolicy`)
+- `precompiledPlan` — shape of `AnalysisPlan` (steps, DAG edges, declared
+  outputs) used in Phase 1 until the compile seam from #529/#723 lands
+- `expectedOutcome` — asserted `isExecutable`, `requiresApproval`,
+  `estimatedArtifactKinds`, `terminalWorkflowStatus`, and
+  `expectsMapPackage` / `expectsAppPackage` flags
+
+The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, the
+`tests/Eval/scenarios/` directory under `Honua.sln`, then the directory next to
+the test binary.
+
+### Stages and protocol parity
+
+`EvalRunner` executes each scenario through a fixed stage sequence:
+`CaptureIntent` → `CompilePlan` → `ValidatePlan` → `DryRun` → `ProtocolParity`
+→ `SubmitPlanJob` → `PollJob` → `GetJobResults` → `ComposeMapPackage` →
+`ComposeAppPackage` → `PromoteDeployment`. Stages whose upstream capability is
+not yet wired (execution engine, publish surface, package composition, deploy
+promotion) report `Skipped` with a reason rather than failing — only `Failed`
+stages break the gate today.
+
+`ProtocolParity` cross-checks plan acceptance across gRPC, OGC API Processes,
+and GeoServices GPServer so divergence between adapters surfaces as a single
+scenario-level diff instead of three unrelated test failures. Spans are emitted
+from the `Honua.Tests.Eval` `ActivitySource` (one span per scenario, one per
+stage).
+
+### Fixture corpus
+
+Fixture resolution is routed through `IEvalFixtureSource`:
+
+- `SharedCorpusFixtureSource` — binds to the geospatial-mcp corpus located by
+  `HONUA_EVAL_CORPUS_PATH`; `HONUA_EVAL_CORPUS_VERSION` is surfaced in the
+  report envelope.
+- `LocalSeedFixtureSource` — falls back to the in-repo `tests/seed/seed.yaml`
+  baseline (`corpusVersion: seed.yaml@v1`) so the harness runs locally without
+  external mounts.
+
+### Report artifact
+
+Each run emits `tests/TestResults/eval-report.json` (override with
+`HONUA_EVAL_REPORT_DIR`) serialized through `EvalJsonContext`. The document is
+pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
+includes:
+
+- `environment` — `corpusSource`, `corpusVersion`, `corpusPath`, `redisAvailable`
+- `scenarios[]` — id, mode, overall `status`
+  (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
+  probes, elapsed ms
+- `rollup` — totals, `firstFailure` pointer, `totalElapsedMs`
+
+`honua-devops-31` pins on the schema version and fails closed on mismatch.
+
+### Running the harness
+
+The harness runs in the **.NET Tests (Server - Operator Eval Harness)** CI
+lane (`ci.yml`), which filters on
+`Features.Eval|Features.Geoprocessing|Features.OgcProcesses|Features.Grpc` and
+uploads the report as the `operator-eval-report` workflow artifact.
+
+Locally:
+
+```bash
+# Run the full operator eval harness lane
+dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+  --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval"
+
+# Filter by the OperatorEval protocol trait
+dotnet test --filter "Protocol=OperatorEval"
+
+# Point at the shared corpus when available
+HONUA_EVAL_CORPUS_PATH=/path/to/geospatial-mcp \
+HONUA_EVAL_CORPUS_VERSION=core@0001 \
+  dotnet test --filter "Protocol=OperatorEval"
+```
+
 ## Environment Requirements
 
 - Docker (for Testcontainers)
