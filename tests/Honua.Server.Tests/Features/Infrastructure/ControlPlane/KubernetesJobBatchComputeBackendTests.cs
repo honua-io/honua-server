@@ -331,8 +331,11 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
-    public async Task CancelAsync_MissingJob_IsTreatedAsCancelled()
+    public async Task CancelAsync_MissingNonterminalJob_MapsToFailedLikeObserve()
     {
+        // A missing provider Job must use the same terminal mapping as ObserveAsync:
+        // a non-terminal local state becomes Failed, not Cancelled, otherwise the
+        // durable record silently reclassifies lost remote work as user-cancelled.
         var client = Substitute.For<IKubernetesJobClient>();
         client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
@@ -344,8 +347,49 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         var observation = await backend.CancelAsync(job);
 
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("no longer present");
+    }
+
+    [Fact]
+    public async Task CancelAsync_MissingJobAfterSucceeded_PreservesSucceeded()
+    {
+        // A cancel request arriving after the provider Job already succeeded and was
+        // cleaned up via ttlSecondsAfterFinished must not overwrite the terminal
+        // success; the missing-job mapping preserves terminal local state.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
+        client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.NotFound });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancel-after-success", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Succeeded);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        observation.Message.Should().Contain("cleaned up");
+    }
+
+    [Fact]
+    public async Task CancelAsync_MissingJobAfterCancelled_PreservesCancelled()
+    {
+        // Idempotent cancel: a re-issued cancel against an already-cancelled record
+        // whose provider Job is gone must stay Cancelled rather than re-transitioning
+        // through Failed.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
+        client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.NotFound });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancel-idempotent", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Cancelled);
+
+        var observation = await backend.CancelAsync(job);
+
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
-        observation.Message.Should().Contain("already absent");
     }
 
     [Fact]

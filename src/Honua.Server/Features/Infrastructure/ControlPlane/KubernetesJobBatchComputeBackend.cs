@@ -229,11 +229,24 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             var result = await jobClient.DeleteJobAsync(namespaceName, jobName, cancellationToken)
                 .ConfigureAwait(false);
 
+            // A missing provider Job must not be reclassified as Cancelled over the
+            // durable record: the normal observe path routes the same condition
+            // through BuildObservationForMissingJob (preserves any already-terminal
+            // local state, otherwise Failed because the Job was lost before it
+            // could reach a terminal state on the cluster). Mirror that here so the
+            // cancel-path persists the same outcome as ObserveAsync.
+            if (result.NotFound)
+            {
+                var missing = BuildObservationForMissingJob(job);
+                ControlPlaneTelemetry.RecordExecutionRequest(job, "cancel", "not_found");
+                return missing;
+            }
+
             // The Job may have transitioned to Succeeded/Failed in the window between
             // the pre-delete GET and this DELETE. The Kubernetes API returns the Job
             // object at deletion time, so use its status conditions (when provided) to
             // preserve any terminal outcome the race missed.
-            if (!result.NotFound && result.Snapshot is { } deleteSnapshot)
+            if (result.Snapshot is { } deleteSnapshot)
             {
                 var postDelete = await BuildTerminalObservationFromSnapshotAsync(
                         job, namespaceName, deleteSnapshot, cancellationToken)
@@ -246,16 +259,13 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 }
             }
 
-            var message = result.NotFound
-                ? "Kubernetes Job was already absent; treating as cancelled."
-                : $"Requested cascade deletion of Kubernetes Job {namespaceName}/{jobName}.";
-            ControlPlaneTelemetry.RecordExecutionRequest(job, "cancel", result.NotFound ? "not_found" : "deleted");
+            ControlPlaneTelemetry.RecordExecutionRequest(job, "cancel", "deleted");
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Cancelled,
                 ProviderOperationId = job.ProviderOperationId,
                 PercentComplete = job.PercentComplete,
-                Message = message
+                Message = $"Requested cascade deletion of Kubernetes Job {namespaceName}/{jobName}."
             };
         }
         catch (Exception ex) when (IsTransportOrConfigFailure(ex))
