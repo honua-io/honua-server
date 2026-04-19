@@ -826,7 +826,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             CancellationRequestedAt = IsTerminal(observation.Status) ? job.CancellationRequestedAt : (job.CancellationRequestedAt ?? now)
         };
         var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!persisted)
+        if (persisted)
+        {
+            ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
+        }
+        else
         {
             GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
             var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
@@ -863,6 +867,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 };
                 if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
+                    ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryUpdate);
                     updated = retryUpdate;
                 }
                 else

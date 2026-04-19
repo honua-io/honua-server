@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Tests.Helpers;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -1738,6 +1740,137 @@ public sealed class JobExecutionServiceTests
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ProcessJob_EmitsTransitionTelemetry_ForRunningAndFinalize()
+    {
+        var provisioning = CreateProvisioningJob();
+        var running = provisioning with { Status = ExecutionJobStatus.Running };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        // First two reads (initial lookup + pre-Running re-read) return Provisioning;
+        // subsequent reads (FinalizeJobAsync) see the authoritative Running record.
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning, provisioning, running);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Succeeded());
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        var transitions = new List<MeasurementSample>();
+        using var listener = CreateTransitionListener(transitions);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(transitions, sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Provisioning" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Running");
+
+        Assert.Contains(transitions, sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Running" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Succeeded");
+    }
+
+    [UnitTest]
+    public async Task ProcessJob_EmitsTransitionTelemetry_ForAbandonRequeue()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            RetryPolicy = new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(1),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            }
+        };
+        var running = provisioning with { Status = ExecutionJobStatus.Running };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>())
+            .Returns(provisioning, provisioning, running);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<IJobExecutionContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Transient failure"));
+
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        var transitions = new List<MeasurementSample>();
+        using var listener = CreateTransitionListener(transitions);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        listener.RecordObservableInstruments();
+
+        // Retry path: Running -> Queued must emit a transition sample.
+        Assert.Contains(transitions, sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Running" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Queued");
+    }
+
+    private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
+
+    private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == "honua.controlplane.execution.transitions_total")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
+    {
+        foreach (var tag in tags)
+        {
+            if (tag.Key == name)
+            {
+                return tag.Value?.ToString();
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

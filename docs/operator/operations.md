@@ -202,11 +202,13 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > in-cluster service account projection and accepts explicit bearer tokens for
 > out-of-cluster development; set `ControlPlane:Kubernetes:CaBundlePath` to a
 > PEM-encoded bundle when the target cluster's API server uses a private or
-> self-signed CA that does not chain to the OS trust store. Misconfiguration
-> (missing/invalid `ApiServerUrl`, unreadable bearer token file, empty or
-> malformed CA bundle PEM) is caught at startup by `ControlPlaneOptions`
-> validation; runtime adapter failures are surfaced as failed submissions
-> rather than 500s. Remote jobs are started
+> self-signed CA that does not chain to the OS trust store. Startup
+> validation (`ControlPlaneOptions`) rejects a malformed `ApiServerUrl`
+> whenever one is supplied, an unreadable bearer token file, and an empty or
+> malformed CA bundle PEM; it requires `ApiServerUrl` only when
+> `InClusterAutoDetect` is disabled. When auto-detect is on but the host is
+> not running inside a Kubernetes pod, submission fails at runtime in the
+> adapter with a clear error rather than surfacing as a 500. Remote jobs are started
 > synchronously on submission and subsequently observed by the reconciler on
 > any Redis-enabled host. `ttlSecondsAfterFinished` is clamped to a safe floor
 > (≥ 30 s, six reconciler poll cycles) so a completed Job cannot be

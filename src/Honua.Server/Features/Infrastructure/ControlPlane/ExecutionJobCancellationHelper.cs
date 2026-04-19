@@ -63,6 +63,7 @@ internal static class ExecutionJobCancellationHelper
 
         if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
+            ControlPlaneTelemetry.RecordExecutionTransition(job, cancelled);
             return new(PreSubmissionCancelOutcome.Cancelled, cancelled);
         }
 
@@ -141,6 +142,7 @@ internal static class ExecutionJobCancellationHelper
 
                 if (await jobStore.TrySetAsync(cancelled, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
+                    ControlPlaneTelemetry.RecordExecutionTransition(current, cancelled);
                     return new(ExecutionJobCancellationState.Cancelled, cancelled);
                 }
             }

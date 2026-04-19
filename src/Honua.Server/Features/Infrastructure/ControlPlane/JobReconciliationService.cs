@@ -209,6 +209,8 @@ internal sealed partial class JobReconciliationService(
                 return false;
             }
 
+            ControlPlaneTelemetry.RecordExecutionTransition(preRetry, abandoned);
+
             // Revoke the stale CTS immediately after the authoritative store
             // transition to Queued, before the queue write. If RequeueAsync
             // fails, cancel paths will not delegate to the dead worker and
@@ -249,6 +251,8 @@ internal sealed partial class JobReconciliationService(
             {
                 return false;
             }
+
+            ControlPlaneTelemetry.RecordExecutionTransition(preFail, failed);
 
             cancellationTokens.Revoke(preFail.OperationId, snapshot.ClaimedBy!);
 
@@ -320,6 +324,8 @@ internal sealed partial class JobReconciliationService(
             return false;
         }
 
+        ControlPlaneTelemetry.RecordExecutionTransition(current, failed);
+
         // Signal and remove the stale CTS immediately after the authoritative
         // store transition, before the queue write.
         cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
@@ -388,6 +394,8 @@ internal sealed partial class JobReconciliationService(
         {
             return false;
         }
+
+        ControlPlaneTelemetry.RecordExecutionTransition(job, cancelledJob);
 
         cancellationTokens.Revoke(job.OperationId, claimedBy);
 

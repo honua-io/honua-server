@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Tests.Helpers;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1113,6 +1115,128 @@ public sealed class JobReconciliationServiceTests
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task HeartbeatExpiry_Retry_EmitsTransitionTelemetry()
+    {
+        var snapshot = CreateRunningJob(
+            retryPolicy: new JobRetryPolicy
+            {
+                MaxAttempts = 3,
+                Strategy = BackoffStrategy.Fixed,
+                BaseDelay = TimeSpan.FromSeconds(5),
+                MaxDelay = TimeSpan.FromMinutes(1)
+            },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(1)
+            },
+            timeoutPolicy: new JobTimeoutPolicy
+            {
+                MaxDuration = TimeSpan.FromHours(24)
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+
+        var transitions = new List<MeasurementSample>();
+        using var listener = CreateTransitionListener(transitions);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        listener.RecordObservableInstruments();
+        Assert.Contains(transitions, sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Running" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Queued");
+    }
+
+    [UnitTest]
+    public async Task TimeoutExpiry_Fail_EmitsTransitionTelemetry()
+    {
+        var snapshot = CreateRunningJob(
+            timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(1) },
+            heartbeatPolicy: new JobHeartbeatPolicy
+            {
+                Interval = TimeSpan.FromSeconds(30),
+                Timeout = TimeSpan.FromHours(24)
+            });
+        snapshot = snapshot with { ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>())
+            .Returns([snapshot]);
+        jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>())
+            .Returns(snapshot);
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+
+        var service = new JobReconciliationService(
+            jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+
+        var transitions = new List<MeasurementSample>();
+        using var listener = CreateTransitionListener(transitions);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await RunSingleSweepAsync(service, cts.Token);
+
+        listener.RecordObservableInstruments();
+        Assert.Contains(transitions, sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Running" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Failed");
+    }
+
+    private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
+
+    private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == "honua.controlplane.execution.transitions_total")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
+    {
+        foreach (var tag in tags)
+        {
+            if (tag.Key == name)
+            {
+                return tag.Value?.ToString();
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

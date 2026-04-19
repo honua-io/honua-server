@@ -462,7 +462,11 @@ internal static class JobEndpoints
                             CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? latest.CancellationRequestedAt : (latest.CancellationRequestedAt ?? cancelNow)
                         };
                         var persisted = await jobStore.TrySetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
-                        if (!persisted)
+                        if (persisted)
+                        {
+                            ControlPlaneTelemetry.RecordExecutionTransition(latest, cancelled);
+                        }
+                        else
                         {
                             var fresh = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                             if (fresh == null)
@@ -510,6 +514,7 @@ internal static class JobEndpoints
                                 };
                                 if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: context.RequestAborted).ConfigureAwait(false))
                                 {
+                                    ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryUpdate);
                                     cancelled = retryUpdate;
                                 }
                                 else
