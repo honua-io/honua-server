@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp;
@@ -274,6 +275,7 @@ public sealed class McpTaxonomyAlignmentTests
     private static IMcpTool[] BuildTools()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
+        var groundingService = Substitute.For<IGroundingService>();
         return
         [
             new ValidatePlanTool(jobService, NullLogger<ValidatePlanTool>.Instance),
@@ -281,8 +283,8 @@ public sealed class McpTaxonomyAlignmentTests
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new PlanAnalysisTool(jobService, NullLogger<PlanAnalysisTool>.Instance),
-            new GroundCandidatesTool(jobService, NullLogger<GroundCandidatesTool>.Instance),
-            new ClarifyIntentTool(jobService, NullLogger<ClarifyIntentTool>.Instance)
+            new GroundCandidatesTool(groundingService, NullLogger<GroundCandidatesTool>.Instance),
+            new ClarifyIntentTool(groundingService, NullLogger<ClarifyIntentTool>.Instance)
         ];
     }
 

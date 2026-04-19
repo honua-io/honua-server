@@ -387,8 +387,8 @@ List parameterized resource URIs:
 | `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
 | `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
 | `honua_plan_analysis` | contract stub | blocked by `honua.planner.service` | `planning` |
-| `honua_ground_candidates` | contract stub | blocked by `honua.grounding.service` | `planning` |
-| `honua_clarify_intent` | contract stub | blocked by `honua.clarifier.service` | `planning` |
+| `honua_ground_candidates` | functional | `IGroundingService.GroundAsync` | `planning` |
+| `honua_clarify_intent` | functional | `IGroundingService.GroundAsync` | `planning` |
 
 Stub tools still enforce authentication and the same operator-grant
 authorization as their functional counterparts (via
@@ -397,6 +397,10 @@ structured `not_implemented` envelope with `blockedBy`, `contract`, and
 `nextSteps` fields so operators can bind today and pick up behavior when
 the upstream service lands. Authenticated callers without the required
 grant receive a `permission_denied` error, matching the functional tools.
+The grounding tools delegate to `IGroundingService`, which layers
+catalog discovery on top of the same authorization graph via
+`IOperatorAuthorizationEvaluator` — see
+[GROUNDING.md](GROUNDING.md) for the full pipeline.
 
 #### Tool payload notes
 
@@ -429,9 +433,21 @@ grant receive a `permission_denied` error, matching the functional tools.
 - `honua_cancel_job` accepts `{ jobId }`. Blank job ids fail with
   `invalid_argument`. Success returns
   `{ jobId, status: "cancellation_requested", cancellationRequested: true }`.
-- `honua_plan_analysis`, `honua_ground_candidates`, and
-  `honua_clarify_intent` accept `{}` and return
+- `honua_plan_analysis` accepts `{}` and returns
   `{ status: "not_implemented", tool, blockedBy, contract, nextSteps }`.
+- `honua_ground_candidates` accepts
+  `{ goal, workflowFamilyHint?, constraints?, explicitInputs?, assumptionPolicy?, context?, intentId? }`
+  and returns
+  `{ workflowFamily, draftIntent, candidates, clarification?, engine }`.
+  `workflowFamily.value` is one of `Analyze`, `PublishData`, `BuildApp`,
+  `AutomateDeploy`. `draftIntent` carries a canonical intent envelope with
+  optional `analysis` and `publishing` blocks per the drafted family.
+- `honua_clarify_intent` accepts the same shape plus a required
+  `{ intentId, response: { answers: Record<string, string[]> } }`. The
+  service is stateless — callers carry `goal`, `constraints`, and
+  `explicitInputs` forward across turns. See
+  [GROUNDING.md](GROUNDING.md) for the material-ambiguity rule set and
+  clarification reason codes.
 
 ### Resources
 

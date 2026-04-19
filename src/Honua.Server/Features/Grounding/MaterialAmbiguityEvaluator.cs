@@ -1,0 +1,181 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Grounding.Domain;
+using Honua.Core.Features.Publishing.Domain;
+using Honua.Server.Features.Geoprocessing;
+
+namespace Honua.Server.Features.Grounding;
+
+/// <summary>
+/// Applies the ADR-0027 material-ambiguity rule set to a grounding pass.
+/// Centralised here so the rule set is a single reviewable function and the
+/// conformance harness can pin the exact order of findings.
+/// </summary>
+internal static class MaterialAmbiguityEvaluator
+{
+    public static IReadOnlyList<MaterialAmbiguityFinding> Evaluate(
+        GroundingRequest request,
+        WorkflowFamilyClassification classification,
+        CandidateRanking candidates,
+        IReadOnlyList<ProcessParameterSpec> requiredParameterGaps,
+        GroundingOptions options)
+    {
+        var findings = new List<MaterialAmbiguityFinding>(capacity: 3);
+
+        // 1. LowConfidence comes first — if the workflow family itself is
+        // unclear, the caller must resolve that before anything else.
+        if (classification.Confidence < options.WorkflowFamilyFloor)
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.LowConfidence,
+                QuestionId = "workflow_family",
+                QuestionKind = ClarificationQuestionKind.SingleSelect,
+                Prompt = "Which workflow matches your goal?",
+                Options =
+                [
+                    new ClarificationOption { Id = nameof(WorkflowFamily.Analyze), Label = "Analyze data" },
+                    new ClarificationOption { Id = nameof(WorkflowFamily.PublishData), Label = "Publish data as a service" },
+                    new ClarificationOption { Id = nameof(WorkflowFamily.BuildApp), Label = "Build an app or dashboard" },
+                    new ClarificationOption { Id = nameof(WorkflowFamily.AutomateDeploy), Label = "Automate a deployment" }
+                ]
+            });
+        }
+
+        // 2. MissingRequiredInput — any required process parameter without an
+        // inferable default.
+        foreach (var parameter in requiredParameterGaps)
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.MissingRequiredInput,
+                QuestionId = $"param.{parameter.Name}",
+                QuestionKind = ClarificationQuestionKind.FreeText,
+                Prompt = $"Provide a value for required parameter '{parameter.DisplayName}': {parameter.Description}"
+            });
+        }
+
+        // 3. AmbiguousDataset / AmbiguousProcess — multiple high-confidence
+        // candidates within the material spread.
+        if (IsAmbiguous(candidates.Datasets, options, out var datasetOptions))
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.AmbiguousDataset,
+                QuestionId = "dataset.selection",
+                QuestionKind = ClarificationQuestionKind.SingleSelect,
+                Prompt = "Which dataset do you want to use?",
+                Options = datasetOptions
+            });
+        }
+
+        if (IsAmbiguous(candidates.Processes, options, out var processOptions))
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.AmbiguousProcess,
+                QuestionId = "process.selection",
+                QuestionKind = ClarificationQuestionKind.SingleSelect,
+                Prompt = "Which operation do you want to run?",
+                Options = processOptions
+            });
+        }
+
+        // 4. DestructiveAction — top process candidate is flagged destructive.
+        if (candidates.Processes.Count > 0
+            && ProcessDestructiveClassifier.IsDestructive(candidates.Processes[0].Id))
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.DestructiveAction,
+                QuestionId = "destructive.confirm",
+                QuestionKind = ClarificationQuestionKind.Confirmation,
+                Prompt = $"'{candidates.Processes[0].DisplayName}' mutates existing data. Confirm you want to proceed."
+            });
+        }
+
+        // 5. PublishAction — workflow family is PublishData, or requested
+        // outputs include a published surface.
+        if (classification.Value == WorkflowFamily.PublishData)
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.PublishAction,
+                QuestionId = "publish.target",
+                QuestionKind = ClarificationQuestionKind.SingleSelect,
+                Prompt = "Where should the result be published?",
+                Options =
+                [
+                    new ClarificationOption { Id = nameof(PublishTargetKind.FeatureService), Label = "Feature service" },
+                    new ClarificationOption { Id = nameof(PublishTargetKind.TileService), Label = "Tile service" },
+                    new ClarificationOption { Id = nameof(PublishTargetKind.MapService), Label = "Map service" },
+                    new ClarificationOption { Id = nameof(PublishTargetKind.StaticExport), Label = "Static export" }
+                ]
+            });
+        }
+
+        // 6. PolicyBoundary — workflow family we do not yet draft end-to-end.
+        if (classification.Value is WorkflowFamily.BuildApp or WorkflowFamily.AutomateDeploy)
+        {
+            findings.Add(new MaterialAmbiguityFinding
+            {
+                ReasonCode = ClarificationReasonCode.PolicyBoundary,
+                QuestionId = "workflow_family.blocked",
+                QuestionKind = ClarificationQuestionKind.Confirmation,
+                Prompt = $"The '{classification.Value}' workflow family is staged as an envelope only in this release. Confirm to proceed with just the envelope."
+            });
+        }
+
+        return findings;
+    }
+
+    private static bool IsAmbiguous(
+        IReadOnlyList<GroundingCandidate> candidates,
+        GroundingOptions options,
+        out IReadOnlyList<ClarificationOption> options_out)
+    {
+        if (candidates.Count < 2 || candidates[0].Score < options.HighConfidenceFloor)
+        {
+            options_out = [];
+            return false;
+        }
+
+        var leadScore = candidates[0].Score;
+        var options_list = new List<ClarificationOption>(capacity: candidates.Count);
+        options_list.Add(new ClarificationOption
+        {
+            Id = candidates[0].Id,
+            Label = candidates[0].DisplayName ?? candidates[0].Id
+        });
+
+        for (var i = 1; i < candidates.Count; i++)
+        {
+            if (candidates[i].Score < options.HighConfidenceFloor)
+            {
+                break;
+            }
+
+            if (leadScore - candidates[i].Score > options.MaterialSpread)
+            {
+                break;
+            }
+
+            options_list.Add(new ClarificationOption
+            {
+                Id = candidates[i].Id,
+                Label = candidates[i].DisplayName ?? candidates[i].Id
+            });
+        }
+
+        if (options_list.Count < 2)
+        {
+            options_out = [];
+            return false;
+        }
+
+        options_out = options_list;
+        return true;
+    }
+}

@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.Mcp.Models;
@@ -28,6 +29,7 @@ namespace Honua.Server.Tests.Features.Mcp;
 public sealed class McpAuthorizationTests
 {
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+    private readonly IGroundingService _groundingService = Substitute.For<IGroundingService>();
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_validate_plan")]
@@ -111,28 +113,34 @@ public sealed class McpAuthorizationTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
-    public async Task GroundCandidatesStub_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    public async Task GroundCandidates_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_groundingService, NullLogger<GroundCandidatesTool>.Instance);
 
-        JsonElement? arguments = McpTestFactory.ParseJson("{}");
+        JsonElement? arguments = McpTestFactory.ParseJson("""{"goal":"Buffer the parcels"}""");
         var act = async () => await tool.InvokeAsync(
             McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
     }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
-    public async Task ClarifyIntentStub_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
+    public async Task ClarifyIntent_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_groundingService, NullLogger<ClarifyIntentTool>.Instance);
 
-        JsonElement? arguments = McpTestFactory.ParseJson("{}");
+        JsonElement? arguments = McpTestFactory.ParseJson("""
+            {"intentId":"intent-1","goal":"Buffer the parcels","response":{"answers":{"q1":["a"]}}}
+            """);
         var act = async () => await tool.InvokeAsync(
             McpTestFactory.AnonymousHttpContext(), arguments, CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeTrue();
+        await _groundingService.DidNotReceiveWithAnyArgs().GroundAsync(default!, default!, default);
     }
 
     [UnitTest]
