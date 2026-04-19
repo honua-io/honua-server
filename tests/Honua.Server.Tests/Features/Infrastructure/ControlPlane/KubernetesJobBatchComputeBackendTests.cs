@@ -649,6 +649,85 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task ObserveAsync_RemoteTargetWithoutDefaultNamespace_FallsBackToDefault()
+    {
+        // When InClusterAutoDetect is disabled (host targets a different cluster),
+        // the backend must not leak the local projected namespace; with no
+        // DefaultNamespace it must use "default".
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync("default", "honua-job-remote-observe", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-remote", Active = 1 }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            InClusterAutoDetect = false,
+            ApiServerUrl = "https://remote-cluster.example:6443",
+            DefaultNamespace = null
+        });
+        var job = CreateJob("job-remote-observe", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Provisioning);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running);
+        await client.Received(1).GetJobAsync("default", "honua-job-remote-observe", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CancelAsync_RemoteTargetWithoutDefaultNamespace_FallsBackToDefault()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync("default", "honua-job-remote-cancel", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-remote-live", Active = 1 }
+            });
+        client.DeleteJobAsync("default", "honua-job-remote-cancel", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.OK });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            InClusterAutoDetect = false,
+            ApiServerUrl = "https://remote-cluster.example:6443",
+            DefaultNamespace = null
+        });
+        var job = CreateJob("job-remote-cancel", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        await client.Received(1).DeleteJobAsync("default", "honua-job-remote-cancel", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_RemoteTargetWithExplicitDefaultNamespace_UsesConfiguredNamespace()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-remote-start" }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            InClusterAutoDetect = false,
+            ApiServerUrl = "https://remote-cluster.example:6443",
+            DefaultNamespace = "remote-ops"
+        });
+        var job = CreateJob("job-remote-start", image: "honua/worker:1.0.0");
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        await client.Received(1).CreateJobAsync(
+            Arg.Is<KubernetesJobManifest>(m => m.Namespace == "remote-ops"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void MapStatus_FailedConditionWins()
     {
         var snapshot = new KubernetesJobStatusSnapshot { FailedCondition = true };
@@ -724,6 +803,20 @@ public sealed class KubernetesJobBatchComputeBackendTests
         container.GetProperty("env")[0].GetProperty("name").GetString().Should().Be("HONUA");
         container.GetProperty("resources").GetProperty("requests").GetProperty("cpu").GetString().Should().Be("250m");
         container.GetProperty("resources").GetProperty("limits").GetProperty("memory").GetString().Should().Be("2Gi");
+    }
+
+    [Fact]
+    public void SerializeDeleteOptions_UsesCoreV1ApiVersion()
+    {
+        // Kubernetes rejects unrecognized API versions on DeleteOptions request
+        // bodies; the documented contract uses apiVersion "v1", not "meta/v1".
+        var bytes = KubernetesJobManifestSerializer.SerializeDeleteOptions("Background");
+        using var document = JsonDocument.Parse(bytes);
+        var root = document.RootElement;
+
+        root.GetProperty("apiVersion").GetString().Should().Be("v1");
+        root.GetProperty("kind").GetString().Should().Be("DeleteOptions");
+        root.GetProperty("propagationPolicy").GetString().Should().Be("Background");
     }
 
     [Fact]

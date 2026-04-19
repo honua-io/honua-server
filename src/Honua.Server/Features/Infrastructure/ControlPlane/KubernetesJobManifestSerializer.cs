@@ -120,7 +120,10 @@ internal static class KubernetesJobManifestSerializer
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
-            writer.WriteString("apiVersion", "meta/v1");
+            // Kubernetes DeleteOptions request bodies carry apiVersion "v1" (not
+            // "meta/v1"); the API server rejects unrecognized API versions for
+            // DeleteOptions.
+            writer.WriteString("apiVersion", "v1");
             writer.WriteString("kind", "DeleteOptions");
             writer.WriteString("propagationPolicy", propagationPolicy);
             writer.WriteEndObject();

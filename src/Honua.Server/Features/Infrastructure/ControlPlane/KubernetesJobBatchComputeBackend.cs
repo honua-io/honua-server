@@ -520,13 +520,16 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
     // Single source of truth for namespace selection so submission, observation, and
     // cancellation agree on the target Job. Fallback chain: spec parameter →
-    // configured DefaultNamespace → projected in-cluster namespace → "default".
-    // The final "default" tier matches the contract documented on
-    // KubernetesExecutionOptions.DefaultNamespace.
+    // configured DefaultNamespace → projected in-cluster namespace (only when
+    // InClusterAutoDetect is enabled) → "default". Mirrors the CA-trust decision in
+    // KubernetesJobClient.ResolveTrustedCaPath: the projected service-account
+    // namespace identifies the local cluster, so a Honua host running inside
+    // cluster A that targets cluster B via an explicit ApiServerUrl must not leak
+    // the local namespace into requests against the remote cluster.
     private static string ResolveNamespace(ExecutionJobRecord job, KubernetesExecutionOptions snapshot)
         => Normalize(job.Spec.Parameters.GetValueOrDefault(KubernetesJobParameterKeys.Namespace))
             ?? Normalize(snapshot.DefaultNamespace)
-            ?? KubernetesJobClient.TryReadInClusterNamespace()
+            ?? (snapshot.InClusterAutoDetect ? KubernetesJobClient.TryReadInClusterNamespace() : null)
             ?? "default";
 
     internal static string BuildJobName(string operationId)
