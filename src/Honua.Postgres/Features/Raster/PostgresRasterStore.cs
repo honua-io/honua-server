@@ -901,28 +901,61 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // Require an existing source raster before running the zonal query so missing
+        // rasters surface as a first-class error rather than silently becoming zero-count
+        // rows per zone. See IRasterStore.ComputeZonalStatisticsAsync contract.
+        int rasterSrid;
+        await using (var sridCommand = connection.CreateCommand())
+        {
+            sridCommand.CommandText = $"""
+                SELECT ST_SRID(raster)
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @rasterId
+                """;
+            AddParameter(sridCommand, "@layerId", layerId);
+            AddParameter(sridCommand, "@rasterId", rasterId);
+
+            var sridScalar = await sridCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (sridScalar is null || sridScalar is DBNull)
+            {
+                PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
+                throw new InvalidOperationException(
+                    $"Raster {rasterId} was not found in layer {layerId}.");
+            }
+
+            rasterSrid = Convert.ToInt32(sridScalar, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         await using var command = connection.CreateCommand();
-        // Single ST_SummaryStats call per zone is projected into a record, then decomposed.
-        // LEFT JOIN ensures zones without raster intersection still emit a row.
+        // Normalize each zone geometry to the raster SRID up front (reject zones with
+        // unknown SRIDs explicitly) so ST_Intersects and ST_Clip operate on matched
+        // coordinate systems. CROSS JOIN guarantees one row per zone only after the
+        // source raster existence check above.
         command.CommandText = $"""
             WITH src AS (
-                SELECT raster
+                SELECT raster, ST_SRID(raster) AS raster_srid
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id = @rasterId
             ),
             zones AS (
-                SELECT objectid, geometry
+                SELECT objectid,
+                       CASE
+                           WHEN ST_SRID(geometry) = @rasterSrid THEN geometry
+                           ELSE ST_Transform(geometry, @rasterSrid)
+                       END AS geometry
                 FROM {_featuresTable}
-                WHERE layer_id = @zonesLayerId AND geometry IS NOT NULL
+                WHERE layer_id = @zonesLayerId
+                  AND geometry IS NOT NULL
+                  AND ST_SRID(geometry) > 0
             ),
             zone_stats AS (
                 SELECT z.objectid AS zone_id,
-                       CASE WHEN r.raster IS NULL OR NOT ST_Intersects(r.raster, z.geometry)
+                       CASE WHEN NOT ST_Intersects(r.raster, z.geometry)
                             THEN NULL
                             ELSE ST_SummaryStats(ST_Clip(r.raster, z.geometry, TRUE), @band)
                        END AS stats
                 FROM zones z
-                LEFT JOIN src r ON TRUE
+                CROSS JOIN src r
             )
             SELECT zone_id,
                    COALESCE((stats).count, 0)::bigint AS pixel_count,
@@ -938,6 +971,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@rasterId", rasterId);
         AddParameter(command, "@zonesLayerId", zonesLayerId);
         AddParameter(command, "@band", band);
+        AddParameter(command, "@rasterSrid", rasterSrid);
 
         var rows = new List<RasterZonalStatisticsRow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);

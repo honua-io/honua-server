@@ -183,11 +183,14 @@ model. Must not add domain types to `Honua.Core`.
   seeds 34 built-in processes across seven categories (10 `geometry.*`,
   4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`,
   2 `generalization.*`, 3 `data-management.*`) that plan validation checks
-  `AnalysisPlanStep.ProcessId` against. Heavyweight `surface.*` and `raster.*`
-  processes remain behind the canonical worker boundary — execution routes
-  through `ISurfaceAnalysisService` / `IRasterStore` and (optionally) the
-  pluggable cloud executor adapters from honua-server#727 — so adding the
-  families did not introduce a new execution surface. Destructive
+  `AnalysisPlanStep.ProcessId` against. For heavyweight `surface.*` and
+  `raster.*` workloads this ticket adds the PostGIS-backed execution
+  primitives (`ISurfaceAnalysisService`, `IRasterStore.ComputeZonalStatisticsAsync`)
+  that will sit behind the canonical worker boundary; the handler/executor
+  wiring that dispatches catalog entries into those services — optionally
+  over the #727 cloud executor adapters — is follow-on work and not part of
+  this ticket, so the catalog addition still does not introduce a new
+  execution surface. Destructive
   `data-management.*` ids (`delete-features`, `calculate-field`) are classified
   server-side by `ProcessDestructiveClassifier` so submission and execution
   route the plan through `OperatorApprovalGate` with `IsDestructive = true`

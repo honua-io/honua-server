@@ -98,6 +98,63 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
         rows[0].Stats["mean"]!.Value.Should().BeLessThan(rows[1].Stats["mean"]!.Value);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
+    public async Task ComputeZonalStatisticsAsync_ReprojectsZoneGeometriesWhenSridDiffersFromRaster()
+    {
+        const int sourceLayerId = 7301;
+        const int zonesLayerId = 7302;
+        var sourceRasterId = await InsertTestRasterAsync(sourceLayerId, "zonal-srid-mismatch");
+        // Zones in EPSG:3857 (Web Mercator) against a raster in EPSG:4326.
+        // ST_Transform on each zone geometry projects them back into the raster CRS so
+        // ST_Intersects / ST_Clip operate in matched coordinates.
+        await InsertZoneFeaturesInSridAsync(
+            zonesLayerId,
+            3857,
+            [
+                // Zone 1: covers raster pixels (0,0)..(2,3) in EPSG:4326 after reprojection.
+                "POLYGON((0 0, 222638.98 0, 222638.98 334111.17, 0 334111.17, 0 0))",
+                // Zone 2: covers raster pixels (2,0)..(3,3) in EPSG:4326 after reprojection.
+                "POLYGON((222638.98 0, 333958.47 0, 333958.47 334111.17, 222638.98 334111.17, 222638.98 0))",
+            ]);
+
+        var rasterStore = CreateRasterStore();
+
+        var rows = await rasterStore.ComputeZonalStatisticsAsync(
+            sourceLayerId,
+            sourceRasterId,
+            zonesLayerId,
+            band: 1,
+            statistics: ["count", "mean"]);
+
+        rows.Should().HaveCount(2);
+        rows.Should().OnlyContain(row => row.PixelCount > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
+    public async Task ComputeZonalStatisticsAsync_WhenSourceRasterMissing_ThrowsInvalidOperation()
+    {
+        const int sourceLayerId = 7401;
+        const int zonesLayerId = 7402;
+        // Seed zones but no raster under sourceLayerId/rasterId 999.
+        await InsertZoneFeaturesAsync(zonesLayerId);
+
+        var rasterStore = CreateRasterStore();
+
+        var act = async () => await rasterStore.ComputeZonalStatisticsAsync(
+            sourceLayerId,
+            rasterId: 999,
+            zonesLayerId,
+            band: 1,
+            statistics: ["count", "mean"]);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*was not found*");
+    }
+
     private async Task EnsureRasterTablesAsync()
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
@@ -191,6 +248,23 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
             """;
         command.Parameters.Add(new NpgsqlParameter("@layerId", layerId));
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertZoneFeaturesInSridAsync(int layerId, int srid, IReadOnlyList<string> wkts)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        foreach (var wkt in wkts)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO features (layer_id, geometry, attributes)
+                VALUES (@layerId, ST_GeomFromText(@wkt, @srid), '{}'::jsonb);
+                """;
+            command.Parameters.Add(new NpgsqlParameter("@layerId", layerId));
+            command.Parameters.Add(new NpgsqlParameter("@wkt", wkt));
+            command.Parameters.Add(new NpgsqlParameter("@srid", srid));
+            await command.ExecuteNonQueryAsync();
+        }
     }
 
     private PostgresRasterStore CreateRasterStore()
