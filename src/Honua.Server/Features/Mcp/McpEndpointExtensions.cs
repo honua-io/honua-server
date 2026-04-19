@@ -20,6 +20,13 @@ internal static class McpEndpointExtensions
     private const string JsonMimeType = "application/json";
 
     /// <summary>
+    /// HTTP status code returned for accepted JSON-RPC notifications. The MCP
+    /// HTTP transport spec requires a 202 Accepted with no body when the input
+    /// is a notification or response (no <c>id</c>) and the server accepted it.
+    /// </summary>
+    private const int NotificationAcceptedStatusCode = StatusCodes.Status202Accepted;
+
+    /// <summary>
     /// Explicit JSON <c>null</c> element used as the response <c>id</c> when the
     /// request could not be parsed. JSON-RPC 2.0 requires the id field on error
     /// responses even when the server cannot determine the client's original id,
@@ -41,7 +48,7 @@ internal static class McpEndpointExtensions
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 requests for initialize, tools/list, tools/call, resources/list, and resources/read.")
+            .WithDescription("Accepts JSON-RPC 2.0 requests for initialize, notifications/initialized, tools/list, tools/call, resources/list, and resources/read.")
             .WithTags("Mcp");
 
         return endpoints;
@@ -89,6 +96,14 @@ internal static class McpEndpointExtensions
         var response = await surface
             .DispatchAsync(context, request, cancellationToken)
             .ConfigureAwait(false);
+        if (response is null)
+        {
+            // Notification (no id) or notifications/* method — JSON-RPC 2.0
+            // forbids a response body, so reply 202 Accepted with no payload.
+            context.Response.StatusCode = NotificationAcceptedStatusCode;
+            return;
+        }
+
         await WriteResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
     }
 

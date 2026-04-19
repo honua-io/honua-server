@@ -42,10 +42,14 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task Initialize_ReturnsJsonRpcResultWithServerInfo()
+    public async Task Initialize_WithSupportedVersion_NegotiatesAndReturnsServerInfo()
     {
         var response = await PostRpcAsync("""
-            {"jsonrpc":"2.0","id":1,"method":"initialize"}
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
             """);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -60,10 +64,111 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         root.TryGetProperty("error", out _).Should().BeFalse();
 
         var result = root.GetProperty("result");
-        result.GetProperty("protocolVersion").GetString().Should().NotBeNullOrEmpty();
+        result.GetProperty("protocolVersion").GetString().Should().Be("2025-03-26");
         result.GetProperty("serverInfo").GetProperty("name").GetString().Should().Be("honua.operator.mcp");
         result.GetProperty("capabilities").GetProperty("tools").Should().NotBeNull();
         result.GetProperty("capabilities").GetProperty("resources").Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Initialize_WithUnsupportedVersion_FallsBackToLatestServerVersion()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":2,"method":"initialize","params":{
+                "protocolVersion":"1999-01-01",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        // Spec requires the server to advertise a version it actually supports
+        // when the client asks for one it does not implement.
+        root.GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be("2025-03-26");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Initialize_WithoutParams_ReturnsInvalidArgumentJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":3,"method":"initialize"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetInt32().Should().Be(3);
+        var error = root.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("protocolVersion");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task Initialize_MissingClientInfo_ReturnsInvalidArgumentJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":4,"method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var error = root.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("clientInfo");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task NotificationsInitialized_AcceptedWithEmptyBody()
+    {
+        var initialize = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"hello-1","method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+        initialize.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Per JSON-RPC 2.0 the notification has no `id`; per the MCP HTTP
+        // transport the server must return 202 Accepted with no body.
+        var notification = await PostRpcAsync("""
+            {"jsonrpc":"2.0","method":"notifications/initialized"}
+            """);
+
+        notification.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var bodyBytes = await notification.Content.ReadAsByteArrayAsync();
+        bodyBytes.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task UnknownNotification_AcceptedSilentlyWithoutBody()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","method":"notifications/unknown"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var bodyBytes = await response.Content.ReadAsByteArrayAsync();
+        bodyBytes.Should().BeEmpty();
     }
 
     [IntegrationTest]

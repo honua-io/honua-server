@@ -108,12 +108,42 @@ internal sealed class McpValidationViolation
 // -----------------------------------------------------------------------
 
 /// <summary>
+/// Request payload for the MCP <c>initialize</c> method. The MCP lifecycle
+/// requires the client to advertise its protocol version, capabilities, and
+/// client info so the server can negotiate a compatible session.
+/// See https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle.
+/// </summary>
+internal sealed class McpInitializeParams
+{
+    [JsonPropertyName("protocolVersion")]
+    public string? ProtocolVersion { get; set; }
+
+    [JsonPropertyName("capabilities")]
+    public JsonElement? Capabilities { get; set; }
+
+    [JsonPropertyName("clientInfo")]
+    public McpClientInfo? ClientInfo { get; set; }
+}
+
+/// <summary>
+/// Identifies the calling MCP client during <c>initialize</c>.
+/// </summary>
+internal sealed class McpClientInfo
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("version")]
+    public string? Version { get; set; }
+}
+
+/// <summary>
 /// Response payload for the MCP <c>initialize</c> method.
 /// </summary>
 internal sealed class McpInitializeResult
 {
     [JsonPropertyName("protocolVersion")]
-    public string ProtocolVersion { get; set; } = "2025-03-26";
+    public string ProtocolVersion { get; set; } = string.Empty;
 
     [JsonPropertyName("capabilities")]
     public McpServerCapabilities Capabilities { get; set; } = new();

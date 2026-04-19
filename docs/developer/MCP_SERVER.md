@@ -113,15 +113,38 @@ validation rules.
 
 - **Route**: `POST /mcp`
 - **Wire**: JSON-RPC 2.0
-- **Methods**: `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`
+- **Methods**: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `resources/list`, `resources/read`
 
 Each HTTP POST carries exactly one JSON-RPC request; batch framing is
-deferred. Responses always use HTTP 200 — JSON-RPC errors are returned in
-the response envelope's `error` object rather than as HTTP status codes.
+deferred. Request responses use HTTP 200 with a JSON-RPC envelope —
+JSON-RPC errors are returned in the response envelope's `error` object
+rather than as HTTP status codes. JSON-RPC notifications (no `id` field, or
+any `notifications/*` method) instead return HTTP 202 Accepted with an
+empty body, as required by the MCP HTTP transport.
 `tools/call` and `resources/read` require an authenticated principal and
 return an `unauthenticated` error otherwise; `initialize`, `tools/list`,
 and `resources/list` are handshake methods that do not require
 authentication.
+
+### Lifecycle and version negotiation
+
+The MCP lifecycle is `initialize` (request/response) followed by
+`notifications/initialized` (notification, no response):
+
+1. **`initialize`** — the client MUST send `params` containing
+   `protocolVersion`, `capabilities`, and `clientInfo.name`. Missing or
+   non-object `capabilities`, blank `protocolVersion`, or missing
+   `clientInfo.name` returns `invalid_argument`.
+2. The server negotiates the protocol revision: if the client's
+   `protocolVersion` matches one the server supports it is echoed back;
+   otherwise the server replies with its latest supported revision so the
+   client can decide whether to continue. The current build supports
+   `2025-03-26`.
+3. **`notifications/initialized`** — once the client accepts the negotiated
+   version it sends this notification (no `id`). The server returns
+   HTTP 202 with no body. Unknown `notifications/*` methods are also
+   accepted silently so forward-compatible clients can layer in new
+   notification types.
 
 ### Response Framing
 
@@ -194,7 +217,25 @@ Initialize the MCP session and discover server capabilities:
 {
   "jsonrpc": "2.0",
   "id": "hello-1",
-  "method": "initialize"
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "honua-operator-cli",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+Acknowledge the negotiated session before issuing any other calls. The
+server returns HTTP 202 with no body:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/initialized"
 }
 ```
 

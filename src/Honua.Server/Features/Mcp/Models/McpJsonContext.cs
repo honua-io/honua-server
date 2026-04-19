@@ -17,6 +17,8 @@ namespace Honua.Server.Features.Mcp.Models;
 [JsonSerializable(typeof(McpJsonRpcError))]
 [JsonSerializable(typeof(McpErrorData))]
 [JsonSerializable(typeof(McpValidationViolation))]
+[JsonSerializable(typeof(McpInitializeParams))]
+[JsonSerializable(typeof(McpClientInfo))]
 [JsonSerializable(typeof(McpInitializeResult))]
 [JsonSerializable(typeof(McpServerCapabilities))]
 [JsonSerializable(typeof(McpServerInfo))]
