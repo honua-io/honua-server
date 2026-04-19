@@ -9,6 +9,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Grounding;
 using Honua.TestKit.Attributes;
@@ -433,6 +434,200 @@ public sealed class GroundingServiceTests
         }
 
         result.DraftIntent.Provenance.ClarificationsAnswered.Should().Contain("param.distance");
+        result.DraftIntent.Provenance.Assumptions.Should().Contain("param.distance=50");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_WorkflowFamilyAnswer_OverridesClassifierResult()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.Analyze,
+            Confidence = 0.2,
+            Evidence = ["fallback:analyze"]
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "Do something vague",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["workflow_family"] = ["PublishData"]
+                    }
+                }
+            },
+            Principal);
+
+        result.WorkflowFamily.Value.Should().Be(WorkflowFamily.PublishData);
+        result.WorkflowFamily.Confidence.Should().Be(1.0);
+        result.WorkflowFamily.Evidence.Should().Contain("clarification");
+        result.DraftIntent.WorkflowFamily.Should().Be(WorkflowFamily.PublishData);
+        // Engine classification was not consulted because the override short-circuits it.
+        _engine.DidNotReceive().Classify(Arg.Any<GroundingRequest>());
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_WorkflowFamilyAnswer_UnknownValue_Throws()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["workflow_family"] = ["NotAFamily"]
+                    }
+                }
+            },
+            Principal);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*workflow_family*");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_DatasetSelectionAnswer_PinsChosenCandidateToTop()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns(
+            [
+                Candidate("svc-a", 0.9, CandidateKind.Dataset),
+                Candidate("svc-b", 0.88, CandidateKind.Dataset)
+            ]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "incidents",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["dataset.selection"] = ["svc-b"]
+                    }
+                }
+            },
+            Principal);
+
+        result.Candidates.Datasets.Select(c => c.Id).Should().ContainInOrder("svc-b", "svc-a");
+        result.DraftIntent.Provenance.ClarificationsAnswered.Should().Contain("dataset.selection");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_ProcessSelectionAnswer_UnknownId_Throws()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns([Candidate("geometry.buffer", 0.9, CandidateKind.Process)]);
+
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["process.selection"] = ["geometry.unknown"]
+                    }
+                }
+            },
+            Principal);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*process.selection*");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_PublishTargetAnswer_AppliedToDraftedPublishIntent()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish parcels",
+                IntentId = "intent-1",
+                ExplicitInputs = ["parcels"],
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["publish.target"] = ["TileService"]
+                    }
+                }
+            },
+            Principal);
+
+        result.DraftIntent.Publishing.Should().NotBeNull();
+        result.DraftIntent.Publishing!.TargetKind.Should().Be(PublishTargetKind.TileService);
+
+        if (result.Clarification is not null)
+        {
+            result.Clarification.Questions.Should().NotContain(q => q.QuestionId == "publish.target");
+        }
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_PublishTargetAnswer_UnknownValue_Throws()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+
+        var service = CreateService();
+
+        var act = async () => await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish parcels",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["publish.target"] = ["NotATarget"]
+                    }
+                }
+            },
+            Principal);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage("*publish.target*");
     }
 
     [UnitTest]

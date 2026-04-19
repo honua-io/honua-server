@@ -41,9 +41,13 @@ internal static class GroundingToolSchemas
         var workflowFamilyEnum = JsonStringArray(WorkflowFamilyNames);
         var assumptionPolicyEnum = JsonStringArray(AssumptionPolicyNames);
 
+        // honua_ground_candidates always needs a goal text; honua_clarify_intent
+        // re-runs grounding with the answers merged in, so it also needs the
+        // goal (plus intentId + response.answers). Keeping goal required keeps
+        // the advertised schema aligned with GroundingToolMapper.ToDomain.
         var required = includeClarificationResponse
-            ? """["intentId", "response"]"""
-            : """["goal"]"""; // honua_ground_candidates always needs a goal text.
+            ? """["goal", "intentId", "response"]"""
+            : """["goal"]""";
 
         var builder = new StringBuilder();
         builder.Append(

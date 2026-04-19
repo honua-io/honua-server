@@ -444,8 +444,17 @@ catalog discovery on top of the same authorization graph via
   optional `analysis` and `publishing` blocks per the drafted family.
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
-  service is stateless — callers carry `goal`, `constraints`, and
-  `explicitInputs` forward across turns. See
+  published schema also marks `goal` as required, matching the server
+  mapper which rejects blank goals with `invalid_argument`. The service
+  is stateless — callers carry `goal`, `constraints`, and
+  `explicitInputs` forward across turns. Answers are *applied* rather
+  than merely acknowledged: `workflow_family` overrides the classifier
+  (confidence `1.0`, evidence `clarification`), `dataset.selection` and
+  `process.selection` pin the chosen candidate to the front of its
+  ranking (unknown ids fail with `invalid_argument`), `publish.target`
+  flows into the drafted `PublishIntent`, and `param.<name>` answers
+  skip the matching parameter-gap clarification and surface as
+  `param.<name>=<value>` entries on `provenance.assumptions`. See
   [GROUNDING.md](GROUNDING.md) for the material-ambiguity rule set and
   clarification reason codes.
 
@@ -661,6 +670,9 @@ of `result.content`).
 | `GeoprocessingValidationException` | `invalid_argument` | |
 | `GeoprocessingStoreUnavailableException` | `unavailable` | `retryable: true` |
 | `GeoprocessingIdempotencyConflictException` | `already_exists` | |
+| `GroundingException(EmptyGoal \| UnsupportedWorkflowFamily)` | `invalid_argument` | |
+| `GroundingException(UnknownIntent)` | `not_found` | |
+| `GroundingException(CatalogUnavailable)` | `unavailable` | `retryable: true` |
 | anything else | `internal` | |
 
 `structuredContent` always includes `status: "error"`, `code`, and
@@ -675,6 +687,7 @@ through this error path.
 - `honua.mcp.tool.call` — emitted today, tagged by `tool_name`, `status`, `workflow_family`
 - `honua.mcp.resource.read` — emitted today, tagged by `resource_family`, `status`
 - `honua.mcp.boundary.rejection` — reserved counter tagged by `rejection_reason` for future taxonomy non-goal rejections
+- `honua.grounding.result` — emitted on every successful grounding pass, tagged by `engine`, `workflow_family`, and `clarified` (`"true"` / `"false"`), so the honua-server-734 eval harness can watch engine mix and clarification rate
 
 The dispatcher tags the ambient activity with `honua.protocol = "Mcp"`
 and `honua.operation = <method>` as soon as the JSON-RPC method has been

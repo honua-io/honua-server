@@ -29,7 +29,8 @@ internal static class IntentDrafter
         CandidateRanking candidates,
         IReadOnlyList<string> clarificationQuestionIds,
         IReadOnlyCollection<string> clarificationsAnswered,
-        IReadOnlyList<string> assumptions)
+        IReadOnlyList<string> assumptions,
+        PublishTargetKind? publishTargetOverride = null)
     {
         var requestedOutputs = InferRequestedOutputs(classification.Value, request);
         var provenance = BuildProvenance(candidates, clarificationQuestionIds, clarificationsAnswered, assumptions);
@@ -53,7 +54,7 @@ internal static class IntentDrafter
                 WorkflowFamily = classification.Value,
                 RequestedOutputs = requestedOutputs,
                 AssumptionPolicy = request.AssumptionPolicy,
-                Publishing = BuildPublishIntent(request, intentId, candidates),
+                Publishing = BuildPublishIntent(request, intentId, candidates, publishTargetOverride),
                 Provenance = provenance
             },
             _ => new DraftIntent
@@ -85,7 +86,8 @@ internal static class IntentDrafter
     private static PublishIntent? BuildPublishIntent(
         GroundingRequest request,
         string intentId,
-        CandidateRanking candidates)
+        CandidateRanking candidates,
+        PublishTargetKind? publishTargetOverride)
     {
         // Draft a publish intent only when the caller has pinned a source
         // via ExplicitInputs or when a high-confidence dataset leads the
@@ -111,7 +113,7 @@ internal static class IntentDrafter
             intentId: intentId,
             sourceKind: PublishSourceKind.FeatureLayer,
             sourceId: sourceId,
-            targetKind: PublishTargetKind.FeatureService);
+            targetKind: publishTargetOverride ?? PublishTargetKind.FeatureService);
     }
 
     private static IReadOnlyList<ArtifactKind> InferRequestedOutputs(

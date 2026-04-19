@@ -98,6 +98,25 @@ Each finding carries a stable `QuestionId` (e.g. `workflow_family`,
 `destructive.confirm`, `publish.target`, `workflow_family.blocked`) that
 the caller echoes back in `honua_clarify_intent`.
 
+### Answer application
+
+`ClarificationAnswerResolver` parses the `response.answers` map into an
+`AppliedClarificationAnswers` record and the service folds every
+recognised answer into the next pipeline pass so a clarification turn
+reshapes the result, not just the acknowledged-question set:
+
+| QuestionId | Effect on the follow-up pass |
+|------------|------------------------------|
+| `workflow_family` | Overrides the classifier. Confidence reports as `1.0` with evidence `clarification`. Unknown values raise `invalid_argument`. |
+| `dataset.selection` | Reorders the post-authorization dataset ranking so the pinned id is first. Unknown ids raise `invalid_argument`. |
+| `process.selection` | Same pin semantics as `dataset.selection`, applied to the process ranking. |
+| `publish.target` | Flows into the drafted `PublishIntent.TargetKind`. Unknown values raise `invalid_argument`. |
+| `param.<name>` | Skips the matching `MissingRequiredInput` clarification and records `param.<name>=<value>` on `provenance.assumptions`. |
+| `destructive.confirm`, `workflow_family.blocked` | Confirmation-only; any non-blank value counts as acknowledgement. |
+
+Unknown question ids are tolerated (forward compatibility) and simply
+left out of `provenance.clarificationsAnswered`.
+
 ## Configuration
 
 Options live under the `Operator:Grounding` configuration section and are

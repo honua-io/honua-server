@@ -79,15 +79,26 @@ internal sealed class GroundingService : IGroundingService
         var tokens = GroundingTokenizer.Tokenize(request.Goal);
         GroundingLog.PassStarted(_logger, _engine.Name, tokens.Count, request.WorkflowFamilyHint.HasValue);
 
-        // Normalize prior-turn clarification answers. A non-empty answer
-        // resolves the corresponding finding: we skip it during parameter-gap
-        // probing and drop it from the evaluator output so the next turn does
-        // not replay the same ambiguity. Provenance still records the ids so
-        // downstream planners can audit what the operator supplied.
-        var answeredQuestionIds = CollectAnsweredQuestionIds(request.ClarificationResponse);
+        // Resolve prior-turn clarification answers. Validated overrides flow
+        // into classification, ranking, and drafting; tracked question ids
+        // also suppress the matching finding so the next turn does not
+        // replay the same ambiguity. Invalid enum answers (workflow_family,
+        // publish.target) throw here so the caller receives invalid_argument
+        // instead of a silently ignored choice.
+        var applied = ClarificationAnswerResolver.Parse(request.ClarificationResponse);
+        var appliedIds = new HashSet<string>(applied.AppliedQuestionIds, StringComparer.Ordinal);
 
-        // 1. Classify the workflow family.
-        var classification = _engine.Classify(request);
+        // 1. Classify the workflow family. A prior `workflow_family` answer
+        // overrides the engine output at 1.0 confidence with a pinned
+        // evidence tag so downstream consumers can audit the source.
+        var classification = applied.WorkflowFamilyOverride is { } overrideFamily
+            ? new WorkflowFamilyClassification
+            {
+                Value = overrideFamily,
+                Confidence = 1.0,
+                Evidence = ["clarification"]
+            }
+            : _engine.Classify(request);
 
         // 2. Rank processes against the frozen process catalog. The catalog
         // is a singleton and contains the deterministic 20-process roster;
@@ -96,6 +107,8 @@ internal sealed class GroundingService : IGroundingService
         var processCandidates = _engine.ScoreProcesses(request, processes);
         processCandidates = ApplyBandsAndCap(processCandidates);
         processCandidates = _authorizationFilter.Filter(principal, processCandidates);
+        processCandidates = ClarificationAnswerResolver.ApplyPin(
+            processCandidates, applied.PinnedProcessId, "process.selection", appliedIds);
 
         // 3. Rank layers / services. Layer catalog is optional because some
         // deployments (e.g. read-only raster servers, pre-provisioning test
@@ -105,6 +118,8 @@ internal sealed class GroundingService : IGroundingService
         var datasetCandidates = await RankDatasetsAsync(request, cancellationToken).ConfigureAwait(false);
         datasetCandidates = ApplyBandsAndCap(datasetCandidates);
         datasetCandidates = _authorizationFilter.Filter(principal, datasetCandidates);
+        datasetCandidates = ClarificationAnswerResolver.ApplyPin(
+            datasetCandidates, applied.PinnedDatasetId, "dataset.selection", appliedIds);
 
         var ranking = new CandidateRanking
         {
@@ -114,21 +129,22 @@ internal sealed class GroundingService : IGroundingService
 
         // 4. Evaluate material ambiguity against the post-filter ranking so
         // the clarification envelope only names candidates the caller can
-        // actually see. Parameter-gap probing consumes answered param.<name>
-        // questions; the finding filter below consumes the remaining kinds
-        // (workflow_family, dataset.selection, process.selection, etc.).
-        var requiredParameterGaps = CollectRequiredParameterGaps(request, ranking, answeredQuestionIds);
+        // actually see. Parameter-gap probing consumes resolved param.<name>
+        // values; the finding filter below consumes the remaining answered
+        // kinds (workflow_family, dataset.selection, process.selection,
+        // publish.target, destructive.confirm, workflow_family.blocked).
+        var requiredParameterGaps = CollectRequiredParameterGaps(request, ranking, applied.ResolvedParameters);
         var findings = MaterialAmbiguityEvaluator.Evaluate(
             request,
             classification,
             ranking,
             requiredParameterGaps,
             _options);
-        findings = FilterAnsweredFindings(findings, answeredQuestionIds);
+        findings = FilterAnsweredFindings(findings, appliedIds);
 
         // 5. Build draft intent.
         var intentId = request.IntentId ?? $"grounding-{Guid.NewGuid():N}";
-        var assumptions = CollectAssumptions(request);
+        var assumptions = CollectAssumptions(request, applied.ResolvedParameters);
         var clarificationQuestionIds = findings.Select(f => f.QuestionId).ToArray();
         var draft = IntentDrafter.Draft(
             request,
@@ -136,8 +152,9 @@ internal sealed class GroundingService : IGroundingService
             classification,
             ranking,
             clarificationQuestionIds,
-            answeredQuestionIds,
-            assumptions);
+            appliedIds,
+            assumptions,
+            applied.PublishTargetOverride);
 
         // 6. Build the clarification envelope (if any).
         var clarification = BuildClarification(intentId, findings);
@@ -275,7 +292,7 @@ internal sealed class GroundingService : IGroundingService
     private List<ProcessParameterSpec> CollectRequiredParameterGaps(
         GroundingRequest request,
         CandidateRanking ranking,
-        HashSet<string> answeredQuestionIds)
+        IReadOnlyDictionary<string, string> resolvedParameters)
     {
         // Only probe the top process candidate: if the operator has not
         // settled on a process, the AmbiguousProcess finding handles it,
@@ -316,7 +333,7 @@ internal sealed class GroundingService : IGroundingService
                 continue;
             }
 
-            if (answeredQuestionIds.Contains($"param.{parameter.Name}"))
+            if (resolvedParameters.ContainsKey(parameter.Name))
             {
                 continue;
             }
@@ -325,34 +342,6 @@ internal sealed class GroundingService : IGroundingService
         }
 
         return gaps;
-    }
-
-    private static HashSet<string> CollectAnsweredQuestionIds(ClarificationResponse? response)
-    {
-        if (response?.Answers is not { Count: > 0 } answers)
-        {
-            return new HashSet<string>(StringComparer.Ordinal);
-        }
-
-        var ids = new HashSet<string>(answers.Count, StringComparer.Ordinal);
-        foreach (var (questionId, values) in answers)
-        {
-            if (string.IsNullOrWhiteSpace(questionId) || values is null)
-            {
-                continue;
-            }
-
-            for (var i = 0; i < values.Count; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(values[i]))
-                {
-                    ids.Add(questionId);
-                    break;
-                }
-            }
-        }
-
-        return ids;
     }
 
     private static IReadOnlyList<MaterialAmbiguityFinding> FilterAnsweredFindings(
@@ -392,9 +381,11 @@ internal sealed class GroundingService : IGroundingService
         };
     }
 
-    private static List<string> CollectAssumptions(GroundingRequest request)
+    private static List<string> CollectAssumptions(
+        GroundingRequest request,
+        IReadOnlyDictionary<string, string> resolvedParameters)
     {
-        var assumptions = new List<string>(capacity: 2);
+        var assumptions = new List<string>(capacity: 2 + resolvedParameters.Count);
         if (request.Constraints?.Units is { Length: > 0 } units)
         {
             assumptions.Add($"units={units}");
@@ -412,6 +403,14 @@ internal sealed class GroundingService : IGroundingService
             // spatial input (units-only, time-only) stay silent so the
             // assumption list reflects the caller's actual spatial footprint.
             assumptions.Add("srid=4326 (default)");
+        }
+
+        // Resolved parameter values from prior clarification answers flow
+        // through as assumptions so downstream planning sees the caller's
+        // choices without a new contract surface.
+        foreach (var (name, value) in resolvedParameters)
+        {
+            assumptions.Add($"param.{name}={value}");
         }
 
         return assumptions;
