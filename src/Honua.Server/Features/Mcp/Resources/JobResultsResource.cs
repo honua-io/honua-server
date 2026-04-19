@@ -34,11 +34,13 @@ internal sealed class JobResultsResource : IMcpResource
 
     public string Family => McpTelemetry.ResourceFamily.JobResults;
 
-    public IReadOnlyList<McpResourceDescriptor> Describe() => new[]
+    public IReadOnlyList<McpResourceDescriptor> Describe() => [];
+
+    public IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates() => new[]
     {
-        new McpResourceDescriptor
+        new McpResourceTemplateDescriptor
         {
-            Uri = Template,
+            UriTemplate = Template,
             Name = "Geoprocessing job results",
             Description = "AnalysisResultPackage envelope for a terminal job, delegated through the canonical geoprocessing job service.",
             MimeType = McpResourceHelpers.JsonMimeType

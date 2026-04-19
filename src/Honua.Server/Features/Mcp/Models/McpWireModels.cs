@@ -234,7 +234,8 @@ internal sealed class McpContentBlock
 }
 
 /// <summary>
-/// Response payload for <c>resources/list</c>.
+/// Response payload for <c>resources/list</c>. Only concrete resource URIs appear
+/// here; parameterized URIs belong on <c>resources/templates/list</c>.
 /// </summary>
 internal sealed class McpResourcesListResult
 {
@@ -246,6 +247,33 @@ internal sealed class McpResourceDescriptor
 {
     [JsonPropertyName("uri")]
     public string Uri { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("mimeType")]
+    public string MimeType { get; set; } = "application/json";
+}
+
+/// <summary>
+/// Response payload for <c>resources/templates/list</c>. MCP 2025-03-26 requires
+/// parameterized resource URIs (e.g. <c>honua://jobs/{jobId}</c>) to be advertised
+/// with an <c>uriTemplate</c> field on this surface rather than mixed into
+/// <c>resources/list</c>.
+/// </summary>
+internal sealed class McpResourceTemplatesListResult
+{
+    [JsonPropertyName("resourceTemplates")]
+    public IReadOnlyList<McpResourceTemplateDescriptor> ResourceTemplates { get; set; } = [];
+}
+
+internal sealed class McpResourceTemplateDescriptor
+{
+    [JsonPropertyName("uriTemplate")]
+    public string UriTemplate { get; set; } = string.Empty;
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;

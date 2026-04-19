@@ -8,7 +8,8 @@ namespace Honua.Server.Features.Mcp;
 
 /// <summary>
 /// Maps the single JSON-RPC endpoint that hosts the MCP operator surface.
-/// Clients POST one MCP request per HTTP request; batch framing is deferred.
+/// Accepts both individual requests and JSON-RPC 2.0 batches, and enforces
+/// the MCP request-id rules (string or integer only).
 /// </summary>
 internal static class McpEndpointExtensions
 {
@@ -48,7 +49,7 @@ internal static class McpEndpointExtensions
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 requests for initialize, notifications/initialized, tools/list, tools/call, resources/list, and resources/read.")
+            .WithDescription("Accepts JSON-RPC 2.0 single requests and batches for initialize, notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
             .WithTags("Mcp");
 
         return endpoints;
@@ -59,55 +60,165 @@ internal static class McpEndpointExtensions
         var surface = context.RequestServices.GetRequiredService<McpOperatorSurface>();
         var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
 
-        McpJsonRpcRequest? request;
+        JsonDocument? document;
         try
         {
-            request = await JsonSerializer
-                .DeserializeAsync(context.Request.Body, McpJsonContext.Default.McpJsonRpcRequest, cancellationToken)
+            document = await JsonDocument
+                .ParseAsync(context.Request.Body, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (JsonException ex)
         {
             McpLog.RequestParseFailed(logger, ex.Message);
-            await WriteResponseAsync(
+            await WriteSingleAsync(
                 context,
-                new McpJsonRpcResponse
-                {
-                    Id = JsonNullId,
-                    Error = McpErrorMapper.InvalidArgument($"Request body is not valid JSON-RPC: {ex.Message}")
-                },
+                ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.ParseError($"Request body is not valid JSON: {ex.Message}")),
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        if (request is null)
+        using (document)
         {
-            await WriteResponseAsync(
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                await HandleBatchAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                await WriteSingleAsync(
+                    context,
+                    ErrorResponse(
+                        JsonNullId,
+                        McpErrorMapper.InvalidRequest(
+                            "Request body must be a JSON-RPC 2.0 request object or batch array.")),
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var response = await ProcessMessageAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
+            if (response is null)
+            {
+                context.Response.StatusCode = NotificationAcceptedStatusCode;
+                return;
+            }
+
+            await WriteSingleAsync(context, response, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task HandleBatchAsync(
+        HttpContext context,
+        McpOperatorSurface surface,
+        JsonElement batch,
+        CancellationToken cancellationToken)
+    {
+        // JSON-RPC 2.0 §6 specifies that an empty array is itself an invalid
+        // request and must be answered with a single error response.
+        if (batch.GetArrayLength() == 0)
+        {
+            await WriteSingleAsync(
                 context,
-                new McpJsonRpcResponse
-                {
-                    Id = JsonNullId,
-                    Error = McpErrorMapper.InvalidArgument("Request body is required.")
-                },
+                ErrorResponse(JsonNullId, McpErrorMapper.InvalidRequest("Batch must contain at least one request.")),
                 cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        var response = await surface
-            .DispatchAsync(context, request, cancellationToken)
-            .ConfigureAwait(false);
-        if (response is null)
+        var responses = new List<McpJsonRpcResponse>();
+        foreach (var element in batch.EnumerateArray())
         {
-            // Notification (no id) or notifications/* method — JSON-RPC 2.0
-            // forbids a response body, so reply 202 Accepted with no payload.
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                responses.Add(ErrorResponse(
+                    JsonNullId,
+                    McpErrorMapper.InvalidRequest("Batch element must be a JSON-RPC request object.")));
+                continue;
+            }
+
+            var response = await ProcessMessageAsync(context, surface, element, cancellationToken).ConfigureAwait(false);
+            if (response is not null)
+            {
+                responses.Add(response);
+            }
+        }
+
+        // All elements were notifications → transport-level 202 Accepted with no body.
+        if (responses.Count == 0)
+        {
             context.Response.StatusCode = NotificationAcceptedStatusCode;
             return;
         }
 
-        await WriteResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = JsonMimeType;
+        await JsonSerializer
+            .SerializeAsync(
+                context.Response.Body,
+                responses,
+                McpJsonContext.Default.ListMcpJsonRpcResponse,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private static async Task WriteResponseAsync(
+    /// <summary>
+    /// Validates a single JSON-RPC envelope, classifies its id, and dispatches
+    /// it through the operator surface. Returns <c>null</c> when the element is
+    /// a notification and no response must be emitted.
+    /// </summary>
+    private static async Task<McpJsonRpcResponse?> ProcessMessageAsync(
+        HttpContext context,
+        McpOperatorSurface surface,
+        JsonElement message,
+        CancellationToken cancellationToken)
+    {
+        var idState = ClassifyRequestId(message);
+        if (idState.Kind == RequestIdKind.Invalid)
+        {
+            // MCP 2025-03-26 / JSON-RPC 2.0: id must be a string or integer when
+            // present. Null, boolean, fractional number, array, and object ids
+            // are rejected — the server responds with id: null because it cannot
+            // safely echo a value the client chose incorrectly.
+            return ErrorResponse(
+                JsonNullId,
+                McpErrorMapper.InvalidRequest(
+                    "Request id must be a string or integer when present (null, boolean, fractional, array, and object ids are not allowed)."));
+        }
+
+        McpJsonRpcRequest? request;
+        try
+        {
+            request = message.Deserialize(McpJsonContext.Default.McpJsonRpcRequest);
+        }
+        catch (JsonException ex)
+        {
+            return idState.Kind == RequestIdKind.Notification
+                ? null
+                : ErrorResponse(
+                    idState.Element ?? JsonNullId,
+                    McpErrorMapper.InvalidRequest($"Request envelope is not a valid JSON-RPC message: {ex.Message}"));
+        }
+
+        if (request is null)
+        {
+            return idState.Kind == RequestIdKind.Notification
+                ? null
+                : ErrorResponse(
+                    idState.Element ?? JsonNullId,
+                    McpErrorMapper.InvalidRequest("Request envelope could not be deserialized."));
+        }
+
+        // Normalize request.Id so the dispatcher treats absent/notification the
+        // same way regardless of how JsonElement? surfaced missing fields.
+        request.Id = idState.Kind == RequestIdKind.Notification ? null : idState.Element;
+
+        return await surface.DispatchAsync(context, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteSingleAsync(
         HttpContext context,
         McpJsonRpcResponse response,
         CancellationToken cancellationToken)
@@ -117,6 +228,52 @@ internal static class McpEndpointExtensions
         await JsonSerializer
             .SerializeAsync(context.Response.Body, response, McpJsonContext.Default.McpJsonRpcResponse, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static McpJsonRpcResponse ErrorResponse(JsonElement id, McpJsonRpcError error) => new()
+    {
+        Id = id,
+        Error = error
+    };
+
+    /// <summary>
+    /// Classifies the <c>id</c> property of a JSON-RPC message per MCP
+    /// 2025-03-26 rules: absent = notification, string or integer = valid,
+    /// everything else (null, boolean, fractional number, array, object) is
+    /// invalid and must be rejected with an <c>invalid_request</c> error.
+    /// </summary>
+    private static RequestIdState ClassifyRequestId(JsonElement message)
+    {
+        if (!message.TryGetProperty("id", out var idElement))
+        {
+            return new RequestIdState(RequestIdKind.Notification, null);
+        }
+
+        switch (idElement.ValueKind)
+        {
+            case JsonValueKind.String:
+                return new RequestIdState(RequestIdKind.Valid, idElement.Clone());
+
+            case JsonValueKind.Number:
+                // MCP restricts numeric ids to integers to match the JSON-RPC 2.0
+                // recommendation that ids not contain fractional parts.
+                return idElement.TryGetInt64(out _)
+                    ? new RequestIdState(RequestIdKind.Valid, idElement.Clone())
+                    : new RequestIdState(RequestIdKind.Invalid, null);
+
+            default:
+                // Null, Boolean, Array, Object — all disallowed for request ids.
+                return new RequestIdState(RequestIdKind.Invalid, null);
+        }
+    }
+
+    private readonly record struct RequestIdState(RequestIdKind Kind, JsonElement? Element);
+
+    private enum RequestIdKind
+    {
+        Notification,
+        Valid,
+        Invalid
     }
 
     private static JsonElement CreateJsonNullElement()

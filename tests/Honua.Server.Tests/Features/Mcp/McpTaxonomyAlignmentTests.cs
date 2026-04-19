@@ -92,9 +92,10 @@ public sealed class McpTaxonomyAlignmentTests
     {
         var resources = BuildResources();
 
-        var uris = resources
-            .SelectMany(r => r.Describe())
-            .Select(d => d.Uri)
+        // Parameterized URIs live on `resources/templates/list`; concrete URIs
+        // stay on `resources/list`. The taxonomy union covers both surfaces.
+        var uris = resources.SelectMany(r => r.Describe()).Select(d => d.Uri)
+            .Concat(resources.SelectMany(r => r.DescribeTemplates()).Select(d => d.UriTemplate))
             .OrderBy(u => u, StringComparer.Ordinal)
             .ToArray();
 
@@ -121,8 +122,10 @@ public sealed class McpTaxonomyAlignmentTests
     {
         var resources = BuildResources();
 
-        resources.SelectMany(r => r.Describe())
-            .Select(d => d.Uri)
+        var concreteUris = resources.SelectMany(r => r.Describe()).Select(d => d.Uri);
+        var templateUris = resources.SelectMany(r => r.DescribeTemplates()).Select(d => d.UriTemplate);
+
+        concreteUris.Concat(templateUris)
             .Should().OnlyContain(u => u.StartsWith(McpResourceUris.Scheme + "://", StringComparison.Ordinal));
     }
 
@@ -131,8 +134,10 @@ public sealed class McpTaxonomyAlignmentTests
     {
         var resources = BuildResources();
 
-        resources.SelectMany(r => r.Describe())
-            .Select(d => d.MimeType)
+        var concreteMimeTypes = resources.SelectMany(r => r.Describe()).Select(d => d.MimeType);
+        var templateMimeTypes = resources.SelectMany(r => r.DescribeTemplates()).Select(d => d.MimeType);
+
+        concreteMimeTypes.Concat(templateMimeTypes)
             .Should().OnlyContain(m => string.Equals(m, "application/json", StringComparison.Ordinal));
     }
 

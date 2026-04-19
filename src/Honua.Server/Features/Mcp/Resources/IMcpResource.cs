@@ -20,12 +20,18 @@ internal interface IMcpResource
     string Family { get; }
 
     /// <summary>
-    /// Static descriptors this resource exposes via <c>resources/list</c>.
-    /// Implementations that cover a URI template (e.g. <c>honua://jobs/{jobId}</c>)
-    /// return a single template descriptor; fixed-path resources (catalog) return
-    /// their concrete URI.
+    /// Concrete URI descriptors advertised via <c>resources/list</c>. Resources
+    /// whose only addressable form is a template (e.g. <c>honua://jobs/{jobId}</c>)
+    /// return an empty list here and publish themselves through
+    /// <see cref="DescribeTemplates"/> instead.
     /// </summary>
     IReadOnlyList<McpResourceDescriptor> Describe();
+
+    /// <summary>
+    /// URI-template descriptors advertised via <c>resources/templates/list</c> per
+    /// MCP 2025-03-26. Fixed-path resources return an empty list.
+    /// </summary>
+    IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates();
 
     /// <summary>
     /// Returns <c>true</c> when this resource should handle the supplied URI.

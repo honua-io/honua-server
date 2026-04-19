@@ -20,6 +20,10 @@ public sealed class McpErrorMappingTests
 {
     private const int JsonRpcServerError = -32000;
     private const int JsonRpcInvalidParams = -32602;
+    private const int JsonRpcMethodNotFound = -32601;
+    private const int JsonRpcInvalidRequest = -32600;
+    private const int JsonRpcParseError = -32700;
+    private const int JsonRpcResourceNotFound = -32002;
 
     [UnitTest]
     public void AuthorizationException_RequiringAuthentication_MapsToUnauthenticatedWithReauthFlag()
@@ -54,11 +58,13 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
-    public void NotFoundException_MapsToNotFound()
+    public void NotFoundException_MapsToResourceNotFoundJsonRpcCode()
     {
         var error = McpErrorMapper.Map(new GeoprocessingNotFoundException("job-missing"));
 
-        error.Code.Should().Be(JsonRpcServerError);
+        // MCP 2025-03-26 reserves -32002 for resource-not-found signals so
+        // clients can distinguish missing records from generic server errors.
+        error.Code.Should().Be(JsonRpcResourceNotFound);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
     }
 
@@ -132,12 +138,39 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
-    public void NotFoundFactory_EmitsServerErrorCodeWithNotFoundData()
+    public void ResourceNotFoundFactory_UsesResourceNotFoundJsonRpcCode()
     {
-        var error = McpErrorMapper.NotFound("unknown tool 'foo'");
+        var error = McpErrorMapper.ResourceNotFound("unknown resource 'honua://jobs/missing'");
 
-        error.Code.Should().Be(JsonRpcServerError);
+        error.Code.Should().Be(JsonRpcResourceNotFound);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
+    }
+
+    [UnitTest]
+    public void MethodNotFoundFactory_UsesMethodNotFoundJsonRpcCode()
+    {
+        var error = McpErrorMapper.MethodNotFound("unknown method 'frobnicate'");
+
+        error.Code.Should().Be(JsonRpcMethodNotFound);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
+    }
+
+    [UnitTest]
+    public void InvalidRequestFactory_UsesInvalidRequestJsonRpcCode()
+    {
+        var error = McpErrorMapper.InvalidRequest("jsonrpc must be \"2.0\".");
+
+        error.Code.Should().Be(JsonRpcInvalidRequest);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.InvalidArgument);
+    }
+
+    [UnitTest]
+    public void ParseErrorFactory_UsesParseErrorJsonRpcCode()
+    {
+        var error = McpErrorMapper.ParseError("unexpected token at position 3");
+
+        error.Code.Should().Be(JsonRpcParseError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.InvalidArgument);
     }
 
     [UnitTest]

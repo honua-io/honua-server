@@ -37,6 +37,8 @@ internal sealed class ProcessCatalogResource : IMcpResource
         }
     };
 
+    public IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates() => [];
+
     public bool CanHandle(string uri) => string.Equals(uri, Uri, StringComparison.Ordinal);
 
     public Task<McpResourcesReadResult> ReadAsync(

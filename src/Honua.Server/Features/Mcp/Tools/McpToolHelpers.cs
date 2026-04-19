@@ -113,6 +113,40 @@ internal static class McpToolHelpers
     }
 
     /// <summary>
+    /// Builds the <see cref="McpToolsCallResult"/> for a tool execution failure
+    /// with <c>isError: true</c> per MCP 2025-03-26. The canonical error envelope
+    /// is mirrored in <c>structuredContent</c> so clients can drive retry,
+    /// re-auth, and approval flows without parsing the human-readable text block.
+    /// </summary>
+    public static McpToolsCallResult ErrorResult(Exception exception)
+    {
+        var jsonRpcError = McpErrorMapper.Map(exception);
+        var output = new McpToolErrorOutput
+        {
+            Status = "error",
+            Code = jsonRpcError.Data?.Code ?? McpErrorMapper.Codes.Internal,
+            Message = jsonRpcError.Message,
+            RequiresReauthentication = jsonRpcError.Data?.RequiresReauthentication,
+            ApprovalRequired = jsonRpcError.Data?.ApprovalRequired,
+            PolicyRef = jsonRpcError.Data?.PolicyRef,
+            ConflictingJobId = jsonRpcError.Data?.ConflictingJobId,
+            Retryable = jsonRpcError.Data?.Retryable,
+            Violations = jsonRpcError.Data?.Violations
+        };
+
+        var (element, text) = SerializeStructured(output, McpJsonContext.Default.McpToolErrorOutput);
+        return new McpToolsCallResult
+        {
+            IsError = true,
+            StructuredContent = element,
+            Content =
+            [
+                new McpContentBlock { Type = "text", Text = text }
+            ]
+        };
+    }
+
+    /// <summary>
     /// Parses the raw <c>arguments</c> payload into a typed model using the
     /// supplied type info. Throws <see cref="GeoprocessingValidationException"/>
     /// so validation failures flow through

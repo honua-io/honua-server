@@ -14,8 +14,9 @@ namespace Honua.Server.Features.Mcp;
 /// Central JSON-RPC dispatcher and registry for the MCP operator surface.
 /// Hosts the tool and resource catalogs, routes <c>initialize</c>,
 /// <c>notifications/initialized</c>, <c>tools/list</c>, <c>tools/call</c>,
-/// <c>resources/list</c>, and <c>resources/read</c> methods, and converts
-/// domain exceptions into JSON-RPC errors via <see cref="McpErrorMapper"/>.
+/// <c>resources/list</c>, <c>resources/templates/list</c>, and
+/// <c>resources/read</c> methods, and converts domain exceptions into
+/// JSON-RPC errors via <see cref="McpErrorMapper"/>.
 /// </summary>
 internal sealed class McpOperatorSurface
 {
@@ -46,7 +47,10 @@ internal sealed class McpOperatorSurface
         _resources = resources.ToList();
         _logger = logger;
 
-        McpLog.SurfaceInitialized(_logger, _tools.Count, _resources.Sum(r => r.Describe().Count));
+        McpLog.SurfaceInitialized(
+            _logger,
+            _tools.Count,
+            _resources.Sum(r => r.Describe().Count + r.DescribeTemplates().Count));
     }
 
     public IReadOnlyCollection<string> ToolNames => (IReadOnlyCollection<string>)_tools.Keys;
@@ -57,29 +61,30 @@ internal sealed class McpOperatorSurface
     /// Dispatches a JSON-RPC request and returns a response envelope, or
     /// <c>null</c> when the input is a JSON-RPC notification (no <c>id</c> or a
     /// <c>notifications/*</c> method) and therefore must not receive a reply
-    /// per the JSON-RPC 2.0 and MCP HTTP transport rules. Uses
-    /// <see cref="McpErrorMapper"/> to translate domain exceptions into JSON-RPC
-    /// error objects; other unhandled exceptions surface as <c>internal</c>.
+    /// per the JSON-RPC 2.0 and MCP HTTP transport rules. Callers are expected
+    /// to validate the shape of the request id (string or integer) before
+    /// calling this method; invalid ids must be surfaced as JSON-RPC
+    /// <c>invalid_request</c> errors by the transport layer.
     /// </summary>
     public async Task<McpJsonRpcResponse?> DispatchAsync(
         HttpContext httpContext,
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
-        var isNotification = IsNotification(request);
+        var isNotification = request.Id is null;
 
         if (!string.Equals(request.JsonRpc, "2.0", StringComparison.Ordinal))
         {
             return isNotification
                 ? null
-                : ErrorResponse(request.Id, McpErrorMapper.InvalidArgument("jsonrpc must be \"2.0\"."));
+                : ErrorResponse(request.Id, McpErrorMapper.InvalidRequest("jsonrpc must be \"2.0\"."));
         }
 
         if (string.IsNullOrWhiteSpace(request.Method))
         {
             return isNotification
                 ? null
-                : ErrorResponse(request.Id, McpErrorMapper.InvalidArgument("method is required."));
+                : ErrorResponse(request.Id, McpErrorMapper.InvalidRequest("method is required."));
         }
 
         // MCP lifecycle notifications carry no response per JSON-RPC 2.0.
@@ -106,8 +111,9 @@ internal sealed class McpOperatorSurface
                 "tools/list" => SuccessResponse(request.Id, ListTools(), McpJsonContext.Default.McpToolsListResult),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => SuccessResponse(request.Id, ListResources(), McpJsonContext.Default.McpResourcesListResult),
+                "resources/templates/list" => SuccessResponse(request.Id, ListResourceTemplates(), McpJsonContext.Default.McpResourceTemplatesListResult),
                 "resources/read" => await ReadResourceAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
-                _ => ErrorResponse(request.Id, McpErrorMapper.NotFound($"Unknown MCP method '{request.Method}'."))
+                _ => ErrorResponse(request.Id, McpErrorMapper.MethodNotFound($"Unknown MCP method '{request.Method}'."))
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -115,13 +121,6 @@ internal sealed class McpOperatorSurface
             return ErrorResponse(request.Id, McpErrorMapper.Map(ex));
         }
     }
-
-    /// <summary>
-    /// JSON-RPC 2.0 distinguishes notifications from requests by the absence
-    /// of the <c>id</c> member. <see cref="JsonElement"/>? is <c>null</c> when
-    /// the field was missing on the wire.
-    /// </summary>
-    private static bool IsNotification(McpJsonRpcRequest request) => request.Id is null;
 
     private McpJsonRpcResponse HandleInitialize(McpJsonRpcRequest request)
     {
@@ -187,7 +186,16 @@ internal sealed class McpOperatorSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
-        var parameters = ParseParams(request.Params, McpJsonContext.Default.McpToolsCallParams);
+        McpToolsCallParams? parameters;
+        try
+        {
+            parameters = ParseParams(request.Params, McpJsonContext.Default.McpToolsCallParams);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+
         if (string.IsNullOrWhiteSpace(parameters?.Name))
         {
             return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument("tools/call requires a tool name."));
@@ -195,12 +203,17 @@ internal sealed class McpOperatorSurface
 
         if (!_tools.TryGetValue(parameters.Name, out var tool))
         {
-            return ErrorResponse(request.Id, McpErrorMapper.NotFound($"Unknown MCP tool '{parameters.Name}'."));
+            // MCP 2025-03-26 maps unknown tool names to -32602 invalid params; the
+            // tool name is part of the tools/call `params` payload.
+            return ErrorResponse(
+                request.Id,
+                McpErrorMapper.InvalidArgument($"Unknown MCP tool '{parameters.Name}'."));
         }
 
+        McpToolsCallResult result;
         try
         {
-            var result = await tool
+            result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
             McpTelemetry.ToolCallCount.Add(
@@ -209,19 +222,28 @@ internal sealed class McpOperatorSurface
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Ok),
                 new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
             McpLog.ToolCompleted(_logger, tool.Name, McpTelemetry.Status.Ok);
-            return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
-            var error = McpErrorMapper.Map(ex);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Per MCP 2025-03-26 tool-execution failures (auth, approval,
+            // validation, domain) must appear inside the result with
+            // isError: true so standard clients can drive retry/re-auth flows
+            // without parsing protocol-level JSON-RPC errors.
+            result = McpToolHelpers.ErrorResult(ex);
+            var code = ExtractErrorCode(result);
             McpTelemetry.ToolCallCount.Add(
                 1,
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
                 new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
-            McpLog.ToolFailed(_logger, tool.Name, error.Data?.Code ?? McpErrorMapper.Codes.Internal, error.Message);
-            return ErrorResponse(request.Id, error);
+            McpLog.ToolFailed(_logger, tool.Name, code, ex.Message);
         }
+
+        return SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
 
     private McpResourcesListResult ListResources() => new()
@@ -232,12 +254,29 @@ internal sealed class McpOperatorSurface
             .ToList()
     };
 
+    private McpResourceTemplatesListResult ListResourceTemplates() => new()
+    {
+        ResourceTemplates = _resources
+            .SelectMany(r => r.DescribeTemplates())
+            .OrderBy(d => d.UriTemplate, StringComparer.Ordinal)
+            .ToList()
+    };
+
     private async Task<McpJsonRpcResponse> ReadResourceAsync(
         HttpContext httpContext,
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
-        var parameters = ParseParams(request.Params, McpJsonContext.Default.McpResourcesReadParams);
+        McpResourcesReadParams? parameters;
+        try
+        {
+            parameters = ParseParams(request.Params, McpJsonContext.Default.McpResourcesReadParams);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+        }
+
         if (string.IsNullOrWhiteSpace(parameters?.Uri))
         {
             return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument("resources/read requires a URI."));
@@ -246,7 +285,9 @@ internal sealed class McpOperatorSurface
         var handler = _resources.FirstOrDefault(r => r.CanHandle(parameters.Uri));
         if (handler is null)
         {
-            return ErrorResponse(request.Id, McpErrorMapper.NotFound($"Unknown MCP resource '{parameters.Uri}'."));
+            return ErrorResponse(
+                request.Id,
+                McpErrorMapper.ResourceNotFound($"Unknown MCP resource '{parameters.Uri}'."));
         }
 
         try
@@ -287,6 +328,24 @@ internal sealed class McpOperatorSurface
             throw new GeoprocessingValidationException(
                 $"JSON-RPC params are not valid: {ex.Message}");
         }
+    }
+
+    private static string ExtractErrorCode(McpToolsCallResult result)
+    {
+        if (result.StructuredContent is null)
+        {
+            return McpErrorMapper.Codes.Internal;
+        }
+
+        var structured = result.StructuredContent.Value;
+        if (structured.ValueKind == JsonValueKind.Object
+            && structured.TryGetProperty("code", out var codeElement)
+            && codeElement.ValueKind == JsonValueKind.String)
+        {
+            return codeElement.GetString() ?? McpErrorMapper.Codes.Internal;
+        }
+
+        return McpErrorMapper.Codes.Internal;
     }
 
     private static McpJsonRpcResponse SuccessResponse<T>(

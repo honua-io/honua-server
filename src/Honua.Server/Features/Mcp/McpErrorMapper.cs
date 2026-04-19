@@ -11,7 +11,9 @@ namespace Honua.Server.Features.Mcp;
 /// Mirrors the translation that <see cref="HonuaProcessService.MapToRpcException"/>
 /// performs for gRPC so every transport surfaces the same recoverable signals
 /// (approval required, idempotency conflict, authentication) without parsing
-/// message strings.
+/// message strings. Numeric codes follow JSON-RPC 2.0 / MCP 2025-03-26: -32700
+/// parse error, -32600 invalid request, -32601 method not found, -32602 invalid
+/// params, -32002 resource not found, and -32000 for generic server errors.
 /// </summary>
 internal static class McpErrorMapper
 {
@@ -31,15 +33,28 @@ internal static class McpErrorMapper
         public const string Internal = "internal";
     }
 
-    /// <summary>
-    /// JSON-RPC 2.0 numeric codes. MCP reserves -32000..-32099 for implementation
-    /// errors. We map 1:1 from the string codes so clients can use either axis.
-    /// </summary>
-    private const int JsonRpcServerError = -32000;
-    private const int JsonRpcInvalidParams = -32602;
+    /// <summary>JSON-RPC 2.0 parse error for malformed JSON payloads.</summary>
+    public const int JsonRpcParseError = -32700;
+
+    /// <summary>JSON-RPC 2.0 invalid request for payloads that are valid JSON but not a valid JSON-RPC envelope.</summary>
+    public const int JsonRpcInvalidRequest = -32600;
+
+    /// <summary>JSON-RPC 2.0 method-not-found error for unknown MCP methods.</summary>
+    public const int JsonRpcMethodNotFound = -32601;
+
+    /// <summary>JSON-RPC 2.0 invalid-params error for unknown tool names or malformed method params.</summary>
+    public const int JsonRpcInvalidParams = -32602;
+
+    /// <summary>MCP reserves -32000..-32099 for implementation-defined server errors.</summary>
+    public const int JsonRpcServerError = -32000;
+
+    /// <summary>MCP 2025-03-26 reserves -32002 for <c>resources/read</c> calls whose URI is unknown.</summary>
+    public const int JsonRpcResourceNotFound = -32002;
 
     /// <summary>
-    /// Translates the supplied exception into a JSON-RPC error object.
+    /// Translates the supplied domain exception into a JSON-RPC error object.
+    /// Used by <c>resources/read</c> (which has no result-level <c>isError</c>
+    /// hook) and by <c>tools/call</c> when building the tool-level error envelope.
     /// </summary>
     public static McpJsonRpcError Map(Exception ex) => ex switch
     {
@@ -78,7 +93,7 @@ internal static class McpErrorMapper
 
         GeoprocessingNotFoundException notFoundEx => new McpJsonRpcError
         {
-            Code = JsonRpcServerError,
+            Code = JsonRpcResourceNotFound,
             Message = notFoundEx.Message,
             Data = new McpErrorData
             {
@@ -149,8 +164,40 @@ internal static class McpErrorMapper
     };
 
     /// <summary>
-    /// Creates an invalid-argument error for MCP protocol-level validation issues
-    /// (unknown tool/resource, malformed arguments) without touching domain exceptions.
+    /// Creates a JSON-RPC parse-error envelope for payloads that are not valid JSON.
+    /// </summary>
+    public static McpJsonRpcError ParseError(string message) => new()
+    {
+        Code = JsonRpcParseError,
+        Message = message,
+        Data = new McpErrorData { Code = Codes.InvalidArgument }
+    };
+
+    /// <summary>
+    /// Creates a JSON-RPC invalid-request envelope for payloads that are JSON but
+    /// not a valid JSON-RPC 2.0 envelope (missing body, bad <c>jsonrpc</c> version,
+    /// missing or null/non-scalar <c>id</c> on a request).
+    /// </summary>
+    public static McpJsonRpcError InvalidRequest(string message) => new()
+    {
+        Code = JsonRpcInvalidRequest,
+        Message = message,
+        Data = new McpErrorData { Code = Codes.InvalidArgument }
+    };
+
+    /// <summary>
+    /// Creates a JSON-RPC method-not-found envelope for unknown MCP methods.
+    /// </summary>
+    public static McpJsonRpcError MethodNotFound(string message) => new()
+    {
+        Code = JsonRpcMethodNotFound,
+        Message = message,
+        Data = new McpErrorData { Code = Codes.NotFound }
+    };
+
+    /// <summary>
+    /// Creates an invalid-params error for protocol-level param validation failures
+    /// (missing tool name, unknown tool, malformed <c>params</c> shape).
     /// </summary>
     public static McpJsonRpcError InvalidArgument(string message) => new()
     {
@@ -160,11 +207,12 @@ internal static class McpErrorMapper
     };
 
     /// <summary>
-    /// Creates a <see cref="Codes.NotFound"/> error for unknown tools or resource URIs.
+    /// Creates a resource-not-found envelope for <c>resources/read</c> calls whose
+    /// URI is unknown to the server.
     /// </summary>
-    public static McpJsonRpcError NotFound(string message) => new()
+    public static McpJsonRpcError ResourceNotFound(string message) => new()
     {
-        Code = JsonRpcServerError,
+        Code = JsonRpcResourceNotFound,
         Message = message,
         Data = new McpErrorData { Code = Codes.NotFound }
     };

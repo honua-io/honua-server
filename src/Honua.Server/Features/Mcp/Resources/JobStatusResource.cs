@@ -26,11 +26,13 @@ internal sealed class JobStatusResource : IMcpResource
 
     public string Family => McpTelemetry.ResourceFamily.Jobs;
 
-    public IReadOnlyList<McpResourceDescriptor> Describe() => new[]
+    public IReadOnlyList<McpResourceDescriptor> Describe() => [];
+
+    public IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates() => new[]
     {
-        new McpResourceDescriptor
+        new McpResourceTemplateDescriptor
         {
-            Uri = Template,
+            UriTemplate = Template,
             Name = "Geoprocessing job status",
             Description = "Execution job lifecycle record including status, phase, percent complete, and warnings.",
             MimeType = McpResourceHelpers.JsonMimeType

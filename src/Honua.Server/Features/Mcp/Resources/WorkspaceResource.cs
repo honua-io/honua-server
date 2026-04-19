@@ -26,11 +26,13 @@ internal sealed class WorkspaceResource : IMcpResource
 
     public string Family => McpTelemetry.ResourceFamily.Workspaces;
 
-    public IReadOnlyList<McpResourceDescriptor> Describe() => new[]
+    public IReadOnlyList<McpResourceDescriptor> Describe() => [];
+
+    public IReadOnlyList<McpResourceTemplateDescriptor> DescribeTemplates() => new[]
     {
-        new McpResourceDescriptor
+        new McpResourceTemplateDescriptor
         {
-            Uri = Template,
+            UriTemplate = Template,
             Name = "Workspace (stub)",
             Description = "Workspace metadata for a referenced workspace id. Contract stub pending workspace store.",
             MimeType = McpResourceHelpers.JsonMimeType

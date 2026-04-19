@@ -170,3 +170,40 @@ internal sealed class McpNotImplementedOutput
     [JsonPropertyName("nextSteps")]
     public IReadOnlyList<string> NextSteps { get; set; } = [];
 }
+
+/// <summary>
+/// Structured envelope emitted in <see cref="McpToolsCallResult.StructuredContent"/>
+/// when a tool execution fails (auth, validation, approval, domain error). Per
+/// MCP 2025-03-26 tool errors surface inside <c>result</c> with
+/// <c>isError: true</c>, not as JSON-RPC protocol errors, so clients can still
+/// read the tool-level payload for recovery hints.
+/// </summary>
+internal sealed class McpToolErrorOutput
+{
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "error";
+
+    [JsonPropertyName("code")]
+    public string Code { get; set; } = string.Empty;
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+
+    [JsonPropertyName("requiresReauthentication")]
+    public bool? RequiresReauthentication { get; set; }
+
+    [JsonPropertyName("approvalRequired")]
+    public bool? ApprovalRequired { get; set; }
+
+    [JsonPropertyName("policyRef")]
+    public string? PolicyRef { get; set; }
+
+    [JsonPropertyName("conflictingJobId")]
+    public string? ConflictingJobId { get; set; }
+
+    [JsonPropertyName("retryable")]
+    public bool? Retryable { get; set; }
+
+    [JsonPropertyName("violations")]
+    public IReadOnlyList<McpValidationViolation>? Violations { get; set; }
+}

@@ -174,7 +174,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task UnknownMethod_ReturnsStructuredJsonRpcError()
+    public async Task UnknownMethod_ReturnsMethodNotFoundJsonRpcError()
     {
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"probe-1","method":"nonexistent/method"}
@@ -186,6 +186,8 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
 
         root.GetProperty("id").GetString().Should().Be("probe-1");
         var error = root.GetProperty("error");
+        // JSON-RPC 2.0 reserves -32601 for method-not-found.
+        error.GetProperty("code").GetInt32().Should().Be(-32601);
         error.GetProperty("message").GetString().Should().Contain("nonexistent/method");
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("not_found");
     }
@@ -193,7 +195,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task MalformedJson_ReturnsInvalidArgumentJsonRpcError()
+    public async Task MalformedJson_ReturnsParseErrorJsonRpcCode()
     {
         var response = await PostRpcAsync("{not-json");
 
@@ -207,13 +209,15 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         id.ValueKind.Should().Be(JsonValueKind.Null);
 
         var error = root.GetProperty("error");
+        // JSON-RPC 2.0 reserves -32700 for parse errors.
+        error.GetProperty("code").GetInt32().Should().Be(-32700);
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
     }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
-    public async Task EmptyBody_ReturnsInvalidArgumentWithNullId()
+    public async Task EmptyBody_ReturnsParseErrorWithNullId()
     {
         var response = await PostRpcAsync(string.Empty);
 
@@ -225,7 +229,313 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         id.ValueKind.Should().Be(JsonValueKind.Null);
 
         var error = root.GetProperty("error");
+        // An empty body is not valid JSON — it must surface as parse error.
+        error.GetProperty("code").GetInt32().Should().Be(-32700);
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task PrimitiveBody_ReturnsInvalidRequestWithNullId()
+    {
+        // A valid JSON number is not a valid JSON-RPC envelope, so the transport
+        // surfaces -32600 invalid_request rather than -32700 parse_error.
+        var response = await PostRpcAsync("42");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task NullId_IsRejectedAsInvalidRequest()
+    {
+        // MCP restricts request ids to string or integer; an explicit null id is
+        // reserved for error responses when the server cannot determine the id.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":null,"method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task BooleanId_IsRejectedAsInvalidRequest()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":true,"method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task FractionalId_IsRejectedAsInvalidRequest()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":1.5,"method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ObjectId_IsRejectedAsInvalidRequest()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":{"nested":"value"},"method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task BatchWithMultipleRequests_ReturnsArrayOfResponses()
+    {
+        var response = await PostRpcAsync("""
+            [
+              {"jsonrpc":"2.0","id":1,"method":"tools/list"},
+              {"jsonrpc":"2.0","id":"a","method":"resources/list"}
+            ]
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetArrayLength().Should().Be(2);
+
+        var ids = root.EnumerateArray().Select(e => e.GetProperty("id")).ToArray();
+        ids.Should().Contain(e => e.ValueKind == JsonValueKind.Number && e.GetInt32() == 1);
+        ids.Should().Contain(e => e.ValueKind == JsonValueKind.String && e.GetString() == "a");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task BatchOfOnlyNotifications_ReturnsAccepted()
+    {
+        var response = await PostRpcAsync("""
+            [
+              {"jsonrpc":"2.0","method":"notifications/initialized"},
+              {"jsonrpc":"2.0","method":"notifications/unknown"}
+            ]
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var bodyBytes = await response.Content.ReadAsByteArrayAsync();
+        bodyBytes.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task BatchMixedWithNotification_ReturnsOnlyResponseForRequest()
+    {
+        var response = await PostRpcAsync("""
+            [
+              {"jsonrpc":"2.0","id":7,"method":"tools/list"},
+              {"jsonrpc":"2.0","method":"notifications/initialized"}
+            ]
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetArrayLength().Should().Be(1);
+        root[0].GetProperty("id").GetInt32().Should().Be(7);
+        root[0].TryGetProperty("error", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task EmptyBatch_ReturnsInvalidRequestWithNullId()
+    {
+        var response = await PostRpcAsync("[]");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        // Per JSON-RPC 2.0 §6 an empty batch is itself an invalid request —
+        // the server responds with a single response object, not an array.
+        root.ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task BatchWithInvalidElement_ReturnsPerElementInvalidRequestError()
+    {
+        var response = await PostRpcAsync("""
+            [
+              {"jsonrpc":"2.0","id":1,"method":"tools/list"},
+              "not-an-object"
+            ]
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetArrayLength().Should().Be(2);
+        var errorElement = root.EnumerateArray()
+            .FirstOrDefault(e => e.TryGetProperty("error", out _));
+        errorElement.ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        errorElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ResourceTemplatesList_AdvertisesParameterizedUris()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"tpl-1","method":"resources/templates/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var templates = root.GetProperty("result").GetProperty("resourceTemplates");
+        templates.ValueKind.Should().Be(JsonValueKind.Array);
+        var uriTemplates = templates.EnumerateArray()
+            .Select(t => t.GetProperty("uriTemplate").GetString())
+            .ToArray();
+        uriTemplates.Should().Contain("honua://jobs/{jobId}");
+        uriTemplates.Should().Contain("honua://jobs/{jobId}/results");
+        uriTemplates.Should().Contain("honua://workspaces/{workspaceId}");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ResourcesList_ExcludesParameterizedUris()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"list-1","method":"resources/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var resources = root.GetProperty("result").GetProperty("resources");
+        var uris = resources.EnumerateArray()
+            .Select(t => t.GetProperty("uri").GetString())
+            .ToArray();
+        uris.Should().NotContain(u => u != null && u.Contains('{'));
+        uris.Should().Contain("honua://catalog/processes");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ToolsCall_WithToolExecutionFailure_SurfacesIsErrorInsideResult()
+    {
+        // honua_cancel_job throws GeoprocessingValidationException for a blank
+        // job id. Per MCP 2025-03-26 tool execution errors must appear inside
+        // result with isError: true so the client can read a structured
+        // envelope without parsing JSON-RPC protocol errors.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"err-1","method":"tools/call","params":{"name":"honua_cancel_job","arguments":{"jobId":""}}}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetString().Should().Be("err-1");
+        root.TryGetProperty("error", out _).Should().BeFalse();
+
+        var result = root.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("error");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        structured.GetProperty("message").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ToolsCall_UnknownToolName_ReturnsInvalidParamsJsonRpcError()
+    {
+        // Protocol-level param errors (unknown tool name) stay as JSON-RPC
+        // invalid_params; only tool-execution failures move to isError.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"unk-1","method":"tools/call","params":{"name":"honua_does_not_exist","arguments":{}}}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32602);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ResourcesRead_UnknownUri_ReturnsResourceNotFoundJsonRpcCode()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"rr-1","method":"resources/read","params":{"uri":"honua://unknown/thing"}}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        var error = root.GetProperty("error");
+        // MCP 2025-03-26 reserves -32002 for unknown resource URIs.
+        error.GetProperty("code").GetInt32().Should().Be(-32002);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("not_found");
     }
 
     [IntegrationTest]

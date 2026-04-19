@@ -112,19 +112,38 @@ validation rules.
 ### Endpoint
 
 - **Route**: `POST /mcp`
-- **Wire**: JSON-RPC 2.0
-- **Methods**: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `resources/list`, `resources/read`
+- **Wire**: JSON-RPC 2.0 (single requests and batches)
+- **Methods**: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `resources/list`, `resources/templates/list`, `resources/read`
 
-Each HTTP POST carries exactly one JSON-RPC request; batch framing is
-deferred. Request responses use HTTP 200 with a JSON-RPC envelope —
+Request responses use HTTP 200 with a JSON-RPC envelope — protocol-level
 JSON-RPC errors are returned in the response envelope's `error` object
 rather than as HTTP status codes. JSON-RPC notifications (no `id` field, or
 any `notifications/*` method) instead return HTTP 202 Accepted with an
 empty body, as required by the MCP HTTP transport.
 `tools/call` and `resources/read` require an authenticated principal and
 return an `unauthenticated` error otherwise; `initialize`, `tools/list`,
-and `resources/list` are handshake methods that do not require
-authentication.
+`resources/list`, and `resources/templates/list` are handshake methods that
+do not require authentication.
+
+#### Request framing and ids
+
+Each HTTP POST carries either a single JSON-RPC request object or a
+JSON-RPC 2.0 batch array. Batch handling follows §6 of the spec:
+
+- An empty batch array is itself an invalid request; the server responds
+  with a single `invalid_request` response object whose `id` is `null`.
+- Each non-object element in the batch produces one `invalid_request`
+  response in the reply array with `id: null`.
+- Notifications in the batch are processed but do not produce a response
+  entry. If every element was a notification, the server returns HTTP 202
+  with no body instead of an empty JSON array.
+- Mixed batches return a JSON array whose length equals the number of
+  non-notification requests.
+
+Per MCP 2025-03-26 a JSON-RPC request `id` MUST be either a string or an
+integer. Explicit `null`, booleans, fractional numbers, arrays, and objects
+are rejected with `invalid_request` (`-32600`). Absent `id` marks the
+message as a notification, which MUST NOT receive a response body.
 
 ### Lifecycle and version negotiation
 
@@ -163,7 +182,11 @@ The MCP lifecycle is `initialize` (request/response) followed by
   currently contains one `application/json` block whose `text` field is the
   serialized resource body.
 - `tools/list` returns descriptors sorted by tool name; `resources/list`
-  returns descriptors sorted by resource URI.
+  returns descriptors sorted by resource URI. Parameterized resource URIs
+  (for example `honua://jobs/{jobId}`) appear only on
+  `resources/templates/list` under `result.resourceTemplates[*].uriTemplate`
+  per MCP 2025-03-26; `resources/list` exposes only concrete, directly
+  addressable URIs.
 - Tool descriptors expose a static `inputSchema` JSON Schema document.
   Resource descriptors currently all advertise `mimeType: "application/json"`.
 
@@ -186,6 +209,30 @@ Example `tools/call` success shape:
       "status": "Queued",
       "createdAt": "2026-04-18T12:00:00+00:00",
       "resourceUri": "honua://jobs/job-xyz"
+    }
+  }
+}
+```
+
+Example `tools/call` execution-failure shape (tool-level error inside
+`result`, not a JSON-RPC protocol error):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "run-1",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"status\":\"error\",\"code\":\"invalid_argument\",\"message\":\"Cancel-job requires a non-empty jobId.\"}"
+      }
+    ],
+    "isError": true,
+    "structuredContent": {
+      "status": "error",
+      "code": "invalid_argument",
+      "message": "Cancel-job requires a non-empty jobId."
     }
   }
 }
@@ -287,6 +334,26 @@ Read the job lifecycle resource returned by `honua_execute_plan`:
 }
 ```
 
+Submit a batch — two tool calls in a single HTTP request. The server
+returns a JSON array with one response per non-notification element:
+
+```json
+[
+  {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+  {"jsonrpc": "2.0", "id": "a", "method": "resources/templates/list"}
+]
+```
+
+List parameterized resource URIs:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "tpl-1",
+  "method": "resources/templates/list"
+}
+```
+
 ### Tools
 
 | Tool | Status | Domain delegate | Workflow family |
@@ -332,12 +399,12 @@ service lands.
 
 ### Resources
 
-| URI template | Status | Description |
-|--------------|--------|-------------|
-| `honua://jobs/{jobId}` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
-| `honua://jobs/{jobId}/results` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
-| `honua://workspaces/{workspaceId}` | contract stub | Stable template pending workspace store |
-| `honua://catalog/processes` | contract stub | Stable URI pending catalog service |
+| URI / template | Surface | Status | Description |
+|----------------|---------|--------|-------------|
+| `honua://jobs/{jobId}` | `resources/templates/list` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
+| `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
+| `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
+| `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
 map-package artifact. The wire shape is stable so clients can bind today;
@@ -381,26 +448,56 @@ second lifecycle model.
 
 ### Error envelope
 
-Domain exceptions are translated by `McpErrorMapper` into a JSON-RPC error
-object whose `data` field mirrors the gRPC status vocabulary:
+MCP 2025-03-26 distinguishes protocol-level errors from tool-execution
+errors. Transport and dispatch failures surface as JSON-RPC errors in the
+response envelope's `error` field; tool-execution failures (auth, approval,
+validation, domain exceptions thrown inside a tool) are reported inside
+`result` with `isError: true` and a structured `structuredContent` envelope
+so clients can drive retry, re-auth, and approval flows without parsing
+protocol-level errors.
 
-| Exception | `data.code` | JSON-RPC code | Extra signal |
-|-----------|-------------|---------------|--------------|
-| `GeoprocessingAuthorizationException(requiresAuthentication: true)` | `unauthenticated` | `-32000` | `requiresReauthentication: true` |
-| `GeoprocessingAuthorizationException(false)` | `permission_denied` | `-32000` | |
-| `GeoprocessingApprovalRequiredException` | `failed_precondition` | `-32000` | `approvalRequired: true`, `policyRef` |
-| `GeoprocessingPreconditionFailedException` | `failed_precondition` | `-32000` | |
-| `GeoprocessingNotFoundException` | `not_found` | `-32000` | |
-| `GeoprocessingValidationException` | `invalid_argument` | `-32602` | |
-| `GeoprocessingStoreUnavailableException` | `unavailable` | `-32000` | `retryable: true` |
-| `GeoprocessingIdempotencyConflictException` | `already_exists` | `-32000` | |
-| anything else | `internal` | `-32000` | |
+#### Protocol-level errors (JSON-RPC `error`)
 
-Clients can drive retry, re-auth, and approval flows from `data.code`
-without parsing human-readable strings.
-Malformed JSON, missing JSON-RPC fields, missing tool/resource parameters,
-and unsupported plan enums surface as `invalid_argument`; unknown methods,
-tool names, and resource URIs surface as `not_found`.
+Returned on the JSON-RPC envelope for parse failures, framing errors,
+unknown methods, unknown tools, unknown resource URIs, and for any failure
+in `resources/read` (which has no result-level `isError` hook).
+
+| Failure | `data.code` | JSON-RPC code |
+|---------|-------------|---------------|
+| Body is not valid JSON | `invalid_argument` | `-32700` |
+| Body is valid JSON but not a valid JSON-RPC envelope (bad `jsonrpc`, invalid `id`, empty batch, non-object batch element) | `invalid_argument` | `-32600` |
+| Unknown JSON-RPC method | `not_found` | `-32601` |
+| Unknown tool name, missing tool name, or malformed `params` | `invalid_argument` | `-32602` |
+| Unknown resource URI (`resources/read`) | `not_found` | `-32002` |
+| `resources/read` — `GeoprocessingNotFoundException` | `not_found` | `-32002` |
+| `resources/read` — `GeoprocessingValidationException` | `invalid_argument` | `-32602` |
+| `resources/read` — other domain exception | see tool-execution table (data.code column) | `-32000` |
+
+#### Tool-execution errors (`result.isError: true`)
+
+Returned from `tools/call` when the tool raises a domain or auth exception.
+The JSON-RPC envelope contains `result.isError: true`; the error envelope
+is embedded in `result.structuredContent` (and mirrored in the `text` block
+of `result.content`).
+
+| Exception | `structuredContent.code` | Extra signals |
+|-----------|--------------------------|---------------|
+| `GeoprocessingAuthorizationException(requiresAuthentication: true)` | `unauthenticated` | `requiresReauthentication: true` |
+| `GeoprocessingAuthorizationException(false)` | `permission_denied` | |
+| `GeoprocessingApprovalRequiredException` | `failed_precondition` | `approvalRequired: true`, `policyRef` |
+| `GeoprocessingPreconditionFailedException` | `failed_precondition` | |
+| `GeoprocessingNotFoundException` | `not_found` | |
+| `GeoprocessingValidationException` | `invalid_argument` | |
+| `GeoprocessingStoreUnavailableException` | `unavailable` | `retryable: true` |
+| `GeoprocessingIdempotencyConflictException` | `already_exists` | |
+| anything else | `internal` | |
+
+`structuredContent` always includes `status: "error"`, `code`, and
+`message`; optional fields (`requiresReauthentication`, `approvalRequired`,
+`policyRef`, `conflictingJobId`, `retryable`, `violations`) are present
+only when the domain signal applies. Stub tools that return
+`not_implemented` remain a successful tool result — they are not routed
+through this error path.
 
 ### Telemetry
 
