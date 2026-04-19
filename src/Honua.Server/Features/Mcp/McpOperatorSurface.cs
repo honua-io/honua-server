@@ -59,15 +59,17 @@ internal sealed class McpOperatorSurface
 
     /// <summary>
     /// Dispatches a JSON-RPC request and returns a response envelope, or
-    /// <c>null</c> when the input is a JSON-RPC notification (no <c>id</c>)
-    /// and therefore must not receive a reply per the JSON-RPC 2.0 and MCP
-    /// HTTP transport rules. A <c>notifications/*</c> method that carries an
-    /// <c>id</c> is not a real notification — JSON-RPC 2.0 and the MCP
-    /// schema forbid ids on notifications — so it is rejected with
-    /// <c>invalid_request</c>. Callers are expected to validate the shape of
-    /// the request id (string or integer) before calling this method;
-    /// invalid ids must be surfaced as JSON-RPC <c>invalid_request</c>
-    /// errors by the transport layer.
+    /// <c>null</c> when the input is a valid MCP notification — meaning a
+    /// <c>notifications/*</c> method with no <c>id</c>. Per MCP 2025-03-26 the
+    /// <c>notifications/*</c> prefix is the only way a message carries
+    /// notification semantics: a non-<c>notifications/*</c> method without an
+    /// <c>id</c>, or a <c>notifications/*</c> message that carries an
+    /// <c>id</c>, is malformed and surfaced as <c>invalid_request</c>
+    /// (<c>id: null</c> when the server cannot echo one) so clients see the
+    /// error instead of an HTTP 202 that looks like success. Callers are
+    /// expected to validate the shape of the request id (string or integer)
+    /// before calling this method; invalid ids must be surfaced as JSON-RPC
+    /// <c>invalid_request</c> errors by the transport layer.
     /// </summary>
     public async Task<McpJsonRpcResponse?> DispatchAsync(
         HttpContext httpContext,
@@ -78,16 +80,16 @@ internal sealed class McpOperatorSurface
 
         if (!string.Equals(request.JsonRpc, "2.0", StringComparison.Ordinal))
         {
-            return isNotification
-                ? null
-                : ErrorResponse(request.Id, McpErrorMapper.InvalidRequest("jsonrpc must be \"2.0\"."));
+            return ErrorResponse(
+                isNotification ? McpEndpointExtensions.JsonNullId : request.Id,
+                McpErrorMapper.InvalidRequest("jsonrpc must be \"2.0\"."));
         }
 
         if (string.IsNullOrWhiteSpace(request.Method))
         {
-            return isNotification
-                ? null
-                : ErrorResponse(request.Id, McpErrorMapper.InvalidRequest("method is required."));
+            return ErrorResponse(
+                isNotification ? McpEndpointExtensions.JsonNullId : request.Id,
+                McpErrorMapper.InvalidRequest("method is required."));
         }
 
         // MCP lifecycle notifications carry no response per JSON-RPC 2.0.
@@ -109,9 +111,17 @@ internal sealed class McpOperatorSurface
 
         if (isNotification)
         {
-            // A non-notifications method without an id is malformed JSON-RPC.
-            // Per spec we cannot respond (no id), so drop silently.
-            return null;
+            // Only `notifications/*` methods may omit id in MCP 2025-03-26.
+            // A non-notifications method without an id is a malformed request,
+            // not a valid notification; surfacing invalid_request with id: null
+            // (JSON-RPC 2.0's fallback for unknown ids) helps client developers
+            // catch their own bugs — for example an `initialize` call with a
+            // missing id — instead of seeing an HTTP 202 that looks like
+            // success.
+            return ErrorResponse(
+                McpEndpointExtensions.JsonNullId,
+                McpErrorMapper.InvalidRequest(
+                    $"Method '{request.Method}' requires an id; only notifications/* methods may omit it."));
         }
 
         // Tag the ambient activity with the MCP protocol and JSON-RPC method as

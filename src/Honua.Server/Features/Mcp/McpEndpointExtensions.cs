@@ -32,13 +32,16 @@ internal static class McpEndpointExtensions
 
     /// <summary>
     /// Explicit JSON <c>null</c> element used as the response <c>id</c> when the
-    /// request could not be parsed. JSON-RPC 2.0 requires the id field on error
-    /// responses even when the server cannot determine the client's original id,
-    /// in which case it MUST be <c>null</c>. Assigning this element to
-    /// <see cref="McpJsonRpcResponse.Id"/> prevents the
+    /// request could not be parsed or is malformed. JSON-RPC 2.0 requires the id
+    /// field on error responses even when the server cannot determine the
+    /// client's original id, in which case it MUST be <c>null</c>. Assigning this
+    /// element to <see cref="McpJsonRpcResponse.Id"/> prevents the
     /// <c>WhenWritingNull</c> ignore condition from dropping the property.
+    /// Exposed <c>internal</c> so <see cref="McpOperatorSurface"/> can emit
+    /// invalid_request error envelopes for malformed requests that reach the
+    /// dispatcher without a valid id.
     /// </summary>
-    private static readonly JsonElement JsonNullId = CreateJsonNullElement();
+    internal static readonly JsonElement JsonNullId = CreateJsonNullElement();
 
     /// <summary>
     /// Maps <c>POST /mcp</c> for JSON-RPC dispatch.
@@ -216,20 +219,22 @@ internal static class McpEndpointExtensions
         }
         catch (JsonException ex)
         {
-            return idState.Kind == RequestIdKind.Notification
-                ? null
-                : ErrorResponse(
-                    idState.Element ?? JsonNullId,
-                    McpErrorMapper.InvalidRequest($"Request envelope is not a valid JSON-RPC message: {ex.Message}"));
+            // A malformed envelope (for example, wrong field types) is never a
+            // valid MCP notification. Returning HTTP 202 with no body would
+            // mask the client-side bug; JSON-RPC 2.0 allows id: null on error
+            // responses when the server cannot determine the client's id, so
+            // surface invalid_request regardless of whether the broken message
+            // carried an id field.
+            return ErrorResponse(
+                idState.Element ?? JsonNullId,
+                McpErrorMapper.InvalidRequest($"Request envelope is not a valid JSON-RPC message: {ex.Message}"));
         }
 
         if (request is null)
         {
-            return idState.Kind == RequestIdKind.Notification
-                ? null
-                : ErrorResponse(
-                    idState.Element ?? JsonNullId,
-                    McpErrorMapper.InvalidRequest("Request envelope could not be deserialized."));
+            return ErrorResponse(
+                idState.Element ?? JsonNullId,
+                McpErrorMapper.InvalidRequest("Request envelope could not be deserialized."));
         }
 
         // Normalize request.Id so the dispatcher treats absent/notification the

@@ -117,9 +117,14 @@ validation rules.
 
 Request responses use HTTP 200 with a JSON-RPC envelope — protocol-level
 JSON-RPC errors are returned in the response envelope's `error` object
-rather than as HTTP status codes. JSON-RPC notifications (no `id` field, or
-any `notifications/*` method) instead return HTTP 202 Accepted with an
-empty body, as required by the MCP HTTP transport.
+rather than as HTTP status codes. MCP notifications (a `notifications/*`
+method without an `id`) instead return HTTP 202 Accepted with an empty
+body, as required by the MCP HTTP transport. A non-`notifications/*`
+method that omits `id`, or a malformed envelope the server cannot
+deserialize, is surfaced as `invalid_request` (`-32600`) with `id: null`
+rather than silently accepted — clients need an explicit signal when
+their payload is rejected, and the `notifications/*` prefix is the only
+form MCP 2025-03-26 treats as a notification.
 `tools/call` and `resources/read` require an authenticated principal and
 return an `unauthenticated` error otherwise. The authentication gate runs
 *before* param parsing, tool-name matching, or resource-URI matching, so
@@ -154,12 +159,13 @@ JSON-RPC 2.0 batch array. Batch handling follows §6 of the spec:
 
 Per MCP 2025-03-26 a JSON-RPC request `id` MUST be either a string or an
 integer. Explicit `null`, booleans, fractional numbers, arrays, and objects
-are rejected with `invalid_request` (`-32600`). Absent `id` marks the
-message as a notification, which MUST NOT receive a response body.
-Conversely, JSON-RPC notifications (including every `notifications/*`
-method) MUST NOT include an `id` field; a `notifications/*` message that
-carries an `id` is rejected with `invalid_request` rather than silently
-accepted.
+are rejected with `invalid_request` (`-32600`). An absent `id` only marks
+the message as a notification when the method carries the
+`notifications/*` prefix — a non-`notifications/*` method that omits
+`id` is a malformed request and is rejected with `invalid_request`
+(`id: null`) rather than silently accepted. Conversely, a
+`notifications/*` message that carries an `id` is also rejected with
+`invalid_request`; notifications MUST NOT include an `id` field.
 
 ### Lifecycle and version negotiation
 

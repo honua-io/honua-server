@@ -198,6 +198,56 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    public async Task NonNotificationMethod_WithoutId_IsRejectedAsInvalidRequest()
+    {
+        // MCP 2025-03-26: only `notifications/*` methods may omit id. A plain
+        // request method (initialize, tools/list, tools/call, resources/read)
+        // that lacks an id is malformed and must surface as invalid_request
+        // with id: null, rather than being silently accepted as a notification
+        // with HTTP 202.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","method":"initialize","params":{
+                "protocolVersion":"2025-03-26",
+                "capabilities":{},
+                "clientInfo":{"name":"honua-tests","version":"1.0.0"}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32600);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+        error.GetProperty("message").GetString().Should().Contain("initialize");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task MalformedEnvelope_WithoutId_IsRejectedAsInvalidRequest()
+    {
+        // A valid JSON object that fails McpJsonRpcRequest deserialization
+        // (here `method` is a number instead of a string) must not be
+        // silently accepted as a notification just because it lacks an id —
+        // clients need an explicit signal that their payload was rejected.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","method":42}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     public async Task UnknownNotification_WithId_IsRejectedAsInvalidRequest()
     {
         var response = await PostRpcAsync("""
