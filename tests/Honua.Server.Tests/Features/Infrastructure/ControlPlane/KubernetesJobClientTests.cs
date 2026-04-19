@@ -68,7 +68,8 @@ public sealed class KubernetesJobClientTests
         try
         {
             var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(leafCert, SslPolicyErrors.None, roots);
+            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+                leafCert, presentedChain: null, SslPolicyErrors.None, roots);
             result.Should().BeTrue();
         }
         finally
@@ -87,6 +88,7 @@ public sealed class KubernetesJobClientTests
             var roots = new X509Certificate2Collection { rootCert };
             var result = KubernetesJobClient.ValidateAgainstTrustedCas(
                 leafCert,
+                presentedChain: null,
                 SslPolicyErrors.RemoteCertificateChainErrors,
                 roots);
             result.Should().BeTrue();
@@ -107,6 +109,7 @@ public sealed class KubernetesJobClientTests
             var roots = new X509Certificate2Collection { rootCert };
             var result = KubernetesJobClient.ValidateAgainstTrustedCas(
                 leafCert,
+                presentedChain: null,
                 SslPolicyErrors.RemoteCertificateNameMismatch,
                 roots);
             result.Should().BeFalse();
@@ -127,7 +130,8 @@ public sealed class KubernetesJobClientTests
             var roots = new X509Certificate2Collection { rootCert };
             var combined = SslPolicyErrors.RemoteCertificateNameMismatch
                 | SslPolicyErrors.RemoteCertificateChainErrors;
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(leafCert, combined, roots);
+            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+                leafCert, presentedChain: null, combined, roots);
             result.Should().BeFalse();
         }
         finally
@@ -146,6 +150,7 @@ public sealed class KubernetesJobClientTests
             var roots = new X509Certificate2Collection { rootCert };
             var result = KubernetesJobClient.ValidateAgainstTrustedCas(
                 leafCert,
+                presentedChain: null,
                 SslPolicyErrors.RemoteCertificateNotAvailable,
                 roots);
             result.Should().BeFalse();
@@ -170,6 +175,7 @@ public sealed class KubernetesJobClientTests
             var roots = new X509Certificate2Collection { rootCert };
             var result = KubernetesJobClient.ValidateAgainstTrustedCas(
                 expiredLeaf,
+                presentedChain: null,
                 SslPolicyErrors.RemoteCertificateChainErrors,
                 roots);
             result.Should().BeFalse();
@@ -191,6 +197,7 @@ public sealed class KubernetesJobClientTests
             var roots = new X509Certificate2Collection { trustedRoot };
             var result = KubernetesJobClient.ValidateAgainstTrustedCas(
                 untrustedLeaf,
+                presentedChain: null,
                 SslPolicyErrors.RemoteCertificateChainErrors,
                 roots);
             result.Should().BeFalse();
@@ -199,6 +206,75 @@ public sealed class KubernetesJobClientTests
         {
             trustedRoot.Dispose();
             untrustedLeaf.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ValidateAgainstTrustedCas_WithIntermediate_CarriesPresentedIntermediatesForward()
+    {
+        // Private-PKI clusters commonly present a root→intermediate→leaf chain. The
+        // custom trust store only carries the root, so the intermediate has to come
+        // from the chain argument or Build() fails with PartialChain.
+        var (rootCert, intermediateCert, leafCert) = CreateIntermediateChain(
+            rootSubject: "CN=TestRoot",
+            intermediateSubject: "CN=TestIntermediate",
+            leafSubject: "CN=leaf.example");
+
+        using var presentedChain = new X509Chain();
+        presentedChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        presentedChain.ChainPolicy.CustomTrustStore.Add(rootCert);
+        presentedChain.ChainPolicy.ExtraStore.Add(intermediateCert);
+        presentedChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        presentedChain.Build(leafCert);
+
+        try
+        {
+            // Trust bundle contains only the root — the intermediate must arrive via
+            // the presented chain argument.
+            var roots = new X509Certificate2Collection { rootCert };
+            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+                leafCert,
+                presentedChain,
+                SslPolicyErrors.RemoteCertificateChainErrors,
+                roots);
+
+            result.Should().BeTrue("the presented intermediate must be carried into ExtraStore");
+        }
+        finally
+        {
+            rootCert.Dispose();
+            intermediateCert.Dispose();
+            leafCert.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ValidateAgainstTrustedCas_WithIntermediate_FailsWhenIntermediateUnavailable()
+    {
+        var (rootCert, intermediateCert, leafCert) = CreateIntermediateChain(
+            rootSubject: "CN=TestRoot",
+            intermediateSubject: "CN=TestIntermediate",
+            leafSubject: "CN=leaf.example");
+
+        try
+        {
+            var roots = new X509Certificate2Collection { rootCert };
+
+            // No presentedChain → the intermediate isn't discoverable, so the build
+            // must fail rather than silently trusting the leaf.
+            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+                leafCert,
+                presentedChain: null,
+                SslPolicyErrors.RemoteCertificateChainErrors,
+                roots);
+
+            result.Should().BeFalse();
+        }
+        finally
+        {
+            rootCert.Dispose();
+            intermediateCert.Dispose();
+            leafCert.Dispose();
         }
     }
 
@@ -243,5 +319,65 @@ public sealed class KubernetesJobClientTests
         // The cert produced by .Create() does not carry the private key; we only need
         // validation and chain-building, not signing, so the public cert is sufficient.
         return (rootCert, leafCert);
+    }
+
+    private static (X509Certificate2 Root, X509Certificate2 Intermediate, X509Certificate2 Leaf) CreateIntermediateChain(
+        string rootSubject,
+        string intermediateSubject,
+        string leafSubject)
+    {
+        using var rootRsa = RSA.Create(2048);
+        var rootRequest = new CertificateRequest(
+            rootSubject,
+            rootRsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 1, true));
+        rootRequest.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
+            true));
+        var rootCert = rootRequest.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddYears(-1),
+            DateTimeOffset.UtcNow.AddYears(5));
+
+        using var intermediateRsa = RSA.Create(2048);
+        var intermediateRequest = new CertificateRequest(
+            intermediateSubject,
+            intermediateRsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        intermediateRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
+        intermediateRequest.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign,
+            true));
+        var intermediateSerial = new byte[8];
+        Random.Shared.NextBytes(intermediateSerial);
+        var intermediatePublic = intermediateRequest.Create(
+            rootCert,
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(3),
+            intermediateSerial);
+        var intermediateCert = intermediatePublic.CopyWithPrivateKey(intermediateRsa);
+        intermediatePublic.Dispose();
+
+        using var leafRsa = RSA.Create(2048);
+        var leafRequest = new CertificateRequest(
+            leafSubject,
+            leafRsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+        leafRequest.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+            true));
+        var leafSerial = new byte[8];
+        Random.Shared.NextBytes(leafSerial);
+        var leafCert = leafRequest.Create(
+            intermediateCert,
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            leafSerial);
+
+        return (rootCert, intermediateCert, leafCert);
     }
 }

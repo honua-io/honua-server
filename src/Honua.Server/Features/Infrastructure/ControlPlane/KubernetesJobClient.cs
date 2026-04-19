@@ -421,8 +421,8 @@ internal sealed partial class KubernetesJobClient(
                 var trustedRoots = LoadCaBundle(resolvedPath);
                 if (trustedRoots.Count > 0)
                 {
-                    handler.ServerCertificateCustomValidationCallback = (_, leaf, _, errors) =>
-                        ValidateAgainstTrustedCas(leaf, errors, trustedRoots);
+                    handler.ServerCertificateCustomValidationCallback = (_, leaf, presentedChain, errors) =>
+                        ValidateAgainstTrustedCas(leaf, presentedChain, errors, trustedRoots);
                 }
             }
             catch (Exception)
@@ -447,10 +447,14 @@ internal sealed partial class KubernetesJobClient(
     /// trust to the configured custom root(s) via <see cref="X509ChainTrustMode.CustomRootTrust"/>
     /// while preserving normal name-binding, expiry, and signature checks. Explicitly
     /// rejects hostname mismatches and missing-certificate errors so a thumbprint match
-    /// alone cannot silence those policy failures.
+    /// alone cannot silence those policy failures. Intermediate certificates presented
+    /// by the server are carried forward via <see cref="X509ChainPolicy.ExtraStore"/>
+    /// so a root → intermediate → leaf chain verifies when the configured bundle only
+    /// contains the root.
     /// </summary>
     internal static bool ValidateAgainstTrustedCas(
         X509Certificate2? leaf,
+        X509Chain? presentedChain,
         SslPolicyErrors errors,
         X509Certificate2Collection trustedRoots)
     {
@@ -478,6 +482,23 @@ internal sealed partial class KubernetesJobClient(
         // endpoint (private CA); skipping revocation keeps chain validation deterministic
         // while expiry/signature checks still apply via Build().
         customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+
+        // Forward any intermediate certificates the server presented alongside the leaf.
+        // Without this, a valid root → intermediate → leaf chain fails because the
+        // CustomTrustStore only holds the root and the intermediates are not otherwise
+        // discoverable on the client.
+        if (presentedChain != null)
+        {
+            foreach (var element in presentedChain.ChainElements)
+            {
+                var cert = element.Certificate;
+                if (cert != null && !ReferenceEquals(cert, leaf))
+                {
+                    customChain.ChainPolicy.ExtraStore.Add(cert);
+                }
+            }
+        }
+
         return customChain.Build(leaf);
     }
 

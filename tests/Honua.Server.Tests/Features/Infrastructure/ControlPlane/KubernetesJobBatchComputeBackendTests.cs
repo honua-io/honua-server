@@ -33,7 +33,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         capabilities.SupportsCancellation.Should().BeTrue();
         capabilities.SupportsProgressPolling.Should().BeTrue();
-        capabilities.SupportsRetry.Should().BeTrue();
+        // Remote retry orchestration is not wired yet; see KubernetesJobBatchComputeBackend XML doc.
+        capabilities.SupportsRetry.Should().BeFalse();
         capabilities.SupportsArtifactStaging.Should().BeTrue();
         capabilities.SupportsLogStreaming.Should().BeFalse();
     }
@@ -174,6 +175,10 @@ public sealed class KubernetesJobBatchComputeBackendTests
     public async Task CancelAsync_IOError_PreservesCurrentStatus()
     {
         var client = Substitute.For<IKubernetesJobClient>();
+        // The bearer-token read runs on every request, so both the pre-cancel observe
+        // and the delete hop surface the same IO failure.
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Throws(new IOException("bearer token file unreadable"));
         client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Throws(new IOException("bearer token file unreadable"));
         var backend = CreateBackend(client);
@@ -329,6 +334,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
     public async Task CancelAsync_MissingJob_IsTreatedAsCancelled()
     {
         var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
         client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.NotFound });
 
@@ -345,6 +352,12 @@ public sealed class KubernetesJobBatchComputeBackendTests
     public async Task CancelAsync_DeleteSucceeds_ReturnsCancelled()
     {
         var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-live", Active = 1 }
+            });
         client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.OK });
 
@@ -358,9 +371,80 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task CancelAsync_ProviderJobAlreadySucceeded_PreservesSucceeded()
+    {
+        // Race: the pod finished between the last reconciler sweep and this cancel hop.
+        // Delete would succeed, but writing Cancelled over a Succeeded terminal state
+        // would lose the successful completion. Preserve the terminal outcome instead.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-succeeded-race",
+                    Succeeded = 1,
+                    CompleteCondition = true
+                }
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-succeeded-race", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        observation.PercentComplete.Should().Be(100d);
+        observation.ProviderOperationId.Should().Be("uid-succeeded-race");
+        await client.DidNotReceiveWithAnyArgs().DeleteJobAsync(default!, default!);
+    }
+
+    [Fact]
+    public async Task CancelAsync_ProviderJobAlreadyFailed_PreservesFailedWithPodDetail()
+    {
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-failed-race",
+                    Failed = 1,
+                    FailedCondition = true,
+                    TerminalReason = "BackoffLimitExceeded"
+                }
+            });
+        client.ListPodsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new List<KubernetesPodStatusSnapshot>
+            {
+                new()
+                {
+                    Name = "pod-1",
+                    Phase = "Failed",
+                    ContainerTerminationReason = "OOMKilled",
+                    ContainerTerminationMessage = "worker exited",
+                    ContainerExitCode = 137
+                }
+            });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-failed-race", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("worker exited");
+        await client.DidNotReceiveWithAnyArgs().DeleteJobAsync(default!, default!);
+    }
+
+    [Fact]
     public async Task CancelAsync_HttpFailure_PreservesCurrentStatus()
     {
         var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("boom"));
         client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Throws(new HttpRequestException("boom"));
 
@@ -547,6 +631,12 @@ public sealed class KubernetesJobBatchComputeBackendTests
     public async Task CancelAsync_NoNamespaceConfigured_FallsBackToDefault()
     {
         var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync("default", "honua-job-cancel-default", Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-live", Active = 1 }
+            });
         client.DeleteJobAsync("default", "honua-job-cancel-default", Arg.Any<CancellationToken>())
             .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.OK });
         var backend = CreateBackend(client, new KubernetesExecutionOptions { DefaultNamespace = null });

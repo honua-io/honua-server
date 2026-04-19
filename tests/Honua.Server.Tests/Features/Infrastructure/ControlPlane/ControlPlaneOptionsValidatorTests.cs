@@ -159,4 +159,50 @@ public sealed class ControlPlaneOptionsValidatorTests
 
         Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
     }
+
+    [UnitTest]
+    public void Validate_WithMissingKubernetesBearerTokenPath_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            Kubernetes = new KubernetesExecutionOptions
+            {
+                InClusterAutoDetect = false,
+                ApiServerUrl = "https://cluster.example.test",
+                BearerTokenPath = "/this/path/does/not/exist/token"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("BearerTokenPath"));
+    }
+
+    [UnitTest]
+    public void Validate_WithExistingKubernetesBearerTokenPath_Succeeds()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"bearer-token-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(tempFile, "test-token");
+        try
+        {
+            var options = new ControlPlaneOptions
+            {
+                Kubernetes = new KubernetesExecutionOptions
+                {
+                    InClusterAutoDetect = false,
+                    ApiServerUrl = "https://cluster.example.test",
+                    BearerTokenPath = tempFile
+                }
+            };
+
+            var result = _validator.Validate(null, options);
+
+            Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }

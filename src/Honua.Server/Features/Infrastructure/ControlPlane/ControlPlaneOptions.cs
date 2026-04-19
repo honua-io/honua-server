@@ -308,6 +308,11 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
         {
             failures.Add($"{prefix}:CaBundlePath '{options.CaBundlePath}' does not exist or is unreadable.");
         }
+
+        if (!string.IsNullOrWhiteSpace(options.BearerTokenPath) && !File.Exists(options.BearerTokenPath))
+        {
+            failures.Add($"{prefix}:BearerTokenPath '{options.BearerTokenPath}' does not exist or is unreadable.");
+        }
     }
 }
 

@@ -13,9 +13,14 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 /// Batch compute adapter that executes canonical execution jobs on a Kubernetes
 /// cluster by translating the <see cref="ExecutionJobRecord"/> into a
 /// <c>batch/v1</c> Job and projecting Job + Pod lifecycle back onto
-/// <see cref="ExecutionJobStatus"/>. The reconciler owns retries and timeouts;
-/// the adapter keeps Jobs at <c>backoffLimit: 0</c> so the canonical runtime
-/// remains the single source of truth for retry semantics.
+/// <see cref="ExecutionJobStatus"/>. The adapter keeps Jobs at
+/// <c>backoffLimit: 0</c> so a failed Pod surfaces terminally rather than being
+/// silently retried inside the cluster. Retry orchestration for remote
+/// <c>Failed</c> observations is not yet implemented in the canonical
+/// <see cref="ExecutionJobReconciler"/>; the adapter therefore advertises
+/// <see cref="BatchComputeBackendCapabilities.SupportsRetry"/> as <c>false</c>
+/// until the reconciler grows a remote-requeue path keyed off
+/// <c>JobRetryPolicy</c>.
 /// </summary>
 internal sealed partial class KubernetesJobBatchComputeBackend(
     IKubernetesJobClient jobClient,
@@ -40,7 +45,12 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             SupportsCancellation = true,
             SupportsLogStreaming = false,
             SupportsProgressPolling = true,
-            SupportsRetry = true,
+            // Remote-failure retry orchestration does not yet exist in the reconciler
+            // (Queued/local retries live in JobReconciliationService; ObserveJobAsync
+            // persists provider Failed observations as terminal). Advertise false until
+            // that orchestration lands so callers treating SupportsRetry as a contract
+            // do not get stranded expectations.
+            SupportsRetry = false,
             SupportsArtifactStaging = true
         });
 
@@ -195,6 +205,22 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
 
         try
         {
+            // Observe the provider state before requesting deletion so a Job that
+            // already reached Succeeded/Failed (for example, the pod finished between
+            // the reconciler sweep and this cancel hop) is not overwritten with
+            // Cancelled by the subsequent authoritative store write. Matches the
+            // terminal-preservation rule used by BuildObservationForMissingJob and
+            // the local backend's ObserveAsync-backed cancel.
+            var terminal = await TryObserveTerminalBeforeCancelAsync(
+                    job, namespaceName, jobName, cancellationToken)
+                .ConfigureAwait(false);
+            if (terminal != null)
+            {
+                ControlPlaneTelemetry.RecordExecutionRequest(
+                    job, "cancel", terminal.Status.ToString().ToLowerInvariant() + "_race");
+                return terminal;
+            }
+
             var result = await jobClient.DeleteJobAsync(namespaceName, jobName, cancellationToken)
                 .ConfigureAwait(false);
             var message = result.NotFound
@@ -222,6 +248,51 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 Message = $"Kubernetes Job cancellation failed: {ex.Message}"
             };
         }
+    }
+
+    private async Task<BatchComputeObservation?> TryObserveTerminalBeforeCancelAsync(
+        ExecutionJobRecord job,
+        string namespaceName,
+        string jobName,
+        CancellationToken cancellationToken)
+    {
+        var fetch = await jobClient.GetJobAsync(namespaceName, jobName, cancellationToken)
+            .ConfigureAwait(false);
+        if (fetch.NotFound || fetch.Snapshot == null)
+        {
+            return null;
+        }
+
+        var snapshot = fetch.Snapshot;
+        var observed = MapStatus(snapshot, job.Status);
+        if (observed is not (ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed))
+        {
+            return null;
+        }
+
+        string? message;
+        if (observed == ExecutionJobStatus.Failed)
+        {
+            var pods = await jobClient
+                .ListPodsAsync(
+                    namespaceName,
+                    $"{OperationIdLabel}={job.OperationId}",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            message = BuildFailureMessage(snapshot, pods);
+        }
+        else
+        {
+            message = "Kubernetes Job completed before cancellation took effect.";
+        }
+
+        return new BatchComputeObservation
+        {
+            Status = observed,
+            ProviderOperationId = snapshot.Uid ?? job.ProviderOperationId,
+            PercentComplete = ProjectPercentComplete(observed, job.PercentComplete),
+            Message = message ?? job.CurrentPhase
+        };
     }
 
     // Misconfiguration (missing/invalid ApiServerUrl, unreadable bearer token file) surfaces at
