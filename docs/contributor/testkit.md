@@ -386,11 +386,14 @@ reflection). Each scenario declares:
 - `precompiledPlan` — shape of `AnalysisPlan` (steps, DAG edges, declared
   outputs) used in Phase 1 until the compile seam from #529/#723 lands
 - `expectedOutcome` — Phase 1 currently asserts `isExecutable`,
-  `requiresApproval`, and `estimatedArtifactKinds`. It also carries forward
-  `terminalWorkflowStatus` plus `expectsMapPackage` / `expectsAppPackage` for
-  later execution/package assertions; today they are forward-declared and not
-  validated against runtime outputs yet (`expectsAppPackage` is the only one
-  that currently affects stage scoping)
+  `requiresApproval`, and `estimatedArtifactKinds`. `estimatedArtifactKinds` is
+  enforced as an exact set: missing kinds fail with `artifact-kinds-missing` and
+  unexpected kinds fail with `artifact-kinds-unexpected` so drift in either
+  direction is caught. It also carries forward `terminalWorkflowStatus` plus
+  `expectsMapPackage` / `expectsAppPackage` for later execution/package
+  assertions; today they are forward-declared and not validated against runtime
+  outputs yet (`expectsAppPackage` is the only one that currently affects stage
+  scoping)
 
 The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, the
 `tests/Eval/scenarios/` directory under `Honua.sln`, then the directory next to

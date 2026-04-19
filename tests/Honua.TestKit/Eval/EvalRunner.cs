@@ -323,6 +323,19 @@ public sealed class EvalRunner
                         ElapsedMs = stopwatch.ElapsedMilliseconds
                     }, response);
                 }
+
+                var unexpected = actual.Except(expected).ToArray();
+                if (unexpected.Length > 0)
+                {
+                    return (new EvalStageOutcome
+                    {
+                        Stage = EvalStageKind.DryRun,
+                        Status = EvalStageStatus.Failed,
+                        Reason = "artifact-kinds-unexpected",
+                        Detail = $"Unexpected artifact kinds [{string.Join(",", unexpected)}] were produced by dry-run; expected [{string.Join(",", expected)}].",
+                        ElapsedMs = stopwatch.ElapsedMilliseconds
+                    }, response);
+                }
             }
 
             return (new EvalStageOutcome

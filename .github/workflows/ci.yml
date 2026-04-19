@@ -434,7 +434,7 @@ jobs:
         with:
           name: operator-eval-report
           path: tests/TestResults/eval-report.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10

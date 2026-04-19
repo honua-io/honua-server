@@ -66,6 +66,31 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
+    /// Dry-run validation must fail when the server reports artifact kinds beyond the
+    /// scenario's declared set. Subset-only comparison would silently accept drift in
+    /// the canonical runtime's artifact surface, weakening the eval gate's contract.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task DryRun_UnexpectedArtifactKinds_FailsScenario()
+    {
+        var baseScenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
+        var scenario = baseScenario with
+        {
+            ExpectedOutcome = baseScenario.ExpectedOutcome with
+            {
+                EstimatedArtifactKinds = [ArtifactKind.FeatureLayer]
+            }
+        };
+
+        var result = await _fixture.Runner.RunAsync(scenario, CancellationToken.None);
+
+        var dryRun = result.Stages.Single(stage => stage.Stage == EvalStageKind.DryRun);
+        dryRun.Status.Should().Be(EvalStageStatus.Failed);
+        dryRun.Reason.Should().Be("artifact-kinds-unexpected");
+    }
+
+    /// <summary>
     /// OGC protocol parity must treat a 403 approval-required response as a matched
     /// rejection when the scenario itself expects <c>RequiresApproval=true</c>. Without
     /// this, any future approval-gated scenario would incorrectly fail parity even
