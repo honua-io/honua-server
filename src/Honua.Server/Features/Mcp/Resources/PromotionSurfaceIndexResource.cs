@@ -64,6 +64,36 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
 
     public string Family => McpTelemetry.ResourceFamily.PromotionIndex;
 
+    // Counter telemetry routes through the per-URI family so the four promotion
+    // roots — published-services, deployments, map-packages, app-packages —
+    // emit distinct `resource_family` tag values. Without this the dispatcher
+    // would collapse all four roots into a single `promotion-index` series and
+    // lose per-root success/error observability.
+    public string ResolveFamily(string uri)
+    {
+        if (string.Equals(uri, McpResourceUris.PublishedServicesRoot, StringComparison.Ordinal))
+        {
+            return McpTelemetry.ResourceFamily.PublishedServices;
+        }
+
+        if (string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal))
+        {
+            return McpTelemetry.ResourceFamily.Deployments;
+        }
+
+        if (string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal))
+        {
+            return McpTelemetry.ResourceFamily.MapPackages;
+        }
+
+        if (string.Equals(uri, McpResourceUris.AppPackagesRoot, StringComparison.Ordinal))
+        {
+            return McpTelemetry.ResourceFamily.AppPackages;
+        }
+
+        return Family;
+    }
+
     public IReadOnlyList<McpResourceDescriptor> Describe() => new[]
     {
         new McpResourceDescriptor
