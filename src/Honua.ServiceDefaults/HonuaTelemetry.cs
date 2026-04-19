@@ -121,6 +121,9 @@ public static class HonuaTelemetry
 
         /// <summary>Anomaly detection activity.</summary>
         public const string AnomalyDetection = "honua.ml.anomaly_detection";
+
+        /// <summary>Operator execution admission evaluation activity.</summary>
+        public const string ExecutionAdmission = "honua.execution.admission";
     }
 
     /// <summary>

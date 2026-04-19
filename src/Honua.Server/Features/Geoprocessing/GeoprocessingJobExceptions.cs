@@ -83,3 +83,46 @@ internal sealed class GeoprocessingIdempotencyConflictException : Exception
     public GeoprocessingIdempotencyConflictException()
         : base("Idempotency key is already associated with a different request.") { }
 }
+
+/// <summary>
+/// Raised when a runtime admission control blocks job submission.
+/// Both Throttled and Denied outcomes surface through this exception; the outcome
+/// and dimension are preserved for protocol mapping, telemetry, and eval harness signals.
+/// </summary>
+internal sealed class GeoprocessingAdmissionException : Exception
+{
+    /// <summary>
+    /// Terminal admission outcome (<see cref="Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Throttled"/>
+    /// or <see cref="Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Denied"/>).
+    /// </summary>
+    public Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome Outcome { get; }
+
+    /// <summary>
+    /// Control dimension that rejected the request.
+    /// </summary>
+    public Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionDimension DenyingDimension { get; }
+
+    /// <summary>
+    /// Machine-readable policy reference that rejected the request.
+    /// </summary>
+    public string PolicyRef { get; }
+
+    /// <summary>
+    /// Suggested retry delay in seconds.
+    /// </summary>
+    public int RetryAfterSeconds { get; }
+
+    public GeoprocessingAdmissionException(
+        Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome outcome,
+        Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionDimension dimension,
+        string policyRef,
+        string reason,
+        int retryAfterSeconds)
+        : base(reason)
+    {
+        Outcome = outcome;
+        DenyingDimension = dimension;
+        PolicyRef = policyRef;
+        RetryAfterSeconds = retryAfterSeconds;
+    }
+}

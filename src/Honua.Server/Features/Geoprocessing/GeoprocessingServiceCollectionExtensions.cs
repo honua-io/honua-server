@@ -62,6 +62,15 @@ internal static class GeoprocessingServiceCollectionExtensions
                     sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
         }
 
+        // Execution admission controls (ticket #739) — rate, concurrency, cost, backpressure
+        services
+            .AddOptions<ExecutionAdmissionOptions>()
+            .Bind(configuration.GetSection(ExecutionAdmissionOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
+
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
 

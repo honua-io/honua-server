@@ -579,6 +579,11 @@ internal static class GPServerEndpoints
                 LogAndReturn(logger, operation, conflictEx.Message,
                     StandardErrorHelpers.CreateConflict(context, conflictEx.Message)),
 
+            GeoprocessingAdmissionException admissionEx =>
+                LogAndReturn(logger, operation, admissionEx.Message,
+                    StandardErrorHelpers.CreateServiceUnavailable(
+                        context, admissionEx.Message, admissionEx.RetryAfterSeconds)),
+
             _ => LogAndReturn(logger, operation, ex.Message,
                 StandardErrorHelpers.CreateInternalServerError(context,
                     "An error occurred while processing the GP request."))

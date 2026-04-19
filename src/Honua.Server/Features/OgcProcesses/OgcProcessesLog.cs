@@ -84,4 +84,8 @@ internal static partial class OgcProcessesLog
 
     [LoggerMessage(8162, LogLevel.Warning, "OGC Job dismiss rejected (approval required): JobId={JobId}, Policy={PolicyRef}")]
     public static partial void DismissRejectedApprovalRequired(ILogger logger, string jobId, string policyRef);
+
+    // 8170-8179: Admission
+    [LoggerMessage(8170, LogLevel.Warning, "OGC Processes execution rejected by admission: Outcome={Outcome}, Dimension={Dimension}, Policy={PolicyRef}")]
+    public static partial void ExecutionRejectedByAdmission(ILogger logger, string outcome, string dimension, string policyRef);
 }

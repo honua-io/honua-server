@@ -152,4 +152,11 @@ internal static partial class GeoprocessingServiceLog
     public static partial void RemoteCancelCasExhausted(
         ILogger logger,
         string jobId);
+
+    [LoggerMessage(8028, LogLevel.Warning, "Submit rejected by admission: Outcome={Outcome}, Dimension={Dimension}, Policy={PolicyRef}")]
+    public static partial void SubmitRejectedByAdmission(
+        ILogger logger,
+        string outcome,
+        string dimension,
+        string policyRef);
 }
