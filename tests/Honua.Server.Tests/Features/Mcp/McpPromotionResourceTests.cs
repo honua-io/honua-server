@@ -705,6 +705,91 @@ public sealed class McpPromotionResourceTests
         string.Compare(afterTag, beforeTag, StringComparison.Ordinal).Should().BePositive();
     }
 
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task PromotionIndex_PublishedServices_EmitsPerItemEtagButNoEnvelopeEtag()
+    {
+        _services.ListActiveAsync(Arg.Any<CancellationToken>())
+            .Returns([BuildPublishedService("svc-1")]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.TryGetProperty("etag", out _).Should().BeFalse(
+            "list envelopes do not expose a rolled-up ETag; agents poll per-item.");
+        body.GetProperty("items")[0].GetProperty("etag").GetString().Should().StartWith("W/\"");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://deployments")]
+    public async Task PromotionIndex_Deployments_EmitsPerItemEtagButNoEnvelopeEtag()
+    {
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>())
+            .Returns([BuildDeployment("dep-1", DeploymentSource.FromPublishedService("svc-1"))]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://deployments",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.TryGetProperty("etag", out _).Should().BeFalse(
+            "list envelopes do not expose a rolled-up ETag; agents poll per-item.");
+        body.GetProperty("items")[0].GetProperty("etag").GetString().Should().StartWith("W/\"");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
+    public async Task MapPackageResource_Read_DoesNotExposeEtag()
+    {
+        _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map-1", Arg.Any<CancellationToken>())
+            .Returns([BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-1"))]);
+
+        var resource = new MapPackageResource(_deployments, _jobService, NullLogger<MapPackageResource>.Instance);
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages/map-1",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.TryGetProperty("etag", out _).Should().BeFalse(
+            "packages are derived from deployment reverse-lookups and have no canonical lifecycle ETag.");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    public async Task PromotionIndex_MapPackages_EmitsNoEtagOnEnvelopeOrItems()
+    {
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-a"))
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.TryGetProperty("etag", out _).Should().BeFalse();
+        body.GetProperty("items")[0].TryGetProperty("etag", out _).Should().BeFalse();
+    }
+
     // ------------------------------------------------------------------
     // Authentication gate
     // ------------------------------------------------------------------

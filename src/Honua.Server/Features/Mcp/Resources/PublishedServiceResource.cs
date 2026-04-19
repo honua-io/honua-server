@@ -80,6 +80,8 @@ internal sealed class PublishedServiceResource : IMcpResource
             principal, OperatorResourceType.PublishedService, OperatorOperation.Read);
 
         var serviceId = uri[McpResourceUris.PublishedServicesPrefix.Length..];
+        McpLog.ResourceRead(_logger, Family, uri);
+
         var record = await _services.GetAsync(serviceId, cancellationToken).ConfigureAwait(false);
         if (record is null)
         {

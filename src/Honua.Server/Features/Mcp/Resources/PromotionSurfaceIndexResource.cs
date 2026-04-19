@@ -141,6 +141,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         McpTelemetry.EnrichActivity("ListPublishedServices");
         _jobService.EnsureCallerAuthorized(
             principal, OperatorResourceType.PublishedService, OperatorOperation.Read);
+        McpLog.ResourceRead(_logger, McpTelemetry.ResourceFamily.PublishedServices, uri);
 
         // ListActiveAsync only excludes decommissioned services, so we narrow to the
         // Active subset here to match the "active published services" descriptor
@@ -189,6 +190,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         McpTelemetry.EnrichActivity("ListDeployments");
         _jobService.EnsureCallerAuthorized(
             principal, OperatorResourceType.Deployment, OperatorOperation.Read);
+        McpLog.ResourceRead(_logger, McpTelemetry.ResourceFamily.Deployments, uri);
 
         // ListActiveAsync excludes Retired and Superseded but still surfaces
         // Failed, Cancelled, Draft, Scheduled, Provisioning, and RollingOut
@@ -239,6 +241,10 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
             : "ListAppPackages");
         _jobService.EnsureCallerAuthorized(
             principal, OperatorResourceType.Package, OperatorOperation.Read);
+        var listFamily = packageKind == DeploymentSourceKind.MapPackage
+            ? McpTelemetry.ResourceFamily.MapPackages
+            : McpTelemetry.ResourceFamily.AppPackages;
+        McpLog.ResourceRead(_logger, listFamily, uri);
 
         // Packages are visible only through currently-published deployments so the
         // list root agrees with the package detail 404 contract — a package that
@@ -262,10 +268,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
             })
             .ToList();
 
-        var family = packageKind == DeploymentSourceKind.MapPackage
-            ? McpTelemetry.ResourceFamily.MapPackages
-            : McpTelemetry.ResourceFamily.AppPackages;
-        McpLog.PromotionListRead(_logger, family, items.Count, truncated);
+        McpLog.PromotionListRead(_logger, listFamily, items.Count, truncated);
 
         var view = new McpPackageListView
         {

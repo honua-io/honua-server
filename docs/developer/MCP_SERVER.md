@@ -492,10 +492,11 @@ second lifecycle model.
 
 #### Promotion-surface payload notes
 
-The published-service, deployment, and package resources all share the same
-ETag and provenance conventions so agents can poll for lifecycle changes
+The published-service, deployment, and package resources share provenance
+conventions, and published-service / deployment resources additionally carry
+monotonic ETags so agents can poll those surfaces for lifecycle changes
 without subscribing. A subscription surface is not in scope today; the
-audit-trail plus monotonic ETag is the observability contract.
+audit-trail plus monotonic ETag (where exposed) is the observability contract.
 
 - **Authorization.** Every promotion-surface read goes through
   `IGeoprocessingJobService.EnsureCallerAuthorized`, which routes to
@@ -508,12 +509,19 @@ audit-trail plus monotonic ETag is the observability contract.
   package reads and the package list roots require `Package` with
   `Read`. The same vocabulary and grants cover the gRPC, GPServer, and
   MCP protocols.
-- **ETag.** Every promotion-surface read returns a weak ETag of the form
+- **ETag.** Published-service and deployment reads — both the detail views
+  and the summary items returned inside `honua://published-services` /
+  `honua://deployments` list envelopes — return a weak ETag of the form
   `W/"{updatedAtTicks:hex}-{status}"`. For deployments the timestamp is
   the maximum of `updatedAt` and the last `transitions[*].at`, so a new
   audit entry always advances the tag. Status is included so lifecycle
   flips (e.g. `Active` → `Suspended`) invalidate clients even when the
-  record's timestamp clock hasn't advanced yet. Full MCP
+  record's timestamp clock hasn't advanced yet. Map/app package views,
+  package summary items, and the list-root envelopes themselves do not
+  carry an ETag: packages are derived from deployment reverse-lookups
+  with no canonical lifecycle timestamp of their own, and list envelopes
+  expose per-item ETags so agents poll the individual service or
+  deployment resource rather than a rolled-up digest. Full MCP
   `notifications/resources/updated` is deferred.
 - **Provenance edges** live under `provenance` on the detail views and
   mirror `McpHostedProvenance`: `originatingIntentId`, `resultPackageId`,

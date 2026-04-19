@@ -71,6 +71,8 @@ internal sealed class DeploymentResource : IMcpResource
             principal, OperatorResourceType.Deployment, OperatorOperation.Read);
 
         var deploymentId = uri[McpResourceUris.DeploymentsPrefix.Length..];
+        McpLog.ResourceRead(_logger, Family, uri);
+
         var deployment = await _deployments.GetAsync(deploymentId, cancellationToken).ConfigureAwait(false);
         if (deployment is null)
         {

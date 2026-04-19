@@ -76,6 +76,8 @@ internal sealed class MapPackageResource : IMcpResource
             principal, OperatorResourceType.Package, OperatorOperation.Read);
 
         var packageId = uri[McpResourceUris.MapPackagesPrefix.Length..];
+        McpLog.ResourceRead(_logger, Family, uri);
+
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.MapPackage, packageId, cancellationToken)
             .ConfigureAwait(false);

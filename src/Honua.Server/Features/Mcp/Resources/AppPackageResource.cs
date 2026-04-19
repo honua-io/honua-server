@@ -74,6 +74,8 @@ internal sealed class AppPackageResource : IMcpResource
             principal, OperatorResourceType.Package, OperatorOperation.Read);
 
         var packageId = uri[McpResourceUris.AppPackagesPrefix.Length..];
+        McpLog.ResourceRead(_logger, Family, uri);
+
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.AppPackage, packageId, cancellationToken)
             .ConfigureAwait(false);
