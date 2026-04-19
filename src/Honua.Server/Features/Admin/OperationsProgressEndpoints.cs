@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -110,6 +111,7 @@ internal static class OperationsProgressEndpoints
             GeoprocessingProgress geoprocessingProgress => Results.Json(geoprocessingProgress, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             PublishingProgress publishingProgress => Results.Json(publishingProgress, OperationsProgressJsonContext.Default.PublishingProgress),
             WorkflowProgress workflowProgress => Results.Json(workflowProgress, OperationsProgressJsonContext.Default.WorkflowProgress),
+            DeploymentProgress deploymentProgress => Results.Json(deploymentProgress, OperationsProgressJsonContext.Default.DeploymentProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
     }
@@ -129,6 +131,7 @@ internal static class OperationsProgressEndpoints
             GeoprocessingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.GeoprocessingProgress),
             PublishingProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.PublishingProgress),
             WorkflowProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.WorkflowProgress),
+            DeploymentProgress p => JsonSerializer.SerializeToElement(p, OperationsProgressJsonContext.Default.DeploymentProgress),
             _ => JsonSerializer.SerializeToElement(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
 
@@ -640,6 +643,9 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(PublishIntentStatus))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(WorkflowProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(WorkflowRunStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(DeploymentProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(DeploymentStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(RolloutState))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
