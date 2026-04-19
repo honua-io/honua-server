@@ -599,6 +599,36 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    public async Task ToolsCall_PlanWithNullStepEntry_SurfacesInvalidArgumentInsideResult()
+    {
+        // Malformed {"steps":[null]} would otherwise dereference step.Kind and
+        // turn into a NullReferenceException that the tool envelope renders as
+        // an internal error. The invariant is that plan-shape validation
+        // failures stay on the invalid_argument path inside the isError result.
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"null-step","method":"tools/call","params":{
+                "name":"honua_validate_plan",
+                "arguments":{"plan":{"planId":"plan-1","steps":[null]}}
+            }}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetString().Should().Be("null-step");
+        root.TryGetProperty("error", out _).Should().BeFalse();
+
+        var result = root.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        structured.GetProperty("message").GetString().Should().Contain("step at index 0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     public async Task ToolsCall_UnknownToolName_ReturnsInvalidParamsJsonRpcError()
     {
         // Protocol-level param errors (unknown tool name) stay as JSON-RPC

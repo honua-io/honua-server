@@ -265,4 +265,134 @@ public sealed class McpToolDelegationTests
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
     }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_validate_plan")]
+    public async Task ValidatePlan_NullStepEntry_ThrowsValidationBeforeDelegation()
+    {
+        // A malformed `{"steps":[null]}` payload must surface as invalid_argument
+        // instead of letting the NullReferenceException at step.Kind propagate
+        // into the tool-error envelope as an internal error.
+        var tool = new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[null],"outputs":["FeatureLayer"]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("Plan step at index 0");
+        _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_dry_run_plan")]
+    public async Task DryRunPlan_NullStepEntry_ThrowsValidationBeforeDelegation()
+    {
+        var tool = new DryRunPlanTool(_jobService, NullLogger<DryRunPlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[null]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        _jobService.DidNotReceiveWithAnyArgs().DryRunPlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_execute_plan")]
+    public async Task ExecutePlan_NullStepEntry_ThrowsValidationBeforeDelegation()
+    {
+        var tool = new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[null]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+        await _jobService.DidNotReceiveWithAnyArgs().SubmitJobAsync(
+            default!, default!, default!, default!, default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_validate_plan")]
+    public async Task ValidatePlan_NullOutputEntry_ThrowsValidationBeforeDelegation()
+    {
+        // Sibling null-list case: outputs:[null] must also surface as
+        // invalid_argument rather than propagate a null into Enum.TryParse.
+        var tool = new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[],"outputs":[null]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("Plan output at index 0");
+        _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_validate_plan")]
+    public async Task ValidatePlan_NullWarningEntry_ThrowsValidationBeforeDelegation()
+    {
+        var tool = new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[],"warnings":[null]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("Plan warning at index 0");
+        _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_validate_plan")]
+    public async Task ValidatePlan_NullDependsOnEntry_ThrowsValidationBeforeDelegation()
+    {
+        var tool = new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[{"stepId":"s1","kind":"Geoprocess","dependsOn":[null]}]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("dependsOn");
+        _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_validate_plan")]
+    public async Task ValidatePlan_NullInputsValue_ThrowsValidationBeforeDelegation()
+    {
+        var tool = new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance);
+        var arguments = McpTestFactory.ParseJson("""
+            {"plan":{"planId":"plan-1","steps":[{"stepId":"s1","kind":"Geoprocess","inputs":{"layer":null}}]}}
+            """);
+
+        var act = async () => await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain("null value for input");
+        _jobService.DidNotReceiveWithAnyArgs().ValidatePlan(default!, default!);
+    }
 }

@@ -20,6 +20,12 @@ internal static class McpToolHelpers
     /// kinds or artifact kinds produce a
     /// <see cref="GeoprocessingValidationException"/> so tools surface an
     /// <c>invalid_argument</c> error rather than silently dropping fields.
+    /// Null entries inside <c>steps</c>, <c>outputs</c>, <c>warnings</c>, and
+    /// each step's <c>dependsOn</c>/<c>inputs</c> collections are rejected
+    /// with a validation error so malformed payloads like
+    /// <c>{"steps":[null]}</c> surface as <c>invalid_argument</c> instead of
+    /// turning into a server-side <c>NullReferenceException</c> that the
+    /// <c>tools/call</c> envelope would otherwise render as an internal error.
     /// </summary>
     public static AnalysisPlan ToDomainPlan(McpPlanInput? input)
     {
@@ -31,17 +37,31 @@ internal static class McpToolHelpers
         var steps = new List<AnalysisPlanStep>(input.Steps?.Count ?? 0);
         if (input.Steps != null)
         {
-            foreach (var step in input.Steps)
+            for (var i = 0; i < input.Steps.Count; i++)
             {
-                steps.Add(ToDomainStep(step));
+                var step = input.Steps[i];
+                if (step is null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Plan step at index {i} is null; each entry must be a step object.");
+                }
+
+                steps.Add(ToDomainStep(step, i));
             }
         }
 
         var outputs = new List<ArtifactKind>(input.Outputs?.Count ?? 0);
         if (input.Outputs != null)
         {
-            foreach (var output in input.Outputs)
+            for (var i = 0; i < input.Outputs.Count; i++)
             {
+                var output = input.Outputs[i];
+                if (output is null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Plan output at index {i} is null; each entry must be an artifact kind string.");
+                }
+
                 if (!Enum.TryParse<ArtifactKind>(output, ignoreCase: true, out var parsed))
                 {
                     throw new GeoprocessingValidationException(
@@ -52,17 +72,36 @@ internal static class McpToolHelpers
             }
         }
 
+        IReadOnlyList<string> warnings;
+        if (input.Warnings is null)
+        {
+            warnings = [];
+        }
+        else
+        {
+            for (var i = 0; i < input.Warnings.Count; i++)
+            {
+                if (input.Warnings[i] is null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Plan warning at index {i} is null; each entry must be a string.");
+                }
+            }
+
+            warnings = input.Warnings;
+        }
+
         return new AnalysisPlan
         {
             PlanId = input.PlanId ?? string.Empty,
             IntentId = input.IntentId ?? string.Empty,
             Steps = steps,
             Outputs = outputs,
-            Warnings = input.Warnings ?? []
+            Warnings = warnings
         };
     }
 
-    private static AnalysisPlanStep ToDomainStep(McpPlanStepInput step)
+    private static AnalysisPlanStep ToDomainStep(McpPlanStepInput step, int index)
     {
         if (!Enum.TryParse<AnalysisPlanStepKind>(step.Kind, ignoreCase: true, out var kind))
         {
@@ -70,13 +109,51 @@ internal static class McpToolHelpers
                 $"Step '{step.StepId}' has unsupported step kind '{step.Kind}'.");
         }
 
+        IReadOnlyDictionary<string, string> inputs;
+        if (step.Inputs is null)
+        {
+            inputs = new Dictionary<string, string>();
+        }
+        else
+        {
+            foreach (var pair in step.Inputs)
+            {
+                if (pair.Value is null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId ?? $"at index {index}"}' has a null value for input '{pair.Key}'.");
+                }
+            }
+
+            inputs = step.Inputs;
+        }
+
+        IReadOnlyList<string> dependsOn;
+        if (step.DependsOn is null)
+        {
+            dependsOn = [];
+        }
+        else
+        {
+            for (var i = 0; i < step.DependsOn.Count; i++)
+            {
+                if (step.DependsOn[i] is null)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"Step '{step.StepId ?? $"at index {index}"}' has a null dependsOn entry at index {i}.");
+                }
+            }
+
+            dependsOn = step.DependsOn;
+        }
+
         return new AnalysisPlanStep
         {
             StepId = step.StepId ?? string.Empty,
             Kind = kind,
             ProcessId = step.ProcessId,
-            Inputs = step.Inputs ?? new Dictionary<string, string>(),
-            DependsOn = step.DependsOn ?? []
+            Inputs = inputs,
+            DependsOn = dependsOn
         };
     }
 

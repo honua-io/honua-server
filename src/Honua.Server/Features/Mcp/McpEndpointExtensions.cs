@@ -9,7 +9,10 @@ namespace Honua.Server.Features.Mcp;
 /// <summary>
 /// Maps the single JSON-RPC endpoint that hosts the MCP operator surface.
 /// Accepts both individual requests and JSON-RPC 2.0 batches, and enforces
-/// the MCP request-id rules (string or integer only).
+/// the MCP request-id rules (string or integer only). Note that
+/// <c>initialize</c> is single-request-only per MCP 2025-03-26 lifecycle —
+/// any batch containing an <c>initialize</c> element is rejected wholesale
+/// because the server cannot negotiate a protocol version mid-batch.
 /// </summary>
 internal static class McpEndpointExtensions
 {
@@ -49,7 +52,7 @@ internal static class McpEndpointExtensions
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
-            .WithDescription("Accepts JSON-RPC 2.0 single requests and batches for initialize, notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
+            .WithDescription("Accepts JSON-RPC 2.0 requests. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, and resources/read.")
             .WithTags("Mcp");
 
         return endpoints;
