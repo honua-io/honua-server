@@ -81,6 +81,27 @@ internal static class SeedRunner
         }
     }
 
+    // Returns the collection names visible to the given profile, or null when the
+    // seed applies every collection (no profile filter). Callers can treat a non-null
+    // result as the strict allow-list for that profile and validate that declared
+    // scenario inputs are a subset before seeding a schema.
+    internal static IReadOnlyCollection<string>? GetAllowedCollections(string seedPath, string? profileName)
+    {
+        if (string.IsNullOrWhiteSpace(seedPath))
+        {
+            throw new ArgumentException("Seed path is required.", nameof(seedPath));
+        }
+
+        if (!File.Exists(seedPath))
+        {
+            throw new FileNotFoundException($"Seed file not found: {seedPath}", seedPath);
+        }
+
+        var seed = LoadSeed(seedPath);
+        var profile = ResolveProfile(seed, profileName);
+        return ResolveAllowedCollections(profile);
+    }
+
     private static async Task ApplyOnceAsync(
         NpgsqlDataSource dataSource,
         string seedPath,

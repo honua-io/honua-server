@@ -2,7 +2,7 @@
   "id": "analysis-buffer-places",
   "name": "Buffer places and summarize overlap",
   "mode": "Analysis",
-  "fixtureProfile": "core",
+  "fixtureProfile": "ogc",
   "intent": {
     "intentId": "intent-analysis-buffer-places",
     "goal": "Buffer the seed 'places' layer by 500m and report overlap with roads.",

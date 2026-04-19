@@ -380,20 +380,27 @@ reflection). Each scenario declares:
 
 - `id`, `name`, `mode` (`Analysis` | `Publish` | `Package` | `Deploy`)
 - `fixtureProfile` (seed profile applied to the shared eval schema; all scenarios
-  in one harness run must agree on it)
+  in one harness run must agree on it, and every layer named in `intent.inputs`
+  must be served by that profile's collections in `tests/seed/seed.yaml` —
+  `BundledScenario_DeclaredInputsAreServedByItsFixtureProfile` enforces this at
+  unit-test time so the harness cannot go green against a profile that omits the
+  data a scenario claims to exercise)
 - `intent` — shape of `AnalysisIntent` (goal, inputs, constraints, requested
   outputs, `assumptionPolicy`)
 - `precompiledPlan` — shape of `AnalysisPlan` (steps, DAG edges, declared
   outputs) used in Phase 1 until the compile seam from #529/#723 lands
 - `expectedOutcome` — Phase 1 currently asserts `isExecutable`,
   `requiresApproval`, and `estimatedArtifactKinds`. `estimatedArtifactKinds` is
-  enforced as an exact set: missing kinds fail with `artifact-kinds-missing` and
-  unexpected kinds fail with `artifact-kinds-unexpected` so drift in either
-  direction is caught. It also carries forward `terminalWorkflowStatus` plus
-  `expectsMapPackage` / `expectsAppPackage` for later execution/package
-  assertions; today they are forward-declared and not validated against runtime
-  outputs yet (`expectsAppPackage` is the only one that currently affects stage
-  scoping)
+  enforced as an exact set: missing kinds fail with `artifact-kinds-missing`
+  and unexpected kinds fail with `artifact-kinds-unexpected` so drift in either
+  direction is caught. A proto artifact kind that has no domain counterpart is
+  recorded as a deterministic `artifact-kind-unknown` `DryRun` failure rather
+  than letting the harness throw, so `eval-report.json` is always emitted when
+  the server adds a new proto enum value. It also carries forward
+  `terminalWorkflowStatus` plus `expectsMapPackage` / `expectsAppPackage` for
+  later execution/package assertions; today they are forward-declared and not
+  validated against runtime outputs yet (`expectsAppPackage` is the only one
+  that currently affects stage scoping)
 
 The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, the
 `tests/Eval/scenarios/` directory under `Honua.sln`, then the directory next to

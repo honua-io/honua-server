@@ -160,7 +160,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         Id = "approval-required-delete-features",
         Name = "Delete-features plan that must clear the approval gate",
         Mode = EvalScenarioMode.Analysis,
-        FixtureProfile = "core",
+        FixtureProfile = "ogc",
         Intent = new EvalIntentSpec
         {
             IntentId = "intent-approval-required-delete-features",

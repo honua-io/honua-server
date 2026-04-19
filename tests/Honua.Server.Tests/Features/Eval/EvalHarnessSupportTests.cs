@@ -4,6 +4,7 @@ using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Eval;
+using Honua.TestKit.Seeding;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Eval;
@@ -112,6 +113,56 @@ public sealed class EvalHarnessSupportTests
         {
             tempDirectory.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(BundledScenarioIds))]
+    [Operation(Operations.ContractTesting)]
+    [Trait("Category", "Unit")]
+    public void BundledScenario_DeclaredInputsAreServedByItsFixtureProfile(string scenarioId)
+    {
+        var scenario = EvalScenarioLoader.LoadById(scenarioId);
+        var seedPath = ResolveRepoRelativePath(Path.Combine("tests", "seed", "seed.yaml"));
+
+        File.Exists(seedPath).Should().BeTrue(
+            because: $"seed corpus must be discoverable at '{seedPath}' for eval harness validation");
+
+        var allowed = SeedRunner.GetAllowedCollections(seedPath, scenario.FixtureProfile);
+
+        allowed.Should().NotBeNull(
+            because: $"scenario '{scenarioId}' declares fixtureProfile '{scenario.FixtureProfile}' " +
+                     "which must exist in the seed corpus");
+
+        var missing = scenario.Intent.Inputs
+            .Where(input => !allowed!.Contains(input, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+
+        missing.Should().BeEmpty(
+            because: $"scenario '{scenarioId}' declares inputs [{string.Join(", ", scenario.Intent.Inputs)}] " +
+                     $"but fixtureProfile '{scenario.FixtureProfile}' only seeds " +
+                     $"[{string.Join(", ", allowed!)}]. Either change fixtureProfile or expand the profile's " +
+                     "collections in tests/seed/seed.yaml so CI provisions the data the scenario claims to exercise.");
+    }
+
+    public static IEnumerable<object[]> BundledScenarioIds()
+    {
+        foreach (var id in EvalScenarioLoader.DiscoverScenarioIds())
+        {
+            yield return [id];
+        }
+    }
+
+    private static string ResolveRepoRelativePath(string relative)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory != null
+            ? Path.Combine(directory.FullName, relative)
+            : Path.Combine(AppContext.BaseDirectory, relative);
     }
 
     [UnitTest]

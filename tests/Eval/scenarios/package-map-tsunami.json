@@ -2,7 +2,7 @@
   "id": "package-map-tsunami",
   "name": "Package a tsunami-evacuation operations map",
   "mode": "Package",
-  "fixtureProfile": "core",
+  "fixtureProfile": "ogc",
   "intent": {
     "intentId": "intent-package-map-tsunami",
     "goal": "Compose a map package that overlays roads on buffered places for tsunami evacuation ops.",

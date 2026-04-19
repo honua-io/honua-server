@@ -2,7 +2,7 @@
   "id": "publish-refresh-roads",
   "name": "Refresh the 'roads' publication with updated features",
   "mode": "Publish",
-  "fixtureProfile": "core",
+  "fixtureProfile": "ogc",
   "intent": {
     "intentId": "intent-publish-refresh-roads",
     "goal": "Re-simplify the roads layer and republish the canonical layer.",
