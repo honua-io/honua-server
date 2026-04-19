@@ -409,14 +409,31 @@ stages break the gate today. `SubmitPlanJob` also degrades to
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
 
-`ProtocolParity` cross-checks plan acceptance across gRPC and OGC API
-Processes, and it probes the GPServer `submitJob` surface separately. Because
-the GPServer adapter still lacks a formal task catalog binding, that probe is
-recorded as `Skipped(task-resolution-unavailable)` instead of a false `Passed`.
-When OGC execution cannot enqueue because Redis is unavailable, that probe is
-recorded as `Skipped(service-unavailable)` rather than `Failed`.
-Spans are emitted from the `Honua.Tests.Eval` `ActivitySource` (one span per
-scenario, one per stage).
+When a scenario intentionally expects a rejected plan (`isExecutable: false`)
+or an approval-gated plan (`requiresApproval: true`) and `ValidatePlan` matches
+that expectation, `DryRun` and `SubmitPlanJob` are recorded as
+`Skipped(plan-non-executable)` / `Skipped(plan-approval-required)` rather than
+invoking the execution-only RPCs that are contractually guaranteed to reject
+(gRPC `InvalidArgument` for non-executable plans, `FailedPrecondition` for
+approval-gated plans). This keeps negative scenarios expressible without
+polluting the gate with false failures.
+
+`ProtocolParity` cross-checks plan acceptance across gRPC and OGC API Processes
+against the scenario's expected state, and it probes the GPServer `submitJob`
+surface separately. The gRPC probe reports `matched-acceptance` or
+`matched-rejection:{n}-violations` when the validate response matches the
+expected `isExecutable` value, and `mismatch:{actual}` when it diverges. The
+OGC probe treats `201 Created` as `matched-acceptance` for executable scenarios
+and as `unexpected-acceptance` (Failed) for scenarios that expected rejection;
+conversely `400 Bad Request` is `matched-rejection` (Passed) when the scenario
+expected rejection and `unexpected-rejection` (Failed) otherwise. `503` /
+`501` remain environmental skips, and when OGC execution cannot enqueue
+because Redis is unavailable, that probe is recorded as
+`Skipped(service-unavailable)` rather than `Failed`. Because the GPServer
+adapter still lacks a formal task catalog binding, its probe is recorded as
+`Skipped(task-resolution-unavailable)` instead of a false `Passed`. Spans are
+emitted from the `Honua.Tests.Eval` `ActivitySource` (one span per scenario,
+one per stage).
 
 ### Fixture corpus
 

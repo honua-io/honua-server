@@ -68,18 +68,39 @@ public sealed class EvalRunner
             .ConfigureAwait(false);
         stages.Add(validateOutcome.Stage);
 
-        var dryRunOutcome = await RunDryRunAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
-            .ConfigureAwait(false);
-        stages.Add(dryRunOutcome.Stage);
+        // When the scenario intentionally expects a non-executable or approval-gated plan and
+        // ValidatePlan matched that expectation, the downstream execution-only RPCs are
+        // contractually guaranteed to reject (InvalidArgument for non-executable plans,
+        // FailedPrecondition for approval-gated plans). Skip those stages with a deterministic
+        // reason so the matched outcome rolls up cleanly.
+        var executionSkip = ResolveExecutionSkipReason(scenario.ExpectedOutcome, validateOutcome);
+
+        if (executionSkip is { } dryRunSkip)
+        {
+            stages.Add(BuildSkipOutcome(EvalStageKind.DryRun, dryRunSkip.Reason, dryRunSkip.Detail));
+        }
+        else
+        {
+            var dryRunOutcome = await RunDryRunAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
+                .ConfigureAwait(false);
+            stages.Add(dryRunOutcome.Stage);
+        }
 
         var parityStopwatch = Stopwatch.StartNew();
         parity = await RunProtocolParityAsync(scenario, validateOutcome.Response, cancellationToken).ConfigureAwait(false);
         parityStopwatch.Stop();
         stages.Add(BuildProtocolParityStageOutcome(parity, parityStopwatch.ElapsedMilliseconds));
 
-        var submitOutcome = await RunSubmitPlanJobAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
-            .ConfigureAwait(false);
-        stages.Add(submitOutcome.Stage);
+        if (executionSkip is { } submitSkip)
+        {
+            stages.Add(BuildSkipOutcome(EvalStageKind.SubmitPlanJob, submitSkip.Reason, submitSkip.Detail));
+        }
+        else
+        {
+            var submitOutcome = await RunSubmitPlanJobAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
+                .ConfigureAwait(false);
+            stages.Add(submitOutcome.Stage);
+        }
 
         stages.Add(BuildSkipOutcome(EvalStageKind.PollJob,
             "execution-engine-pending", "Execution engine not yet wired (see #732)."));
@@ -334,7 +355,7 @@ public sealed class EvalRunner
         activity?.SetTag("eval.scenario.id", scenario.Id);
 
         var probes = new List<EvalProtocolProbe>();
-        probes.Add(BuildGrpcValidateProbe(grpcValidate));
+        probes.Add(BuildGrpcValidateProbe(grpcValidate, scenario.ExpectedOutcome.IsExecutable));
 
         var ogcProbe = await ProbeOgcProcessExecutionAsync(scenario, cancellationToken).ConfigureAwait(false);
         probes.Add(ogcProbe);
@@ -453,7 +474,7 @@ public sealed class EvalRunner
     // Protocol parity probes
     // -----------------------------------------------------------------------
 
-    private static EvalProtocolProbe BuildGrpcValidateProbe(Proto.ValidatePlanResponse? response)
+    private static EvalProtocolProbe BuildGrpcValidateProbe(Proto.ValidatePlanResponse? response, bool expectedExecutable)
     {
         if (response == null)
         {
@@ -466,11 +487,27 @@ public sealed class EvalRunner
             };
         }
 
+        if (response.IsExecutable != expectedExecutable)
+        {
+            var actualOutcome = response.IsExecutable
+                ? "executable"
+                : $"rejected:{response.Violations.Count}-violations";
+            return new EvalProtocolProbe
+            {
+                Protocol = Constants.Protocols.Grpc,
+                Assertion = "plan-shape-accepted",
+                Outcome = $"mismatch:{actualOutcome}",
+                Status = EvalStageStatus.Failed
+            };
+        }
+
         return new EvalProtocolProbe
         {
             Protocol = Constants.Protocols.Grpc,
             Assertion = "plan-shape-accepted",
-            Outcome = response.IsExecutable ? "executable" : $"rejected:{response.Violations.Count}-violations",
+            Outcome = response.IsExecutable
+                ? "matched-acceptance"
+                : $"matched-rejection:{response.Violations.Count}-violations",
             Status = EvalStageStatus.Passed
         };
     }
@@ -479,6 +516,8 @@ public sealed class EvalRunner
         EvalScenario scenario,
         CancellationToken cancellationToken)
     {
+        var expectedExecutable = scenario.ExpectedOutcome.IsExecutable;
+
         try
         {
             using var request = new HttpRequestMessage(
@@ -494,17 +533,29 @@ public sealed class EvalRunner
 
             using var response = await _fixture.Client.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-            // Accept 201 (queued), or 503 (jobStore unavailable in local dev).
-            // The adapter's plan validator is our cross-check: if the canonical runtime
-            // accepts the plan and the OGC validator rejects it, that's a parity failure.
+            // Parity is measured against the scenario's expected acceptance state, so a
+            // 400 rejection for a plan the canonical runtime also rejects is the passing
+            // outcome (matched rejection). 201 with an expected-executable scenario is the
+            // passing outcome for acceptance. 503 / 501 remain environmental skips.
             if (response.StatusCode == HttpStatusCode.Created)
             {
                 return new EvalProtocolProbe
                 {
                     Protocol = Constants.Protocols.OgcApiProcesses,
                     Assertion = "plan-shape-accepted",
-                    Outcome = "created",
-                    Status = EvalStageStatus.Passed
+                    Outcome = expectedExecutable ? "matched-acceptance" : "unexpected-acceptance",
+                    Status = expectedExecutable ? EvalStageStatus.Passed : EvalStageStatus.Failed
+                };
+            }
+
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                return new EvalProtocolProbe
+                {
+                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Assertion = "plan-shape-accepted",
+                    Outcome = expectedExecutable ? "unexpected-rejection" : "matched-rejection",
+                    Status = expectedExecutable ? EvalStageStatus.Failed : EvalStageStatus.Passed
                 };
             }
 
@@ -643,6 +694,34 @@ public sealed class EvalRunner
             Detail = detail,
             ElapsedMs = 0
         };
+
+    private static ExecutionSkipReason? ResolveExecutionSkipReason(
+        EvalExpectedOutcome expected,
+        (EvalStageOutcome Stage, Proto.ValidatePlanResponse? Response) validateOutcome)
+    {
+        if (validateOutcome.Response is null || validateOutcome.Stage.Status != EvalStageStatus.Passed)
+        {
+            return null;
+        }
+
+        if (!expected.IsExecutable && !validateOutcome.Response.IsExecutable)
+        {
+            return new ExecutionSkipReason(
+                "plan-non-executable",
+                "Scenario expected IsExecutable=false; skipping DryRun and SubmitPlanJob because the canonical runtime rejects non-executable plans.");
+        }
+
+        if (expected.RequiresApproval && validateOutcome.Response.RequiresApproval)
+        {
+            return new ExecutionSkipReason(
+                "plan-approval-required",
+                "Scenario expected RequiresApproval=true; skipping DryRun and SubmitPlanJob because SubmitPlanJob enforces the approval gate.");
+        }
+
+        return null;
+    }
+
+    private readonly record struct ExecutionSkipReason(string Reason, string Detail);
 
     private static EvalStageOutcome BuildProtocolParityStageOutcome(EvalProtocolParityOutcome parity, long elapsedMs)
     {
