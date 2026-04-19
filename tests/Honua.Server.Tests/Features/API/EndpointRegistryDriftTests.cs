@@ -265,6 +265,7 @@ public sealed class EndpointRegistryDriftTests : IDisposable
                path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/wfs", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/docs", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/mcp", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/healthz/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) ||

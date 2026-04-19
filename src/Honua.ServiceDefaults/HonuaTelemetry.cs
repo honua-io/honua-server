@@ -259,6 +259,9 @@ public static class HonuaTelemetry
 
         /// <summary>GeoServices GPServer REST API.</summary>
         public const string GPServer = "GPServer";
+
+        /// <summary>Model Context Protocol operator surface.</summary>
+        public const string Mcp = "Mcp";
     }
 
     /// <summary>

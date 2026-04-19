@@ -50,6 +50,7 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
 | **GeoServices REST ImageServer** | ArcGIS raster workflows | Raster/image export, identify, tiles, raster catalog query, per-band statistics & histograms, legend swatches, raster function chain validation |
 | **GeoServices Geometry Service** | Esri geometry operations | Buffer, project, intersect, union, clip, difference |
 | **GeoServices GPServer** | ArcGIS Pro, Esri geoprocessing SDKs | Job status polling, cancellation; routes registered for submission and result retrieval. Internal `IProcessCatalog` seeds 19 built-in processes (`geometry.*`, `analytics.*`, `generalization.*`, `data-management.*`) used for plan validation; destructive `data-management.*` ids route through the operator approval gate. Per-task projection into the GPServer surface and execution-engine result delivery remain pending. |
+| **MCP Operator JSON-RPC** | AI agents, operator automation | JSON-RPC tool/resource surface on `/mcp` for plan validation, dry runs, execution submission, cancellation, and job/result inspection over the canonical geoprocessing runtime. Planning/grounding/clarification tools and workspace/catalog resources are stable contract stubs pending their upstream services. |
 | **OGC API Features** | QGIS, MapLibre, any OGC client | Feature CRUD with CQL2 filtering |
 | **OGC API Maps** | OGC map clients | Standards-based rendered map images |
 | **OGC API Tiles** | QGIS, MapLibre | Vector and raster tile access |

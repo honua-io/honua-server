@@ -72,6 +72,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
 | GeoServices REST GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, Esri geoprocessing SDKs (partial: job status and cancel; submit and execute pending) |
+| MCP Operator JSON-RPC | `/mcp` | AI agents, operator automation, MCP clients |
 | STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |
 | OGC API Features | `/ogc/features` | QGIS, OpenLayers, MapLibre, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients, custom web apps |
@@ -98,6 +99,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 
 **Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, and dismiss over the canonical geoprocessing runtime. V1 keeps `/ogc/processes/jobs/{jobId}/results` stubbed until execution-engine result storage is wired.
+
+**AI operator workflows** — MCP JSON-RPC on `/mcp` exposes plan validation, dry runs, execution submission, cancellation, and job/result resource reads over the same canonical geoprocessing runtime used by gRPC and GPServer. Planning, grounding, clarification, workspace, and catalog contracts are already discoverable as authenticated `not_implemented` placeholders so clients can bind before the upstream services land.
 
 **Workflow orchestration** — Declarative multi-step DAG workflows compose canonical analysis plans into chained, scheduled, and dependency-aware runs. Steps wire upstream artifacts to downstream inputs, support per-step retry policies and failure propagation, and execute over the durable job orchestration substrate. A cron scheduler fires time-triggered workflows with replica-safe deduplication. Requires Redis.
 

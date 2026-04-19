@@ -10,7 +10,8 @@ operator architecture.
 It complements:
 
 - [MCP Server](../../developer/MCP_SERVER.md), which documents the current open-core MCP data
-  access surface
+  access surface in `honua-sdk-js` plus the server-owned operator surface in
+  `honua-server`
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md),
   which describes the high-level system design
 
@@ -915,7 +916,13 @@ implementations are registered and `EnableAutomaticCleanup` is true (default).
 
 ## MCP Contract Families
 
-MCP is the interaction and orchestration plane.
+MCP is the interaction and orchestration plane. The server-side implementation
+of the planning, execution, and lifecycle families lives in
+`src/Honua.Server/Features/Mcp/` and is documented in
+[MCP Server — Operator Surface](../../developer/MCP_SERVER.md#operator-surface). Tool names on
+the wire carry a `honua_` prefix (for example, `honua_validate_plan`) so they
+namespace cleanly alongside other MCP servers in a client registry; the
+taxonomy names below refer to the contract families themselves.
 
 ### Resources
 
@@ -927,6 +934,9 @@ MCP is the interaction and orchestration plane.
 - map template resources
 - app template resources
 - saved result package resources
+
+Server-implemented resource URIs are listed in
+[MCP Server — Resources](../../developer/MCP_SERVER.md#resources-1).
 
 ### Tools
 
@@ -943,6 +953,11 @@ MCP is the interaction and orchestration plane.
 - `create_app_package`
 - `preview_app_package`
 - `publish_result`
+
+Server-implemented tool names, statuses, and the domain delegates they bind
+to are listed in [MCP Server — Tools](../../developer/MCP_SERVER.md#tools-1). Stub tools
+return a structured `not_implemented` envelope with `blockedBy` pointers so
+clients can bind the wire today.
 
 ### Prompts
 

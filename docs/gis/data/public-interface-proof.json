@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-13T00:00:00Z",
+  "updatedUtc": "2026-04-19T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -1308,6 +1308,54 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "mcp-operator",
+      "displayName": "MCP operator surface (server-owned)",
+      "surfaceKind": "http-route-family",
+      "protocol": "MCP",
+      "canonicalIdentifier": "POST /mcp — JSON-RPC 2.0 operator surface",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/mcp"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "JSON-RPC framing, auth, tool delegation, stub envelopes, resource reads, and error mapping are covered through unit and integration tests against the operator surface",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/Honua.Server.Tests/Features/Mcp/McpEndpointIntegrationTests.cs",
+            "tests/Honua.Server.Tests/Features/Mcp/McpToolDelegationTests.cs",
+            "tests/Honua.Server.Tests/Features/Mcp/McpErrorMappingTests.cs",
+            "tests/Honua.Server.Tests/Features/Mcp/McpAuthorizationTests.cs",
+            "tests/Honua.Server.Tests/Features/Mcp/McpStubToolTests.cs",
+            "tests/Honua.Server.Tests/Features/Mcp/McpResourceSerializationTests.cs",
+            "tests/Honua.Server.Tests/Features/Mcp/McpTaxonomyAlignmentTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#728",
           "versionCaptureRule": null
         }
       ]

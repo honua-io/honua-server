@@ -2,15 +2,22 @@
 
 Honua ships an MCP server package in the `honua-sdk-js` repository (path `mcp`, package `@honua/mcp-server`) so AI clients can safely discover services, inspect layer schema, and run filtered geospatial queries.
 
-That SDK-hosted package is the current focused discovery/query MCP surface. The
-forward-looking AI operator MCP surface for planning, execution, publishing,
-packaging, and deployment is expected to be owned canonically by
-`honua-server` as the server-side implementation of the `geospatial-mcp`
-standard. The SDK MCP package may proxy or federate that server-owned surface
-later, but it is not the semantic source of truth for operator workflows.
+That SDK-hosted package is the current focused discovery/query MCP surface.
+The forward-looking AI operator MCP surface for planning, execution,
+publishing, packaging, and deployment is owned canonically by `honua-server`
+as the server-side implementation of the `geospatial-mcp` standard. The SDK
+MCP package may proxy or federate that server-owned surface later, but it is
+not the semantic source of truth for operator workflows.
 
-This document covers the public/open-core MCP data-access surface. It does **not** describe Honua's private operator tooling or AI DevOps rollout automation layer.
-Forward-looking operator-workflow design notes are maintained as historical design material and are intentionally excluded from the current developer contract index.
+This document covers both the SDK-hosted discovery/query surface and, in
+[Operator Surface](#operator-surface), the server-owned operator surface that
+implements the taxonomy defined in the archived
+[AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md).
+
+For the archived AI-first analyst and builder design notes, see:
+
+- [AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md)
+- [Deterministic Operator Workflow Results](../archive/developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
 
 ## Capabilities
 
@@ -91,3 +98,478 @@ See [MCP Certification](../contributor/mcp-certification.md) for contributor gui
 
 - Prefer `grpc-web` for performance when available.
 - Use server-side auth controls (API key or OIDC) exactly as you do for direct client calls.
+
+## Operator Surface
+
+The server-owned operator surface lives in `src/Honua.Server/Features/Mcp/`
+and implements the geospatial-mcp taxonomy described in the archived
+[AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md#mcp-contract-families).
+It is a thin adapter over `IGeoprocessingJobService` — the same transport-neutral
+domain service the gRPC `ProcessService` and the GeoServices `GPServer`
+adapter delegate to — so every protocol enforces identical authorization and
+validation rules.
+
+### Endpoint
+
+- **Route**: `POST /mcp`
+- **Wire**: JSON-RPC 2.0 (single requests and batches)
+- **Methods**: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `resources/list`, `resources/templates/list`, `resources/read`
+
+Request responses use HTTP 200 with a JSON-RPC envelope — protocol-level
+JSON-RPC errors are returned in the response envelope's `error` object
+rather than as HTTP status codes. MCP notifications (a `notifications/*`
+method without an `id`) instead return HTTP 202 Accepted with an empty
+body, as required by the MCP HTTP transport. A non-`notifications/*`
+method that omits `id`, or a malformed envelope the server cannot
+deserialize, is surfaced as `invalid_request` (`-32600`) with `id: null`
+rather than silently accepted — clients need an explicit signal when
+their payload is rejected, and the `notifications/*` prefix is the only
+form MCP 2025-03-26 treats as a notification.
+`tools/call` and `resources/read` require an authenticated principal and
+return an `unauthenticated` error otherwise. The authentication gate runs
+*before* param parsing, tool-name matching, or resource-URI matching, so
+anonymous callers see the `unauthenticated` signal even when their payload
+is malformed or targets an unknown tool/URI — this keeps reauth the single
+recoverable path instead of masking it with `invalid_argument` or
+`not_found`. `tools/call` surfaces the signal through the isError envelope
+(`result.isError: true`, `result.structuredContent.code: "unauthenticated"`)
+to stay consistent with the MCP 2025-03-26 tool-execution error contract;
+`resources/read` surfaces it as a JSON-RPC error. `initialize`,
+`tools/list`, `resources/list`, and `resources/templates/list` are
+handshake methods that do not require authentication.
+
+#### Request framing and ids
+
+Each HTTP POST carries either a single JSON-RPC request object or a
+JSON-RPC 2.0 batch array. Batch handling follows §6 of the spec:
+
+- An empty batch array is itself an invalid request; the server responds
+  with a single `invalid_request` response object whose `id` is `null`.
+- Each non-object element in the batch produces one `invalid_request`
+  response in the reply array with `id: null`.
+- Notifications in the batch are processed but do not produce a response
+  entry. If every element was a notification, the server returns HTTP 202
+  with no body instead of an empty JSON array.
+- Mixed batches return a JSON array whose length equals the number of
+  non-notification requests.
+- Per MCP 2025-03-26 lifecycle, the `initialize` request MUST NOT be part
+  of a JSON-RPC batch. If any element of the batch carries
+  `"method": "initialize"`, the server rejects the entire batch with a
+  single `invalid_request` response object whose `id` is `null`.
+
+Per MCP 2025-03-26 a JSON-RPC request `id` MUST be either a string or an
+integer. Explicit `null`, booleans, fractional numbers, arrays, and objects
+are rejected with `invalid_request` (`-32600`). An absent `id` only marks
+the message as a notification when the method carries the
+`notifications/*` prefix — a non-`notifications/*` method that omits
+`id` is a malformed request and is rejected with `invalid_request`
+(`id: null`) rather than silently accepted. Conversely, a
+`notifications/*` message that carries an `id` is also rejected with
+`invalid_request`; notifications MUST NOT include an `id` field.
+
+### Lifecycle and version negotiation
+
+The MCP lifecycle is `initialize` (request/response) followed by
+`notifications/initialized` (notification, no response):
+
+1. **`initialize`** — the client MUST send `params` containing
+   `protocolVersion`, `capabilities`, and `clientInfo.name`. Missing or
+   non-object `capabilities`, blank `protocolVersion`, or missing
+   `clientInfo.name` returns `invalid_argument`. The `initialize` request
+   MUST NOT be part of a JSON-RPC batch; see
+   [Request framing and ids](#request-framing-and-ids).
+2. The server negotiates the protocol revision: if the client's
+   `protocolVersion` matches one the server supports it is echoed back;
+   otherwise the server replies with its latest supported revision so the
+   client can decide whether to continue. The current build supports
+   `2025-03-26`.
+3. **`notifications/initialized`** — once the client accepts the negotiated
+   version it sends this notification (no `id`). The server returns
+   HTTP 202 with no body. Unknown `notifications/*` methods are also
+   accepted silently so forward-compatible clients can layer in new
+   notification types.
+
+### Response Framing
+
+- Successful JSON-RPC responses omit `error`; failures omit `result`.
+- Payloads use camelCase and omit `null` properties.
+- `initialize` returns:
+  - `protocolVersion: "2025-03-26"`
+  - `serverInfo.name: "honua.operator.mcp"`
+  - `serverInfo.version: "v1"`
+  - `capabilities.tools.listChanged: false`
+  - `capabilities.resources.listChanged: false`
+- Successful `tools/call` responses return the same payload twice:
+  - `result.structuredContent` contains the typed JSON object
+  - `result.content[0].text` contains that same JSON serialized as text
+- Successful `resources/read` responses return `result.contents`, which
+  currently contains one `application/json` block whose `text` field is the
+  serialized resource body.
+- `tools/list` returns descriptors sorted by tool name; `resources/list`
+  returns descriptors sorted by resource URI. Parameterized resource URIs
+  (for example `honua://jobs/{jobId}`) appear only on
+  `resources/templates/list` under `result.resourceTemplates[*].uriTemplate`
+  per MCP 2025-03-26; `resources/list` exposes only concrete, directly
+  addressable URIs.
+- Tool descriptors expose a static `inputSchema` JSON Schema document.
+  Resource descriptors currently all advertise `mimeType: "application/json"`.
+
+Example `tools/call` success shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "run-1",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"jobId\":\"job-xyz\",\"status\":\"Queued\",\"createdAt\":\"2026-04-18T12:00:00+00:00\",\"resourceUri\":\"honua://jobs/job-xyz\"}"
+      }
+    ],
+    "isError": false,
+    "structuredContent": {
+      "jobId": "job-xyz",
+      "status": "Queued",
+      "createdAt": "2026-04-18T12:00:00+00:00",
+      "resourceUri": "honua://jobs/job-xyz"
+    }
+  }
+}
+```
+
+Example `tools/call` execution-failure shape (tool-level error inside
+`result`, not a JSON-RPC protocol error):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "run-1",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"status\":\"error\",\"code\":\"invalid_argument\",\"message\":\"Cancel-job requires a non-empty jobId.\"}"
+      }
+    ],
+    "isError": true,
+    "structuredContent": {
+      "status": "error",
+      "code": "invalid_argument",
+      "message": "Cancel-job requires a non-empty jobId."
+    }
+  }
+}
+```
+
+Example `resources/read` success shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "job-1",
+  "result": {
+    "contents": [
+      {
+        "uri": "honua://jobs/job-xyz",
+        "mimeType": "application/json",
+        "text": "{\"jobId\":\"job-xyz\",\"status\":\"Running\",\"createdAt\":\"2026-04-18T12:00:00+00:00\",\"updatedAt\":\"2026-04-18T12:02:00+00:00\",\"percentComplete\":50.5,\"currentPhase\":\"executing\",\"warnings\":[\"layer projection assumed\"],\"resultsUri\":\"honua://jobs/job-xyz/results\"}"
+      }
+    ]
+  }
+}
+```
+
+### Request examples
+
+Initialize the MCP session and discover server capabilities:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "honua-operator-cli",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+Acknowledge the negotiated session before issuing any other calls. The
+server returns HTTP 202 with no body:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/initialized"
+}
+```
+
+Submit a plan for execution:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "run-1",
+  "method": "tools/call",
+  "params": {
+    "name": "honua_execute_plan",
+    "arguments": {
+      "plan": {
+        "planId": "plan-1",
+        "steps": [
+          {
+            "stepId": "buffer-1",
+            "kind": "Geoprocess",
+            "processId": "geometry.buffer",
+            "inputs": {
+              "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "srid": "4326",
+              "distance": "100"
+            }
+          }
+        ],
+        "outputs": [
+          "FeatureLayer",
+          "Map"
+        ]
+      },
+      "idempotencyKey": "plan-1-exec"
+    }
+  }
+}
+```
+
+Read the job lifecycle resource returned by `honua_execute_plan`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "job-1",
+  "method": "resources/read",
+  "params": {
+    "uri": "honua://jobs/job-xyz"
+  }
+}
+```
+
+Submit a batch — two tool calls in a single HTTP request. The server
+returns a JSON array with one response per non-notification element:
+
+```json
+[
+  {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+  {"jsonrpc": "2.0", "id": "a", "method": "resources/templates/list"}
+]
+```
+
+List parameterized resource URIs:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "tpl-1",
+  "method": "resources/templates/list"
+}
+```
+
+### Tools
+
+| Tool | Status | Domain delegate | Workflow family |
+|------|--------|-----------------|-----------------|
+| `honua_validate_plan` | functional | `IGeoprocessingJobService.ValidatePlan` | `planning` |
+| `honua_dry_run_plan` | functional | `IGeoprocessingJobService.DryRunPlan` | `planning` |
+| `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
+| `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
+| `honua_plan_analysis` | contract stub | blocked by `honua.planner.service` | `planning` |
+| `honua_ground_candidates` | contract stub | blocked by `honua.grounding.service` | `planning` |
+| `honua_clarify_intent` | contract stub | blocked by `honua.clarifier.service` | `planning` |
+
+Stub tools still enforce authentication and the same operator-grant
+authorization as their functional counterparts (via
+`IGeoprocessingJobService.EnsureCallerAuthorized`) before returning a
+structured `not_implemented` envelope with `blockedBy`, `contract`, and
+`nextSteps` fields so operators can bind today and pick up behavior when
+the upstream service lands. Authenticated callers without the required
+grant receive a `permission_denied` error, matching the functional tools.
+
+#### Tool payload notes
+
+- `honua_validate_plan` and `honua_dry_run_plan` accept `{ "plan": ... }`.
+  The validator is designed to report `EMPTY_PLAN_ID` and `EMPTY_STEPS` as
+  structured violations, so the published schema for these tools does not
+  require `plan.planId` or `plan.steps` at the top level. Steps that *are*
+  supplied must still provide `stepId` and `kind`; unsupported step kinds
+  or output artifact kinds fail with `invalid_argument` before the domain
+  service is invoked.
+- `honua_execute_plan` publishes a stricter variant of the same schema:
+  `plan.planId` and `plan.steps` are required and `plan.steps` carries
+  `minItems: 1`, matching the server-side guard in
+  `SubmitJobAsync`. Schema-driven MCP clients therefore block execute
+  payloads the server would always reject while still being able to submit
+  partial plans to the validator.
+- `plan.steps[*].kind` accepts the canonical step kinds
+  `QueryFeatures`, `Geoprocess`, `Aggregate`, `RenderMap`, and `Export`
+  (case-insensitive).
+- `plan.outputs[*]` accepts the canonical artifact kinds `Scalar`,
+  `FeatureLayer`, `Table`, `Raster`, `File`, `Report`, `Map`, and
+  `AppBundle` (case-insensitive).
+- `honua_validate_plan` returns
+  `{ isExecutable, requiresApproval, violations, warnings }`.
+- `honua_dry_run_plan` returns
+  `{ estimatedDurationSeconds, estimatedArtifacts, sideEffects }`.
+- `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
+  whitespace keys are normalized to `null` before delegation. Success returns
+  `{ jobId, status, createdAt, resourceUri }`.
+- `honua_cancel_job` accepts `{ jobId }`. Blank job ids fail with
+  `invalid_argument`. Success returns
+  `{ jobId, status: "cancellation_requested", cancellationRequested: true }`.
+- `honua_plan_analysis`, `honua_ground_candidates`, and
+  `honua_clarify_intent` accept `{}` and return
+  `{ status: "not_implemented", tool, blockedBy, contract, nextSteps }`.
+
+### Resources
+
+| URI / template | Surface | Status | Description |
+|----------------|---------|--------|-------------|
+| `honua://jobs/{jobId}` | `resources/templates/list` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
+| `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
+| `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
+| `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
+
+`honua://jobs/{jobId}/results` is the reserved output channel for the
+map-package artifact. The wire shape is stable so clients can bind today;
+`mapPackageId`, `artifacts`, `workspaceRefs`, and `provenance` will flow
+through from `AnalysisResultPackage` when the execution engine exposes a
+stored package. Until result storage lands, the canonical
+`IGeoprocessingJobService.GetJobResultsAsync` implementation still returns
+`not_found` after validating that the job exists and has reached a terminal
+state, and the MCP resource mirrors that behavior rather than fabricating a
+second lifecycle model.
+
+#### Resource payload notes
+
+- `honua://jobs/{jobId}` returns
+  `{ jobId, status, createdAt, updatedAt, completedAt?, percentComplete?, currentPhase?, errorMessage?, warnings, resultsUri }`.
+- `honua://jobs/{jobId}/results` returns
+  `{ jobId, resultPackageId, status, summary, artifacts, workspaceRefs, mapPackageId?, appPackageId?, assumptions, provenance, errors }`
+  when `GetJobResultsAsync` succeeds.
+- `artifacts[*]` includes
+  `{ artifactId, kind, label, uri?, contentType?, metadata }`.
+- `workspaceRefs[*]` includes
+  `{ workspaceId, kind, label, uri?, expiresAt?, resourceUri }`.
+  `resourceUri` points back to `honua://workspaces/{workspaceId}` even when
+  the backing workspace `uri` is an external storage URI.
+- `provenance` includes
+  `{ sources, processDefinitions, assumptions, clarificationsAsked, clarificationsAnswered, executedAt?, generatedArtifactIds }`.
+- `errors[*]` includes `{ kind, message, stepId?, violations? }`.
+- `honua://jobs/{jobId}/results` returns a JSON-RPC error instead of a stub
+  envelope when the canonical job service rejects the request:
+  `failed_precondition` for non-terminal jobs, `not_found` for missing jobs,
+  and currently `not_found` for terminal jobs whose result package has not yet
+  been stored.
+- `notImplementedReason` is omitted on successful
+  `honua://jobs/{jobId}/results` payloads; only stub resources emit it.
+- `honua://workspaces/{workspaceId}` returns
+  `{ workspaceId, kind, label, status: "not_implemented", notImplementedReason }`
+  with nullable fields such as `uri` and `expiresAt` omitted until the
+  workspace store lands.
+- `honua://catalog/processes` returns
+  `{ catalogVersion, status: "not_implemented", processes: [], notImplementedReason }`.
+
+### Error envelope
+
+MCP 2025-03-26 distinguishes protocol-level errors from tool-execution
+errors. Transport and dispatch failures surface as JSON-RPC errors in the
+response envelope's `error` field; tool-execution failures (auth, approval,
+validation, domain exceptions thrown inside a tool) are reported inside
+`result` with `isError: true` and a structured `structuredContent` envelope
+so clients can drive retry, re-auth, and approval flows without parsing
+protocol-level errors.
+
+#### Protocol-level errors (JSON-RPC `error`)
+
+Returned on the JSON-RPC envelope for parse failures, framing errors,
+unknown methods, unknown tools, unknown resource URIs, and for any failure
+in `resources/read` (which has no result-level `isError` hook).
+
+| Failure | `data.code` | JSON-RPC code |
+|---------|-------------|---------------|
+| Body is not valid JSON | `invalid_argument` | `-32700` |
+| Body is valid JSON but not a valid JSON-RPC envelope (bad `jsonrpc`, invalid `id`, empty batch, non-object batch element) | `invalid_argument` | `-32600` |
+| Unknown JSON-RPC method | `not_found` | `-32601` |
+| Unknown tool name, missing tool name, or malformed `params` | `invalid_argument` | `-32602` |
+| Unknown resource URI (`resources/read`) | `not_found` | `-32002` |
+| `resources/read` — `GeoprocessingNotFoundException` | `not_found` | `-32002` |
+| `resources/read` — `GeoprocessingValidationException` | `invalid_argument` | `-32602` |
+| `resources/read` — other domain exception | see tool-execution table (data.code column) | `-32000` |
+
+#### Tool-execution errors (`result.isError: true`)
+
+Returned from `tools/call` when the tool raises a domain or auth exception.
+The JSON-RPC envelope contains `result.isError: true`; the error envelope
+is embedded in `result.structuredContent` (and mirrored in the `text` block
+of `result.content`).
+
+| Exception | `structuredContent.code` | Extra signals |
+|-----------|--------------------------|---------------|
+| `GeoprocessingAuthorizationException(requiresAuthentication: true)` | `unauthenticated` | `requiresReauthentication: true` |
+| `GeoprocessingAuthorizationException(false)` | `permission_denied` | |
+| `GeoprocessingApprovalRequiredException` | `failed_precondition` | `approvalRequired: true`, `policyRef` |
+| `GeoprocessingPreconditionFailedException` | `failed_precondition` | |
+| `GeoprocessingNotFoundException` | `not_found` | |
+| `GeoprocessingValidationException` | `invalid_argument` | |
+| `GeoprocessingStoreUnavailableException` | `unavailable` | `retryable: true` |
+| `GeoprocessingIdempotencyConflictException` | `already_exists` | |
+| anything else | `internal` | |
+
+`structuredContent` always includes `status: "error"`, `code`, and
+`message`; optional fields (`requiresReauthentication`, `approvalRequired`,
+`policyRef`, `conflictingJobId`, `retryable`, `violations`) are present
+only when the domain signal applies. Stub tools that return
+`not_implemented` remain a successful tool result — they are not routed
+through this error path.
+
+### Telemetry
+
+- `honua.mcp.tool.call` — emitted today, tagged by `tool_name`, `status`, `workflow_family`
+- `honua.mcp.resource.read` — emitted today, tagged by `resource_family`, `status`
+- `honua.mcp.boundary.rejection` — reserved counter tagged by `rejection_reason` for future taxonomy non-goal rejections
+
+The dispatcher tags the ambient activity with `honua.protocol = "Mcp"`
+and `honua.operation = <method>` as soon as the JSON-RPC method has been
+validated, so `initialize`, `tools/list`, `resources/list`, and
+`resources/templates/list` spans — plus the anonymous auth short-circuits
+in `tools/call` and `resources/read` — all roll up alongside gRPC and
+GPServer traffic. Concrete tool and resource handlers override the
+operation tag with their operation name (e.g. `ExecutePlan`, `GetJob`).
+
+Contract-first stub tools and resources increment
+`honua.mcp.tool.call` / `honua.mcp.resource.read` with
+`status = "not_implemented"`, so dashboards can distinguish stubs from
+functional paths without inspecting response bodies. Functional tools and
+resources emit `status = "ok"` on success and `status = "error"` on
+failure.
+
+When the dispatcher rejects `tools/call` or `resources/read` for an
+anonymous caller — before the tool or URI is resolved — it emits the
+same counters with sentinel tag values so the auth-denial path stays
+observable:
+
+- `honua.mcp.tool.call` → `tool_name = "unknown"`, `status = "error"`, `workflow_family = "unknown"`
+- `honua.mcp.resource.read` → `resource_family = "unknown"`, `status = "error"`
+
+Both paths also emit `McpLog.AuthorizationDenied` with the JSON-RPC
+method as the `target` and `authenticated = false`.
+
+### Source
+
+- Vertical slice: `src/Honua.Server/Features/Mcp/`
+- Tools: `src/Honua.Server/Features/Mcp/Tools/`
+- Resources: `src/Honua.Server/Features/Mcp/Resources/`
+- Tests: `tests/Honua.Server.Tests/Features/Mcp/`
