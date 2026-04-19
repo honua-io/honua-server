@@ -274,13 +274,24 @@ builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureC
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
+var awsBatchSection = builder.Configuration.GetSection("ControlPlane:AwsBatch");
+if (awsBatchSection.Exists())
+{
+    builder.Services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
+    builder.Services.AddSingleton<AwsBatchComputeBackend>();
+    builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());
+}
+
 if (connectedRedis != null)
 {
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
-    builder.Services.AddSingleton<IOperationReconciler, DeployWorkflowReconciler>();
+    builder.Services.AddSingleton<DeployWorkflowReconciler>();
+    builder.Services.AddSingleton<ExecutionJobReconciler>();
+    builder.Services.AddSingleton<IOperationReconciler, CompositeOperationReconciler>();
     if (!isTestEnvironment)
     {
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
+        builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
     }
 }
 

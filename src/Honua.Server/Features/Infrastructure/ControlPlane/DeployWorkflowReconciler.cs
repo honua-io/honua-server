@@ -15,7 +15,7 @@ internal sealed partial class DeployWorkflowReconciler(
     IDeployTargetRegistry targetRegistry,
     IEnumerable<IDeployBackend> backends,
     IDeployTelemetrySignalEvaluator telemetrySignalEvaluator,
-    ILogger<DeployWorkflowReconciler> logger) : IOperationReconciler
+    ILogger<DeployWorkflowReconciler> logger)
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
@@ -153,11 +153,6 @@ internal sealed partial class DeployWorkflowReconciler(
             await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
         }
     }
-
-    public Task ReconcileExecutionJobAsync(
-        string operationId,
-        CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
 
     private async Task RenewLeaseUntilCancelledAsync(string operationId, CancellationTokenSource reconciliationCancellation)
     {
