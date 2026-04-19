@@ -10,7 +10,8 @@ operator architecture.
 It complements:
 
 - [MCP Server](../../developer/MCP_SERVER.md), which documents the current open-core MCP data
-  access surface
+  access surface in `honua-sdk-js` plus the server-owned operator surface in
+  `honua-server`
 - [AI-First Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md),
   which describes the high-level system design
 

@@ -73,9 +73,62 @@ public sealed class McpResourceSerializationTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
-    public async Task JobResultsResource_ReturnsNotImplementedEnvelopeWithJobId()
+    public async Task JobResultsResource_DelegatesToDomainServiceAndSerializesResultPackage()
     {
-        var resource = new JobResultsResource(NullLogger<JobResultsResource>.Instance);
+        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(AnalysisResultPackage.CreateCompleted(
+                "pkg-123",
+                new ResultSummary
+                {
+                    Title = "Buffered parcels",
+                    Description = "5-meter parcel buffers"
+                },
+                [
+                    new ArtifactRef
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "Buffered output",
+                        Uri = "honua://artifacts/artifact-1",
+                        ContentType = "application/geo+json",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["layerId"] = "buffered-parcels"
+                        }
+                    }
+                ],
+                [
+                    new WorkspaceRef
+                    {
+                        WorkspaceId = "ws-42",
+                        Kind = WorkspaceKind.Scratch,
+                        Label = "Scratch workspace",
+                        Uri = "honua://workspace-storage/ws-42",
+                        ExpiresAt = DateTimeOffset.Parse("2026-04-19T12:00:00Z", CultureInfo.InvariantCulture)
+                    }
+                ],
+                new ProvenanceRecord
+                {
+                    Sources =
+                    [
+                        new ProvenanceSource
+                        {
+                            SourceId = "parcels",
+                            Version = "v1",
+                            Description = "County parcels"
+                        }
+                    ],
+                    ProcessDefinitions = ["geometry.buffer"],
+                    Assumptions = ["buffers use planar meters"],
+                    ClarificationsAsked = ["distance_units"],
+                    ClarificationsAnswered = ["meters"],
+                    ExecutedAt = DateTimeOffset.Parse("2026-04-18T12:05:00Z", CultureInfo.InvariantCulture),
+                    GeneratedArtifactIds = ["artifact-1"]
+                },
+                assumptions: ["output uses source CRS"],
+                mapPackageId: "map-55"));
+
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
@@ -89,15 +142,49 @@ public sealed class McpResourceSerializationTests
 
         var body = McpTestFactory.ParseJson(content.Text);
         body.GetProperty("jobId").GetString().Should().Be("job-xyz");
-        body.GetProperty("status").GetString().Should().Be("not_implemented");
-        body.GetProperty("notImplementedReason").GetString().Should().NotBeNullOrEmpty();
+        body.GetProperty("resultPackageId").GetString().Should().Be("pkg-123");
+        body.GetProperty("status").GetString().Should().Be("Completed");
+        body.GetProperty("summary").GetProperty("title").GetString().Should().Be("Buffered parcels");
+        body.GetProperty("artifacts").GetArrayLength().Should().Be(1);
+        body.GetProperty("artifacts")[0].GetProperty("artifactId").GetString().Should().Be("artifact-1");
+        body.GetProperty("workspaceRefs").GetArrayLength().Should().Be(1);
+        body.GetProperty("workspaceRefs")[0].GetProperty("resourceUri").GetString().Should().Be("honua://workspaces/ws-42");
+        body.GetProperty("mapPackageId").GetString().Should().Be("map-55");
+        body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
+    }
 
-        // Package fields are reserved on the wire until result storage ships.
-        body.GetProperty("resultPackageId").GetString().Should().BeEmpty();
-        body.GetProperty("artifacts").GetArrayLength().Should().Be(0);
-        body.GetProperty("workspaceRefs").GetArrayLength().Should().Be(0);
-        // mapPackageId is nullable; the context omits null properties.
-        body.TryGetProperty("mapPackageId", out _).Should().BeFalse();
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
+    public async Task JobResultsResource_NonTerminalJob_PropagatesFailedPrecondition()
+    {
+        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AnalysisResultPackage>>(_ => throw new GeoprocessingPreconditionFailedException("not terminal"));
+
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://jobs/job-xyz/results",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
+    public async Task JobResultsResource_TerminalJobWithoutStoredPackage_PropagatesNotFound()
+    {
+        _jobService.GetJobResultsAsync("job-xyz", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AnalysisResultPackage>>(_ => throw new GeoprocessingNotFoundException("result package unavailable"));
+
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://jobs/job-xyz/results",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     [UnitTest]
@@ -151,7 +238,7 @@ public sealed class McpResourceSerializationTests
     [Endpoint("POST /mcp resources/read")]
     public void JobResultsResource_CanHandle_MatchesOnlyJobResultsUris()
     {
-        var resource = new JobResultsResource(NullLogger<JobResultsResource>.Instance);
+        var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
 
         resource.CanHandle("honua://jobs/job-1/results").Should().BeTrue();
         resource.CanHandle("honua://jobs/job-1").Should().BeFalse();

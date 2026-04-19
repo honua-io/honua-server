@@ -123,6 +123,65 @@ return an `unauthenticated` error otherwise; `initialize`, `tools/list`,
 and `resources/list` are handshake methods that do not require
 authentication.
 
+### Response Framing
+
+- Successful JSON-RPC responses omit `error`; failures omit `result`.
+- Payloads use camelCase and omit `null` properties.
+- `initialize` returns:
+  - `protocolVersion: "2025-03-26"`
+  - `serverInfo.name: "honua.operator.mcp"`
+  - `serverInfo.version: "v1"`
+  - `capabilities.tools.listChanged: false`
+  - `capabilities.resources.listChanged: false`
+- Successful `tools/call` responses return the same payload twice:
+  - `result.structuredContent` contains the typed JSON object
+  - `result.content[0].text` contains that same JSON serialized as text
+- Successful `resources/read` responses return `result.contents`, which
+  currently contains one `application/json` block whose `text` field is the
+  serialized resource body.
+
+Example `tools/call` success shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "run-1",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"jobId\":\"job-xyz\",\"status\":\"Queued\",\"createdAt\":\"2026-04-18T12:00:00+00:00\",\"resourceUri\":\"honua://jobs/job-xyz\"}"
+      }
+    ],
+    "isError": false,
+    "structuredContent": {
+      "jobId": "job-xyz",
+      "status": "Queued",
+      "createdAt": "2026-04-18T12:00:00+00:00",
+      "resourceUri": "honua://jobs/job-xyz"
+    }
+  }
+}
+```
+
+Example `resources/read` success shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "job-1",
+  "result": {
+    "contents": [
+      {
+        "uri": "honua://jobs/job-xyz",
+        "mimeType": "application/json",
+        "text": "{\"jobId\":\"job-xyz\",\"status\":\"Running\",\"createdAt\":\"2026-04-18T12:00:00+00:00\",\"updatedAt\":\"2026-04-18T12:02:00+00:00\",\"percentComplete\":50.5,\"currentPhase\":\"executing\",\"warnings\":[\"layer projection assumed\"],\"resultsUri\":\"honua://jobs/job-xyz/results\"}"
+      }
+    ]
+  }
+}
+```
+
 ### Tools
 
 | Tool | Status | Domain delegate | Workflow family |
@@ -140,21 +199,63 @@ Stub tools still enforce authentication and return a structured
 fields so operators can bind today and pick up behavior when the upstream
 service lands.
 
+#### Tool payload notes
+
+- `honua_validate_plan` and `honua_dry_run_plan` accept `{ "plan": ... }`.
+  The published schema requires `plan.steps[*].stepId` and `kind`.
+  Unsupported step kinds or output artifact kinds fail with
+  `invalid_argument` before the domain service is invoked.
+- `honua_validate_plan` returns
+  `{ isExecutable, requiresApproval, violations, warnings }`.
+- `honua_dry_run_plan` returns
+  `{ estimatedDurationSeconds, estimatedArtifacts, sideEffects }`.
+- `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
+  whitespace keys are normalized to `null` before delegation. Success returns
+  `{ jobId, status, createdAt, resourceUri }`.
+- `honua_cancel_job` accepts `{ jobId }`. Blank job ids fail with
+  `invalid_argument`. Success returns
+  `{ jobId, status: "cancellation_requested", cancellationRequested: true }`.
+- `honua_plan_analysis`, `honua_ground_candidates`, and
+  `honua_clarify_intent` accept `{}` and return
+  `{ status: "not_implemented", tool, blockedBy, contract, nextSteps }`.
+
 ### Resources
 
 | URI template | Status | Description |
 |--------------|--------|-------------|
 | `honua://jobs/{jobId}` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
-| `honua://jobs/{jobId}/results` | contract stub | Reserved URI and `AnalysisResultPackage` envelope. Returns `status: "not_implemented"` with the requested `jobId` until the execution engine's result store ships. |
+| `honua://jobs/{jobId}/results` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://workspaces/{workspaceId}` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | contract stub | Stable URI pending catalog service |
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
 map-package artifact. The wire shape is stable so clients can bind today;
 `mapPackageId`, `artifacts`, `workspaceRefs`, and `provenance` will flow
-through from `AnalysisResultPackage` once result storage lands alongside
-the execution engine. Until then, the resource returns a
-`not_implemented` envelope that echoes the requested `jobId`.
+through from `AnalysisResultPackage` when the execution engine exposes a
+stored package. Until result storage lands, the canonical
+`IGeoprocessingJobService.GetJobResultsAsync` implementation still returns
+`not_found` after validating that the job exists and has reached a terminal
+state, and the MCP resource mirrors that behavior rather than fabricating a
+second lifecycle model.
+
+#### Resource payload notes
+
+- `honua://jobs/{jobId}` returns
+  `{ jobId, status, createdAt, updatedAt, completedAt?, percentComplete?, currentPhase?, errorMessage?, warnings, resultsUri }`.
+- `honua://jobs/{jobId}/results` returns
+  `{ jobId, resultPackageId, status, summary, artifacts, workspaceRefs, mapPackageId?, appPackageId?, assumptions, provenance, errors }`
+  when `GetJobResultsAsync` succeeds.
+- `honua://jobs/{jobId}/results` returns a JSON-RPC error instead of a stub
+  envelope when the canonical job service rejects the request:
+  `failed_precondition` for non-terminal jobs, `not_found` for missing jobs,
+  and currently `not_found` for terminal jobs whose result package has not yet
+  been stored.
+- `honua://workspaces/{workspaceId}` returns
+  `{ workspaceId, kind, label, status: "not_implemented", notImplementedReason }`
+  with nullable fields such as `uri` and `expiresAt` omitted until the
+  workspace store lands.
+- `honua://catalog/processes` returns
+  `{ catalogVersion, status: "not_implemented", processes: [], notImplementedReason }`.
 
 ### Error envelope
 
@@ -175,16 +276,21 @@ object whose `data` field mirrors the gRPC status vocabulary:
 
 Clients can drive retry, re-auth, and approval flows from `data.code`
 without parsing human-readable strings.
+Malformed JSON, missing JSON-RPC fields, missing tool/resource parameters,
+and unsupported plan enums surface as `invalid_argument`; unknown methods,
+tool names, and resource URIs surface as `not_found`.
 
 ### Telemetry
 
-- `honua.mcp.tool.call` — counter tagged by `tool_name`, `status`, `workflow_family`
-- `honua.mcp.resource.read` — counter tagged by `resource_family`, `status`
-- `honua.mcp.boundary.rejection` — counter tagged by `rejection_reason` (taxonomy non-goals)
+- `honua.mcp.tool.call` — emitted today, tagged by `tool_name`, `status`, `workflow_family`
+- `honua.mcp.resource.read` — emitted today, tagged by `resource_family`, `status`
+- `honua.mcp.boundary.rejection` — reserved counter tagged by `rejection_reason` for future taxonomy non-goal rejections
 
 Activities emitted inside the surface are tagged with
 `honua.protocol = "Mcp"` so spans roll up alongside gRPC and GPServer
-traffic.
+traffic. Stub tools still increment `honua.mcp.tool.call` with `status = "ok"`
+because they return structured `not_implemented` payloads rather than
+JSON-RPC errors.
 
 ### Source
 

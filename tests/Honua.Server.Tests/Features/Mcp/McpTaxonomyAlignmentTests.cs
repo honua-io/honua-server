@@ -170,7 +170,7 @@ public sealed class McpTaxonomyAlignmentTests
         return
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
-            new JobResultsResource(NullLogger<JobResultsResource>.Instance),
+            new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
             new WorkspaceResource(NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(NullLogger<ProcessCatalogResource>.Instance)
         ];
