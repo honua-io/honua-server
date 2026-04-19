@@ -399,6 +399,43 @@ jobs:
           cat ./tests/TestResults/server-tests-infra-security.log
           exit "$test_exit_code"
 
+      - name: Run .NET Tests (Server - Operator Eval Harness)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.OgcProcesses|FullyQualifiedName~Honua.Server.Tests.Features.Grpc" \
+            --logger "trx;LogFileName=server-tests-operator-eval.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-operator-eval.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-operator-eval-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-operator-eval.log
+          exit "$test_exit_code"
+
+      - name: Upload Operator Eval Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operator-eval-report
+          path: tests/TestResults/eval-report.json
+          if-no-files-found: warn
+
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |

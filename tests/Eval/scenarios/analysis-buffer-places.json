@@ -1,0 +1,53 @@
+{
+  "id": "analysis-buffer-places",
+  "name": "Buffer places and summarize overlap",
+  "mode": "Analysis",
+  "fixtureProfile": "core",
+  "intent": {
+    "intentId": "intent-analysis-buffer-places",
+    "goal": "Buffer the seed 'places' layer by 500m and report overlap with roads.",
+    "mode": "analysis",
+    "requestedOutputs": ["FeatureLayer", "Report"],
+    "constraints": {
+      "areaOfInterest": "POLYGON((-180 -90,180 -90,180 90,-180 90,-180 -90))",
+      "spatialReferenceId": 4326,
+      "units": "meters"
+    },
+    "inputs": ["places", "roads"],
+    "assumptionPolicy": "AskWhenMaterial"
+  },
+  "precompiledPlan": {
+    "planId": "plan-analysis-buffer-places",
+    "intentId": "intent-analysis-buffer-places",
+    "steps": [
+      {
+        "stepId": "query-places",
+        "kind": "QueryFeatures",
+        "inputs": { "layer": "places" },
+        "dependsOn": []
+      },
+      {
+        "stepId": "buffer-places",
+        "kind": "Geoprocess",
+        "processId": "honua.geoprocess.buffer",
+        "inputs": { "distance": "500", "units": "meters" },
+        "dependsOn": ["query-places"]
+      },
+      {
+        "stepId": "summarize-overlap",
+        "kind": "Aggregate",
+        "inputs": { "target": "roads" },
+        "dependsOn": ["buffer-places"]
+      }
+    ],
+    "outputs": ["FeatureLayer", "Report"]
+  },
+  "expectedOutcome": {
+    "isExecutable": true,
+    "requiresApproval": false,
+    "estimatedArtifactKinds": ["FeatureLayer", "Report"],
+    "terminalWorkflowStatus": "Completed",
+    "expectsMapPackage": false,
+    "expectsAppPackage": false
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "publish-refresh-roads",
+  "name": "Refresh the 'roads' publication with updated features",
+  "mode": "Publish",
+  "fixtureProfile": "core",
+  "intent": {
+    "intentId": "intent-publish-refresh-roads",
+    "goal": "Re-run the roads layer projection and republish the canonical layer.",
+    "mode": "publish",
+    "requestedOutputs": ["FeatureLayer"],
+    "constraints": {
+      "spatialReferenceId": 4326,
+      "units": "meters"
+    },
+    "inputs": ["roads"],
+    "assumptionPolicy": "UseDefaults"
+  },
+  "precompiledPlan": {
+    "planId": "plan-publish-refresh-roads",
+    "intentId": "intent-publish-refresh-roads",
+    "steps": [
+      {
+        "stepId": "query-roads",
+        "kind": "QueryFeatures",
+        "inputs": { "layer": "roads" },
+        "dependsOn": []
+      },
+      {
+        "stepId": "reproject-roads",
+        "kind": "Geoprocess",
+        "processId": "honua.geoprocess.project",
+        "inputs": { "targetSrid": "3857" },
+        "dependsOn": ["query-roads"]
+      },
+      {
+        "stepId": "export-roads",
+        "kind": "Export",
+        "inputs": { "format": "geojson", "layer": "roads" },
+        "dependsOn": ["reproject-roads"]
+      }
+    ],
+    "outputs": ["FeatureLayer"]
+  },
+  "expectedOutcome": {
+    "isExecutable": true,
+    "requiresApproval": false,
+    "estimatedArtifactKinds": ["FeatureLayer"],
+    "terminalWorkflowStatus": "Completed",
+    "expectsMapPackage": false,
+    "expectsAppPackage": false
+  }
+}
