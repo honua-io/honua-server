@@ -7,7 +7,7 @@ using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Mcp;
-using Honua.Server.Features.Mcp.Stores;
+using Honua.Server.Features.Mcp.Resources;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,90 +16,127 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Mcp;
 
 /// <summary>
-/// Pins the promotion-surface DI wiring to the fallback-backed pattern
-/// documented in <c>docs/developer/MCP_SERVER.md</c>. The promotion resources
-/// are functional handlers (dispatcher tags reads as <c>status=ok</c>), and
-/// <c>AddMcpOperatorSurface</c> registers the in-memory stores via
-/// <c>TryAddSingleton</c> so DI always resolves. When canonical
-/// publishing/deployment persistence later registers earlier in the
-/// composition root, the fallback registrations become no-ops and the same
-/// handlers immediately surface real lifecycle data without an API change.
+/// Pins the DI shape for the MCP operator surface and the opt-in promotion
+/// surface. The hosted-promotion resources (<c>honua://published-services*</c>,
+/// <c>honua://deployments*</c>, <c>honua://map-packages*</c>,
+/// <c>honua://app-packages*</c>) are intentionally gated behind
+/// <see cref="McpServiceCollectionExtensions.AddMcpPromotionSurface"/> so the
+/// default server composition cannot advertise promotion URIs backed only by
+/// process-local empty state.
 /// </summary>
 public sealed class McpServiceCollectionExtensionsTests
 {
     [UnitTest]
-    public void AddMcpOperatorSurface_WithoutCanonicalPersistence_ResolvesInMemoryPromotionStoresFallback()
+    public void AddMcpOperatorSurface_DoesNotRegisterPromotionResourceHandlers()
     {
-        using var provider = BuildProvider();
+        var services = BuildBaseServices();
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
 
-        provider.GetRequiredService<IPublishedServiceStore>()
-            .Should().BeOfType<InMemoryPublishedServiceStore>();
-        provider.GetRequiredService<IPublishIntentStore>()
-            .Should().BeOfType<InMemoryPublishIntentStore>();
-        provider.GetRequiredService<IDeploymentStore>()
-            .Should().BeOfType<InMemoryDeploymentStore>();
+        RegisteredResourceHandlers(services)
+            .Should().NotContain(new[]
+            {
+                typeof(PublishedServiceResource),
+                typeof(DeploymentResource),
+                typeof(MapPackageResource),
+                typeof(AppPackageResource),
+                typeof(PromotionSurfaceIndexResource)
+            }, "the promotion surface is opt-in via AddMcpPromotionSurface");
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_WithCanonicalPersistenceAlreadyRegistered_LeavesCanonicalStoresInPlace()
+    public void AddMcpOperatorSurface_DoesNotRegisterFallbackPromotionStores()
+    {
+        var services = BuildBaseServices();
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+
+        services.Any(d => d.ServiceType == typeof(IPublishedServiceStore))
+            .Should().BeFalse("canonical publishing persistence is not yet registered by the default composition");
+        services.Any(d => d.ServiceType == typeof(IDeploymentStore))
+            .Should().BeFalse("canonical deployment persistence is not yet registered by the default composition");
+        services.Any(d => d.ServiceType == typeof(IPublishIntentStore))
+            .Should().BeFalse("canonical publish-intent persistence is not yet registered by the default composition");
+    }
+
+    [UnitTest]
+    public void AddMcpPromotionSurface_RegistersPromotionResourceHandlersOnly()
+    {
+        var services = BuildBaseServices();
+        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpPromotionSurface();
+
+        RegisteredResourceHandlers(services)
+            .Should().Contain(new[]
+            {
+                typeof(PublishedServiceResource),
+                typeof(DeploymentResource),
+                typeof(MapPackageResource),
+                typeof(AppPackageResource),
+                typeof(PromotionSurfaceIndexResource)
+            });
+
+        services.Any(d => d.ServiceType == typeof(IPublishedServiceStore))
+            .Should().BeFalse("AddMcpPromotionSurface must not register any store fallbacks");
+        services.Any(d => d.ServiceType == typeof(IDeploymentStore))
+            .Should().BeFalse("AddMcpPromotionSurface must not register any store fallbacks");
+        services.Any(d => d.ServiceType == typeof(IPublishIntentStore))
+            .Should().BeFalse("AddMcpPromotionSurface must not register any store fallbacks");
+    }
+
+    [UnitTest]
+    public void AddMcpPromotionSurface_WithCanonicalPersistenceAlreadyRegistered_ResolvesSurfaceFromCanonicalStores()
     {
         var canonicalPublishedServices = Substitute.For<IPublishedServiceStore>();
-        var canonicalIntents = Substitute.For<IPublishIntentStore>();
         var canonicalDeployments = Substitute.For<IDeploymentStore>();
 
         var services = BuildBaseServices();
         services.AddSingleton(canonicalPublishedServices);
-        services.AddSingleton(canonicalIntents);
         services.AddSingleton(canonicalDeployments);
         services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpPromotionSurface();
 
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IPublishedServiceStore>().Should().BeSameAs(canonicalPublishedServices);
-        provider.GetRequiredService<IPublishIntentStore>().Should().BeSameAs(canonicalIntents);
         provider.GetRequiredService<IDeploymentStore>().Should().BeSameAs(canonicalDeployments);
+        provider.GetServices<IMcpResource>().OfType<PublishedServiceResource>().Should().ContainSingle();
+        provider.GetServices<IMcpResource>().OfType<DeploymentResource>().Should().ContainSingle();
     }
 
     /// <summary>
-    /// Tripwire for the default real-host composition (<see cref="FeatureRegistrationExtensions.AddServerFeatures"/>).
-    /// Nothing in the default server composition registers canonical publishing/deployment
-    /// persistence today, so <see cref="IPublishedServiceStore"/>, <see cref="IPublishIntentStore"/>,
-    /// and <see cref="IDeploymentStore"/> still resolve to the in-memory fallbacks registered
-    /// by <see cref="McpServiceCollectionExtensions.AddMcpOperatorSurface"/>. This test pins that
-    /// known gap — documented in <c>docs/developer/MCP_SERVER.md</c> — so that when a downstream
-    /// ticket wires canonical persistence earlier in the composition root, the assertion flips
-    /// and forces a deliberate update (either delete the fallback registrations or narrow this
-    /// test to the new wiring).
+    /// Tripwire for the default real-host composition
+    /// (<see cref="FeatureRegistrationExtensions.AddServerFeatures"/>): the
+    /// promotion surface must remain gated off until canonical publishing and
+    /// deployment persistence register earlier in the composition root. When
+    /// that lands, this assertion flips and forces a deliberate update to call
+    /// <see cref="McpServiceCollectionExtensions.AddMcpPromotionSurface"/> in
+    /// the default composition.
     /// </summary>
     [UnitTest]
-    public void AddServerFeatures_DefaultComposition_StillResolvesInMemoryPromotionStoresFallback()
+    public void AddServerFeatures_DefaultComposition_DoesNotAdvertisePromotionResources()
     {
         var services = BuildBaseServices();
         services.AddServerFeatures(new ConfigurationBuilder().Build());
 
-        ResolveImplementationType(services, typeof(IPublishedServiceStore))
-            .Should().Be<InMemoryPublishedServiceStore>(
-                "canonical IPublishedServiceStore persistence is not yet wired into AddServerFeatures");
-        ResolveImplementationType(services, typeof(IPublishIntentStore))
-            .Should().Be<InMemoryPublishIntentStore>(
-                "canonical IPublishIntentStore persistence is not yet wired into AddServerFeatures");
-        ResolveImplementationType(services, typeof(IDeploymentStore))
-            .Should().Be<InMemoryDeploymentStore>(
-                "canonical IDeploymentStore persistence is not yet wired into AddServerFeatures");
+        RegisteredResourceHandlers(services)
+            .Should().NotContain(new[]
+            {
+                typeof(PublishedServiceResource),
+                typeof(DeploymentResource),
+                typeof(MapPackageResource),
+                typeof(AppPackageResource),
+                typeof(PromotionSurfaceIndexResource)
+            }, "the default server composition cannot advertise promotion URIs backed only by empty state");
+
+        services.Any(d => d.ServiceType == typeof(IPublishedServiceStore))
+            .Should().BeFalse("no canonical IPublishedServiceStore persistence is wired into AddServerFeatures yet");
+        services.Any(d => d.ServiceType == typeof(IDeploymentStore))
+            .Should().BeFalse("no canonical IDeploymentStore persistence is wired into AddServerFeatures yet");
     }
 
-    private static ServiceProvider BuildProvider()
-    {
-        var services = BuildBaseServices();
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
-        return services.BuildServiceProvider();
-    }
-
-    private static Type? ResolveImplementationType(IServiceCollection services, Type serviceType)
-    {
-        var descriptor = services.LastOrDefault(d => d.ServiceType == serviceType);
-        return descriptor?.ImplementationType;
-    }
+    private static IEnumerable<Type?> RegisteredResourceHandlers(IServiceCollection services)
+        => services
+            .Where(d => d.ServiceType == typeof(IMcpResource))
+            .Select(d => d.ImplementationType);
 
     private static ServiceCollection BuildBaseServices()
     {

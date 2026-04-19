@@ -441,31 +441,31 @@ grant receive a `permission_denied` error, matching the functional tools.
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
-| `honua://published-services` | `resources/list` | functional (fallback-backed) | Reads the registered `IPublishedServiceStore` and returns a shape-stable empty list until canonical publishing persistence is registered. |
-| `honua://published-services/{serviceId}` | `resources/templates/list` | functional (fallback-backed) | Reads the registered `IPublishedServiceStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind today. |
-| `honua://deployments` | `resources/list` | functional (fallback-backed) | Reads the registered `IDeploymentStore` and returns a shape-stable empty list until canonical deployment persistence is registered. |
-| `honua://deployments/{deploymentId}` | `resources/templates/list` | functional (fallback-backed) | Reads the registered `IDeploymentStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind today. |
-| `honua://map-packages` | `resources/list` | functional (fallback-backed) | Reverse lookup against the registered `IDeploymentStore`; returns a shape-stable empty list until canonical deployment persistence is registered. |
-| `honua://map-packages/{packageId}` | `resources/templates/list` | functional (fallback-backed) | Reverse lookup against the registered `IDeploymentStore`; returns `not_found` when no currently-published deployment references the package. Packages have no standalone store; the view is derived from deployments that reference the package. |
-| `honua://app-packages` | `resources/list` | functional (fallback-backed) | Reverse lookup against the registered `IDeploymentStore`; returns a shape-stable empty list until canonical deployment persistence is registered. |
-| `honua://app-packages/{packageId}` | `resources/templates/list` | functional (fallback-backed) | Reverse lookup against the registered `IDeploymentStore`; returns `not_found` when no currently-published deployment references the package. |
+| `honua://published-services` | `resources/list` | gated (opt-in) | Reads `IPublishedServiceStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://published-services/{serviceId}` | `resources/templates/list` | gated (opt-in) | Reads `IPublishedServiceStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind once the surface is wired. |
+| `honua://deployments` | `resources/list` | gated (opt-in) | Reads `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://deployments/{deploymentId}` | `resources/templates/list` | gated (opt-in) | Reads `IDeploymentStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind once the surface is wired. |
+| `honua://map-packages` | `resources/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://map-packages/{packageId}` | `resources/templates/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`; returns `not_found` when no currently-published deployment references the package. Packages have no standalone store; the view is derived from deployments that reference the package. |
+| `honua://app-packages` | `resources/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
+| `honua://app-packages/{packageId}` | `resources/templates/list` | gated (opt-in) | Reverse lookup against `IDeploymentStore`; returns `not_found` when no currently-published deployment references the package. |
 
 The promotion-surface resources are functional handlers — they do not implement
-`IStubMcpResource` and the dispatcher tags successful reads as
+`IStubMcpResource`, and when advertised the dispatcher tags successful reads as
 `status=ok` on `honua.mcp.resource.read`, distinct from the
 `status=not_implemented` emitted by true contract stubs such as
 `honua://workspaces/{workspaceId}` and `honua://catalog/processes`. Handler
 code, URIs, payload shapes, and authorization are fixed so agents and
-`honua-devops-29` can integrate against the wire contract today.
-`AddMcpOperatorSurface` registers `InMemoryPublishedServiceStore`,
-`InMemoryPublishIntentStore`, and `InMemoryDeploymentStore` via
-`TryAddSingleton` so DI always resolves, but nothing in the current
-composition writes to those fallbacks — so list reads return shape-stable
-empty envelopes and detail reads return `not_found` until a downstream
-ticket registers the canonical publishing / deployment persistence earlier
-in the composition root. When that lands, the fallback registrations become
-no-ops and the same handlers immediately surface real lifecycle data without
-an API change or telemetry reclassification.
+`honua-devops-29` can integrate against the wire contract. The handlers are
+not wired into the default composition today, because canonical
+`IPublishedServiceStore` and `IDeploymentStore` persistence has not shipped
+yet — wiring them against empty process-local state would advertise a URI
+surface that returns nothing useful and risks masking the gap. Hosts that have
+registered canonical persistence call `services.AddMcpPromotionSurface()`
+after `AddMcpOperatorSurface()` to register the five promotion resource
+handlers; `AddMcpPromotionSurface` does not register any fallback stores, so
+an unwired composition cannot accidentally advertise an empty promotion
+surface.
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
 map-package artifact. The wire shape is stable so clients can bind today;
