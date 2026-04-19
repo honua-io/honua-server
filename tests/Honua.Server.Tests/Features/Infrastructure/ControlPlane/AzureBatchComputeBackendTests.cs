@@ -71,6 +71,10 @@ public sealed class AzureBatchComputeBackendTests
 
         submission.Status.Should().Be(ExecutionJobStatus.Failed);
         submission.Message.Should().Contain("account denied");
+        // Preserve the deterministic JobId so a late-accepted job can still be observed and
+        // cancelled during reconciliation rather than orphaned at the provider.
+        submission.ProviderOperationId.Should().NotBeNullOrWhiteSpace();
+        submission.ProviderOperationId.Should().StartWith("honua-");
     }
 
     [Fact]

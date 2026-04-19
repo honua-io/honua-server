@@ -230,15 +230,33 @@ internal interface IAzureBatchClient
 /// with the <c>https://batch.core.windows.net/.default</c> scope to mint a dedicated
 /// data-plane token per request, following the AzureContainerAppsRevisionClient pattern.
 /// </summary>
-internal sealed partial class AzureBatchDataPlaneClient(
-    IHttpClientFactory httpClientFactory,
-    ILogger<AzureBatchDataPlaneClient> logger) : IAzureBatchClient
+internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
 {
     public const string HttpClientName = "control-plane-azure-batch";
 
     private const string ApiVersion = "2024-07-01.20.0";
     private static readonly Uri DataPlaneScope = new("https://batch.core.windows.net/.default");
-    private readonly TokenCredential _credential = new DefaultAzureCredential();
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<AzureBatchDataPlaneClient> _logger;
+    private readonly TokenCredential _credential;
+
+    public AzureBatchDataPlaneClient(
+        IHttpClientFactory httpClientFactory,
+        ILogger<AzureBatchDataPlaneClient> logger)
+        : this(httpClientFactory, logger, new DefaultAzureCredential())
+    {
+    }
+
+    internal AzureBatchDataPlaneClient(
+        IHttpClientFactory httpClientFactory,
+        ILogger<AzureBatchDataPlaneClient> logger,
+        TokenCredential credential)
+    {
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+        _credential = credential;
+    }
 
     public async Task<HttpStatusCode> CreateJobAsync(
         AzureBatchJobSubmission submission,
@@ -254,16 +272,20 @@ internal sealed partial class AzureBatchDataPlaneClient(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient(HttpClientName);
+        using var client = _httpClientFactory.CreateClient(HttpClientName);
         using var jobResponse = await client.SendAsync(jobRequest, cancellationToken).ConfigureAwait(false);
 
-        if (jobResponse.StatusCode == HttpStatusCode.Conflict)
+        // A prior attempt may have created the job but crashed before the task POST; proceed
+        // to task creation so the reconciler does not observe perpetual 404s on the task.
+        var jobAlreadyExists = jobResponse.StatusCode == HttpStatusCode.Conflict;
+        if (jobAlreadyExists)
         {
-            Log.JobAlreadyExists(logger, submission.JobId);
-            return HttpStatusCode.Conflict;
+            Log.JobAlreadyExists(_logger, submission.JobId);
         }
-
-        await EnsureSuccessAsync(jobResponse, cancellationToken).ConfigureAwait(false);
+        else
+        {
+            await EnsureSuccessAsync(jobResponse, cancellationToken).ConfigureAwait(false);
+        }
 
         var taskPayload = BuildCreateTaskPayload(submission);
         using var taskRequest = await CreateRequestAsync(
@@ -276,13 +298,13 @@ internal sealed partial class AzureBatchDataPlaneClient(
         using var taskResponse = await client.SendAsync(taskRequest, cancellationToken).ConfigureAwait(false);
         if (taskResponse.StatusCode == HttpStatusCode.Conflict)
         {
-            Log.TaskAlreadyExists(logger, submission.JobId);
+            Log.TaskAlreadyExists(_logger, submission.JobId);
             return HttpStatusCode.Conflict;
         }
 
         await EnsureSuccessAsync(taskResponse, cancellationToken).ConfigureAwait(false);
-        Log.JobSubmitted(logger, submission.JobId, submission.PoolId);
-        return taskResponse.StatusCode;
+        Log.JobSubmitted(_logger, submission.JobId, submission.PoolId);
+        return jobAlreadyExists ? HttpStatusCode.Conflict : taskResponse.StatusCode;
     }
 
     public async Task<AzureBatchJobState> GetJobStateAsync(
@@ -297,7 +319,7 @@ internal sealed partial class AzureBatchDataPlaneClient(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient(HttpClientName);
+        using var client = _httpClientFactory.CreateClient(HttpClientName);
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -328,19 +350,19 @@ internal sealed partial class AzureBatchDataPlaneClient(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient(HttpClientName);
+        using var client = _httpClientFactory.CreateClient(HttpClientName);
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         // A job that is already terminal (completed/deleted) returns 404 or 409;
         // treat both as no-op successes because the desired post-state is satisfied.
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
         {
-            Log.TerminateNoOp(logger, jobId, (int)response.StatusCode);
+            Log.TerminateNoOp(_logger, jobId, (int)response.StatusCode);
             return;
         }
 
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-        Log.JobTerminated(logger, jobId);
+        Log.JobTerminated(_logger, jobId);
     }
 
     public async Task<AzureBatchPoolState> GetPoolStateAsync(
@@ -355,7 +377,7 @@ internal sealed partial class AzureBatchDataPlaneClient(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        using var client = httpClientFactory.CreateClient(HttpClientName);
+        using var client = _httpClientFactory.CreateClient(HttpClientName);
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -381,10 +403,15 @@ internal sealed partial class AzureBatchDataPlaneClient(
         if (payload != null)
         {
             request.Content = new ByteArrayContent(payload);
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json; odata=minimalmetadata")
+            // Azure Batch requires the odata=minimalmetadata parameter on the Content-Type;
+            // MediaTypeHeaderValue only accepts the bare media type via its constructor,
+            // so parameters must be added separately.
+            var contentType = new MediaTypeHeaderValue("application/json")
             {
                 CharSet = Encoding.UTF8.WebName
             };
+            contentType.Parameters.Add(new NameValueHeaderValue("odata", "minimalmetadata"));
+            request.Content.Headers.ContentType = contentType;
         }
 
         return request;

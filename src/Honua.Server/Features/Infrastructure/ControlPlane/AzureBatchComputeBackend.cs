@@ -94,10 +94,13 @@ internal sealed partial class AzureBatchComputeBackend(
         catch (HttpRequestException ex)
         {
             Log.JobSubmissionFailed(logger, job.OperationId, submission.JobId, ex.Message);
+            // Preserve the deterministic JobId even on failure: a timeout or late error may
+            // still leave the job accepted at Azure Batch, and we need the id to observe or
+            // cancel it during reconciliation rather than orphaning the provider resource.
             return new BatchComputeSubmissionResult
             {
                 Status = ExecutionJobStatus.Failed,
-                ProviderOperationId = job.ProviderOperationId,
+                ProviderOperationId = submission.JobId,
                 Message = $"Azure Batch rejected job submission: {ex.Message}"
             };
         }

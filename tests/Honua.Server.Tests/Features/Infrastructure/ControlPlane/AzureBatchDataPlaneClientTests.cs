@@ -1,9 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Text.Json;
+using Azure.Core;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -104,6 +107,106 @@ public sealed class AzureBatchDataPlaneClientTests
     {
         var mapped = AzureBatchDataPlaneClient.MapExecutionState(rawState, exitCode, failureMessage);
         mapped.ToString().Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_RecoversPartialSubmitWhenJobConflictsButTaskIsMissing()
+    {
+        // Simulates the partial-submit recovery case: a prior attempt created the Azure
+        // Batch job but crashed before the task POST. On retry, the job POST returns 409
+        // Conflict; the client must still issue the task POST so the reconciler does not
+        // observe perpetual 404s on the missing task.
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths)
+            .Enqueue(HttpStatusCode.Conflict, """{"code":"JobExists"}""")
+            .Enqueue(HttpStatusCode.Created, string.Empty);
+
+        var client = CreateClient(handler);
+        var status = await client.CreateJobAsync(SampleSubmission());
+
+        status.Should().Be(HttpStatusCode.Conflict, "prior job already exists so callers can resume observation");
+        capturedPaths.Should().HaveCount(2);
+        capturedPaths[0].Should().Contain("/jobs?");
+        capturedPaths[1].Should().Contain("/jobs/honua-job-1/tasks?");
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_ReturnsConflictWhenBothJobAndTaskAlreadyExist()
+    {
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths)
+            .Enqueue(HttpStatusCode.Conflict, """{"code":"JobExists"}""")
+            .Enqueue(HttpStatusCode.Conflict, """{"code":"TaskExists"}""");
+
+        var client = CreateClient(handler);
+        var status = await client.CreateJobAsync(SampleSubmission());
+
+        status.Should().Be(HttpStatusCode.Conflict);
+        capturedPaths.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_ReturnsCreatedWhenJobAndTaskAreFreshlyCreated()
+    {
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths)
+            .Enqueue(HttpStatusCode.Created, string.Empty)
+            .Enqueue(HttpStatusCode.Created, string.Empty);
+
+        var client = CreateClient(handler);
+        var status = await client.CreateJobAsync(SampleSubmission());
+
+        status.Should().Be(HttpStatusCode.Created);
+        capturedPaths.Should().HaveCount(2);
+    }
+
+    private static AzureBatchDataPlaneClient CreateClient(HttpMessageHandler handler)
+        => new(
+            new SingletonHttpClientFactory(new HttpClient(handler)),
+            NullLogger<AzureBatchDataPlaneClient>.Instance,
+            new StubTokenCredential());
+
+    private static AzureBatchJobSubmission SampleSubmission()
+        => new()
+        {
+            AccountUrl = "https://acct.eastus.batch.azure.com",
+            JobId = "honua-job-1",
+            PoolId = "gdal-heavy-pool",
+            CommandLine = "/bin/bash -c run.sh"
+        };
+
+    private sealed class SingletonHttpClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class QueuedHttpMessageHandler(List<string> capturedPaths) : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses = new();
+
+        public QueuedHttpMessageHandler Enqueue(HttpStatusCode status, string body)
+        {
+            _responses.Enqueue(new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body)
+            });
+            return this;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            capturedPaths.Add(request.RequestUri?.PathAndQuery ?? string.Empty);
+            return Task.FromResult(_responses.Dequeue());
+        }
+    }
+
+    private sealed class StubTokenCredential : TokenCredential
+    {
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+            => new("stub-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+            => ValueTask.FromResult(new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1)));
     }
 
     [Fact]
