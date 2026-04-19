@@ -240,7 +240,7 @@ public sealed class AzureBatchComputeBackendTests
         // into a descriptive submission failure so the operator knows to reconfigure.
         var stub = new StubAzureBatchClient
         {
-            PoolStateException = new HttpRequestException("pool not found")
+            PoolStateException = new HttpRequestException("pool not found", null, HttpStatusCode.NotFound)
         };
         var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
 
@@ -249,6 +249,47 @@ public sealed class AzureBatchComputeBackendTests
         submission.Status.Should().Be(ExecutionJobStatus.Failed);
         submission.Message.Should().Contain("not reachable");
         submission.Message.Should().Contain("pool not found");
+    }
+
+    [Fact]
+    public async Task StartAsync_KeepsJobQueuedWhenPoolLookupFailsTransiently()
+    {
+        // A null/5xx/credential failure on pool validation is not a definitive "pool is
+        // broken" answer. Defer validation and let the submission attempt run: if the
+        // credential is still down the submission will take the uncertain-outcome path
+        // (Queued + provider id) instead of permanently failing the durable record.
+        var stub = new StubAzureBatchClient
+        {
+            PoolStateException = new HttpRequestException("credential acquisition failed: token expired")
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Queued,
+            "transient pool-validation failures must not permanently fail the durable record");
+        stub.LastSubmission.Should().NotBeNull(
+            "submission should proceed when pool validation is deferred");
+    }
+
+    [Fact]
+    public async Task StartAsync_KeepsJobQueuedWhenSubmissionCredentialFails()
+    {
+        // Credential failures during submission arrive as HttpRequestException with a null
+        // status code (normalized inside AzureBatchDataPlaneClient). The backend treats
+        // null-status exceptions as uncertain outcomes and preserves the deterministic
+        // JobId so reconciliation can verify whether the provider accepted the job.
+        var stub = new StubAzureBatchClient
+        {
+            SubmissionException = new HttpRequestException("Azure Batch credential acquisition failed: token expired")
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Queued);
+        submission.ProviderOperationId.Should().StartWith("honua-");
+        submission.Message.Should().Contain("outcome is uncertain");
     }
 
     [Theory]
@@ -523,6 +564,52 @@ public sealed class AzureBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task CancelAsync_PreservesCurrentStatusWhenCredentialFails()
+    {
+        // Regression: a credential failure during cancel must not escape the backend.
+        // If it did, the reconciler's generic catch would stamp the durable record as
+        // terminal Failed while the Azure Batch job could still be running.
+        var stub = new StubAzureBatchClient
+        {
+            TerminateException = new HttpRequestException("Azure Batch credential acquisition failed: token expired")
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with
+        {
+            Status = ExecutionJobStatus.Running,
+            CancellationRequestedAt = DateTimeOffset.UtcNow
+        };
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running,
+            "credential failures during cancel must preserve durable state for the next reconciliation cycle");
+        observation.Message.Should().Contain("credential acquisition failed");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_PreservesCurrentStatusWhenCredentialFails()
+    {
+        // Regression: a credential failure during observe must not escape the backend.
+        // If it did, the reconciler's generic catch would stamp the durable record as
+        // terminal Failed while the Azure Batch job could still be running.
+        var stub = new StubAzureBatchClient
+        {
+            GetJobStateException = new HttpRequestException("Azure Batch credential acquisition failed: token expired")
+        };
+        var backend = new AzureBatchComputeBackend(stub, NullLogger<AzureBatchComputeBackend>.Instance);
+
+        var job = CreateJob(providerJobId: "honua-test") with { Status = ExecutionJobStatus.Running };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running,
+            "credential failures during observe must preserve durable state for the next reconciliation cycle");
+        observation.Message.Should().Contain("credential acquisition failed");
+    }
+
+    [Fact]
     public async Task GetCapabilitiesAsync_AdvertisesCancellationRetryAndArtifactStaging()
     {
         var backend = new AzureBatchComputeBackend(new StubAzureBatchClient(), NullLogger<AzureBatchComputeBackend>.Instance);
@@ -585,6 +672,8 @@ public sealed class AzureBatchComputeBackendTests
 
         public HttpRequestException? PoolStateException { get; set; }
 
+        public HttpRequestException? GetJobStateException { get; set; }
+
         public List<string> TerminatedJobs { get; } = [];
 
         public Task<HttpStatusCode> CreateJobAsync(
@@ -604,11 +693,18 @@ public sealed class AzureBatchComputeBackendTests
             string accountUrl,
             string jobId,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(NextState ?? new AzureBatchJobState
+        {
+            if (GetJobStateException != null)
+            {
+                throw GetJobStateException;
+            }
+
+            return Task.FromResult(NextState ?? new AzureBatchJobState
             {
                 JobId = jobId,
                 ExecutionState = AzureBatchTaskExecutionState.NotFound
             });
+        }
 
         public Task TerminateJobAsync(
             string accountUrl,

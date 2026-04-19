@@ -364,10 +364,20 @@ internal sealed partial class AzureBatchComputeBackend(
         }
         catch (HttpRequestException ex)
         {
-            // Missing pool returns 404 and surfaces as HttpRequestException from the client.
-            // Treat any pool lookup failure as a hard submission error so the durable record
-            // records an actionable message instead of silently queuing a task that will
-            // never execute.
+            // A null/5xx/timeout/throttle status signals an ambiguous transport or credential
+            // problem rather than a definite "pool is bad" answer. Skipping validation lets
+            // the submission attempt itself run through StartAsync's uncertain-outcome path
+            // (which keeps the record Queued for reconciliation) instead of prematurely
+            // stamping the durable record terminal Failed on a transient auth/network blip.
+            if (IsSubmissionOutcomeUncertain(ex))
+            {
+                Log.PoolValidationTransient(logger, poolId, ex.Message);
+                return null;
+            }
+
+            // Definite pool lookup failures (404 not found, 403 authorization) are
+            // misconfiguration: fail fast with an actionable message instead of silently
+            // queuing a task that will never execute.
             Log.PoolValidationFailed(logger, poolId, ex.Message);
             return new BatchComputeSubmissionResult
             {
@@ -526,6 +536,9 @@ internal sealed partial class AzureBatchComputeBackend(
 
         [LoggerMessage(9085, LogLevel.Warning, "Azure Batch pool {PoolId} validation failed: {ErrorMessage}")]
         public static partial void PoolValidationFailed(ILogger logger, string poolId, string errorMessage);
+
+        [LoggerMessage(9088, LogLevel.Debug, "Azure Batch pool {PoolId} validation deferred due to transient lookup error: {ErrorMessage}")]
+        public static partial void PoolValidationTransient(ILogger logger, string poolId, string errorMessage);
 
         [LoggerMessage(9086, LogLevel.Warning, "Azure Batch pool {PoolId} rejected submission (state: {State}, allocationState: {AllocationState})")]
         public static partial void PoolValidationRejected(ILogger logger, string poolId, string state, string? allocationState);

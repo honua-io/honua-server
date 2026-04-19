@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using Azure.Core;
+using Azure.Identity;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -202,6 +203,121 @@ public sealed class AzureBatchDataPlaneClientTests
         capturedPaths[2].Should().Contain("/jobs/honua-job-1?");
     }
 
+    [Fact]
+    public async Task CreateJobAsync_DeletesFreshJobWhenTaskTokenAcquisitionFails()
+    {
+        // Regression: a credential that succeeds for the job POST and fails for the task
+        // POST must still trigger partial-submit cleanup. Previously the task request was
+        // built outside the guarded try/catch, so a second-token failure leaked the newly
+        // created Azure Batch job. The scripted credential only fails on call #2 so the
+        // cleanup DELETE (call #3) still mints a token and reaches the HTTP layer.
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths)
+            .Enqueue(HttpStatusCode.Created, string.Empty)
+            .Enqueue(HttpStatusCode.Accepted, string.Empty);
+
+        var credential = new ScriptedTokenCredential(
+            new AuthenticationFailedException("second token expired"),
+            firstCallSucceeds: true,
+            failOnCall: 2);
+
+        var client = new AzureBatchDataPlaneClient(
+            new SingletonHttpClientFactory(new HttpClient(handler)),
+            NullLogger<AzureBatchDataPlaneClient>.Instance,
+            credential);
+
+        var act = () => client.CreateJobAsync(SampleSubmission());
+
+        // Normalized as HttpRequestException so backends can share a single catch clause.
+        var thrown = await act.Should().ThrowAsync<HttpRequestException>();
+        thrown.Which.Message.Should().Contain("credential acquisition failed");
+        thrown.Which.StatusCode.Should().BeNull("credential failures are ambiguous outcomes");
+
+        // Both the original job POST and the cleanup DELETE must have been captured; the
+        // task POST was never issued because the token fetch threw first.
+        capturedPaths.Should().HaveCount(2);
+        capturedPaths[0].Should().Contain("/jobs?");
+        capturedPaths[1].Should().Contain("/jobs/honua-job-1?");
+    }
+
+    [Fact]
+    public async Task CreateJobAsync_WrapsInitialTokenFailureAsHttpRequestException()
+    {
+        var capturedPaths = new List<string>();
+        var handler = new QueuedHttpMessageHandler(capturedPaths);
+
+        var credential = new ScriptedTokenCredential(
+            new CredentialUnavailableException("managed identity unavailable"),
+            firstCallSucceeds: false);
+
+        var client = new AzureBatchDataPlaneClient(
+            new SingletonHttpClientFactory(new HttpClient(handler)),
+            NullLogger<AzureBatchDataPlaneClient>.Instance,
+            credential);
+
+        var act = () => client.CreateJobAsync(SampleSubmission());
+
+        var thrown = await act.Should().ThrowAsync<HttpRequestException>();
+        thrown.Which.StatusCode.Should().BeNull();
+        thrown.Which.InnerException.Should().BeOfType<CredentialUnavailableException>();
+        capturedPaths.Should().BeEmpty("the HTTP layer is never reached when the credential cannot mint a token");
+    }
+
+    [Fact]
+    public async Task GetJobStateAsync_WrapsCredentialFailureAsHttpRequestException()
+    {
+        // Observe paths must also normalize credential failures so the backend's
+        // HttpRequestException catch preserves durable state instead of letting the raw
+        // AuthenticationFailedException bubble up into the reconciler, where it would be
+        // stamped as terminal Failed while the Azure Batch task is still live.
+        var credential = new ScriptedTokenCredential(
+            new AuthenticationFailedException("token expired"),
+            firstCallSucceeds: false);
+        var client = new AzureBatchDataPlaneClient(
+            new SingletonHttpClientFactory(new HttpClient(new QueuedHttpMessageHandler(new List<string>()))),
+            NullLogger<AzureBatchDataPlaneClient>.Instance,
+            credential);
+
+        var act = () => client.GetJobStateAsync("https://acct.eastus.batch.azure.com", "honua-job-1");
+
+        var thrown = await act.Should().ThrowAsync<HttpRequestException>();
+        thrown.Which.StatusCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TerminateJobAsync_WrapsCredentialFailureAsHttpRequestException()
+    {
+        var credential = new ScriptedTokenCredential(
+            new AuthenticationFailedException("token expired"),
+            firstCallSucceeds: false);
+        var client = new AzureBatchDataPlaneClient(
+            new SingletonHttpClientFactory(new HttpClient(new QueuedHttpMessageHandler(new List<string>()))),
+            NullLogger<AzureBatchDataPlaneClient>.Instance,
+            credential);
+
+        var act = () => client.TerminateJobAsync("https://acct.eastus.batch.azure.com", "honua-job-1");
+
+        var thrown = await act.Should().ThrowAsync<HttpRequestException>();
+        thrown.Which.StatusCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetPoolStateAsync_WrapsCredentialFailureAsHttpRequestException()
+    {
+        var credential = new ScriptedTokenCredential(
+            new AuthenticationFailedException("token expired"),
+            firstCallSucceeds: false);
+        var client = new AzureBatchDataPlaneClient(
+            new SingletonHttpClientFactory(new HttpClient(new QueuedHttpMessageHandler(new List<string>()))),
+            NullLogger<AzureBatchDataPlaneClient>.Instance,
+            credential);
+
+        var act = () => client.GetPoolStateAsync("https://acct.eastus.batch.azure.com", "pool-1");
+
+        var thrown = await act.Should().ThrowAsync<HttpRequestException>();
+        thrown.Which.StatusCode.Should().BeNull();
+    }
+
     private static AzureBatchDataPlaneClient CreateClient(HttpMessageHandler handler)
         => new(
             new SingletonHttpClientFactory(new HttpClient(handler)),
@@ -261,6 +377,38 @@ public sealed class AzureBatchDataPlaneClientTests
 
         public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
             => ValueTask.FromResult(new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1)));
+    }
+
+    private sealed class ScriptedTokenCredential(AuthenticationFailedException failureException, bool firstCallSucceeds, int? failOnCall = null) : TokenCredential
+    {
+        private int _callCount;
+
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+            => GetTokenAsync(requestContext, cancellationToken).AsTask().GetAwaiter().GetResult();
+
+        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            var callIndex = Interlocked.Increment(ref _callCount);
+
+            // When failOnCall is set, only that specific call fails; other calls succeed.
+            // Otherwise fall back to the firstCallSucceeds toggle.
+            if (failOnCall.HasValue)
+            {
+                if (callIndex == failOnCall.Value)
+                {
+                    throw failureException;
+                }
+
+                return ValueTask.FromResult(new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1)));
+            }
+
+            if (callIndex == 1 && firstCallSucceeds)
+            {
+                return ValueTask.FromResult(new AccessToken("stub-token", DateTimeOffset.UtcNow.AddHours(1)));
+            }
+
+            throw failureException;
+        }
     }
 
     [Fact]

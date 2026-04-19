@@ -288,18 +288,22 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
             await EnsureSuccessAsync(jobResponse, cancellationToken).ConfigureAwait(false);
         }
 
-        var taskPayload = BuildCreateTaskPayload(submission);
-        using var taskRequest = await CreateRequestAsync(
-                HttpMethod.Post,
-                BuildTasksUrl(submission.AccountUrl, submission.JobId),
-                taskPayload,
-                cancellationToken)
-            .ConfigureAwait(false);
-
         var cleanupAttempted = false;
         HttpStatusCode taskStatus;
         try
         {
+            // Build the task request inside the guarded block so a credential or
+            // request-construction failure between the job POST and the task POST still
+            // triggers TryDeleteIncompleteJobAsync; otherwise the freshly created job
+            // would leak at the provider.
+            var taskPayload = BuildCreateTaskPayload(submission);
+            using var taskRequest = await CreateRequestAsync(
+                    HttpMethod.Post,
+                    BuildTasksUrl(submission.AccountUrl, submission.JobId),
+                    taskPayload,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             using var taskResponse = await client.SendAsync(taskRequest, cancellationToken).ConfigureAwait(false);
             taskStatus = taskResponse.StatusCode;
             if (taskResponse.StatusCode == HttpStatusCode.Conflict)
@@ -443,10 +447,25 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
         byte[]? payload,
         CancellationToken cancellationToken)
     {
-        var accessToken = await _credential.GetTokenAsync(
-                new TokenRequestContext([DataPlaneScope.ToString()]),
-                cancellationToken)
-            .ConfigureAwait(false);
+        AccessToken accessToken;
+        try
+        {
+            accessToken = await _credential.GetTokenAsync(
+                    new TokenRequestContext([DataPlaneScope.ToString()]),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            // Normalize credential failures to HttpRequestException with no status code so
+            // they flow through the same recoverable path as transport failures. The backend
+            // treats null-status HttpRequestException as an ambiguous submission outcome and
+            // preserves durable state on observe/cancel instead of promoting the job to
+            // Failed while Azure Batch may still be hosting it.
+            throw new HttpRequestException(
+                $"Azure Batch credential acquisition failed: {ex.Message}",
+                ex);
+        }
 
         var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Token);
