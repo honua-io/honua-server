@@ -1393,6 +1393,158 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_NonTerminalCurrent_MergesResolvedProvenance()
+    {
+        // Winner is a concurrent cancellation request: Queued + CancellationRequestedAt
+        // set, no provider marker. Without the merge-on-conflict loop the pinned namespace
+        // and ProviderOperationId would be dropped, so a later cancel would re-resolve
+        // namespace from mutable defaults or misclassify the record as pre-submission and
+        // orphan the already-created Kubernetes Job.
+        var cancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var winnerRecord = CreateJobRecord(
+            operationId: "job-cas-merge",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            CancellationRequestedAt = cancellationRequestedAt
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var setCallCount = 0;
+        ExecutionJobRecord? lastPersisted = null;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                setCallCount++;
+                var record = (ExecutionJobRecord)call[0];
+                // 1st call: Provisioning transition → succeed.
+                // 2nd call: Post-start update → simulated CAS conflict (winner raced in).
+                // 3rd call: Merge-provenance CAS over the fetched winner → succeed.
+                if (setCallCount == 2)
+                {
+                    return false;
+                }
+
+                lastPersisted = record;
+                return true;
+            });
+        jobStore.GetAsync("job-cas-merge", Arg.Any<CancellationToken>())
+            .Returns(winnerRecord);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "k8s-uid-1",
+                Message = "Started",
+                ResolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["k8s.namespace"] = "pinned-ns"
+                }
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-cas-merge",
+            GeoprocessingProgress.CreateForSubmittedJob("job-cas-merge", "plan-cas-merge"));
+
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-merge",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob);
+
+        var result = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        setCallCount.Should().Be(3,
+            "the helper must re-CAS with merged submission provenance after the post-start conflict");
+        lastPersisted.Should().NotBeNull();
+        lastPersisted!.Spec.Parameters.Should().ContainKey("k8s.namespace");
+        lastPersisted.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns",
+            "the resolved Kubernetes namespace must be pinned onto the winning record");
+        lastPersisted.ProviderOperationId.Should().Be("k8s-uid-1",
+            "the provider-side job identifier must survive the CAS conflict so observe/cancel/retry target the right Job");
+        lastPersisted.CancellationRequestedAt.Should().Be(cancellationRequestedAt,
+            "the winner's cancellation-request stamp must not be overwritten by the merge");
+        lastPersisted.Status.Should().Be(ExecutionJobStatus.Queued,
+            "the merge must not clobber the winner's status field");
+
+        result.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns");
+        result.ProviderOperationId.Should().Be("k8s-uid-1");
+    }
+
+    [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_ExistingPinOnWinner_SkipsRedundantMerge()
+    {
+        // If the winner already carries a pinned namespace and provider id (e.g., a
+        // concurrent reconciler re-observed the same adapter), the helper must not
+        // churn an extra CAS write just to re-stamp identical provenance.
+        var alreadyPinnedWinner = CreateJobRecord(
+            operationId: "job-cas-nochange",
+            status: ExecutionJobStatus.Running,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            ProviderOperationId = "k8s-uid-1",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "honua-kubernetes-job",
+                WorkloadId = "plan-remote",
+                WorkloadName = "Geoprocessing",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingPlanId] = "plan-remote",
+                    ["k8s.namespace"] = "pinned-ns"
+                }
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var setCallCount = 0;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                setCallCount++;
+                return setCallCount != 2;
+            });
+        jobStore.GetAsync("job-cas-nochange", Arg.Any<CancellationToken>())
+            .Returns(alreadyPinnedWinner);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "k8s-uid-1",
+                Message = "Started",
+                ResolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["k8s.namespace"] = "pinned-ns"
+                }
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-nochange",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob);
+
+        var result = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        setCallCount.Should().Be(2,
+            "when the winner already matches the resolved provenance, no redundant CAS write should fire");
+        result.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns");
+        result.ProviderOperationId.Should().Be("k8s-uid-1");
+    }
+
+    [Fact]
     public void BuildProgress_NonterminalJobOverStaleTerminalProgress_ClearsTerminalMetadata()
     {
         var now = DateTimeOffset.UtcNow;

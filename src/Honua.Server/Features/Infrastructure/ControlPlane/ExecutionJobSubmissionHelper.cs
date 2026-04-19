@@ -121,7 +121,14 @@ internal static partial class ExecutionJobSubmissionHelper
                 Log.PostStartCasConflict(logger, job.OperationId);
             }
 
-            var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            // The provider job has already been created, so the resolved coordinates
+            // (e.g., Kubernetes namespace) and provider identifier must survive even
+            // when a concurrent writer (for example a cancellation-request stamp) wins
+            // the post-start CAS; otherwise a later observe/cancel/retry would re-resolve
+            // namespace from mutable defaults and target the wrong Job, or misclassify the
+            // record as "not submitted" and orphan the provider object.
+            var current = await MergeSubmissionProvenanceOnCasConflictAsync(
+                jobStore, job.OperationId, submission, logger, cancellationToken).ConfigureAwait(false);
             if (current != null)
             {
                 await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, logger, cancellationToken)
@@ -211,6 +218,86 @@ internal static partial class ExecutionJobSubmissionHelper
         return spec with { Parameters = merged };
     }
 
+    // Bounded CAS loop that re-reads the authoritative record after a post-start
+    // conflict and re-persists only the submission provenance the winner could not
+    // have known about (resolved spec parameters and ProviderOperationId). The
+    // winner's status, cancellation request, and other mutable fields are preserved.
+    // Terminal records short-circuit: no future observe/cancel/retry will consult
+    // the pinned coordinates, so there is nothing to fix.
+    private static async Task<ExecutionJobRecord?> MergeSubmissionProvenanceOnCasConflictAsync(
+        IExecutionJobStore jobStore,
+        string operationId,
+        BatchComputeSubmissionResult submission,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 3;
+        ExecutionJobRecord? current = null;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            current = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (current == null || ExecutionJobReconciler.IsTerminal(current.Status))
+            {
+                return current;
+            }
+
+            if (!NeedsProvenanceMerge(current, submission))
+            {
+                return current;
+            }
+
+            var mergedSpec = MergeResolvedParameters(current.Spec, submission.ResolvedParameters);
+            var mergedProviderId = string.IsNullOrEmpty(current.ProviderOperationId)
+                ? submission.ProviderOperationId ?? current.ProviderOperationId
+                : current.ProviderOperationId;
+            var merged = current with
+            {
+                Spec = mergedSpec,
+                ProviderOperationId = mergedProviderId,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            if (await jobStore.TrySetAsync(merged, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                return merged;
+            }
+        }
+
+        if (logger != null)
+        {
+            Log.PostStartProvenanceMergeExhausted(logger, operationId);
+        }
+
+        return current;
+    }
+
+    private static bool NeedsProvenanceMerge(
+        ExecutionJobRecord current,
+        BatchComputeSubmissionResult submission)
+    {
+        if (!string.IsNullOrEmpty(submission.ProviderOperationId)
+            && string.IsNullOrEmpty(current.ProviderOperationId))
+        {
+            return true;
+        }
+
+        if (submission.ResolvedParameters == null || submission.ResolvedParameters.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var pair in submission.ResolvedParameters)
+        {
+            if (!current.Spec.Parameters.TryGetValue(pair.Key, out var existing)
+                || !string.Equals(existing, pair.Value, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     internal static partial class Log
     {
         [LoggerMessage(9040, LogLevel.Warning, "Post-start CAS conflict for execution job {OperationId}: returning authoritative store record")]
@@ -218,5 +305,8 @@ internal static partial class ExecutionJobSubmissionHelper
 
         [LoggerMessage(9041, LogLevel.Warning, "Failed to bridge execution-job progress for {OperationId}")]
         public static partial void ExecutionJobProgressBridgeFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9042, LogLevel.Warning, "Exhausted provenance-merge retries for execution job {OperationId}; resolved parameters may not be pinned on the authoritative record")]
+        public static partial void PostStartProvenanceMergeExhausted(ILogger logger, string operationId);
     }
 }
