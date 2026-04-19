@@ -8,9 +8,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Server.Features.Mcp;
 
 /// <summary>
-/// DI registration for the MCP operator surface. Adds tool and resource
-/// handlers as scoped services (so loggers bind correctly) and the operator
-/// surface as a singleton since it holds only immutable descriptors.
+/// DI registration for the MCP operator surface. Tool and resource handlers,
+/// and the dispatcher itself, are all stateless and depend only on singleton
+/// services (<see cref="Geoprocessing.IGeoprocessingJobService"/> and
+/// <see cref="ILogger{TCategoryName}"/>), so they are registered as singletons.
+/// That keeps the <c>SurfaceInitialized</c> startup log fired exactly once
+/// across the process lifetime and avoids re-building the tool and resource
+/// catalogs on every <c>POST /mcp</c> request.
 /// </summary>
 internal static class McpServiceCollectionExtensions
 {
@@ -24,20 +28,20 @@ internal static class McpServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, ValidatePlanTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, DryRunPlanTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, ExecutePlanTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, CancelJobTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, PlanAnalysisTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, GroundCandidatesTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, ClarifyIntentTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
 
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpResource, JobStatusResource>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpResource, JobResultsResource>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpResource, WorkspaceResource>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpResource, ProcessCatalogResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobStatusResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobResultsResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
 
-        services.TryAddScoped<McpOperatorSurface>();
+        services.TryAddSingleton<McpOperatorSurface>();
 
         return services;
     }

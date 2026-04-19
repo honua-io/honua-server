@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.Mcp.Resources;
@@ -152,6 +154,64 @@ public sealed class McpTaxonomyAlignmentTests
             descriptor.Name.Should().Be(tool.Name);
             descriptor.Description.Should().NotBeNullOrWhiteSpace();
         }
+    }
+
+    [UnitTest]
+    public void PlanSchema_StepKindEnum_MatchesAnalysisPlanStepKind()
+    {
+        var stepKindEnum = ExtractEnumValues(McpToolSchemas.PlanArgumentSchema,
+            "properties", "plan", "properties", "steps", "items", "properties", "kind", "enum");
+
+        stepKindEnum.Should().BeEquivalentTo(Enum.GetNames<AnalysisPlanStepKind>());
+    }
+
+    [UnitTest]
+    public void PlanSchema_OutputsEnum_MatchesArtifactKind()
+    {
+        var outputsEnum = ExtractEnumValues(McpToolSchemas.PlanArgumentSchema,
+            "properties", "plan", "properties", "outputs", "items", "enum");
+
+        outputsEnum.Should().BeEquivalentTo(Enum.GetNames<ArtifactKind>());
+    }
+
+    [UnitTest]
+    public void ExecutePlanSchema_StepKindEnum_MatchesAnalysisPlanStepKind()
+    {
+        var stepKindEnum = ExtractEnumValues(McpToolSchemas.ExecutePlanArgumentSchema,
+            "properties", "plan", "properties", "steps", "items", "properties", "kind", "enum");
+
+        stepKindEnum.Should().BeEquivalentTo(Enum.GetNames<AnalysisPlanStepKind>());
+    }
+
+    [UnitTest]
+    public void ExecutePlanSchema_OutputsEnum_MatchesArtifactKind()
+    {
+        var outputsEnum = ExtractEnumValues(McpToolSchemas.ExecutePlanArgumentSchema,
+            "properties", "plan", "properties", "outputs", "items", "enum");
+
+        outputsEnum.Should().BeEquivalentTo(Enum.GetNames<ArtifactKind>());
+    }
+
+    private static string[] ExtractEnumValues(JsonElement root, params string[] path)
+    {
+        var current = root;
+        foreach (var segment in path)
+        {
+            current.ValueKind.Should().Be(JsonValueKind.Object,
+                $"path segment '{segment}' requires an object parent");
+            current.TryGetProperty(segment, out var next).Should().BeTrue(
+                $"schema must expose '{segment}' at the configured path");
+            current = next;
+        }
+
+        current.ValueKind.Should().Be(JsonValueKind.Array, "the terminal node must be a JSON array");
+        return current.EnumerateArray()
+            .Select(e =>
+            {
+                e.ValueKind.Should().Be(JsonValueKind.String);
+                return e.GetString()!;
+            })
+            .ToArray();
     }
 
     private static IMcpTool[] BuildTools()

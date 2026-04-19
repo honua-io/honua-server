@@ -1,115 +1,33 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Server.Features.Mcp.Tools;
 
 /// <summary>
-/// Static JSON-schema documents published in <c>tools/list</c>. Schemas are kept
-/// as <c>const</c> strings and parsed once so the MCP surface remains AOT-safe
-/// without reflecting over <see cref="Models.McpPlanArgument"/> and siblings.
+/// JSON-schema documents published in <c>tools/list</c>. Plan schemas are
+/// assembled at type-load time from the canonical
+/// <see cref="AnalysisPlanStepKind"/> and <see cref="ArtifactKind"/> enums so
+/// the published contract cannot drift from the server-side parser in
+/// <see cref="McpToolHelpers"/>. Schemas remain immutable <see cref="JsonElement"/>
+/// values to keep the MCP surface AOT-safe.
 /// </summary>
 internal static class McpToolSchemas
 {
-    private const string PlanArgumentSchemaJson = """
-        {
-          "type": "object",
-          "required": ["plan"],
-          "properties": {
-            "plan": {
-              "type": "object",
-              "description": "Canonical analysis plan expressed as MCP plan input.",
-              "required": ["steps"],
-              "properties": {
-                "planId": { "type": "string" },
-                "intentId": { "type": "string" },
-                "steps": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": ["stepId", "kind"],
-                    "properties": {
-                      "stepId": { "type": "string" },
-                      "kind": {
-                        "type": "string",
-                        "description": "Step kind name (e.g. CallProcess, Stage, Publish)."
-                      },
-                      "processId": { "type": "string" },
-                      "inputs": {
-                        "type": "object",
-                        "additionalProperties": { "type": "string" }
-                      },
-                      "dependsOn": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                      }
-                    }
-                  }
-                },
-                "outputs": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                },
-                "warnings": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                }
-              }
-            }
-          }
-        }
-        """;
+    /// <summary>
+    /// Canonical step-kind names advertised to MCP clients. The live parser
+    /// accepts these values case-insensitively, but the published schema pins
+    /// the canonical PascalCase spelling to match the domain enum.
+    /// </summary>
+    public static readonly IReadOnlyList<string> PlanStepKindNames = Enum.GetNames<AnalysisPlanStepKind>();
 
-    private const string ExecutePlanArgumentSchemaJson = """
-        {
-          "type": "object",
-          "required": ["plan"],
-          "properties": {
-            "plan": {
-              "type": "object",
-              "description": "Canonical analysis plan expressed as MCP plan input.",
-              "required": ["steps"],
-              "properties": {
-                "planId": { "type": "string" },
-                "intentId": { "type": "string" },
-                "steps": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": ["stepId", "kind"],
-                    "properties": {
-                      "stepId": { "type": "string" },
-                      "kind": { "type": "string" },
-                      "processId": { "type": "string" },
-                      "inputs": {
-                        "type": "object",
-                        "additionalProperties": { "type": "string" }
-                      },
-                      "dependsOn": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                      }
-                    }
-                  }
-                },
-                "outputs": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                },
-                "warnings": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                }
-              }
-            },
-            "idempotencyKey": {
-              "type": "string",
-              "description": "Optional deduplication key. Replays with the same key return the same job record."
-            }
-          }
-        }
-        """;
+    /// <summary>
+    /// Canonical artifact-kind names advertised to MCP clients.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ArtifactKindNames = Enum.GetNames<ArtifactKind>();
 
     private const string CancelJobArgumentSchemaJson = """
         {
@@ -135,12 +53,12 @@ internal static class McpToolSchemas
     /// Schema for <see cref="Models.McpPlanArgument"/>, shared by validate_plan
     /// and dry_run_plan.
     /// </summary>
-    public static readonly JsonElement PlanArgumentSchema = Parse(PlanArgumentSchemaJson);
+    public static readonly JsonElement PlanArgumentSchema = Parse(BuildPlanArgumentSchema(includeIdempotencyKey: false));
 
     /// <summary>
     /// Schema for <see cref="Models.McpExecutePlanArgument"/>.
     /// </summary>
-    public static readonly JsonElement ExecutePlanArgumentSchema = Parse(ExecutePlanArgumentSchemaJson);
+    public static readonly JsonElement ExecutePlanArgumentSchema = Parse(BuildPlanArgumentSchema(includeIdempotencyKey: true));
 
     /// <summary>
     /// Schema for <see cref="Models.McpCancelJobArgument"/>.
@@ -151,6 +69,107 @@ internal static class McpToolSchemas
     /// Schema used by stub tools that accept no arguments.
     /// </summary>
     public static readonly JsonElement EmptyObjectSchema = Parse(EmptyObjectSchemaJson);
+
+    private static string BuildPlanArgumentSchema(bool includeIdempotencyKey)
+    {
+        var stepKindEnum = JsonStringArray(PlanStepKindNames);
+        var stepKindExamples = string.Join(", ", PlanStepKindNames);
+        var artifactKindEnum = JsonStringArray(ArtifactKindNames);
+        var artifactKindExamples = string.Join(", ", ArtifactKindNames);
+
+        var builder = new StringBuilder();
+        builder.Append(
+            $$"""
+            {
+              "type": "object",
+              "required": ["plan"],
+              "properties": {
+                "plan": {
+                  "type": "object",
+                  "description": "Canonical analysis plan expressed as MCP plan input.",
+                  "required": ["steps"],
+                  "properties": {
+                    "planId": { "type": "string" },
+                    "intentId": { "type": "string" },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["stepId", "kind"],
+                        "properties": {
+                          "stepId": { "type": "string" },
+                          "kind": {
+                            "type": "string",
+                            "enum": {{stepKindEnum}},
+                            "description": "Canonical AnalysisPlanStepKind value ({{stepKindExamples}}). Server parsing is case-insensitive but clients should send the canonical PascalCase spelling."
+                          },
+                          "processId": { "type": "string" },
+                          "inputs": {
+                            "type": "object",
+                            "additionalProperties": { "type": "string" }
+                          },
+                          "dependsOn": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          }
+                        }
+                      }
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": {{artifactKindEnum}},
+                        "description": "Canonical ArtifactKind value ({{artifactKindExamples}}). Server parsing is case-insensitive but clients should send the canonical PascalCase spelling."
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+            """);
+
+        if (includeIdempotencyKey)
+        {
+            builder.Append(
+                """
+                ,
+                    "idempotencyKey": {
+                      "type": "string",
+                      "description": "Optional deduplication key. Replays with the same key return the same job record."
+                    }
+                """);
+        }
+
+        builder.Append(
+            """
+
+              }
+            }
+            """);
+
+        return builder.ToString();
+    }
+
+    private static string JsonStringArray(IReadOnlyList<string> values)
+    {
+        var builder = new StringBuilder(2 + values.Count * 16);
+        builder.Append('[');
+        for (var i = 0; i < values.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append('"').Append(values[i]).Append('"');
+        }
+
+        builder.Append(']');
+        return builder.ToString();
+    }
 
     private static JsonElement Parse(string json)
     {
