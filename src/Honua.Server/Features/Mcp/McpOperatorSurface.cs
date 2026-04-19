@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 using Honua.Server.Features.Mcp.Resources;
 using Honua.Server.Features.Mcp.Tools;
@@ -182,7 +183,15 @@ internal sealed class McpOperatorSurface
             return null;
         }
 
-        return parameters.Value.Deserialize(typeInfo);
+        try
+        {
+            return parameters.Value.Deserialize(typeInfo);
+        }
+        catch (JsonException ex)
+        {
+            throw new GeoprocessingValidationException(
+                $"JSON-RPC params are not valid: {ex.Message}");
+        }
     }
 
     private static McpJsonRpcResponse SuccessResponse<T>(

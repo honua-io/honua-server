@@ -100,6 +100,42 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ToolsCall_WithMalformedParams_ReturnsInvalidArgumentJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"call-bad","method":"tools/call","params":["not","an","object"]}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetString().Should().Be("call-bad");
+        var error = root.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    public async Task ResourcesRead_WithMalformedParams_ReturnsInvalidArgumentJsonRpcError()
+    {
+        var response = await PostRpcAsync("""
+            {"jsonrpc":"2.0","id":"read-bad","method":"resources/read","params":"not-an-object"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.GetProperty("id").GetString().Should().Be("read-bad");
+        var error = root.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("invalid_argument");
+    }
+
     private async Task<HttpResponseMessage> PostRpcAsync(string body)
     {
         using var content = new StringContent(body, Encoding.UTF8);

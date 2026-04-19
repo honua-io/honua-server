@@ -139,6 +139,10 @@ authentication.
 - Successful `resources/read` responses return `result.contents`, which
   currently contains one `application/json` block whose `text` field is the
   serialized resource body.
+- `tools/list` returns descriptors sorted by tool name; `resources/list`
+  returns descriptors sorted by resource URI.
+- Tool descriptors expose a static `inputSchema` JSON Schema document.
+  Resource descriptors currently all advertise `mimeType: "application/json"`.
 
 Example `tools/call` success shape:
 
@@ -182,6 +186,66 @@ Example `resources/read` success shape:
 }
 ```
 
+### Request examples
+
+Initialize the MCP session and discover server capabilities:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "initialize"
+}
+```
+
+Submit a plan for execution:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "run-1",
+  "method": "tools/call",
+  "params": {
+    "name": "honua_execute_plan",
+    "arguments": {
+      "plan": {
+        "planId": "plan-1",
+        "steps": [
+          {
+            "stepId": "buffer-1",
+            "kind": "Geoprocess",
+            "processId": "geometry.buffer",
+            "inputs": {
+              "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "srid": "4326",
+              "distance": "100"
+            }
+          }
+        ],
+        "outputs": [
+          "FeatureLayer",
+          "Map"
+        ]
+      },
+      "idempotencyKey": "plan-1-exec"
+    }
+  }
+}
+```
+
+Read the job lifecycle resource returned by `honua_execute_plan`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "job-1",
+  "method": "resources/read",
+  "params": {
+    "uri": "honua://jobs/job-xyz"
+  }
+}
+```
+
 ### Tools
 
 | Tool | Status | Domain delegate | Workflow family |
@@ -205,6 +269,12 @@ service lands.
   The published schema requires `plan.steps[*].stepId` and `kind`.
   Unsupported step kinds or output artifact kinds fail with
   `invalid_argument` before the domain service is invoked.
+- `plan.steps[*].kind` accepts the canonical step kinds
+  `QueryFeatures`, `Geoprocess`, `Aggregate`, `RenderMap`, and `Export`
+  (case-insensitive).
+- `plan.outputs[*]` accepts the canonical artifact kinds `Scalar`,
+  `FeatureLayer`, `Table`, `Raster`, `File`, `Report`, `Map`, and
+  `AppBundle` (case-insensitive).
 - `honua_validate_plan` returns
   `{ isExecutable, requiresApproval, violations, warnings }`.
 - `honua_dry_run_plan` returns
@@ -245,11 +315,22 @@ second lifecycle model.
 - `honua://jobs/{jobId}/results` returns
   `{ jobId, resultPackageId, status, summary, artifacts, workspaceRefs, mapPackageId?, appPackageId?, assumptions, provenance, errors }`
   when `GetJobResultsAsync` succeeds.
+- `artifacts[*]` includes
+  `{ artifactId, kind, label, uri?, contentType?, metadata }`.
+- `workspaceRefs[*]` includes
+  `{ workspaceId, kind, label, uri?, expiresAt?, resourceUri }`.
+  `resourceUri` points back to `honua://workspaces/{workspaceId}` even when
+  the backing workspace `uri` is an external storage URI.
+- `provenance` includes
+  `{ sources, processDefinitions, assumptions, clarificationsAsked, clarificationsAnswered, executedAt?, generatedArtifactIds }`.
+- `errors[*]` includes `{ kind, message, stepId?, violations? }`.
 - `honua://jobs/{jobId}/results` returns a JSON-RPC error instead of a stub
   envelope when the canonical job service rejects the request:
   `failed_precondition` for non-terminal jobs, `not_found` for missing jobs,
   and currently `not_found` for terminal jobs whose result package has not yet
   been stored.
+- `notImplementedReason` is omitted on successful
+  `honua://jobs/{jobId}/results` payloads; only stub resources emit it.
 - `honua://workspaces/{workspaceId}` returns
   `{ workspaceId, kind, label, status: "not_implemented", notImplementedReason }`
   with nullable fields such as `uri` and `expiresAt` omitted until the
