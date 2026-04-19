@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Geoprocessing;
@@ -1535,6 +1536,79 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_AdmissionDenied_ThrowsAdmissionException()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Denied(
+                ExecutionAdmissionDimension.Concurrency,
+                "concurrency:geoprocessing:per-partition",
+                "Partition active job limit reached.",
+                retryAfterSeconds: 15,
+                new ExecutionAdmissionSnapshot { ActiveJobsInPartition = 10 }));
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var act = async () => await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        var ex = await act.Should().ThrowAsync<GeoprocessingAdmissionException>();
+        ex.Which.Outcome.Should().Be(ExecutionAdmissionOutcome.Denied);
+        ex.Which.DenyingDimension.Should().Be(ExecutionAdmissionDimension.Concurrency);
+        ex.Which.RetryAfterSeconds.Should().Be(15);
+
+        await _jobStore
+            .DidNotReceive()
+            .TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WhenAdmitted_PersistsCostWeightInSpecParameters()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var metadata = new Dictionary<string, string> { ["workspace.id"] = "ws-42" };
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), metadata);
+
+        job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.CostWeightParameterKey);
+        job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.PartitionKeyParameterKey)
+            .WhoseValue.Should().Be("ws-42");
+    }
+
+    // -----------------------------------------------------------------------
+    // GetJobAsync
+    // -----------------------------------------------------------------------
 
     [UnitTest]
     [Operation(Operations.Delete)]

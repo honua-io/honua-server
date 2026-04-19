@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -39,6 +40,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly AnalyticsLimits _analyticsLimits;
     private readonly IExecutionJobDefinitionRegistry? _workloadRegistry;
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
+    private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -52,7 +54,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IJobQueue? jobQueue = null,
         IOptions<LimitsOptions>? limitsOptions = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
-        IEnumerable<IBatchComputeBackend>? backends = null)
+        IEnumerable<IBatchComputeBackend>? backends = null,
+        IExecutionAdmissionEvaluator? admissionEvaluator = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -65,6 +68,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _jobQueue = jobQueue;
         _workloadRegistry = workloadRegistry;
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
+        _admissionEvaluator = admissionEvaluator;
     }
 
     public void EnsureCallerAuthorized(
@@ -181,6 +185,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
 
+        var partitionKey = ResolvePartitionKey(specParams);
+        var costWeight = (double)Math.Max(plan.Steps.Count, 1);
+        var priority = ResolvePriority(specParams);
+
+        var admission = await EnsureAdmittedAsync(
+            plan, principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+
+        if (admission != null)
+        {
+            specParams[ExecutionAdmissionEvaluator.CostWeightParameterKey] =
+                costWeight.ToString("R", CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(partitionKey))
+            {
+                specParams[ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = partitionKey;
+            }
+        }
+
         var workload = await ResolveWorkloadAsync(cancellationToken).ConfigureAwait(false);
         var spec = BuildSpec(plan, specParams, workload);
 
@@ -188,6 +209,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         {
             OperationId = jobId,
             Status = ExecutionJobStatus.Queued,
+            Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
@@ -639,6 +661,83 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
         throw new GeoprocessingApprovalRequiredException(approval.PolicyRef ?? "unknown");
+    }
+
+    private async Task<ExecutionAdmissionDecision?> EnsureAdmittedAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        string? partitionKey,
+        double costWeight,
+        OperationPriority priority,
+        CancellationToken cancellationToken)
+    {
+        if (_admissionEvaluator == null)
+        {
+            return null;
+        }
+
+        var request = new ExecutionAdmissionRequest
+        {
+            JobKind = ExecutionJobKind.Geoprocessing,
+            PartitionKey = partitionKey,
+            PrincipalId = principal.Identity?.Name,
+            EstimatedCostWeight = costWeight,
+            Priority = priority
+        };
+
+        var decision = await _admissionEvaluator
+            .EvaluateAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (decision.Outcome == ExecutionAdmissionOutcome.Admitted)
+        {
+            return decision;
+        }
+
+        GeoprocessingServiceLog.SubmitRejectedByAdmission(
+            _logger,
+            decision.Outcome.ToString(),
+            decision.DenyingDimension?.ToString() ?? "Unknown",
+            decision.PolicyRef ?? "unknown");
+
+        throw new GeoprocessingAdmissionException(
+            decision.Outcome,
+            decision.DenyingDimension ?? ExecutionAdmissionDimension.Backpressure,
+            decision.PolicyRef ?? "unknown",
+            decision.Reason ?? "Execution admission rejected the request.",
+            decision.RetryAfterSeconds ?? 10);
+    }
+
+    private static string? ResolvePartitionKey(Dictionary<string, string> specParams)
+    {
+        if (specParams.TryGetValue(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, out var explicitKey)
+            && !string.IsNullOrWhiteSpace(explicitKey))
+        {
+            return explicitKey;
+        }
+
+        if (specParams.TryGetValue("workspace.id", out var workspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
+        {
+            return workspaceId;
+        }
+
+        if (specParams.TryGetValue("tenant.id", out var tenantId) && !string.IsNullOrWhiteSpace(tenantId))
+        {
+            return tenantId;
+        }
+
+        return null;
+    }
+
+    private static OperationPriority ResolvePriority(Dictionary<string, string> specParams)
+    {
+        if (specParams.TryGetValue("admission.priority", out var raw)
+            && Enum.TryParse<OperationPriority>(raw, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        return OperationPriority.Normal;
     }
 
     private IExecutionJobStore RequireJobStore()

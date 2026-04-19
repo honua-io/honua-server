@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -190,7 +191,8 @@ internal static class ProcessEndpoints
         [FromServices] IExecutionJobStore? jobStore = null,
         [FromServices] IJobQueue? jobQueue = null,
         [FromServices] IExecutionJobDefinitionRegistry? workloadRegistry = null,
-        [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
+        [FromServices] IEnumerable<IBatchComputeBackend>? backends = null,
+        [FromServices] IExecutionAdmissionEvaluator? admissionEvaluator = null)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -370,6 +372,13 @@ internal static class ProcessEndpoints
         }
 
         var planJson = planElement.GetRawText();
+        var stepCount = CountSteps(planElement);
+        var costWeight = (double)Math.Max(stepCount, 1);
+
+        var admissionResult = await EvaluateAdmissionAsync(
+            admissionEvaluator, context, logger, costWeight).ConfigureAwait(false);
+        if (admissionResult != null) return admissionResult;
+
         var now = DateTimeOffset.UtcNow;
         var jobId = $"gp-{Guid.NewGuid():N}";
 
@@ -381,6 +390,8 @@ internal static class ProcessEndpoints
             ? new Dictionary<string, string>(workload.Parameters, StringComparer.Ordinal)
             : new Dictionary<string, string>(StringComparer.Ordinal);
         specParameters[ExecutionJobParameterKeys.GeoprocessingPlanId] = planId;
+        specParameters[ExecutionAdmissionEvaluator.CostWeightParameterKey] =
+            costWeight.ToString("R", CultureInfo.InvariantCulture);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -767,6 +778,63 @@ internal static class ProcessEndpoints
         OgcProcessesJsonContext.Default.OgcProcessError,
         MediaTypes.Json,
         StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// Evaluates runtime admission controls (rate, concurrency, cost, backpressure)
+    /// and returns a 503 response with <c>Retry-After</c> when the request is
+    /// throttled or denied. Returns null when admitted, or when no evaluator is registered.
+    /// Mirrors the gate in <see cref="GeoprocessingJobService"/> so jobs created directly
+    /// by the OGC adapter share the same control model.
+    /// </summary>
+    private static async Task<IResult?> EvaluateAdmissionAsync(
+        IExecutionAdmissionEvaluator? admissionEvaluator,
+        HttpContext context,
+        ILogger logger,
+        double costWeight)
+    {
+        if (admissionEvaluator == null) return null;
+
+        var request = new ExecutionAdmissionRequest
+        {
+            JobKind = ExecutionJobKind.Geoprocessing,
+            PrincipalId = context.User.Identity?.Name,
+            EstimatedCostWeight = costWeight,
+            Priority = OperationPriority.Normal
+        };
+
+        var decision = await admissionEvaluator
+            .EvaluateAsync(request, context.RequestAborted).ConfigureAwait(false);
+
+        if (decision.Outcome == ExecutionAdmissionOutcome.Admitted) return null;
+
+        var retryAfter = decision.RetryAfterSeconds ?? 10;
+        context.Response.Headers["Retry-After"] = retryAfter.ToString(CultureInfo.InvariantCulture);
+        OgcProcessesLog.ExecutionRejectedByAdmission(
+            logger,
+            decision.Outcome.ToString(),
+            decision.DenyingDimension?.ToString() ?? "Unknown",
+            decision.PolicyRef ?? "unknown");
+
+        return Results.Json(
+            new OgcProcessError
+            {
+                Type = "about:blank",
+                Title = "Service unavailable",
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Detail = decision.Reason ?? "Execution admission rejected the request."
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status503ServiceUnavailable);
+    }
+
+    private static int CountSteps(System.Text.Json.JsonElement plan)
+    {
+        if (plan.ValueKind != System.Text.Json.JsonValueKind.Object) return 0;
+        if (!plan.TryGetProperty("steps", out var steps)) return 0;
+        if (steps.ValueKind != System.Text.Json.JsonValueKind.Array) return 0;
+        return steps.GetArrayLength();
+    }
 
     private static void EnrichActivity(string operation)
     {
