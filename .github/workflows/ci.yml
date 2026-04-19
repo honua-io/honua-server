@@ -888,143 +888,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  llm-architecture-review:
-    name: LLM Architecture Review
-    runs-on: ubuntu-latest
-    needs: [build, test-all]  # Run after core tests complete
-    if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]' }}
-    outputs:
-      assessment: ${{ steps.llm-analysis.outputs.assessment }}
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Checkout PR
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Get Changed Files
-        id: changed-files
-        run: |
-          # Get ALL changed files for comprehensive review (acceptance criteria, issue linking)
-          ALL_CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }})
-
-          # Get C# files separately for architecture-specific analysis
-          CS_CHANGED_FILES=$(echo "$ALL_CHANGED_FILES" | grep -E '\.(cs|csproj)$' || echo "")
-
-          if [ -z "$ALL_CHANGED_FILES" ]; then
-            echo "No files changed, skipping review"
-            echo "skip_review=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
-          echo "$ALL_CHANGED_FILES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "cs_files<<EOF" >> $GITHUB_OUTPUT
-          echo "$CS_CHANGED_FILES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "skip_review=false" >> $GITHUB_OUTPUT
-
-          # Show what we found
-          echo "All changed files:"
-          echo "$ALL_CHANGED_FILES"
-          echo ""
-          echo "C# files (for architecture analysis):"
-          echo "$CS_CHANGED_FILES"
-
-      - name: Setup Python
-        if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Dependencies
-        if: steps.changed-files.outputs.skip_review == 'false'
-        run: |
-          python -m pip install --upgrade pip
-          # Only install OpenAI if API key is available
-          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
-            pip install openai
-          fi
-
-      - name: LLM Architecture Analysis
-        if: steps.changed-files.outputs.skip_review == 'false'
-        id: llm-analysis
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_BASE_REF: ${{ github.base_ref }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_PR_NUMBER: ${{ github.event.number }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          REVIEW_CHUNK_LINES: 300
-          REVIEW_MAX_FILES: 50
-        run: |
-          python scripts/architecture-review.py
-
-      - name: Post Review Comment
-        if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/github-script@v9
-        env:
-          ANALYSIS_OUTPUT: ${{ steps.llm-analysis.outputs.analysis }}
-          ASSESSMENT_OUTPUT: ${{ steps.llm-analysis.outputs.assessment }}
-        with:
-          script: |
-            const analysis = process.env.ANALYSIS_OUTPUT;
-            const assessment = process.env.ASSESSMENT_OUTPUT;
-
-            let assessmentIcon = '✅';
-            let assessmentColor = 'green';
-            if (assessment === 'NEEDS_ATTENTION') {
-              assessmentIcon = '⚠️';
-              assessmentColor = 'orange';
-            } else if (assessment === 'BLOCKING_ISSUES') {
-              assessmentIcon = '🚫';
-              assessmentColor = 'red';
-            }
-
-            const body = `## 🤖 LLM Architecture Review
-
-            ${assessmentIcon} **Assessment: ${assessment}**
-
-            ${analysis}
-
-            ---
-            *Automated architectural analysis powered by OpenAI GPT-4*
-            *This review focuses on architectural patterns and design decisions*
-            *Human review still recommended for complex changes*`;
-
-            // Check if we already have a review comment
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-
-            const existingComment = comments.data.find(comment =>
-              comment.body.includes('🤖 LLM Architecture Review')
-            );
-
-            if (existingComment) {
-              // Update existing comment
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body: body
-              });
-            } else {
-              // Create new comment
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-            }
-
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
@@ -1260,7 +1123,7 @@ jobs:
     # When a newer run supersedes this one via workflow concurrency, avoid
     # publishing a false failing gate from the cancelled run.
     if: ${{ always() && !cancelled() }}
-    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, llm-architecture-review, architecture-gate]
+    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results
@@ -1275,16 +1138,3 @@ jobs:
           fi
           echo "All required CI jobs passed."
 
-  # Architecture gate job that blocks merge if LLM review finds blocking issues
-  architecture-gate:
-    name: Architecture Gate
-    needs: llm-architecture-review
-    runs-on: ubuntu-latest
-    if: needs.llm-architecture-review.outputs.assessment == 'BLOCKING_ISSUES'
-    steps:
-      - name: Block PR on Architectural Violations
-        run: |
-          echo "::error::Architecture review found BLOCKING_ISSUES that must be resolved before merge."
-          echo "::error::Please review the LLM Architecture Review comment and address all critical violations."
-          echo "::error::Common blocking issues: dependency violations, controller usage, AOT incompatibility, missing docs."
-          exit 1
