@@ -263,7 +263,6 @@ internal static class JobEndpoints
         // lifecycle now see 200 OK + `{}` instead of "not available".
         // When the artifact store is wired up the dictionary will be populated from the
         // job's ArtifactRefs; until then the endpoint stays spec-legal.
-        OgcProcessesLog.JobResultsRequested(logger, jobId);
         return Results.Text("{}", MediaTypes.Json, statusCode: StatusCodes.Status200OK);
     }
 

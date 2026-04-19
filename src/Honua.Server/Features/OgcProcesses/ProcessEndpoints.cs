@@ -62,14 +62,19 @@ internal static class ProcessEndpoints
         OutputTransmission = ImmutableArray.Create("value")
     };
 
+    // V1 canonical process declares no value-typed outputs. `/jobs/{id}/results` returns
+    // `200 OK` with an empty document-mode body (OGC API Processes Part 1 §7.11.1) until
+    // result storage is populated; the empty `Outputs` map keeps the published
+    // description in sync with that contract.
     private static readonly OgcProcessDescription CanonicalProcessDescription = new()
     {
         Id = CanonicalProcessId,
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime. " +
                       "Accepts a plan specification with steps, inputs, and output expectations. " +
-                      "Job status can be polled via the jobs endpoint. " +
-                      "Result retrieval will be available once the execution engine is integrated.",
+                      "Job status is available on the job endpoint; successful jobs return a " +
+                      "document-mode results body (empty until the canonical process declares " +
+                      "value-typed outputs).",
         Version = "1.0.0",
         JobControlOptions = ImmutableArray.Create("async-execute", "dismiss"),
         OutputTransmission = ImmutableArray.Create("value"),
@@ -82,15 +87,7 @@ internal static class ProcessEndpoints
                 Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = "application/json" }
             })
         }),
-        Outputs = ImmutableDictionary.CreateRange(new[]
-        {
-            KeyValuePair.Create("results", new OgcProcessIoDescription
-            {
-                Title = "Results",
-                Description = "Analysis result package containing artifacts produced by the plan execution.",
-                Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = "application/json" }
-            })
-        })
+        Outputs = ImmutableDictionary<string, OgcProcessIoDescription>.Empty
     };
 
     public static void MapOgcProcessesProcessEndpoints(this IEndpointRouteBuilder endpoints)
