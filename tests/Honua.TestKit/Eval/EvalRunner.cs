@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Grpc.Core;
@@ -337,7 +336,7 @@ public sealed class EvalRunner
         var ogcProbe = await ProbeOgcProcessExecutionAsync(scenario, cancellationToken).ConfigureAwait(false);
         probes.Add(ogcProbe);
 
-        var gpServerProbe = await ProbeGPServerServiceInfoAsync(scenario, cancellationToken).ConfigureAwait(false);
+        var gpServerProbe = await ProbeGPServerSubmitJobAsync(cancellationToken).ConfigureAwait(false);
         probes.Add(gpServerProbe);
 
         var statuses = probes.Select(p => p.Status).ToArray();
@@ -548,31 +547,36 @@ public sealed class EvalRunner
         }
     }
 
-    private async Task<EvalProtocolProbe> ProbeGPServerServiceInfoAsync(
-        EvalScenario scenario,
+    private async Task<EvalProtocolProbe> ProbeGPServerSubmitJobAsync(
         CancellationToken cancellationToken)
     {
         try
         {
-            using var response = await _fixture.Client.GetAsync(
-                $"/rest/services/{scenario.Id}/GPServer?f=json", cancellationToken).ConfigureAwait(false);
-
-            if (response.StatusCode == HttpStatusCode.OK)
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                response.Content.Headers.ContentType ??= new MediaTypeHeaderValue("application/json");
+                ["f"] = "json",
+                ["input_features"] = "eval-placeholder"
+            });
+            using var response = await _fixture.Client.PostAsync(
+                "/rest/services/HonuaEval/GPServer/BufferAnalysis/submitJob",
+                content,
+                cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.NotImplemented)
+            {
                 return new EvalProtocolProbe
                 {
                     Protocol = Constants.Protocols.GPServer,
-                    Assertion = "service-info-reachable",
-                    Outcome = "ok",
-                    Status = EvalStageStatus.Passed
+                    Assertion = "submit-job-surface",
+                    Outcome = "task-resolution-unavailable",
+                    Status = EvalStageStatus.Skipped
                 };
             }
 
             return new EvalProtocolProbe
             {
                 Protocol = Constants.Protocols.GPServer,
-                Assertion = "service-info-reachable",
+                Assertion = "submit-job-surface",
                 Outcome = $"status-{(int)response.StatusCode}",
                 Status = EvalStageStatus.Failed
             };

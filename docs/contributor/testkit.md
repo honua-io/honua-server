@@ -379,7 +379,8 @@ through the source-generated `EvalJsonContext` (AOT-safe, no runtime
 reflection). Each scenario declares:
 
 - `id`, `name`, `mode` (`Analysis` | `Publish` | `Package` | `Deploy`)
-- `fixtureProfile` (shared-corpus key)
+- `fixtureProfile` (seed profile applied to the shared eval schema; all scenarios
+  in one harness run must agree on it)
 - `intent` — shape of `AnalysisIntent` (goal, inputs, constraints, requested
   outputs, `assumptionPolicy`)
 - `precompiledPlan` — shape of `AnalysisPlan` (steps, DAG edges, declared
@@ -402,22 +403,30 @@ not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
 stages break the gate today.
 
-`ProtocolParity` cross-checks plan acceptance across gRPC, OGC API Processes,
-and GeoServices GPServer so divergence between adapters surfaces as a single
-scenario-level diff instead of three unrelated test failures. Spans are emitted
-from the `Honua.Tests.Eval` `ActivitySource` (one span per scenario, one per
-stage).
+`ProtocolParity` cross-checks plan acceptance across gRPC and OGC API
+Processes, and it probes the GPServer `submitJob` surface separately. Because
+the GPServer adapter still lacks a formal task catalog binding, that probe is
+recorded as `Skipped(task-resolution-unavailable)` instead of a false `Passed`.
+Spans are emitted from the `Honua.Tests.Eval` `ActivitySource` (one span per
+scenario, one per stage).
 
 ### Fixture corpus
 
-Fixture resolution is routed through `IEvalFixtureSource`:
+Fixture resolution is routed through `IEvalFixtureSource` and applied to the
+shared `WebAppFixture` before host startup:
 
 - `SharedCorpusFixtureSource` — binds to the geospatial-mcp corpus located by
-  `HONUA_EVAL_CORPUS_PATH`; `HONUA_EVAL_CORPUS_VERSION` is surfaced in the
-  report envelope.
+  `HONUA_EVAL_CORPUS_PATH`, which must point to a YAML seed file or a directory
+  containing `seed.yaml`; `HONUA_EVAL_CORPUS_VERSION` is surfaced in the report
+  envelope.
 - `LocalSeedFixtureSource` — falls back to the in-repo `tests/seed/seed.yaml`
   baseline (`corpusVersion: seed.yaml@v1`) so the harness runs locally without
   external mounts.
+
+The harness resolves the single `fixtureProfile` declared by the discoverable
+scenario set and applies that profile with `WebAppFixture.UseSeed(...)`. Mixed
+profiles fail fast because the eval harness intentionally uses one class-scoped
+seeded schema per run.
 
 ### Report artifact
 
@@ -426,7 +435,8 @@ Each run emits `tests/TestResults/eval-report.json` (override with
 pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:
 
-- `environment` — `corpusSource`, `corpusVersion`, `corpusPath`, `redisAvailable`
+- `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
+  `redisAvailable` (derived from observed successful `SubmitPlanJob` stages)
 - `scenarios[]` — id, mode, overall `status`
   (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
   probes, elapsed ms

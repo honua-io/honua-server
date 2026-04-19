@@ -32,8 +32,14 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
     /// <inheritdoc />
     public async Task InitializeAsync()
     {
-        await WebApp.InitializeAsync();
+        var scenarios = EvalScenarioLoader.DiscoverScenarioIds()
+            .Select(EvalScenarioLoader.LoadById)
+            .ToArray();
+
         FixtureSource = SharedCorpusFixtureSource.TryCreate() ?? (IEvalFixtureSource)new LocalSeedFixtureSource();
+        var seedProfile = EvalHarnessSupport.ResolveSeedProfile(scenarios);
+        WebApp.UseSeed(FixtureSource.SeedPath, seedProfile);
+        await WebApp.InitializeAsync();
         Runner = new EvalRunner(WebApp, FixtureSource);
     }
 
@@ -84,7 +90,7 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
                 CorpusVersion = FixtureSource.CorpusVersion,
                 CorpusSource = FixtureSource.Id,
                 CorpusPath = FixtureSource.CorpusPath,
-                RedisAvailable = false
+                RedisAvailable = EvalHarnessSupport.DetermineRedisAvailability(snapshot)
             },
             Scenarios = snapshot,
             Rollup = new EvalReportRollup

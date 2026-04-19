@@ -317,7 +317,7 @@ internal static class SeedRunner
             columns.Add(idColumn);
             var paramName = NextParam();
             values.Add($"@{paramName}");
-            AddParameter(paramName, feature.Id);
+            AddParameter(paramName, NormalizeValueForColumn(feature.Id, collection.IdType ?? "serial"));
         }
 
         if (feature.Properties is not null)
@@ -325,7 +325,7 @@ internal static class SeedRunner
             foreach (var (name, value) in feature.Properties)
             {
                 if (collection.Properties is null ||
-                    !collection.Properties.ContainsKey(name))
+                    !collection.Properties.TryGetValue(name, out var propertyType))
                 {
                     throw new InvalidOperationException($"Feature property '{name}' not defined on collection '{collection.Name}'.");
                 }
@@ -334,7 +334,7 @@ internal static class SeedRunner
                 var paramName = NextParam();
                 columns.Add(columnName);
                 values.Add($"@{paramName}");
-                AddParameter(paramName, value);
+                AddParameter(paramName, NormalizeValueForColumn(value, propertyType));
             }
         }
 
@@ -500,6 +500,71 @@ internal static class SeedRunner
             _ => value.ToString()
         };
     }
+
+    private static object? NormalizeValueForColumn(object? value, string declaredType)
+    {
+        var normalized = NormalizeYamlObject(value);
+        if (normalized is not string text)
+        {
+            return normalized;
+        }
+
+        var type = declaredType.Trim().ToLowerInvariant();
+        if (IsIntegerType(type) &&
+            long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integerValue))
+        {
+            return UsesInt64(type)
+                ? integerValue
+                : checked((int)integerValue);
+        }
+
+        if (IsBooleanType(type) &&
+            bool.TryParse(text, out var boolValue))
+        {
+            return boolValue;
+        }
+
+        if (IsFloatingPointType(type) &&
+            double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands,
+                CultureInfo.InvariantCulture, out var doubleValue))
+        {
+            return doubleValue;
+        }
+
+        if (IsDecimalType(type) &&
+            decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture,
+                out var decimalValue))
+        {
+            return decimalValue;
+        }
+
+        return normalized;
+    }
+
+    private static bool IsIntegerType(string declaredType)
+        => declaredType.StartsWith("smallint", StringComparison.Ordinal) ||
+           declaredType.StartsWith("integer", StringComparison.Ordinal) ||
+           declaredType.StartsWith("bigint", StringComparison.Ordinal) ||
+           declaredType.StartsWith("int", StringComparison.Ordinal) ||
+           declaredType.StartsWith("serial", StringComparison.Ordinal) ||
+           declaredType.StartsWith("bigserial", StringComparison.Ordinal);
+
+    private static bool UsesInt64(string declaredType)
+        => declaredType.StartsWith("bigint", StringComparison.Ordinal) ||
+           declaredType.StartsWith("bigserial", StringComparison.Ordinal);
+
+    private static bool IsBooleanType(string declaredType)
+        => declaredType.StartsWith("bool", StringComparison.Ordinal) ||
+           declaredType.StartsWith("boolean", StringComparison.Ordinal);
+
+    private static bool IsFloatingPointType(string declaredType)
+        => declaredType.StartsWith("real", StringComparison.Ordinal) ||
+           declaredType.StartsWith("double precision", StringComparison.Ordinal) ||
+           declaredType.StartsWith("float", StringComparison.Ordinal);
+
+    private static bool IsDecimalType(string declaredType)
+        => declaredType.StartsWith("numeric", StringComparison.Ordinal) ||
+           declaredType.StartsWith("decimal", StringComparison.Ordinal);
 }
 
 internal sealed class SeedDefinition

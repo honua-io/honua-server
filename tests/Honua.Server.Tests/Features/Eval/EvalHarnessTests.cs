@@ -50,6 +50,25 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         await RunScenarioAsync("package-map-tsunami");
     }
 
+    /// <summary>
+    /// GPServer parity must stay honest until the adapter can bind eval scenarios to a
+    /// formal GP task catalog.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task AnalysisBufferPlaces_RecordsGpServerProbeAsSkippedUntilTaskBindingExists()
+    {
+        var scenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
+        var result = await _fixture.Runner.RunAsync(scenario, CancellationToken.None);
+
+        var gpServerProbe = result.ProtocolParity.Probes
+            .Single(probe => probe.Protocol == Protocols.GPServer);
+
+        gpServerProbe.Assertion.Should().Be("submit-job-surface");
+        gpServerProbe.Status.Should().Be(EvalStageStatus.Skipped);
+        gpServerProbe.Outcome.Should().Be("task-resolution-unavailable");
+    }
+
     private async Task RunScenarioAsync(string scenarioId)
     {
         var scenario = EvalScenarioLoader.LoadById(scenarioId);

@@ -25,7 +25,10 @@ public sealed record EvalScenario
     [JsonPropertyName("mode")]
     public EvalScenarioMode Mode { get; init; } = EvalScenarioMode.Analysis;
 
-    /// <summary>Shared-corpus fixture profile (e.g. <c>core</c>, <c>ogc</c>).</summary>
+    /// <summary>
+    /// Seed profile applied to the class-scoped eval schema (e.g. <c>core</c>,
+    /// <c>ogc</c>). All scenarios in one harness run must agree on this profile.
+    /// </summary>
     [JsonPropertyName("fixtureProfile")]
     public string FixtureProfile { get; init; } = "core";
 
