@@ -1,10 +1,17 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Eval;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Eval;
@@ -59,6 +66,44 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
+    /// OGC protocol parity must treat a 403 approval-required response as a matched
+    /// rejection when the scenario itself expects <c>RequiresApproval=true</c>. Without
+    /// this, any future approval-gated scenario would incorrectly fail parity even
+    /// though the OGC adapter matches the canonical runtime's approval gate exactly.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    public async Task OgcProbe_ApprovalRequiredScenario_MatchesApprovalRejection()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperatorApprovalEvaluator>();
+                services.AddSingleton<IOperatorApprovalEvaluator>(new DestructiveOnlyApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var runner = new EvalRunner(approvalFixture, new LocalSeedFixtureSource());
+            var scenario = BuildDestructiveApprovalScenario();
+
+            var result = await runner.RunAsync(scenario, CancellationToken.None);
+
+            var ogcProbe = result.ProtocolParity.Probes
+                .Single(probe => probe.Protocol == Protocols.OgcApiProcesses);
+
+            ogcProbe.Assertion.Should().Be("plan-shape-accepted");
+            ogcProbe.Outcome.Should().Be("matched-approval-required");
+            ogcProbe.Status.Should().Be(EvalStageStatus.Passed);
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// Enumerates every scenario id under <c>tests/Eval/scenarios/</c> so the harness
     /// suite expands automatically as the corpus grows.
     /// </summary>
@@ -83,5 +128,58 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
                      string.Join(", ", result.Stages
                          .Where(s => s.Status == EvalStageStatus.Failed)
                          .Select(s => $"{s.Stage}({s.Reason})")));
+    }
+
+    private static EvalScenario BuildDestructiveApprovalScenario() => new()
+    {
+        Id = "approval-required-delete-features",
+        Name = "Delete-features plan that must clear the approval gate",
+        Mode = EvalScenarioMode.Analysis,
+        FixtureProfile = "core",
+        Intent = new EvalIntentSpec
+        {
+            IntentId = "intent-approval-required-delete-features",
+            Goal = "Bulk-delete features from the roads layer (destructive; requires approval).",
+            Mode = "analysis",
+            RequestedOutputs = [ArtifactKind.Scalar],
+            Inputs = ["roads"],
+            AssumptionPolicy = AssumptionPolicy.UseDefaults
+        },
+        PrecompiledPlan = new EvalPlanSpec
+        {
+            PlanId = "plan-approval-required-delete-features",
+            IntentId = "intent-approval-required-delete-features",
+            Steps =
+            [
+                new EvalPlanStepSpec
+                {
+                    StepId = "delete-roads",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.delete-features",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "0",
+                        ["where"] = "OBJECTID > 0"
+                    }
+                }
+            ],
+            Outputs = [ArtifactKind.Scalar]
+        },
+        ExpectedOutcome = new EvalExpectedOutcome
+        {
+            IsExecutable = true,
+            RequiresApproval = true,
+            EstimatedArtifactKinds = [ArtifactKind.Scalar]
+        }
+    };
+
+    private sealed class DestructiveOnlyApprovalEvaluator : IOperatorApprovalEvaluator
+    {
+        public ApprovalRequirement Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+            => request.IsDestructive
+                ? ApprovalRequirement.Required(
+                    $"operator.destructive.{request.ResourceType.ToString().ToLowerInvariant()}",
+                    "destructive-action-requires-approval")
+                : ApprovalRequirement.NotRequired();
     }
 }

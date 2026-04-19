@@ -426,9 +426,12 @@ expected `isExecutable` value, and `mismatch:{actual}` when it diverges. The
 OGC probe treats `201 Created` as `matched-acceptance` for executable scenarios
 and as `unexpected-acceptance` (Failed) for scenarios that expected rejection;
 conversely `400 Bad Request` is `matched-rejection` (Passed) when the scenario
-expected rejection and `unexpected-rejection` (Failed) otherwise. `503` /
-`501` remain environmental skips, and when OGC execution cannot enqueue
-because Redis is unavailable, that probe is recorded as
+expected rejection and `unexpected-rejection` (Failed) otherwise. `403
+Forbidden` is the OGC adapter's approval-gate rejection emitted after catalog
+validation, so it is `matched-approval-required` (Passed) when the scenario
+expected `requiresApproval: true` and `unexpected-approval-required` (Failed)
+otherwise. `503` / `501` remain environmental skips, and when OGC execution
+cannot enqueue because Redis is unavailable, that probe is recorded as
 `Skipped(service-unavailable)` rather than `Failed`. Because the GPServer
 adapter still lacks a formal task catalog binding, its probe is recorded as
 `Skipped(task-resolution-unavailable)` instead of a false `Passed`. Spans are

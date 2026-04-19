@@ -536,7 +536,9 @@ public sealed class EvalRunner
             // Parity is measured against the scenario's expected acceptance state, so a
             // 400 rejection for a plan the canonical runtime also rejects is the passing
             // outcome (matched rejection). 201 with an expected-executable scenario is the
-            // passing outcome for acceptance. 503 / 501 remain environmental skips.
+            // passing outcome for acceptance. 403 is the canonical approval-gate rejection
+            // emitted after catalog validation, so it matches parity whenever the scenario
+            // expects RequiresApproval=true. 503 / 501 remain environmental skips.
             if (response.StatusCode == HttpStatusCode.Created)
             {
                 return new EvalProtocolProbe
@@ -556,6 +558,18 @@ public sealed class EvalRunner
                     Assertion = "plan-shape-accepted",
                     Outcome = expectedExecutable ? "unexpected-rejection" : "matched-rejection",
                     Status = expectedExecutable ? EvalStageStatus.Failed : EvalStageStatus.Passed
+                };
+            }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var expectsApproval = scenario.ExpectedOutcome.RequiresApproval;
+                return new EvalProtocolProbe
+                {
+                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Assertion = "plan-shape-accepted",
+                    Outcome = expectsApproval ? "matched-approval-required" : "unexpected-approval-required",
+                    Status = expectsApproval ? EvalStageStatus.Passed : EvalStageStatus.Failed
                 };
             }
 
