@@ -569,12 +569,15 @@ internal static class SeedRunner
            declaredType.StartsWith("int2", StringComparison.Ordinal) ||
            declaredType.StartsWith("int4", StringComparison.Ordinal) ||
            declaredType.StartsWith("int8", StringComparison.Ordinal) ||
+           declaredType.Equals("int", StringComparison.Ordinal) ||
+           declaredType.StartsWith("int[", StringComparison.Ordinal) ||
            declaredType.StartsWith("serial", StringComparison.Ordinal) ||
            declaredType.StartsWith("bigserial", StringComparison.Ordinal);
 
     private static bool UsesInt64(string declaredType)
         => declaredType.StartsWith("bigint", StringComparison.Ordinal) ||
-           declaredType.StartsWith("bigserial", StringComparison.Ordinal);
+           declaredType.StartsWith("bigserial", StringComparison.Ordinal) ||
+           declaredType.StartsWith("int8", StringComparison.Ordinal);
 
     private static bool IsBooleanType(string declaredType)
         => declaredType.StartsWith("bool", StringComparison.Ordinal) ||
