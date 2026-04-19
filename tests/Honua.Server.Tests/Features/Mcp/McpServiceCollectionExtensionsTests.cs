@@ -15,13 +15,14 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Mcp;
 
 /// <summary>
-/// Pins the promotion-surface DI wiring to the stub pattern documented in
-/// <c>docs/developer/MCP_SERVER.md</c>. Resources are advertised as
-/// <c>contract stub</c> while <c>AddMcpOperatorSurface</c> only registers
-/// in-memory fallback stores; when canonical publishing/deployment
-/// persistence later registers earlier in the composition root, the
-/// fallback registrations become no-ops and this test forces the docs flip
-/// from <c>contract stub</c> to <c>functional</c>.
+/// Pins the promotion-surface DI wiring to the fallback-backed pattern
+/// documented in <c>docs/developer/MCP_SERVER.md</c>. The promotion resources
+/// are functional handlers (dispatcher tags reads as <c>status=ok</c>), and
+/// <c>AddMcpOperatorSurface</c> registers the in-memory stores via
+/// <c>TryAddSingleton</c> so DI always resolves. When canonical
+/// publishing/deployment persistence later registers earlier in the
+/// composition root, the fallback registrations become no-ops and the same
+/// handlers immediately surface real lifecycle data without an API change.
 /// </summary>
 public sealed class McpServiceCollectionExtensionsTests
 {
