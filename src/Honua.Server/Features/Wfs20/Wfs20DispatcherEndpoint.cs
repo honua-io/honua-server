@@ -199,10 +199,10 @@ internal static class Wfs20DispatcherEndpoint
             }
         }
 
-        if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
-        {
-            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
-        }
+        // GetCapabilities is inherently XML-only; reject on the Accept header would
+        // break clients that set a broad default like `application/json` as a
+        // catch-all (common in test fixtures and OpenAPI-typed SDK clients).
+        // The server will still respond with application/xml regardless.
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var sections = parameters.Get(Wfs20Utilities.ParameterNames.Sections);
@@ -270,10 +270,11 @@ internal static class Wfs20DispatcherEndpoint
                     "outputFormat");
             }
 
-            if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
-            {
-                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
-            }
+            // DescribeFeatureType's outputFormat check above already enforces an
+            // XML-compatible format. Don't also reject on the Accept header —
+            // test fixtures and catch-all SDK clients routinely set
+            // `Accept: application/json` and the server always emits XML here
+            // regardless.
 
             // Handle the request
             var schema = await handler.HandleDescribeFeatureTypeAsync(

@@ -49,10 +49,8 @@ internal sealed partial class Wfs20Handler
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
-        if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
-        {
-            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
-        }
+        // WFS ListStoredQueries is XML-only; don't 406 on `Accept: application/json`
+        // default headers. The response is always application/xml.
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var xml = BuildListStoredQueriesXml(descriptors);
@@ -65,10 +63,7 @@ internal sealed partial class Wfs20Handler
         string? storedQueryIds,
         CancellationToken cancellationToken = default)
     {
-        if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
-        {
-            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
-        }
+        // Same story — DescribeStoredQueries is XML-only.
 
         var requestedIds = ParseQualifiedList(storedQueryIds);
         foreach (var requestedId in requestedIds)
