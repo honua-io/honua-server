@@ -1210,6 +1210,62 @@ public sealed class GeoprocessingJobServiceTests
             .WithMessage("*could not be confirmed*");
     }
 
+    // Regression: a failed remote job that the reconciler re-queued for retry sits at
+    // Queued + AttemptCount > 0 + NextRetryAt != null + ProviderOperationId == null. That is
+    // semantically pre-submission for the next attempt (the provider object for the failed
+    // attempt may already be TTL-cleaned), so cancel must take the local pre-submission
+    // path and must not call backend.CancelAsync against the stale attempt.
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
+    public async Task CancelJob_RemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var record = CreateJobRecord(
+            "job-retry",
+            ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            AttemptCount = 1,
+            ProviderOperationId = null,
+            NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(15),
+            CurrentPhase = "Retrying (attempt 2/3)"
+        };
+        _jobStore.GetAsync("job-retry", Arg.Any<CancellationToken>()).Returns(record);
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            _jobStore,
+            backends: [backend]);
+
+        await sut.CancelJobAsync("job-retry", CreatePrincipal());
+
+        await backend.DidNotReceive().CancelAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await _jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.OperationId == "job-retry" &&
+                job.Status == ExecutionJobStatus.Cancelled &&
+                job.CompletedAt.HasValue &&
+                job.CurrentPhase == "Cancelled before submission"),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]

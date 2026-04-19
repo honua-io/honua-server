@@ -39,11 +39,18 @@ internal static class ExecutionJobCancellationHelper
             or ExecutionJobStatus.Cancelled;
 
     /// <summary>
-    /// Returns <c>true</c> when the job has evidence of provider-side state,
-    /// meaning the backend has seen the job and a remote cancel is valid.
+    /// Returns <c>true</c> when the job has a live provider-side counterpart that a remote
+    /// cancel should target. A failed remote job that was requeued for retry sits at
+    /// <see cref="ExecutionJobStatus.Queued"/> with <see cref="ExecutionJobRecord.AttemptCount"/> &gt; 0,
+    /// no <see cref="ExecutionJobRecord.ProviderOperationId"/>, and a populated
+    /// <see cref="ExecutionJobRecord.NextRetryAt"/>; calling the backend against that stale
+    /// attempt (whose provider object may already be terminal or TTL-cleaned) would surface a
+    /// false terminal conflict, so treat it as not-yet-submitted and route to the
+    /// pre-submission cancel path. Mirrors the reconciler's submission-gate predicate.
     /// </summary>
-    public static bool WasSubmittedToProvider(ExecutionJobRecord job)
-        => !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0;
+    public static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
+        => !string.IsNullOrEmpty(job.ProviderOperationId)
+            || (job.AttemptCount > 0 && !job.NextRetryAt.HasValue);
 
     public static async Task<PreSubmissionCancelResult> TryCancelPreSubmissionAsync(
         IExecutionJobStore jobStore,

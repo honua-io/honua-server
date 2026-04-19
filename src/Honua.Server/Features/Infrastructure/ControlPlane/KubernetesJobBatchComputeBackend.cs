@@ -74,6 +74,12 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         }
 
         var manifest = BuildManifest(job, image);
+        // Pin the resolved namespace onto the durable record so subsequent observe, cancel,
+        // and retry paths do not re-resolve it against potentially-changed current options.
+        // Without this, mutating ControlPlane:Kubernetes:DefaultNamespace (or restarting with
+        // a different default) causes lifecycle calls to query the wrong namespace and
+        // surface false NotFound outcomes that would incorrectly fail or cancel live jobs.
+        var resolvedParameters = BuildResolvedSubmissionParameters(job, manifest);
 
         try
         {
@@ -93,7 +99,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 {
                     Status = idempotentStatus,
                     ProviderOperationId = snapshot?.Uid ?? job.ProviderOperationId ?? manifest.Name,
-                    Message = "Kubernetes Job already exists; treating submission as idempotent."
+                    Message = "Kubernetes Job already exists; treating submission as idempotent.",
+                    ResolvedParameters = resolvedParameters
                 };
             }
 
@@ -102,7 +109,8 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             {
                 Status = ExecutionJobStatus.Provisioning,
                 ProviderOperationId = result.Snapshot?.Uid ?? manifest.Name,
-                Message = $"Submitted Kubernetes Job {manifest.Namespace}/{manifest.Name}."
+                Message = $"Submitted Kubernetes Job {manifest.Namespace}/{manifest.Name}.",
+                ResolvedParameters = resolvedParameters
             };
         }
         catch (Exception ex) when (IsTransportOrConfigFailure(ex))
@@ -562,6 +570,24 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         var ns = ResolveNamespace(job, snapshot);
         var name = BuildJobName(job.OperationId, ResolveObservedAttempt(job));
         return (ns, name);
+    }
+
+    // Captures the namespace the adapter used when creating the Job so the helper can merge
+    // it back into spec.Parameters. Only emits an entry when the spec did not already pin
+    // it, so operator-set values in spec.Parameters continue to take precedence.
+    private static Dictionary<string, string>? BuildResolvedSubmissionParameters(
+        ExecutionJobRecord job,
+        KubernetesJobManifest manifest)
+    {
+        if (!string.IsNullOrWhiteSpace(job.Spec.Parameters.GetValueOrDefault(KubernetesJobParameterKeys.Namespace)))
+        {
+            return null;
+        }
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [KubernetesJobParameterKeys.Namespace] = manifest.Namespace
+        };
     }
 
     // Single source of truth for namespace selection so submission, observation, and

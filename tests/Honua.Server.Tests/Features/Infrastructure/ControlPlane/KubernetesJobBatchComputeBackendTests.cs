@@ -79,6 +79,97 @@ public sealed class KubernetesJobBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_ResolvedNamespace_ReturnedForPersistence()
+    {
+        // When the spec didn't pin a namespace, the backend must echo the resolved
+        // namespace so the orchestrator persists it on the ExecutionJobSpec; without
+        // this, later lifecycle hops (Observe/Cancel) could target a different
+        // namespace if config defaults drift at runtime.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-resolved" }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "geoprocessing"
+        });
+        var job = CreateJob("job-resolve-ns", image: "honua/worker:1.0.0");
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        result.ResolvedParameters.Should().NotBeNull();
+        result.ResolvedParameters![KubernetesJobParameterKeys.Namespace].Should().Be("geoprocessing");
+    }
+
+    [Fact]
+    public async Task StartAsync_ExplicitNamespaceSpec_DoesNotEchoResolvedParameters()
+    {
+        // If the spec already pins a namespace there's nothing new to persist; returning
+        // an empty ResolvedParameters would still trigger spec rewrites on every submit.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-explicit" }
+            });
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-explicit-ns", image: "honua/worker:1.0.0") with
+        {
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = KubernetesJobBatchComputeBackend.BackendId,
+                WorkloadId = "wl",
+                WorkloadName = "workload",
+                Artifact = "honua/worker:1.0.0",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [KubernetesJobParameterKeys.Namespace] = "caller-ns"
+                }
+            }
+        };
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        result.ResolvedParameters.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StartAsync_Conflict_ResolvedNamespace_ReturnedForPersistence()
+    {
+        // The Conflict (already-exists) path must also echo the resolved namespace,
+        // otherwise an idempotent replay after a crash would leave the spec unpinned
+        // and later lifecycle hops might target a different namespace.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Conflict });
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-existing", Active = 1 }
+            });
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "geoprocessing"
+        });
+        var job = CreateJob("job-conflict-ns", image: "honua/worker:1.0.0");
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Running);
+        result.ResolvedParameters.Should().NotBeNull();
+        result.ResolvedParameters![KubernetesJobParameterKeys.Namespace].Should().Be("geoprocessing");
+    }
+
+    [Fact]
     public async Task StartAsync_Conflict_IsIdempotent()
     {
         var client = Substitute.For<IKubernetesJobClient>();

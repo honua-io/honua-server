@@ -108,6 +108,25 @@ public sealed class ControlPlaneOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_WithNonHttpsKubernetesApiServerUrl_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            Kubernetes = new KubernetesExecutionOptions
+            {
+                InClusterAutoDetect = false,
+                ApiServerUrl = "http://cluster.example.test"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("ApiServerUrl") &&
+            failure.Contains("https scheme", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
     public void Validate_WithAutoDetectDisabledAndNoApiServerUrl_ReturnsFailure()
     {
         var options = new ControlPlaneOptions

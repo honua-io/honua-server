@@ -396,7 +396,7 @@ internal static class JobEndpoints
                     var capabilities = await backend.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
                     if (capabilities.SupportsCancellation)
                     {
-                        if (latest.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(latest))
+                        if (latest.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.HasSubmittedProviderMarker(latest))
                         {
                             var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
                                 jobStore, latest, context.RequestAborted).ConfigureAwait(false);

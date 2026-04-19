@@ -620,7 +620,7 @@ internal static partial class OperationsProgressEndpoints
                             $"Backend '{executionJob.Spec.Backend}' does not support cancellation.");
                     }
 
-                    if (executionJob.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(executionJob))
+                    if (executionJob.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.HasSubmittedProviderMarker(executionJob))
                     {
                         var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
                             jobStore, executionJob, cancellationToken).ConfigureAwait(false);

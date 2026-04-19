@@ -788,7 +788,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var jobStore = RequireJobStore();
 
-        if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(job))
+        if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job))
         {
             var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
                 jobStore, job, cancellationToken).ConfigureAwait(false);

@@ -91,9 +91,9 @@ internal sealed partial class ExecutionJobReconciler(
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
-                    && HasSubmittedProviderMarker(job)
+                    && ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job)
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
-                ExecutionJobStatus.Queued when HasSubmittedProviderMarker(job)
+                ExecutionJobStatus.Queued when ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
                     => CancelQueuedJob(job),
@@ -523,10 +523,6 @@ internal sealed partial class ExecutionJobReconciler(
         => status is ExecutionJobStatus.Succeeded
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
-
-    private static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
-        => !string.IsNullOrEmpty(job.ProviderOperationId)
-            || (job.AttemptCount > 0 && !job.NextRetryAt.HasValue);
 
     internal static partial class Log
     {

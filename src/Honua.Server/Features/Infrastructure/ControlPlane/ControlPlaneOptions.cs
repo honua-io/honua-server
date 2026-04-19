@@ -299,10 +299,20 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
     {
         const string prefix = "ControlPlane:Kubernetes";
 
-        if (!string.IsNullOrWhiteSpace(options.ApiServerUrl) &&
-            !Uri.TryCreate(options.ApiServerUrl, UriKind.Absolute, out _))
+        if (!string.IsNullOrWhiteSpace(options.ApiServerUrl))
         {
-            failures.Add($"{prefix}:ApiServerUrl must be an absolute URL (e.g. https://cluster.example).");
+            // The Kubernetes API receives a bearer token via the Authorization header on every
+            // CreateJob/GetJob/DeleteJob request; a non-HTTPS endpoint would ship those credentials
+            // and the job payload in clear text. Reject at startup so misconfiguration cannot
+            // silently land on a production deployment.
+            if (!Uri.TryCreate(options.ApiServerUrl, UriKind.Absolute, out var parsed))
+            {
+                failures.Add($"{prefix}:ApiServerUrl must be an absolute URL (e.g. https://cluster.example).");
+            }
+            else if (!string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add($"{prefix}:ApiServerUrl must use the https scheme (scheme '{parsed.Scheme}' is not allowed).");
+            }
         }
 
         if (!options.InClusterAutoDetect && string.IsNullOrWhiteSpace(options.ApiServerUrl))

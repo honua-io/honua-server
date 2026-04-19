@@ -101,6 +101,7 @@ internal static partial class ExecutionJobSubmissionHelper
 
         var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
+        var mergedSpec = MergeResolvedParameters(provisioning.Spec, submission.ResolvedParameters);
         var updated = provisioning with
         {
             Status = submission.Status,
@@ -109,7 +110,8 @@ internal static partial class ExecutionJobSubmissionHelper
             ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
             CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
             AttemptCount = provisioning.AttemptCount + 1,
-            NextRetryAt = null
+            NextRetryAt = null,
+            Spec = mergedSpec
         };
 
         if (!await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -189,6 +191,24 @@ internal static partial class ExecutionJobSubmissionHelper
                 Log.ExecutionJobProgressBridgeFailed(logger, job.OperationId, ex);
             }
         }
+    }
+
+    private static ExecutionJobSpec MergeResolvedParameters(
+        ExecutionJobSpec spec,
+        IReadOnlyDictionary<string, string>? resolved)
+    {
+        if (resolved == null || resolved.Count == 0)
+        {
+            return spec;
+        }
+
+        var merged = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal);
+        foreach (var pair in resolved)
+        {
+            merged[pair.Key] = pair.Value;
+        }
+
+        return spec with { Parameters = merged };
     }
 
     internal static partial class Log

@@ -893,6 +893,17 @@ public sealed record BatchComputeSubmissionResult
     /// Operator-facing message from submission.
     /// </summary>
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Provider-resolved spec parameters that should be persisted back onto the durable
+    /// execution-job record so subsequent observe, cancel, and retry calls target the same
+    /// remote coordinates the adapter picked at submission time. Backends use this to pin
+    /// values resolved from ambient configuration (for example the Kubernetes namespace)
+    /// that would otherwise drift if the operator changes the default between a submission
+    /// and a later lifecycle call. Entries are merged into <see cref="ExecutionJobSpec.Parameters"/>
+    /// and override any prior values. Leave null when the adapter has nothing to persist.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? ResolvedParameters { get; init; }
 }
 
 /// <summary>
