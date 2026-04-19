@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp;
 using Honua.Server.Features.Mcp.Models;
@@ -98,7 +100,7 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task PlanAnalysisStub_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance);
+        var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
 
         JsonElement? arguments = McpTestFactory.ParseJson("{}");
         var act = async () => await tool.InvokeAsync(
@@ -111,7 +113,7 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
     public async Task GroundCandidatesStub_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new GroundCandidatesTool(NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
 
         JsonElement? arguments = McpTestFactory.ParseJson("{}");
         var act = async () => await tool.InvokeAsync(
@@ -124,7 +126,7 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
     public async Task ClarifyIntentStub_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var tool = new ClarifyIntentTool(NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
 
         JsonElement? arguments = McpTestFactory.ParseJson("{}");
         var act = async () => await tool.InvokeAsync(
@@ -163,7 +165,7 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
     public async Task WorkspaceResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var resource = new WorkspaceResource(NullLogger<WorkspaceResource>.Instance);
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
 
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AnonymousHttpContext(), "honua://workspaces/ws-1", CancellationToken.None);
@@ -175,11 +177,55 @@ public sealed class McpAuthorizationTests
     [Endpoint("POST /mcp resources/read honua://catalog/processes")]
     public async Task ProcessCatalogResource_WithoutAuthenticatedPrincipal_ThrowsAuthenticationRequired()
     {
-        var resource = new ProcessCatalogResource(NullLogger<ProcessCatalogResource>.Instance);
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
 
         var act = async () => await resource.ReadAsync(
             McpTestFactory.AnonymousHttpContext(), "honua://catalog/processes", CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Workspace, OperatorOperation.Read))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(), "honua://workspaces/ws-1", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://catalog/processes")]
+    public async Task ProcessCatalogResource_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(), "honua://catalog/processes", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void StubResources_ImplementIStubMcpResource_ForTelemetryTagging()
+    {
+        IMcpResource workspace = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
+        IMcpResource catalog = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
+
+        workspace.Should().BeAssignableTo<IStubMcpResource>();
+        catalog.Should().BeAssignableTo<IStubMcpResource>();
     }
 }

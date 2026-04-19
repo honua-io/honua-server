@@ -256,8 +256,11 @@ internal static class McpEndpointExtensions
 
             case JsonValueKind.Number:
                 // MCP restricts numeric ids to integers to match the JSON-RPC 2.0
-                // recommendation that ids not contain fractional parts.
-                return idElement.TryGetInt64(out _)
+                // recommendation that ids not contain fractional parts. Validate
+                // by token syntax so integers outside Int64 (which clients MAY
+                // legally send per JSON's numeric model) are still accepted and
+                // echoed back verbatim via the preserved JsonElement.
+                return IsIntegerNumberToken(idElement)
                     ? new RequestIdState(RequestIdKind.Valid, idElement.Clone())
                     : new RequestIdState(RequestIdKind.Invalid, null);
 
@@ -265,6 +268,39 @@ internal static class McpEndpointExtensions
                 // Null, Boolean, Array, Object — all disallowed for request ids.
                 return new RequestIdState(RequestIdKind.Invalid, null);
         }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the supplied numeric JSON element is a plain
+    /// integer literal (no fractional or exponent part). Used to accept any
+    /// JSON-integer id — including values outside <see cref="long"/> range —
+    /// without coercing to a CLR numeric type, since the id is preserved and
+    /// echoed back as the original <see cref="JsonElement"/>.
+    /// </summary>
+    private static bool IsIntegerNumberToken(JsonElement element)
+    {
+        var raw = element.GetRawText().AsSpan();
+        if (raw.Length == 0)
+        {
+            return false;
+        }
+
+        var start = raw[0] == '-' ? 1 : 0;
+        if (start >= raw.Length)
+        {
+            return false;
+        }
+
+        for (var i = start; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            if (c == '.' || c == 'e' || c == 'E')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private readonly record struct RequestIdState(RequestIdKind Kind, JsonElement? Element);

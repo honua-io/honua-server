@@ -191,7 +191,7 @@ public sealed class McpResourceSerializationTests
     [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
     public async Task WorkspaceResource_ReturnsNotImplementedEnvelopeWithWorkspaceId()
     {
-        var resource = new WorkspaceResource(NullLogger<WorkspaceResource>.Instance);
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
@@ -209,7 +209,7 @@ public sealed class McpResourceSerializationTests
     [Endpoint("POST /mcp resources/read honua://catalog/processes")]
     public async Task ProcessCatalogResource_ReturnsEmptyCatalogWithNotImplementedStatus()
     {
-        var resource = new ProcessCatalogResource(NullLogger<ProcessCatalogResource>.Instance);
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
 
         var result = await resource.ReadAsync(
             McpTestFactory.AuthenticatedHttpContext(),
@@ -249,7 +249,7 @@ public sealed class McpResourceSerializationTests
     [Endpoint("POST /mcp resources/read")]
     public void WorkspaceResource_CanHandle_MatchesOnlyWorkspaceUris()
     {
-        var resource = new WorkspaceResource(NullLogger<WorkspaceResource>.Instance);
+        var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
 
         resource.CanHandle("honua://workspaces/ws-1").Should().BeTrue();
         resource.CanHandle("honua://workspaces/").Should().BeFalse();
@@ -261,7 +261,7 @@ public sealed class McpResourceSerializationTests
     [Endpoint("POST /mcp resources/read")]
     public void ProcessCatalogResource_CanHandle_MatchesOnlyCatalogUri()
     {
-        var resource = new ProcessCatalogResource(NullLogger<ProcessCatalogResource>.Instance);
+        var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
 
         resource.CanHandle("honua://catalog/processes").Should().BeTrue();
         resource.CanHandle("honua://catalog/processes/foo").Should().BeFalse();

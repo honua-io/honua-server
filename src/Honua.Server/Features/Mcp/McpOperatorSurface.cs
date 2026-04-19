@@ -216,12 +216,18 @@ internal sealed class McpOperatorSurface
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
+            // Contract-first stubs return a structured `not_implemented` payload.
+            // Tag telemetry with that status so dashboards can distinguish stubs
+            // from functional tools without inspecting response bodies.
+            var completionStatus = tool is IStubMcpTool
+                ? McpTelemetry.Status.NotImplemented
+                : McpTelemetry.Status.Ok;
             McpTelemetry.ToolCallCount.Add(
                 1,
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
-                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Ok),
+                new KeyValuePair<string, object?>("status", completionStatus),
                 new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
-            McpLog.ToolCompleted(_logger, tool.Name, McpTelemetry.Status.Ok);
+            McpLog.ToolCompleted(_logger, tool.Name, completionStatus);
         }
         catch (OperationCanceledException)
         {
@@ -295,10 +301,16 @@ internal sealed class McpOperatorSurface
             var result = await handler
                 .ReadAsync(httpContext, parameters.Uri, cancellationToken)
                 .ConfigureAwait(false);
+            // Contract-first stub resources return `not_implemented` envelopes.
+            // Tag the counter accordingly so dashboards can separate stub reads
+            // from functional reads.
+            var completionStatus = handler is IStubMcpResource
+                ? McpTelemetry.Status.NotImplemented
+                : McpTelemetry.Status.Ok;
             McpTelemetry.ResourceReadCount.Add(
                 1,
                 new KeyValuePair<string, object?>("resource_family", handler.Family),
-                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Ok));
+                new KeyValuePair<string, object?>("status", completionStatus));
             return SuccessResponse(request.Id, result, McpJsonContext.Default.McpResourcesReadResult);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

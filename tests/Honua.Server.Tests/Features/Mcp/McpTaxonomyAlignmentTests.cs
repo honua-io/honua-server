@@ -223,9 +223,9 @@ public sealed class McpTaxonomyAlignmentTests
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance),
-            new GroundCandidatesTool(NullLogger<GroundCandidatesTool>.Instance),
-            new ClarifyIntentTool(NullLogger<ClarifyIntentTool>.Instance)
+            new PlanAnalysisTool(jobService, NullLogger<PlanAnalysisTool>.Instance),
+            new GroundCandidatesTool(jobService, NullLogger<GroundCandidatesTool>.Instance),
+            new ClarifyIntentTool(jobService, NullLogger<ClarifyIntentTool>.Instance)
         ];
     }
 
@@ -236,8 +236,8 @@ public sealed class McpTaxonomyAlignmentTests
         [
             new JobStatusResource(jobService, NullLogger<JobStatusResource>.Instance),
             new JobResultsResource(jobService, NullLogger<JobResultsResource>.Instance),
-            new WorkspaceResource(NullLogger<WorkspaceResource>.Instance),
-            new ProcessCatalogResource(NullLogger<ProcessCatalogResource>.Instance)
+            new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
+            new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance)
         ];
     }
 }

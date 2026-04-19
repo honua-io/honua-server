@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Server.Features.Geoprocessing;
+
 namespace Honua.Server.Features.Mcp.Tools;
 
 /// <summary>
@@ -11,14 +14,18 @@ internal sealed class GroundCandidatesTool : NotImplementedToolBase
 {
     public const string ToolName = "honua_ground_candidates";
 
-    public GroundCandidatesTool(ILogger<GroundCandidatesTool> logger)
-        : base(logger)
+    public GroundCandidatesTool(IGeoprocessingJobService jobService, ILogger<GroundCandidatesTool> logger)
+        : base(jobService, logger)
     {
     }
 
     public override string Name => ToolName;
 
     public override string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
+
+    protected override OperatorResourceType AuthorizedResource => OperatorResourceType.Catalog;
+
+    protected override OperatorOperation AuthorizedOperation => OperatorOperation.Discover;
 
     protected override string Description =>
         "Ground an intent to candidate datasets, processes, and workspaces. Contract stub pending grounding service.";

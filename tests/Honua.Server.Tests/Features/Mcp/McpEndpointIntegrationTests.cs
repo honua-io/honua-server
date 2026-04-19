@@ -308,6 +308,30 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /mcp")]
+    public async Task LargeIntegerId_IsAcceptedAndEchoedVerbatim()
+    {
+        // JSON's numeric model has no maximum, and MCP only requires the id to
+        // be a string or integer. Validate by syntax, not by Int64 range, so
+        // clients that generate very large integer ids still receive a
+        // well-formed response echoing the original id token.
+        const string bigId = "99999999999999999999";
+        var response = await PostRpcAsync($$"""
+            {"jsonrpc":"2.0","id":{{bigId}},"method":"tools/list"}
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+
+        root.TryGetProperty("error", out _).Should().BeFalse();
+        var id = root.GetProperty("id");
+        id.ValueKind.Should().Be(JsonValueKind.Number);
+        id.GetRawText().Should().Be(bigId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
     public async Task ObjectId_IsRejectedAsInvalidRequest()
     {
         var response = await PostRpcAsync("""

@@ -366,10 +366,13 @@ List parameterized resource URIs:
 | `honua_ground_candidates` | contract stub | blocked by `honua.grounding.service` | `planning` |
 | `honua_clarify_intent` | contract stub | blocked by `honua.clarifier.service` | `planning` |
 
-Stub tools still enforce authentication and return a structured
-`not_implemented` envelope with `blockedBy`, `contract`, and `nextSteps`
-fields so operators can bind today and pick up behavior when the upstream
-service lands.
+Stub tools still enforce authentication and the same operator-grant
+authorization as their functional counterparts (via
+`IGeoprocessingJobService.EnsureCallerAuthorized`) before returning a
+structured `not_implemented` envelope with `blockedBy`, `contract`, and
+`nextSteps` fields so operators can bind today and pick up behavior when
+the upstream service lands. Authenticated callers without the required
+grant receive a `permission_denied` error, matching the functional tools.
 
 #### Tool payload notes
 
@@ -507,9 +510,12 @@ through this error path.
 
 Activities emitted inside the surface are tagged with
 `honua.protocol = "Mcp"` so spans roll up alongside gRPC and GPServer
-traffic. Stub tools still increment `honua.mcp.tool.call` with `status = "ok"`
-because they return structured `not_implemented` payloads rather than
-JSON-RPC errors.
+traffic. Contract-first stub tools and resources increment
+`honua.mcp.tool.call` / `honua.mcp.resource.read` with
+`status = "not_implemented"`, so dashboards can distinguish stubs from
+functional paths without inspecting response bodies. Functional tools and
+resources emit `status = "ok"` on success and `status = "error"` on
+failure.
 
 ### Source
 

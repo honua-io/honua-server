@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Server.Features.Geoprocessing;
+
 namespace Honua.Server.Features.Mcp.Tools;
 
 /// <summary>
@@ -11,14 +14,18 @@ internal sealed class PlanAnalysisTool : NotImplementedToolBase
 {
     public const string ToolName = "honua_plan_analysis";
 
-    public PlanAnalysisTool(ILogger<PlanAnalysisTool> logger)
-        : base(logger)
+    public PlanAnalysisTool(IGeoprocessingJobService jobService, ILogger<PlanAnalysisTool> logger)
+        : base(jobService, logger)
     {
     }
 
     public override string Name => ToolName;
 
     public override string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
+
+    protected override OperatorResourceType AuthorizedResource => OperatorResourceType.Process;
+
+    protected override OperatorOperation AuthorizedOperation => OperatorOperation.Read;
 
     protected override string Description =>
         "Generate an analysis plan from a natural-language intent. Contract stub pending planner service.";

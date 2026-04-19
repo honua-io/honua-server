@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 
 namespace Honua.Server.Features.Mcp.Resources;
@@ -10,17 +12,19 @@ namespace Honua.Server.Features.Mcp.Resources;
 /// catalog envelope tagged <c>not_implemented</c> until the process catalog
 /// service ships. Clients can bind to the URI and MIME type today.
 /// </summary>
-internal sealed class ProcessCatalogResource : IMcpResource
+internal sealed class ProcessCatalogResource : IMcpResource, IStubMcpResource
 {
     public const string Uri = McpResourceUris.CatalogProcesses;
 
     private const string NotImplementedReason =
         "Process catalog reads depend on the catalog service; slated for a follow-up ticket in the geoprocessing epic.";
 
+    private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<ProcessCatalogResource> _logger;
 
-    public ProcessCatalogResource(ILogger<ProcessCatalogResource> logger)
+    public ProcessCatalogResource(IGeoprocessingJobService jobService, ILogger<ProcessCatalogResource> logger)
     {
+        _jobService = jobService;
         _logger = logger;
     }
 
@@ -47,7 +51,8 @@ internal sealed class ProcessCatalogResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetProcessCatalog");
-        _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Catalog, OperatorOperation.Discover);
         McpLog.ResourceRead(_logger, Family, uri);
 
         var resource = new McpProcessCatalogResource

@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Server.Features.Geoprocessing;
+
 namespace Honua.Server.Features.Mcp.Tools;
 
 /// <summary>
@@ -11,14 +14,18 @@ internal sealed class ClarifyIntentTool : NotImplementedToolBase
 {
     public const string ToolName = "honua_clarify_intent";
 
-    public ClarifyIntentTool(ILogger<ClarifyIntentTool> logger)
-        : base(logger)
+    public ClarifyIntentTool(IGeoprocessingJobService jobService, ILogger<ClarifyIntentTool> logger)
+        : base(jobService, logger)
     {
     }
 
     public override string Name => ToolName;
 
     public override string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
+
+    protected override OperatorResourceType AuthorizedResource => OperatorResourceType.Process;
+
+    protected override OperatorOperation AuthorizedOperation => OperatorOperation.Read;
 
     protected override string Description =>
         "Request operator clarification when an intent cannot be grounded unambiguously. Contract stub pending clarifier service.";

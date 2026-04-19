@@ -1,14 +1,17 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 using Honua.Server.Features.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Mcp;
 
@@ -21,45 +24,113 @@ namespace Honua.Server.Tests.Features.Mcp;
 [Protocol(Protocols.Mcp)]
 public sealed class McpStubToolTests
 {
+    private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task PlanAnalysisStub_ReturnsNotImplementedWithPlannerBlocker()
     {
-        var tool = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance);
+        var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
 
         var result = await InvokeAsync(tool);
 
         AssertNotImplemented(result, expectedTool: PlanAnalysisTool.ToolName, expectedBlocker: "honua.planner.service");
+        _jobService.Received(1).EnsureCallerAuthorized(
+            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
     }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
     public async Task GroundCandidatesStub_ReturnsNotImplementedWithGroundingBlocker()
     {
-        var tool = new GroundCandidatesTool(NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
 
         var result = await InvokeAsync(tool);
 
         AssertNotImplemented(result, expectedTool: GroundCandidatesTool.ToolName, expectedBlocker: "honua.grounding.service");
+        _jobService.Received(1).EnsureCallerAuthorized(
+            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover);
     }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
     public async Task ClarifyIntentStub_ReturnsNotImplementedWithClarifierBlocker()
     {
-        var tool = new ClarifyIntentTool(NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
 
         var result = await InvokeAsync(tool);
 
         AssertNotImplemented(result, expectedTool: ClarifyIntentTool.ToolName, expectedBlocker: "honua.clarifier.service");
+        _jobService.Received(1).EnsureCallerAuthorized(
+            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_plan_analysis")]
+    public async Task PlanAnalysisStub_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
+
+        var act = async () => await InvokeAsync(tool);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
+    public async Task GroundCandidatesStub_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
+
+        var act = async () => await InvokeAsync(tool);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
+    public async Task ClarifyIntentStub_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
+    {
+        _jobService
+            .When(s => s.EnsureCallerAuthorized(
+                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read))
+            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
+        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
+
+        var act = async () => await InvokeAsync(tool);
+
+        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void StubsImplementIStubMcpTool_ForTelemetryTagging()
+    {
+        IMcpTool plan = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
+        IMcpTool ground = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
+        IMcpTool clarify = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
+
+        plan.Should().BeAssignableTo<IStubMcpTool>();
+        ground.Should().BeAssignableTo<IStubMcpTool>();
+        clarify.Should().BeAssignableTo<IStubMcpTool>();
     }
 
     [UnitTest]
     public void StubDescriptors_ExposeEmptyObjectSchemaForContract()
     {
-        var plan = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance).Describe();
-        var ground = new GroundCandidatesTool(NullLogger<GroundCandidatesTool>.Instance).Describe();
-        var clarify = new ClarifyIntentTool(NullLogger<ClarifyIntentTool>.Instance).Describe();
+        var plan = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance).Describe();
+        var ground = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance).Describe();
+        var clarify = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance).Describe();
 
         foreach (var descriptor in new[] { plan, ground, clarify })
         {
@@ -73,7 +144,7 @@ public sealed class McpStubToolTests
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task Stub_RejectsArrayArguments_AsInvalidArgument()
     {
-        var tool = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance);
+        var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
 
         var invoke = async () => await InvokeWithAsync(tool, """["not","an","object"]""");
 
@@ -86,7 +157,7 @@ public sealed class McpStubToolTests
     [Endpoint("POST /mcp tools/call honua_ground_candidates")]
     public async Task Stub_RejectsScalarArguments_AsInvalidArgument()
     {
-        var tool = new GroundCandidatesTool(NullLogger<GroundCandidatesTool>.Instance);
+        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
 
         var invoke = async () => await InvokeWithAsync(tool, "\"just-a-string\"");
 
@@ -99,7 +170,7 @@ public sealed class McpStubToolTests
     [Endpoint("POST /mcp tools/call honua_clarify_intent")]
     public async Task Stub_RejectsObjectWithUnexpectedProperties_AsInvalidArgument()
     {
-        var tool = new ClarifyIntentTool(NullLogger<ClarifyIntentTool>.Instance);
+        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
 
         var invoke = async () => await InvokeWithAsync(tool, """{"unexpected":"value"}""");
 
@@ -112,7 +183,7 @@ public sealed class McpStubToolTests
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
     public async Task Stub_AcceptsMissingArguments_AsEmptyObject()
     {
-        var tool = new PlanAnalysisTool(NullLogger<PlanAnalysisTool>.Instance);
+        var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
 
         var result = await tool.InvokeAsync(
             McpTestFactory.AuthenticatedHttpContext(),

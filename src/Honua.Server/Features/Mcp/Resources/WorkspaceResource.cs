@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Mcp.Models;
 
 namespace Honua.Server.Features.Mcp.Resources;
@@ -10,17 +12,19 @@ namespace Honua.Server.Features.Mcp.Resources;
 /// <c>not_implemented</c> metadata until the workspace store lands; the contract
 /// and URI template are stable so clients can bind today.
 /// </summary>
-internal sealed class WorkspaceResource : IMcpResource
+internal sealed class WorkspaceResource : IMcpResource, IStubMcpResource
 {
     public const string Template = McpResourceUris.WorkspacesPrefix + "{workspaceId}";
 
     private const string NotImplementedReason =
         "Workspace resource reads depend on the workspace store; slated for a follow-up ticket in the geoprocessing epic.";
 
+    private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<WorkspaceResource> _logger;
 
-    public WorkspaceResource(ILogger<WorkspaceResource> logger)
+    public WorkspaceResource(IGeoprocessingJobService jobService, ILogger<WorkspaceResource> logger)
     {
+        _jobService = jobService;
         _logger = logger;
     }
 
@@ -56,7 +60,8 @@ internal sealed class WorkspaceResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetWorkspace");
-        _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Workspace, OperatorOperation.Read);
 
         var workspaceId = uri[McpResourceUris.WorkspacesPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
