@@ -441,6 +441,14 @@ grant receive a `permission_denied` error, matching the functional tools.
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
 | `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
+| `honua://published-services` | `resources/list` | functional | Capped list of active published services with summary fields and ETags. |
+| `honua://published-services/{serviceId}` | `resources/templates/list` | functional | Published-service record with provenance edges back to the originating intent, result package, and hosted deployments. |
+| `honua://deployments` | `resources/list` | functional | Capped list of active deployments with publication state, source kind, target, and ETags. |
+| `honua://deployments/{deploymentId}` | `resources/templates/list` | functional | Deployment record including publication state, rollout state, runtime health, and the append-only transition audit trail. |
+| `honua://map-packages` | `resources/list` | functional | Capped list of map packages visible through currently-active deployments (reverse lookup). |
+| `honua://map-packages/{packageId}` | `resources/templates/list` | functional | Map-package surface derived from deployments that reference the package. Packages have no standalone store; the view is limited to provenance edges. |
+| `honua://app-packages` | `resources/list` | functional | Capped list of app packages visible through currently-active deployments (reverse lookup). |
+| `honua://app-packages/{packageId}` | `resources/templates/list` | functional | App-package surface derived from deployments that reference the package. |
 
 `honua://jobs/{jobId}/results` is the reserved output channel for the
 map-package artifact. The wire shape is stable so clients can bind today;
@@ -481,6 +489,56 @@ second lifecycle model.
   workspace store lands.
 - `honua://catalog/processes` returns
   `{ catalogVersion, status: "not_implemented", processes: [], notImplementedReason }`.
+
+#### Promotion-surface payload notes
+
+The published-service, deployment, and package resources all share the same
+ETag and provenance conventions so agents can poll for lifecycle changes
+without subscribing. A subscription surface is not in scope today; the
+audit-trail plus monotonic ETag is the observability contract.
+
+- **Authorization.** Published-service reads require the
+  `published-service` grant with `read`; deployment reads require the
+  `deployment` grant; map/app-package reads and the package list roots
+  require the `package` grant. All of them go through
+  `IGeoprocessingJobService.EnsureCallerAuthorized` so the gRPC, GPServer,
+  and MCP protocols enforce identical grants.
+- **ETag.** Every promotion-surface read returns a weak ETag of the form
+  `W/"{updatedAtTicks:hex}-{status}"`. For deployments the timestamp is
+  the maximum of `updatedAt` and the last `transitions[*].at`, so a new
+  audit entry always advances the tag. Status is included so lifecycle
+  flips (e.g. `Active` → `Suspended`) invalidate clients even when the
+  record's timestamp clock hasn't advanced yet. Full MCP
+  `notifications/resources/updated` is deferred.
+- **Provenance edges** live under `provenance` on the detail views and
+  mirror `McpHostedProvenance`: `originatingIntentId`, `resultPackageId`,
+  `publishedServiceResourceUri`, `parentDeploymentResourceUri`, and
+  `supersededByDeploymentResourceUri`. Edges not applicable to the surface
+  (e.g. no superseding deployment) are omitted.
+- **Pagination.** List-root reads cap results at 50 items by default
+  (max 200). When the canonical store returns more items, the response
+  sets `truncated: true`; a scrolling cursor is not part of v1 — agents
+  requiring full enumeration should filter server-side via the canonical
+  publishing / deployment APIs.
+
+- `honua://published-services/{serviceId}` returns
+  `{ serviceId, resourceUri, status, sourceKind, sourceId, targetKind, endpoint?, publishedAt, lastRefreshedAt?, updatedAt, etag, artifacts, warnings, provenance }`.
+- `honua://published-services` returns
+  `{ resourceUri, count, truncated, items: [{ serviceId, resourceUri, status, targetKind, updatedAt, etag }] }`.
+- `honua://deployments/{deploymentId}` returns
+  `{ deploymentId, resourceUri, status, publicationState, rolloutState, sourceKind, sourceId, sourceResourceUri?, targetId, targetKind, hostingMode, environment?, routePrefix?, publicUrl?, runtimeHealth, createdAt, updatedAt, activatedAt?, retiredAt?, failureReason?, etag, transitions, provenance }`.
+  `transitions[*]` includes `{ from, to, at, rolloutState?, reason? }` in
+  append-only order.
+- `honua://deployments` returns
+  `{ resourceUri, count, truncated, items: [{ deploymentId, resourceUri, status, publicationState, sourceKind, targetId, updatedAt, etag }] }`.
+- `honua://map-packages/{packageId}` and
+  `honua://app-packages/{packageId}` return
+  `{ packageKind, packageId, resourceUri, deploymentCount, deploymentResourceUris, provenance }`.
+  Packages have no standalone record on the server; the read is a reverse
+  lookup against the deployment store. A package that is referenced by no
+  active deployment returns `not_found`.
+- `honua://map-packages` and `honua://app-packages` return
+  `{ resourceUri, packageKind, count, truncated, items: [{ packageId, resourceUri, deploymentCount }] }`.
 
 ### Error envelope
 

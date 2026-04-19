@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Server.Features.Mcp.Resources;
+using Honua.Server.Features.Mcp.Stores;
 using Honua.Server.Features.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -40,6 +43,15 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, JobResultsResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, PublishedServiceResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, DeploymentResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, MapPackageResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, AppPackageResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, PromotionSurfaceIndexResource>());
+
+        services.TryAddSingleton<IPublishedServiceStore, InMemoryPublishedServiceStore>();
+        services.TryAddSingleton<IPublishIntentStore, InMemoryPublishIntentStore>();
+        services.TryAddSingleton<IDeploymentStore, InMemoryDeploymentStore>();
 
         services.TryAddSingleton<McpOperatorSurface>();
 

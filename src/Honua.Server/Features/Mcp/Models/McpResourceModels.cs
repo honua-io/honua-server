@@ -247,3 +247,336 @@ internal sealed class McpProcessEntry
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 }
+
+// -----------------------------------------------------------------------
+// Promotion-surface resources (published services, deployments, packages)
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Provenance edges carried by promotion-surface resources so agents can trace a hosted
+/// surface back to the workflow that produced it. Distinct from <see cref="McpProvenance"/>,
+/// which covers analysis-result provenance (sources, process definitions, clarifications).
+/// </summary>
+internal sealed class McpHostedProvenance
+{
+    [JsonPropertyName("originatingIntentId")]
+    public string? OriginatingIntentId { get; set; }
+
+    [JsonPropertyName("resultPackageId")]
+    public string? ResultPackageId { get; set; }
+
+    [JsonPropertyName("jobResourceUri")]
+    public string? JobResourceUri { get; set; }
+
+    [JsonPropertyName("jobResultsResourceUri")]
+    public string? JobResultsResourceUri { get; set; }
+
+    [JsonPropertyName("publishedServiceResourceUri")]
+    public string? PublishedServiceResourceUri { get; set; }
+
+    [JsonPropertyName("parentDeploymentResourceUri")]
+    public string? ParentDeploymentResourceUri { get; set; }
+
+    [JsonPropertyName("supersededByDeploymentResourceUri")]
+    public string? SupersededByDeploymentResourceUri { get; set; }
+}
+
+/// <summary>
+/// Response body for reads of <c>honua://published-services/{serviceId}</c>.
+/// </summary>
+internal sealed class McpPublishedServiceView
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceKind")]
+    public string SourceKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceId")]
+    public string SourceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("targetKind")]
+    public string TargetKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("endpoint")]
+    public string? Endpoint { get; set; }
+
+    [JsonPropertyName("publishedAt")]
+    public DateTimeOffset PublishedAt { get; set; }
+
+    [JsonPropertyName("lastRefreshedAt")]
+    public DateTimeOffset? LastRefreshedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("etag")]
+    public string Etag { get; set; } = string.Empty;
+
+    [JsonPropertyName("artifacts")]
+    public IReadOnlyList<McpArtifactRef> Artifacts { get; set; } = [];
+
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; set; } = [];
+
+    [JsonPropertyName("provenance")]
+    public McpHostedProvenance Provenance { get; set; } = new();
+}
+
+/// <summary>
+/// Summary entry used in <c>honua://published-services</c> list envelopes.
+/// </summary>
+internal sealed class McpPublishedServiceSummary
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("targetKind")]
+    public string TargetKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("etag")]
+    public string Etag { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Response body for reads of <c>honua://published-services</c>.
+/// </summary>
+internal sealed class McpPublishedServiceListView
+{
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; set; }
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<McpPublishedServiceSummary> Items { get; set; } = [];
+}
+
+/// <summary>
+/// Lifecycle transition exposed on <c>honua://deployments/{id}</c> reads.
+/// </summary>
+internal sealed class McpDeploymentTransitionView
+{
+    [JsonPropertyName("from")]
+    public string From { get; set; } = string.Empty;
+
+    [JsonPropertyName("to")]
+    public string To { get; set; } = string.Empty;
+
+    [JsonPropertyName("at")]
+    public DateTimeOffset At { get; set; }
+
+    [JsonPropertyName("rolloutState")]
+    public string? RolloutState { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+}
+
+/// <summary>
+/// Response body for reads of <c>honua://deployments/{deploymentId}</c>.
+/// </summary>
+internal sealed class McpDeploymentView
+{
+    [JsonPropertyName("deploymentId")]
+    public string DeploymentId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("publicationState")]
+    public string PublicationState { get; set; } = string.Empty;
+
+    [JsonPropertyName("rolloutState")]
+    public string RolloutState { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceKind")]
+    public string SourceKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceId")]
+    public string SourceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceResourceUri")]
+    public string? SourceResourceUri { get; set; }
+
+    [JsonPropertyName("targetId")]
+    public string TargetId { get; set; } = string.Empty;
+
+    [JsonPropertyName("targetKind")]
+    public string TargetKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("hostingMode")]
+    public string HostingMode { get; set; } = string.Empty;
+
+    [JsonPropertyName("environment")]
+    public string? Environment { get; set; }
+
+    [JsonPropertyName("routePrefix")]
+    public string? RoutePrefix { get; set; }
+
+    [JsonPropertyName("publicUrl")]
+    public string? PublicUrl { get; set; }
+
+    [JsonPropertyName("runtimeHealth")]
+    public string RuntimeHealth { get; set; } = string.Empty;
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("activatedAt")]
+    public DateTimeOffset? ActivatedAt { get; set; }
+
+    [JsonPropertyName("retiredAt")]
+    public DateTimeOffset? RetiredAt { get; set; }
+
+    [JsonPropertyName("failureReason")]
+    public string? FailureReason { get; set; }
+
+    [JsonPropertyName("etag")]
+    public string Etag { get; set; } = string.Empty;
+
+    [JsonPropertyName("transitions")]
+    public IReadOnlyList<McpDeploymentTransitionView> Transitions { get; set; } = [];
+
+    [JsonPropertyName("provenance")]
+    public McpHostedProvenance Provenance { get; set; } = new();
+}
+
+/// <summary>
+/// Summary entry used in <c>honua://deployments</c> list envelopes.
+/// </summary>
+internal sealed class McpDeploymentSummary
+{
+    [JsonPropertyName("deploymentId")]
+    public string DeploymentId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("publicationState")]
+    public string PublicationState { get; set; } = string.Empty;
+
+    [JsonPropertyName("sourceKind")]
+    public string SourceKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("targetId")]
+    public string TargetId { get; set; } = string.Empty;
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("etag")]
+    public string Etag { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Response body for reads of <c>honua://deployments</c>.
+/// </summary>
+internal sealed class McpDeploymentListView
+{
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; set; }
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<McpDeploymentSummary> Items { get; set; } = [];
+}
+
+/// <summary>
+/// Response body for reads of <c>honua://map-packages/{packageId}</c> and
+/// <c>honua://app-packages/{packageId}</c>. Map and app packages do not have a
+/// standalone store; the resource derives its visibility from the deployments
+/// that reference the package, so <see cref="DeploymentResourceUris"/> is the
+/// canonical way to reach hosted surfaces that serve the package.
+/// </summary>
+internal sealed class McpPackageView
+{
+    [JsonPropertyName("packageKind")]
+    public string PackageKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("packageId")]
+    public string PackageId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("deploymentCount")]
+    public int DeploymentCount { get; set; }
+
+    [JsonPropertyName("deploymentResourceUris")]
+    public IReadOnlyList<string> DeploymentResourceUris { get; set; } = [];
+
+    [JsonPropertyName("provenance")]
+    public McpHostedProvenance Provenance { get; set; } = new();
+}
+
+/// <summary>
+/// Summary entry used in <c>honua://map-packages</c> and
+/// <c>honua://app-packages</c> list envelopes.
+/// </summary>
+internal sealed class McpPackageSummary
+{
+    [JsonPropertyName("packageId")]
+    public string PackageId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("deploymentCount")]
+    public int DeploymentCount { get; set; }
+}
+
+/// <summary>
+/// Response body for reads of <c>honua://map-packages</c> and
+/// <c>honua://app-packages</c>.
+/// </summary>
+internal sealed class McpPackageListView
+{
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("packageKind")]
+    public string PackageKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; set; }
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<McpPackageSummary> Items { get; set; } = [];
+}
