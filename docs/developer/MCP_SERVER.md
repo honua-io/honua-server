@@ -446,6 +446,14 @@ catalog discovery on top of the same authorization graph via
   enum names only; numeric strings (e.g. `"999"`) and any other unknown
   value are rejected with `invalid_argument` so out-of-contract enum
   values cannot leak onto `workflowFamily.value` or the drafted intent.
+  The published schema pins `goal.minLength = 1`, `intentId.minLength = 1`,
+  and `explicitInputs.items.minLength = 1`; the server mapper also
+  normalizes a whitespace-only `intentId` on the initial grounding call
+  to an omitted value (so `GroundingService` allocates a fresh id
+  instead of propagating an empty string through `draftIntent` and the
+  clarification envelope) and drops blank `explicitInputs` entries so
+  `IntentDrafter` cannot pick a whitespace string as a publish
+  `sourceId`.
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
   published schema also marks `goal` as required and requires at least
@@ -465,9 +473,12 @@ catalog discovery on top of the same authorization graph via
   acknowledged: `workflow_family` overrides the classifier
   (confidence `1.0`, evidence `clarification`), `dataset.selection` and
   `process.selection` pin the chosen candidate to the front of its
-  ranking (unknown ids fail with `invalid_argument`), `publish.target`
-  flows into the drafted `PublishIntent`, and `param.<name>` answers
-  skip the matching parameter-gap clarification and surface as
+  ranking (unknown ids fail with `invalid_argument`), `publish.source`
+  pins the drafted `PublishIntent.SourceId` when no `explicitInputs`
+  and no high-confidence dataset are available (free-text or a dataset
+  option id from the ranked list), `publish.target` flows into the
+  drafted `PublishIntent.TargetKind`, and `param.<name>` answers skip
+  the matching parameter-gap clarification and surface as
   `param.<name>=<value>` entries on `provenance.assumptions`. See
   [GROUNDING.md](GROUNDING.md) for the material-ambiguity rule set and
   clarification reason codes.

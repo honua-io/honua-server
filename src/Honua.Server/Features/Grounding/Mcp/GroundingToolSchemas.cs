@@ -64,7 +64,7 @@ internal static class GroundingToolSchemas
                 "intentId": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Intent identifier. Required for clarification turns; optional on the initial grounding call. Whitespace-only values are rejected."
+                  "description": "Intent identifier. Required for clarification turns; optional on the initial grounding call. On the initial grounding call a whitespace-only value is treated as omitted and the server allocates a fresh id; on a clarification turn a missing or whitespace-only value is rejected with invalid_argument."
                 },
                 "workflowFamilyHint": {
                   "type": "string",

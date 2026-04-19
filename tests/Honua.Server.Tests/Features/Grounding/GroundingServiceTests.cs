@@ -313,6 +313,56 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_SridConstraintDoesNotSuppressDirectionalProjectionSridClarifications()
+    {
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns([Candidate("geometry.project", 0.9, CandidateKind.Process)]);
+        _processCatalog.GetProcess("geometry.project").Returns(new ProcessDefinition
+        {
+            ProcessId = "geometry.project",
+            Title = "Project",
+            Description = "Reprojects geometries from one spatial reference to another.",
+            Category = "geometry",
+            Parameters =
+            [
+                new ProcessParameterSpec
+                {
+                    Name = "fromSrid",
+                    DisplayName = "From SRID",
+                    Description = "Source SRID",
+                    ValueType = ProcessParameterValueType.Srid,
+                    Required = true
+                },
+                new ProcessParameterSpec
+                {
+                    Name = "toSrid",
+                    DisplayName = "To SRID",
+                    Description = "Target SRID",
+                    ValueType = ProcessParameterValueType.Srid,
+                    Required = true
+                }
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        });
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "project the geometries",
+                Constraints = new IntentConstraints { SpatialReferenceId = 3857 }
+            },
+            Principal);
+
+        result.Clarification.Should().NotBeNull();
+        result.Clarification!.ReasonCodes.Should().Contain(ClarificationReasonCode.MissingRequiredInput);
+        result.Clarification.Questions.Should().Contain(q => q.QuestionId == "param.fromSrid");
+        result.Clarification.Questions.Should().Contain(q => q.QuestionId == "param.toSrid");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_MissingLayerCatalog_ReturnsEmptyDatasetsAndNoFailure()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);

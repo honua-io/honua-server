@@ -427,7 +427,14 @@ internal sealed class GroundingService : IGroundingService
 
         return parameter.ValueType switch
         {
-            ProcessParameterValueType.Srid => constraints.SpatialReferenceId.HasValue,
+            // IntentConstraints.SpatialReferenceId is the AOI SRID, so it only
+            // satisfies the generic single-SRID parameter (by convention named
+            // `srid`). Directional parameters like `fromSrid`/`toSrid` on
+            // `geometry.project` must still prompt a clarification because the
+            // AOI SRID cannot disambiguate source vs. target projection.
+            ProcessParameterValueType.Srid =>
+                constraints.SpatialReferenceId.HasValue
+                && string.Equals(parameter.Name, "srid", StringComparison.OrdinalIgnoreCase),
             _ => false
         };
     }
