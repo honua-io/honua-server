@@ -115,6 +115,14 @@ validation rules.
 - **Wire**: JSON-RPC 2.0
 - **Methods**: `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`
 
+Each HTTP POST carries exactly one JSON-RPC request; batch framing is
+deferred. Responses always use HTTP 200 — JSON-RPC errors are returned in
+the response envelope's `error` object rather than as HTTP status codes.
+`tools/call` and `resources/read` require an authenticated principal and
+return an `unauthenticated` error otherwise; `initialize`, `tools/list`,
+and `resources/list` are handshake methods that do not require
+authentication.
+
 ### Tools
 
 | Tool | Status | Domain delegate | Workflow family |
