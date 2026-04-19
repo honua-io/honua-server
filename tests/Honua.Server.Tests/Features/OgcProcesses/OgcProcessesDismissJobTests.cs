@@ -188,6 +188,11 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await _jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _progressStore.Received().SetProgressAsync(
+            JobId,
+            Arg.Any<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingProgress>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -255,6 +260,11 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 
             await backend.DidNotReceive().CancelAsync(
                 Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<CancellationToken>());
+            await progressStore.Received().SetProgressAsync(
+                JobId,
+                Arg.Any<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingProgress>(),
+                Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>());
         }
         finally

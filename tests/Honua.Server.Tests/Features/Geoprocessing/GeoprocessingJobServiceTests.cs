@@ -1626,6 +1626,11 @@ public sealed class GeoprocessingJobServiceTests
 
         await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
             .WithMessage("*terminal state*");
+        await _progressStore.Received().SetProgressAsync(
+            "job-1",
+            Arg.Any<GeoprocessingProgress>(),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

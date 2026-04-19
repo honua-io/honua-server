@@ -283,6 +283,7 @@ internal sealed partial class ExecutionJobReconciler(
                     WorkflowStatus = GeoprocessingWorkflowStatus.AwaitingExecution,
                     CurrentStageStatus = GeoprocessingStageStatus.Pending,
                     CurrentPhase = job.CurrentPhase ?? existing.CurrentPhase,
+                    StepsCompleted = 0,
                     ErrorMessage = null,
                     CompletedAt = null
                 };

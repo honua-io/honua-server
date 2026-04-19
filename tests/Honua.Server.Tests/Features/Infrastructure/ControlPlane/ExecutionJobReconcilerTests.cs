@@ -168,7 +168,9 @@ public sealed class ExecutionJobReconcilerTests
         {
             WorkflowStatus = GeoprocessingWorkflowStatus.Failed,
             CurrentStageStatus = GeoprocessingStageStatus.Failed,
-            ErrorMessage = "Prior attempt failed"
+            ErrorMessage = "Prior attempt failed",
+            StepsCompleted = 8,
+            TotalSteps = 10
         };
         await progressStore.SetProgressAsync("job-local-retry-terminal", staleProgress);
         var backend = new LocalBatchComputeBackend(progressStore, Substitute.For<IJobCancellationNotifier>());
@@ -193,6 +195,8 @@ public sealed class ExecutionJobReconcilerTests
             "stale Failed progress must be reset to AwaitingExecution so admin endpoints do not report terminal state");
         progress.ErrorMessage.Should().BeNull(
             "prior-attempt error message must be cleared on progress reset");
+        progress.StepsCompleted.Should().Be(0,
+            "prior-attempt completion counter must be reset so PercentComplete does not report a stale percentage during requeue");
     }
 
     [Fact]

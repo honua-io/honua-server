@@ -342,6 +342,8 @@ internal static class JobEndpoints
         // Cannot dismiss terminal jobs (succeeded/failed)
         if (OgcProcessesConversionHelpers.IsTerminal(job.Status))
         {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                progressStore, job, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
             OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(job.Status));
             return Results.Json(
                 new OgcProcessError
@@ -476,6 +478,8 @@ internal static class JobEndpoints
                             }
                             else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                             {
+                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                    progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
                                 OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status));
                                 return Results.Json(
                                     new OgcProcessError
@@ -563,6 +567,8 @@ internal static class JobEndpoints
             {
                 if (latest.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
                 {
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        progressStore, latest, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
                     OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(latest.Status));
                     return Results.Json(
                         new OgcProcessError
@@ -656,6 +662,11 @@ internal static class JobEndpoints
                         var terminalStatus = cancelOutcome.Job != null
                             ? OgcProcessesConversionHelpers.ToOgcStatus(cancelOutcome.Job.Status)
                             : "unknown";
+                        if (cancelOutcome.Job != null)
+                        {
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                        }
                         OgcProcessesLog.DismissRejectedTerminal(logger, jobId, terminalStatus);
                         return Results.Json(
                             new OgcProcessError

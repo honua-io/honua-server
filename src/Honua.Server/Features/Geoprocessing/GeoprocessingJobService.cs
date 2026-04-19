@@ -423,6 +423,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (IsTerminal(job.Status))
         {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
             GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, job.Status.ToString());
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
@@ -525,6 +527,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 return;
             }
 
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, latest, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
             GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, latest.Status.ToString());
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' is in terminal state '{latest.Status}' and cannot be cancelled.");
@@ -543,6 +547,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
                 return;
             case ExecutionJobCancellationState.TerminalConflict:
+                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                    _progressStore, cancelOutcome.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
                 GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, cancelOutcome.Job!.Status.ToString());
                 throw new GeoprocessingPreconditionFailedException(
                     $"Job '{jobId}' reached terminal state '{cancelOutcome.Job.Status}' before cancellation could be applied.");
@@ -662,6 +668,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (IsTerminal(job.Status))
         {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
             return job.Status == ExecutionJobStatus.Cancelled
                 ? new(RemoteCancelOutcome.Delegated)
                 : new(RemoteCancelOutcome.TerminalConflict, job.Status);
@@ -734,6 +742,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
             else if (IsTerminal(fresh.Status))
             {
+                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                    _progressStore, fresh, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return new(RemoteCancelOutcome.TerminalConflict, fresh.Status);
             }
             else
