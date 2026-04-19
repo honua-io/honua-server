@@ -114,6 +114,16 @@ internal sealed class McpOperatorSurface
             return null;
         }
 
+        // Tag the ambient activity with the MCP protocol and JSON-RPC method as
+        // early as possible so every dispatched method — including the handler-
+        // less ones (initialize, tools/list, resources/list,
+        // resources/templates/list) and the anonymous auth short-circuits in
+        // CallToolAsync / ReadResourceAsync — shows up alongside gRPC and
+        // GPServer traffic. Concrete tool and resource handlers override the
+        // operation tag with their operation name (e.g. "ExecutePlan",
+        // "GetJob") further down the call stack.
+        McpTelemetry.EnrichActivity(request.Method);
+
         try
         {
             return request.Method switch
@@ -205,6 +215,17 @@ internal sealed class McpOperatorSurface
         // already use so MCP clients can drive a single reauth flow.
         if (httpContext.User.Identity is null || !httpContext.User.Identity.IsAuthenticated)
         {
+            // Emit the same honua.mcp.tool.call counter sample and
+            // McpLog.AuthorizationDenied entry that concrete tool handlers emit
+            // on failure, using `unknown` sentinels for tool name and workflow
+            // family because the dispatcher rejected the call before resolving
+            // the requested tool.
+            McpTelemetry.ToolCallCount.Add(
+                1,
+                new KeyValuePair<string, object?>("tool_name", McpTelemetry.UnknownToolName),
+                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
+                new KeyValuePair<string, object?>("workflow_family", McpTelemetry.WorkflowFamily.Unknown));
+            McpLog.AuthorizationDenied(_logger, "tools/call", authenticated: false);
             var authResult = McpToolHelpers.ErrorResult(
                 new GeoprocessingAuthorizationException(requiresAuthentication: true));
             return SuccessResponse(request.Id, authResult, McpJsonContext.Default.McpToolsCallResult);
@@ -303,6 +324,15 @@ internal sealed class McpOperatorSurface
         // leaking the protocol-level `invalid_argument`/`not_found` surface.
         if (httpContext.User.Identity is null || !httpContext.User.Identity.IsAuthenticated)
         {
+            // Emit the same honua.mcp.resource.read counter sample and
+            // McpLog.AuthorizationDenied entry that concrete resource handlers
+            // emit on failure, using the `unknown` family sentinel because the
+            // dispatcher rejected the read before resolving the URI family.
+            McpTelemetry.ResourceReadCount.Add(
+                1,
+                new KeyValuePair<string, object?>("resource_family", McpTelemetry.ResourceFamily.Unknown),
+                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+            McpLog.AuthorizationDenied(_logger, "resources/read", authenticated: false);
             return ErrorResponse(request.Id, McpErrorMapper.Unauthenticated());
         }
 

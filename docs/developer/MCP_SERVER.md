@@ -535,14 +535,31 @@ through this error path.
 - `honua.mcp.resource.read` — emitted today, tagged by `resource_family`, `status`
 - `honua.mcp.boundary.rejection` — reserved counter tagged by `rejection_reason` for future taxonomy non-goal rejections
 
-Activities emitted inside the surface are tagged with
-`honua.protocol = "Mcp"` so spans roll up alongside gRPC and GPServer
-traffic. Contract-first stub tools and resources increment
+The dispatcher tags the ambient activity with `honua.protocol = "Mcp"`
+and `honua.operation = <method>` as soon as the JSON-RPC method has been
+validated, so `initialize`, `tools/list`, `resources/list`, and
+`resources/templates/list` spans — plus the anonymous auth short-circuits
+in `tools/call` and `resources/read` — all roll up alongside gRPC and
+GPServer traffic. Concrete tool and resource handlers override the
+operation tag with their operation name (e.g. `ExecutePlan`, `GetJob`).
+
+Contract-first stub tools and resources increment
 `honua.mcp.tool.call` / `honua.mcp.resource.read` with
 `status = "not_implemented"`, so dashboards can distinguish stubs from
 functional paths without inspecting response bodies. Functional tools and
 resources emit `status = "ok"` on success and `status = "error"` on
 failure.
+
+When the dispatcher rejects `tools/call` or `resources/read` for an
+anonymous caller — before the tool or URI is resolved — it emits the
+same counters with sentinel tag values so the auth-denial path stays
+observable:
+
+- `honua.mcp.tool.call` → `tool_name = "unknown"`, `status = "error"`, `workflow_family = "unknown"`
+- `honua.mcp.resource.read` → `resource_family = "unknown"`, `status = "error"`
+
+Both paths also emit `McpLog.AuthorizationDenied` with the JSON-RPC
+method as the `target` and `authenticated = false`.
 
 ### Source
 

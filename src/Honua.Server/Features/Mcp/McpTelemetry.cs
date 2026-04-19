@@ -52,6 +52,9 @@ internal static class McpTelemetry
 
     /// <summary>
     /// Workflow-family tag values aligned with the taxonomy capability matrix.
+    /// <see cref="Unknown"/> is the sentinel emitted when the dispatcher rejects
+    /// a <c>tools/call</c> before resolving the tool name (e.g. anonymous auth
+    /// denial) so dashboards still see a counter sample.
     /// </summary>
     public static class WorkflowFamily
     {
@@ -59,10 +62,14 @@ internal static class McpTelemetry
         public const string Execution = "execution";
         public const string Lifecycle = "lifecycle";
         public const string Results = "results";
+        public const string Unknown = "unknown";
     }
 
     /// <summary>
     /// Resource-family tag values matching registered MCP URI families.
+    /// <see cref="Unknown"/> is the sentinel emitted when the dispatcher rejects
+    /// a <c>resources/read</c> before resolving the URI (e.g. anonymous auth
+    /// denial) so dashboards still see a counter sample.
     /// </summary>
     public static class ResourceFamily
     {
@@ -70,7 +77,14 @@ internal static class McpTelemetry
         public const string JobResults = "job-results";
         public const string Workspaces = "workspaces";
         public const string Catalog = "catalog";
+        public const string Unknown = "unknown";
     }
+
+    /// <summary>
+    /// Sentinel <c>tool_name</c> tag value emitted when the dispatcher rejects
+    /// a <c>tools/call</c> before the requested tool name is known.
+    /// </summary>
+    public const string UnknownToolName = "unknown";
 
     /// <summary>
     /// Rejection-reason tag values for <see cref="BoundaryRejectionCount"/>.
