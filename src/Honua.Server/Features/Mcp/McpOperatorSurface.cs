@@ -197,6 +197,19 @@ internal sealed class McpOperatorSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // Per docs/developer/MCP_SERVER.md the authenticated principal gate
+        // precedes any protocol-level param or tool-name validation so an
+        // anonymous caller sees the `unauthenticated` reauthentication signal
+        // regardless of whether the requested tool exists. Surfaces the error
+        // through the same isError:true envelope tool-execution auth failures
+        // already use so MCP clients can drive a single reauth flow.
+        if (httpContext.User.Identity is null || !httpContext.User.Identity.IsAuthenticated)
+        {
+            var authResult = McpToolHelpers.ErrorResult(
+                new GeoprocessingAuthorizationException(requiresAuthentication: true));
+            return SuccessResponse(request.Id, authResult, McpJsonContext.Default.McpToolsCallResult);
+        }
+
         McpToolsCallParams? parameters;
         try
         {
@@ -284,6 +297,15 @@ internal sealed class McpOperatorSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // Authenticate at the dispatcher entry before URI parsing or handler
+        // lookup so the contract's `unauthenticated` signal reaches anonymous
+        // callers even for malformed params or unknown URIs, rather than
+        // leaking the protocol-level `invalid_argument`/`not_found` surface.
+        if (httpContext.User.Identity is null || !httpContext.User.Identity.IsAuthenticated)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.Unauthenticated());
+        }
+
         McpResourcesReadParams? parameters;
         try
         {

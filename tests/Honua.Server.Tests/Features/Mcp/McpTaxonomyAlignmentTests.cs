@@ -192,6 +192,48 @@ public sealed class McpTaxonomyAlignmentTests
         outputsEnum.Should().BeEquivalentTo(Enum.GetNames<ArtifactKind>());
     }
 
+    [UnitTest]
+    public void PlanSchema_DoesNotRequirePlanIdOrSteps_SoValidatorCanReportViolations()
+    {
+        // validate_plan / dry_run_plan deliberately accept partial plans so the
+        // runtime can report EMPTY_PLAN_ID and EMPTY_STEPS as structured
+        // violations. Marking these fields required in the published schema
+        // would cause strict JSON-schema clients to block inputs the validator
+        // is meant to inspect.
+        var plan = McpToolSchemas.PlanArgumentSchema
+            .GetProperty("properties").GetProperty("plan");
+
+        var required = plan.GetProperty("required")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        required.Should().BeEmpty();
+
+        plan.GetProperty("properties").GetProperty("steps")
+            .TryGetProperty("minItems", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ExecutePlanSchema_RequiresPlanIdAndNonEmptySteps_ToMatchSubmissionGuards()
+    {
+        // SubmitJobAsync rejects missing planId and empty steps at ingest; the
+        // published schema must match so schema-driven clients do not send
+        // payloads the server always refuses.
+        var plan = McpToolSchemas.ExecutePlanArgumentSchema
+            .GetProperty("properties").GetProperty("plan");
+
+        var required = plan.GetProperty("required")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        required.Should().BeEquivalentTo("planId", "steps");
+
+        plan.GetProperty("properties").GetProperty("planId")
+            .GetProperty("minLength").GetInt32().Should().Be(1);
+        plan.GetProperty("properties").GetProperty("steps")
+            .GetProperty("minItems").GetInt32().Should().Be(1);
+    }
+
     private static string[] ExtractEnumValues(JsonElement root, params string[] path)
     {
         var current = root;

@@ -51,14 +51,22 @@ internal static class McpToolSchemas
 
     /// <summary>
     /// Schema for <see cref="Models.McpPlanArgument"/>, shared by validate_plan
-    /// and dry_run_plan.
+    /// and dry_run_plan. The validator intentionally reports missing
+    /// <c>planId</c> and empty <c>steps</c> as structured violations rather
+    /// than rejecting them at ingest, so the published schema does not mark
+    /// those fields as required — otherwise schema-driven clients would block
+    /// inputs the validator is meant to inspect.
     /// </summary>
-    public static readonly JsonElement PlanArgumentSchema = Parse(BuildPlanArgumentSchema(includeIdempotencyKey: false));
+    public static readonly JsonElement PlanArgumentSchema = Parse(BuildPlanArgumentSchema(requireExecutableShape: false, includeIdempotencyKey: false));
 
     /// <summary>
-    /// Schema for <see cref="Models.McpExecutePlanArgument"/>.
+    /// Schema for <see cref="Models.McpExecutePlanArgument"/>. Execute rejects
+    /// missing <c>planId</c> and empty <c>steps</c> at submission time, so the
+    /// published schema marks both as required and pins <c>steps</c> to
+    /// <c>minItems: 1</c> — this keeps the schema consistent with the
+    /// submission-path guard in <see cref="Geoprocessing.GeoprocessingJobService"/>.
     /// </summary>
-    public static readonly JsonElement ExecutePlanArgumentSchema = Parse(BuildPlanArgumentSchema(includeIdempotencyKey: true));
+    public static readonly JsonElement ExecutePlanArgumentSchema = Parse(BuildPlanArgumentSchema(requireExecutableShape: true, includeIdempotencyKey: true));
 
     /// <summary>
     /// Schema for <see cref="Models.McpCancelJobArgument"/>.
@@ -70,12 +78,25 @@ internal static class McpToolSchemas
     /// </summary>
     public static readonly JsonElement EmptyObjectSchema = Parse(EmptyObjectSchemaJson);
 
-    private static string BuildPlanArgumentSchema(bool includeIdempotencyKey)
+    private static string BuildPlanArgumentSchema(bool requireExecutableShape, bool includeIdempotencyKey)
     {
         var stepKindEnum = JsonStringArray(PlanStepKindNames);
         var stepKindExamples = string.Join(", ", PlanStepKindNames);
         var artifactKindEnum = JsonStringArray(ArtifactKindNames);
         var artifactKindExamples = string.Join(", ", ArtifactKindNames);
+
+        // Validate/dry-run tools must accept partial plans so the server can
+        // report EMPTY_PLAN_ID/EMPTY_STEPS as structured violations; execute
+        // refuses those shapes outright and the schema matches that guard.
+        var planRequired = requireExecutableShape
+            ? """["planId", "steps"]"""
+            : "[]";
+        var planIdSchema = requireExecutableShape
+            ? """{ "type": "string", "minLength": 1 }"""
+            : """{ "type": "string" }""";
+        var stepsMinItems = requireExecutableShape
+            ? "\"minItems\": 1,\n                      "
+            : string.Empty;
 
         var builder = new StringBuilder();
         builder.Append(
@@ -87,13 +108,13 @@ internal static class McpToolSchemas
                 "plan": {
                   "type": "object",
                   "description": "Canonical analysis plan expressed as MCP plan input.",
-                  "required": ["steps"],
+                  "required": {{planRequired}},
                   "properties": {
-                    "planId": { "type": "string" },
+                    "planId": {{planIdSchema}},
                     "intentId": { "type": "string" },
                     "steps": {
                       "type": "array",
-                      "items": {
+                      {{stepsMinItems}}"items": {
                         "type": "object",
                         "required": ["stepId", "kind"],
                         "properties": {

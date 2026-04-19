@@ -228,4 +228,118 @@ public sealed class McpAuthorizationTests
         workspace.Should().BeAssignableTo<IStubMcpResource>();
         catalog.Should().BeAssignableTo<IStubMcpResource>();
     }
+
+    // The dispatcher-level auth gate runs before param parsing and tool/resource
+    // lookup, so malformed payloads and unknown names from anonymous callers
+    // still surface the `unauthenticated` reauthentication signal instead of
+    // leaking the protocol-level `invalid_argument`/`not_found` codes.
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_AnonymousToolsCall_WithUnknownTool_ReturnsUnauthenticatedIsError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-1\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("""{"name":"honua_does_not_exist","arguments":{}}""")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be(McpErrorMapper.Codes.Unauthenticated);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_AnonymousToolsCall_WithMalformedParams_ReturnsUnauthenticatedIsError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-2\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("[\"not\",\"an\",\"object\"]")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be(McpErrorMapper.Codes.Unauthenticated);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public async Task DispatchAsync_AnonymousResourcesRead_WithUnknownUri_ReturnsUnauthenticatedJsonRpcError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-3\""),
+            Method = "resources/read",
+            Params = McpTestFactory.ParseJson("""{"uri":"honua://unknown/thing"}""")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().NotBeNull();
+        response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
+        response.Error.Data.RequiresReauthentication.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read")]
+    public async Task DispatchAsync_AnonymousResourcesRead_WithMalformedParams_ReturnsUnauthenticatedJsonRpcError()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"u-4\""),
+            Method = "resources/read",
+            Params = McpTestFactory.ParseJson("\"not-an-object\"")
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AnonymousHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().NotBeNull();
+        response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
+    }
+
+    private McpOperatorSurface BuildSurface()
+    {
+        var tools = new IMcpTool[]
+        {
+            new ValidatePlanTool(_jobService, NullLogger<ValidatePlanTool>.Instance),
+            new DryRunPlanTool(_jobService, NullLogger<DryRunPlanTool>.Instance),
+            new ExecutePlanTool(_jobService, NullLogger<ExecutePlanTool>.Instance),
+            new CancelJobTool(_jobService, NullLogger<CancelJobTool>.Instance)
+        };
+        var resources = new IMcpResource[]
+        {
+            new JobStatusResource(_jobService, NullLogger<JobStatusResource>.Instance),
+            new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance),
+            new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance),
+            new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance)
+        };
+        return new McpOperatorSurface(tools, resources, NullLogger<McpOperatorSurface>.Instance);
+    }
 }

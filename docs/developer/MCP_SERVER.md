@@ -121,9 +121,17 @@ rather than as HTTP status codes. JSON-RPC notifications (no `id` field, or
 any `notifications/*` method) instead return HTTP 202 Accepted with an
 empty body, as required by the MCP HTTP transport.
 `tools/call` and `resources/read` require an authenticated principal and
-return an `unauthenticated` error otherwise; `initialize`, `tools/list`,
-`resources/list`, and `resources/templates/list` are handshake methods that
-do not require authentication.
+return an `unauthenticated` error otherwise. The authentication gate runs
+*before* param parsing, tool-name matching, or resource-URI matching, so
+anonymous callers see the `unauthenticated` signal even when their payload
+is malformed or targets an unknown tool/URI — this keeps reauth the single
+recoverable path instead of masking it with `invalid_argument` or
+`not_found`. `tools/call` surfaces the signal through the isError envelope
+(`result.isError: true`, `result.structuredContent.code: "unauthenticated"`)
+to stay consistent with the MCP 2025-03-26 tool-execution error contract;
+`resources/read` surfaces it as a JSON-RPC error. `initialize`,
+`tools/list`, `resources/list`, and `resources/templates/list` are
+handshake methods that do not require authentication.
 
 #### Request framing and ids
 
@@ -387,9 +395,18 @@ grant receive a `permission_denied` error, matching the functional tools.
 #### Tool payload notes
 
 - `honua_validate_plan` and `honua_dry_run_plan` accept `{ "plan": ... }`.
-  The published schema requires `plan.steps[*].stepId` and `kind`.
-  Unsupported step kinds or output artifact kinds fail with
-  `invalid_argument` before the domain service is invoked.
+  The validator is designed to report `EMPTY_PLAN_ID` and `EMPTY_STEPS` as
+  structured violations, so the published schema for these tools does not
+  require `plan.planId` or `plan.steps` at the top level. Steps that *are*
+  supplied must still provide `stepId` and `kind`; unsupported step kinds
+  or output artifact kinds fail with `invalid_argument` before the domain
+  service is invoked.
+- `honua_execute_plan` publishes a stricter variant of the same schema:
+  `plan.planId` and `plan.steps` are required and `plan.steps` carries
+  `minItems: 1`, matching the server-side guard in
+  `SubmitJobAsync`. Schema-driven MCP clients therefore block execute
+  payloads the server would always reject while still being able to submit
+  partial plans to the validator.
 - `plan.steps[*].kind` accepts the canonical step kinds
   `QueryFeatures`, `Geoprocess`, `Aggregate`, `RenderMap`, and `Export`
   (case-insensitive).
