@@ -117,7 +117,11 @@ internal static class GroundingToolMapper
             return null;
         }
 
-        if (!Enum.TryParse<WorkflowFamily>(hint, ignoreCase: true, out var parsed))
+        // Enum.TryParse accepts underlying numeric strings (e.g. "999") as
+        // undefined enum values, so pair it with Enum.IsDefined to keep
+        // non-contract strings from leaking into workflowFamily.value.
+        if (!Enum.TryParse<WorkflowFamily>(hint, ignoreCase: true, out var parsed)
+            || !Enum.IsDefined(parsed))
         {
             throw new GeoprocessingValidationException(
                 $"Unknown workflowFamilyHint '{hint}'. Expected one of: {string.Join(", ", Enum.GetNames<WorkflowFamily>())}.");
@@ -133,7 +137,8 @@ internal static class GroundingToolMapper
             return AssumptionPolicy.AskWhenMaterial;
         }
 
-        if (!Enum.TryParse<AssumptionPolicy>(value, ignoreCase: true, out var parsed))
+        if (!Enum.TryParse<AssumptionPolicy>(value, ignoreCase: true, out var parsed)
+            || !Enum.IsDefined(parsed))
         {
             throw new GeoprocessingValidationException(
                 $"Unknown assumptionPolicy '{value}'. Expected one of: {string.Join(", ", Enum.GetNames<AssumptionPolicy>())}.");

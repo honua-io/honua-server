@@ -71,6 +71,35 @@ public sealed class GroundingToolMapperTests
     }
 
     [UnitTest]
+    public void GroundCandidatesToDomain_NumericWorkflowFamilyHint_ThrowsValidation()
+    {
+        // Enum.TryParse accepts underlying numeric values — the mapper
+        // must reject them so undefined enum strings never reach
+        // workflowFamily.value on the wire.
+        var act = () => GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+        {
+            Goal = "buffer",
+            WorkflowFamilyHint = "999"
+        });
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage("*workflowFamilyHint*");
+    }
+
+    [UnitTest]
+    public void GroundCandidatesToDomain_NumericAssumptionPolicy_ThrowsValidation()
+    {
+        var act = () => GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+        {
+            Goal = "buffer",
+            AssumptionPolicy = "999"
+        });
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage("*assumptionPolicy*");
+    }
+
+    [UnitTest]
     public void GroundCandidatesToDomain_DefaultsAssumptionPolicyToAskWhenMaterial()
     {
         var request = GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
