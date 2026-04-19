@@ -314,7 +314,7 @@ semantics.
 
 | Canonical Noun | Domain Type | Purpose |
 | --- | --- | --- |
-| Process definition | `ProcessDefinition` (with `ProcessParameterSpec` / `ProcessParameterValueType`) discoverable via `IProcessCatalog` | Discoverable unit of geoprocessing capability; the built-in catalog seeds 19 processes across four families (10 `geometry.*`, 4 `analytics.*`, 2 `generalization.*`, 3 `data-management.*`) referenced by `AnalysisPlanStep.ProcessId` |
+| Process definition | `ProcessDefinition` (with `ProcessParameterSpec` / `ProcessParameterValueType`) discoverable via `IProcessCatalog` | Discoverable unit of geoprocessing capability; the built-in catalog seeds 34 processes across seven families (10 `geometry.*`, 4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`, 2 `generalization.*`, 3 `data-management.*`) referenced by `AnalysisPlanStep.ProcessId`. Heavyweight `surface.*` and `raster.*` workloads still flow through the canonical job/runtime path and optional executor adapters (#727) — the catalog adds declarations and plan validation, not a new execution surface |
 | Analysis intent | `AnalysisIntent` | Natural-language or structured goal before planning |
 | Analysis plan | `AnalysisPlan` | Executable DAG of steps compiled from a grounded intent |
 | Plan step | `AnalysisPlanStep` | One unit of work in the execution DAG |
@@ -358,7 +358,7 @@ API Processes Part 1 Core contract. Key mappings:
 
 | OGC Concept | Honua Source / V1 implementation |
 | --- | --- |
-| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); the internal `IProcessCatalog` now enumerates 19 built-in processes across `geometry.*`, `analytics.*`, `generalization.*`, and `data-management.*`, but per-process projection into the adapter surface is follow-on work |
+| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); the internal `IProcessCatalog` now enumerates 34 built-in processes across `geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, and `data-management.*`, but per-process projection into the adapter surface is follow-on work |
 | `GET /processes/{processId}` | V1 static process description with JSON Schema inputs/outputs for the canonical process stub |
 | `POST /processes/{id}/execution` (sync) | Not implemented in V1; synchronous execution returns `501 Not Implemented` |
 | `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
@@ -403,7 +403,7 @@ This ticket builds the canonical process contract. It must:
 This **protocol adapter** is implemented. The adapter:
 
 - Implements OGC API Processes Part 1 Core routes that project canonical process service operations
-- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) in `/processes`; plan submissions are validated against the built-in `IProcessCatalog` (19 seeded processes: 10 `geometry.*`, 4 `analytics.*`, 2 `generalization.*`, 3 `data-management.*`) so unknown process IDs and missing required parameters are rejected at the adapter boundary, but per-process projection into the OGC surface is follow-on work
+- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) in `/processes`; plan submissions are validated against the built-in `IProcessCatalog` (34 seeded processes: 10 `geometry.*`, 4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`, 2 `generalization.*`, 3 `data-management.*`) so unknown process IDs and missing required parameters are rejected at the adapter boundary, but per-process projection into the OGC surface is follow-on work
 - Translates JSON Schema process descriptions from the canonical process stub
 - Validates canonical plan structure at the adapter boundary before durable job creation
 - Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above

@@ -45,7 +45,7 @@ The adapter maps canonical `ExecutionJobStatus` values to OGC status strings:
 
 ## Catalog Validation Semantics
 
-Geoprocess steps are validated against the built-in `IProcessCatalog` (19 seeded processes across `geometry.*`, `analytics.*`, `generalization.*`, and `data-management.*`) before a job is created. The adapter surfaces the following structured violation codes:
+Geoprocess steps are validated against the built-in `IProcessCatalog` (34 seeded processes across `geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, and `data-management.*`) before a job is created. `surface.*` and `raster.*` process declarations are catalog- and validation-only at the adapter boundary; heavyweight execution still routes through the canonical worker boundary (`ISurfaceAnalysisService`, `IRasterStore`, and the optional #727 cloud executor adapters). The adapter surfaces the following structured violation codes:
 
 | Code | Meaning |
 |---|---|
@@ -70,6 +70,19 @@ Per-process semantic rules mirror the live request handlers so plans accepted he
 | `data-management.copy-features` | — | — | — | `objectIds` parsed as comma-separated integers when supplied |
 | `data-management.delete-features` | — | — | — | at least one of `where` / `objectIds` must be supplied (`INVALID_PARAMETER_VALUE`) so deletion is never unbounded |
 | `data-management.calculate-field` | — | — | — | `fieldName` must be a simple unquoted identifier (letters, digits, underscore; first char letter or underscore); `expression` is re-gated at execution time by `FeatureServer.Edits.CalculateFieldValue`'s allow-list |
+| `surface.slope` | `units` ∈ {`degrees`, `percent`, `radians`} | — | `zFactor` > 0 (finite) | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `surface.aspect` | — | — | — | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `surface.hillshade` | — | — | `azimuth` ∈ [0, 360] degrees; `altitude` ∈ [0, 90] degrees; `zFactor` > 0 | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `surface.rugosity-tri`, `surface.rugosity-tpi`, `surface.roughness` | — | — | `windowRadius` exactly 1 (PostGIS ST_TRI/ST_TPI/ST_Roughness only support a 3×3 focal neighborhood today) | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `raster.clip` | — | — | — | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `raster.reproject` | `resampling` ∈ {`nearestneighbor`, `bilinear`, `cubic`, `lanczos`} | — | — | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `raster.statistics` | — | — | optional `bands` parses as comma-separated positive integers | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `raster.histogram` | — | — | `binCount` ≥ 1; optional `bands` parses as comma-separated positive integers | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `raster.zonal-statistics` | `statistics` ∈ {`count`, `sum`, `mean`, `min`, `max`, `stddev`, `variance`} (comma-separated) | — | `band` ≥ 1 | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `conversion.geometry-format` | `target` ∈ {`wkt`, `geojson`, `wkb`, `ewkt`} | — | — | — |
+| `conversion.feature-project` | — | — | — | — |
+| `conversion.raster-format` | `targetFormat` ∈ {`GTiff`, `PNG`, `JPEG`, `COG`} (case-insensitive, aliases accepted: `geotiff`, `tiff`, `tif`, `jpg`) | — | — | optional `rasterId` must be a positive 64-bit integer when supplied |
+| `conversion.raster-reproject` | `resampling` ∈ {`nearestneighbor`, `bilinear`, `cubic`, `lanczos`} | — | — | optional `rasterId` must be a positive 64-bit integer when supplied |
 
 Structured Text-typed inputs that the handlers parse without runtime services are validated here too: `outStatistics` is parsed as JSON (single object or array) and each entry must carry `statisticType` ∈ {`count`, `sum`, `min`, `max`, `avg`, `stddev`, `var`}, `onStatisticField`, and `outStatisticFieldName`, each as a JSON string (numeric, boolean, or object tokens surface as `INVALID_PARAMETER_VALUE` rather than escaping as 500s); `objectIds` must be comma-separated integer feature identifiers; and `spatialRel` rejects the distance-based variants (`esriSpatialRelWithinDistance`, `esriSpatialRelBeyondDistance`) only when a `geometry` filter is also supplied, matching `AnalyticsFeatureQueryFactory` (which does not consult `spatialRel` without geometry) so the validator does not block plans the handler would accept.
 
@@ -86,7 +99,8 @@ Workspace and retention configuration is shared with the canonical geoprocessing
 ## V1 Limitations
 
 - **Async-only**: synchronous execution returns `501 Not Implemented` when the `Prefer: respond-async` header is absent.
-- **Single process projection**: the OGC adapter lists one canonical process (`honua-geoprocessing`) even though the internal catalog now enumerates 19 built-in processes across four families (`geometry.*`, `analytics.*`, `generalization.*`, `data-management.*`). Per-process projection into `/processes` and `/processes/{id}` is follow-on adapter work; executions dispatch through the canonical process and are validated against the built-in catalog at the adapter boundary.
+- **Single process projection**: the OGC adapter lists one canonical process (`honua-geoprocessing`) even though the internal catalog now enumerates 34 built-in processes across seven families (`geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`, `generalization.*`, `data-management.*`). Per-process projection into `/processes` and `/processes/{id}` is follow-on adapter work; executions dispatch through the canonical process and are validated against the built-in catalog at the adapter boundary.
+- **Heavyweight surface/raster execution**: `surface.*` and `raster.*` plan steps are declared in the catalog for discovery and plan validation today. Execution flows through `ISurfaceAnalysisService` / `IRasterStore` on the canonical worker boundary, optionally routed through the #727 cloud executor adapters — the OGC adapter does not short-circuit that path.
 - **Destructive data-management plans require approval**: submission and execution of plans that reference `data-management.delete-features` or `data-management.calculate-field` pass through `OperatorApprovalGate` with `IsDestructive = true`. When `Operator:Approval:DestructiveActionsRequireApproval` is on, these calls hard-fail at the gate before any job or progress record is created — gRPC `FailedPrecondition`, OGC `403` with problem type `about:blank` and title "Approval required" — rather than persisting an `AwaitingApproval` progress entry (pending-approval persistence is follow-on work). Non-destructive `data-management.copy-features` does not set the flag because it materializes a new target layer.
 - **Results endpoint**: Succeeded jobs return `200 OK` with a document-mode, by-value JSON body keyed by stable output identifiers (OGC API Processes Part 1 §7.11.1). V1's canonical process declares no value-typed outputs so the body is an empty object until the execution engine populates result storage. By-reference transmission remains deferred.
 - **Planned result document shape**: once result storage is populated, successful `/results` responses will contain outputs only. Job status, summary, and error state remain on job/status endpoints rather than inside `/results`.

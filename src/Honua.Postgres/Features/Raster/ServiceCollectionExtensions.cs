@@ -50,6 +50,13 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<ILogger<PostgresCloudCogStore>>(),
                 schemaName));
 
+        // Register surface-analysis service
+        services.AddScoped<ISurfaceAnalysisService>(provider =>
+            new PostgresSurfaceAnalysisService(
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ILogger<PostgresSurfaceAnalysisService>>(),
+                schemaName));
+
         return services;
     }
 }

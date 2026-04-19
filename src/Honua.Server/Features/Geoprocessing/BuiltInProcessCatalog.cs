@@ -259,6 +259,228 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
 
         // -----------------------------------------------------------------------
+        // Surface-analysis operations (6)
+        // DEM-derived raster products. These are catalog-first declarations only;
+        // heavyweight execution still flows through the canonical job/runtime path.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "surface.slope",
+            Title = "Slope",
+            Description = "Computes a slope raster from an elevation surface using PostGIS ST_Slope.",
+            Category = "surface",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("units", "Units", "Slope units. Allowed values: degrees, percent, radians. Defaults to degrees.", ProcessParameterValueType.Text, defaultValue: "degrees"),
+                Param("zFactor", "Z Factor", "Vertical-to-horizontal scale factor. Must be > 0. Defaults to 1.0.", ProcessParameterValueType.FloatingPoint, defaultValue: "1.0"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.aspect",
+            Title = "Aspect",
+            Description = "Computes a compass-bearing aspect raster from an elevation surface using PostGIS ST_Aspect.",
+            Category = "surface",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.hillshade",
+            Title = "Hillshade",
+            Description = "Computes a hillshade raster using illumination azimuth, altitude, and vertical scale inputs.",
+            Category = "surface",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("azimuth", "Azimuth", "Illumination azimuth in degrees clockwise from north. Must be between 0 and 360. Defaults to 315.", ProcessParameterValueType.FloatingPoint, defaultValue: "315"),
+                Param("altitude", "Altitude", "Illumination altitude above the horizon in degrees. Must be between 0 and 90. Defaults to 45.", ProcessParameterValueType.FloatingPoint, defaultValue: "45"),
+                Param("zFactor", "Z Factor", "Vertical-to-horizontal scale factor. Must be > 0. Defaults to 1.0.", ProcessParameterValueType.FloatingPoint, defaultValue: "1.0"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.rugosity-tri",
+            Title = "Terrain Ruggedness Index",
+            Description = "Computes a terrain ruggedness index raster using PostGIS ST_TRI. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
+            Category = "surface",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("windowRadius", "Window Radius", "Neighborhood radius in pixels. Must currently be 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.rugosity-tpi",
+            Title = "Topographic Position Index",
+            Description = "Computes a topographic position index raster using PostGIS ST_TPI. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
+            Category = "surface",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("windowRadius", "Window Radius", "Neighborhood radius in pixels. Must currently be 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "surface.roughness",
+            Title = "Roughness",
+            Description = "Computes a roughness raster using PostGIS ST_Roughness. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
+            Category = "surface",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("windowRadius", "Window Radius", "Neighborhood radius in pixels. Must currently be 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+
+        // -----------------------------------------------------------------------
+        // Raster operations (5)
+        // Raster analysis and mutation workflows surfaced through the seeded
+        // process catalog rather than a separate discovery plane.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "raster.clip",
+            Title = "Clip Raster",
+            Description = "Clips a raster to the supplied boundary geometry.",
+            Category = "raster",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("boundary", "Boundary", "Clip boundary geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("boundarySrid", "Boundary SRID", "Spatial reference identifier of the boundary geometry when it differs from the raster SRID.", ProcessParameterValueType.Srid),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.reproject",
+            Title = "Reproject Raster",
+            Description = "Reprojects a raster into a new spatial reference using the requested resampling algorithm.",
+            Category = "raster",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.statistics",
+            Title = "Raster Statistics",
+            Description = "Computes per-band statistics for a raster. Band selection is optional and uses a comma-separated list.",
+            Category = "raster",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("bands", "Bands", "Optional comma-separated 1-based band numbers to analyze. When omitted, all bands are analyzed.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.histogram",
+            Title = "Raster Histogram",
+            Description = "Computes per-band histograms for a raster.",
+            Category = "raster",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("bands", "Bands", "Optional comma-separated 1-based band numbers to analyze. When omitted, all bands are analyzed.", ProcessParameterValueType.Text),
+                Param("binCount", "Bin Count", "Histogram bin count. Must be a positive integer. Defaults to 256.", ProcessParameterValueType.WholeNumber, defaultValue: "256"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "raster.zonal-statistics",
+            Title = "Zonal Statistics",
+            Description = "Computes zonal aggregates by intersecting a raster with polygonal zones from another layer.",
+            Category = "raster",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones.", ProcessParameterValueType.LayerId, required: true),
+                Param("band", "Band", "1-based raster band to aggregate. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
+                Param("statistics", "Statistics", "Comma-separated stat names. Allowed values: count, sum, mean, min, max, stddev, variance.", ProcessParameterValueType.Text, defaultValue: "count,mean,stddev,min,max,sum"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Table]
+        },
+
+        // -----------------------------------------------------------------------
+        // Conversion operations (4)
+        // Explicit format/CRS conversion idioms so adapters can expose them
+        // without inventing a second semantic layer.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "conversion.geometry-format",
+            Title = "Geometry Format Conversion",
+            Description = "Converts a geometry into another interchange format such as WKT, GeoJSON, WKB, or EWKT.",
+            Category = "conversion",
+            Parameters =
+            [
+                Param("geometry", "Geometry", "Input geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
+                Param("target", "Target Format", "Target geometry encoding. Allowed values: wkt, geojson, wkb, ewkt.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "conversion.feature-project",
+            Title = "Project Feature Layer",
+            Description = "Reprojects every feature in a layer into a target spatial reference.",
+            Category = "conversion",
+            Parameters =
+            [
+                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "conversion.raster-format",
+            Title = "Raster Format Conversion",
+            Description = "Exports a raster into another raster format such as GTiff, PNG, JPEG, or COG.",
+            Category = "conversion",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("targetFormat", "Target Format", "Target raster format. Allowed values: GTiff, PNG, JPEG, COG.", ProcessParameterValueType.Text, required: true),
+                Param("compression", "Compression", "Optional format-specific compression hint.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "conversion.raster-reproject",
+            Title = "Raster CRS Conversion",
+            Description = "Exports a raster into another spatial reference as an explicit conversion workflow.",
+            Category = "conversion",
+            Parameters =
+            [
+                .. SharedRasterSourceParameters,
+                Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+                Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster]
+        },
+
+        // -----------------------------------------------------------------------
         // Generalization operations (2)
         // Layer-level counterparts of the geometry-scoped operations: apply a
         // generalization transform across every geometry in a target layer.
@@ -364,6 +586,15 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         Param("spatialRel", "Spatial Relationship", "GeoServices spatial relationship (e.g. esriSpatialRelIntersects). Distance-based relationships are rejected here; use the operation-specific 'distance' or the 'where' clause instead.", ProcessParameterValueType.Text),
         Param("time", "Time Filter", "Temporal filter (instant or extent) following the FeatureServer time convention.", ProcessParameterValueType.Text),
         Param("timeRelation", "Time Relation", "Temporal predicate paired with the 'time' filter.", ProcessParameterValueType.Text),
+    ];
+
+    // Shared layer/raster selector used by surface, raster, and raster-conversion
+    // families. `rasterId` is modeled as Text rather than WholeNumber so the
+    // validator can admit full 64-bit ids instead of truncating to Int32.
+    private static readonly ProcessParameterSpec[] SharedRasterSourceParameters =
+    [
+        Param("layerId", "Layer", "Target raster layer identifier.", ProcessParameterValueType.LayerId, required: true),
+        Param("rasterId", "Raster", "Optional raster identifier. When omitted, the primary raster for the layer is used. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
     ];
 
     private static ProcessParameterSpec Param(

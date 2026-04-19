@@ -112,4 +112,16 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Debug,
         Message = "Catalog query for layer {LayerId}: returned={ReturnedCount}, total={TotalCount}, exceededTransferLimit={ExceededTransferLimit}")]
     public static partial void CatalogQueried(ILogger logger, int layerId, int returnedCount, long totalCount, bool exceededTransferLimit);
+
+    [LoggerMessage(
+        EventId = 7817,
+        Level = LogLevel.Debug,
+        Message = "Computed zonal statistics for layer {LayerId}, raster {RasterId} against zones layer {ZonesLayerId}: {RowCount} rows, band {Band}")]
+    public static partial void ZonalStatisticsComputed(ILogger logger, int layerId, long rasterId, int zonesLayerId, int band, int rowCount);
+
+    [LoggerMessage(
+        EventId = 7818,
+        Level = LogLevel.Debug,
+        Message = "Computed surface raster ({Operation}) from layer {LayerId}, source raster {SourceRasterId} → output raster {OutputRasterId} in layer {OutputLayerId}")]
+    public static partial void SurfaceRasterComputed(ILogger logger, string operation, int layerId, long sourceRasterId, int outputLayerId, long outputRasterId);
 }

@@ -177,16 +177,21 @@ model. Must not add domain types to `Honua.Core`.
 - geospatial-grpc#6: align the public gRPC contract with the canonical
   `process_service.proto`
 - Formalize `ProcessDefinition` as a first-class domain type — **implemented** in
-  honua-server#735 and extended in honua-server#737. `ProcessDefinition`,
-  `ProcessParameterSpec`, and `ProcessParameterValueType` live in
-  `Honua.Core.Features.Geoprocessing.Domain`, and `IProcessCatalog` now seeds
-  19 built-in processes across four categories (10 `geometry.*`, 4 `analytics.*`,
+  honua-server#735 and extended in honua-server#736 and honua-server#737.
+  `ProcessDefinition`, `ProcessParameterSpec`, and `ProcessParameterValueType`
+  live in `Honua.Core.Features.Geoprocessing.Domain`, and `IProcessCatalog` now
+  seeds 34 built-in processes across seven categories (10 `geometry.*`,
+  4 `analytics.*`, 6 `surface.*`, 5 `raster.*`, 4 `conversion.*`,
   2 `generalization.*`, 3 `data-management.*`) that plan validation checks
-  `AnalysisPlanStep.ProcessId` against. Destructive `data-management.*` ids
-  (`delete-features`, `calculate-field`) are classified server-side by
-  `ProcessDestructiveClassifier` so submission and execution route the plan
-  through `OperatorApprovalGate` with `IsDestructive = true` without adding a
-  destruction flag to the canonical `ProcessDefinition`. Per-process projection
-  into the GPServer and OGC API Processes adapter surfaces remains follow-on
-  work
+  `AnalysisPlanStep.ProcessId` against. Heavyweight `surface.*` and `raster.*`
+  processes remain behind the canonical worker boundary — execution routes
+  through `ISurfaceAnalysisService` / `IRasterStore` and (optionally) the
+  pluggable cloud executor adapters from honua-server#727 — so adding the
+  families did not introduce a new execution surface. Destructive
+  `data-management.*` ids (`delete-features`, `calculate-field`) are classified
+  server-side by `ProcessDestructiveClassifier` so submission and execution
+  route the plan through `OperatorApprovalGate` with `IsDestructive = true`
+  without adding a destruction flag to the canonical `ProcessDefinition`.
+  Per-process projection into the GPServer and OGC API Processes adapter
+  surfaces remains follow-on work
 - Consider richer parameter typing when the opaque dictionary proves insufficient

@@ -777,10 +777,13 @@ The lifecycle rules described in this section are the current workspace contract
 
 GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
 Esri clients. Catalog-backed service info, task info, and `submitJob` are
-functional over the built-in `IProcessCatalog` (19 seeded processes across
-`geometry.*`, `analytics.*`, `generalization.*`, and `data-management.*`);
-generic built-in tasks are currently async-only and do not publish a generic
-`execute` route. Destructive `data-management.*` ids
+functional over the built-in `IProcessCatalog` (34 seeded processes across
+`geometry.*`, `analytics.*`, `surface.*`, `raster.*`, `conversion.*`,
+`generalization.*`, and `data-management.*`); generic built-in tasks are
+currently async-only and do not publish a generic `execute` route. Heavyweight
+`surface.*` and `raster.*` processes stay on the canonical worker boundary and
+route through the optional cloud executor adapters from #727 when configured.
+Destructive `data-management.*` ids
 (`delete-features`, `calculate-field`) are classified server-side and route
 through `OperatorApprovalGate` with `IsDestructive = true`. When
 `Operator:Approval:DestructiveActionsRequireApproval` is on, submissions
