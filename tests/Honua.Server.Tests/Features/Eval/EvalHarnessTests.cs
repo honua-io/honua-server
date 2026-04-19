@@ -26,28 +26,17 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         _fixture = fixture ?? throw new ArgumentNullException(nameof(fixture));
     }
 
-    /// <summary>Analysis-mode scenario: buffer seeded places and summarize overlap with roads.</summary>
-    [IntegrationTest]
+    /// <summary>
+    /// Runs every scenario discovered under <c>tests/Eval/scenarios/</c> so that adding
+    /// a new JSON scenario automatically contributes to <c>eval-report.json</c> without
+    /// requiring a code change here.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DiscoveredScenarioIds))]
     [Operation(Operations.ContractTesting)]
-    public async Task AnalysisBufferPlaces_PassesEndToEnd()
+    public async Task Scenario_PassesEndToEnd(string scenarioId)
     {
-        await RunScenarioAsync("analysis-buffer-places");
-    }
-
-    /// <summary>Publish-mode scenario: refresh the roads layer publication.</summary>
-    [IntegrationTest]
-    [Operation(Operations.ContractTesting)]
-    public async Task PublishRefreshRoads_PassesEndToEnd()
-    {
-        await RunScenarioAsync("publish-refresh-roads");
-    }
-
-    /// <summary>Package-mode scenario: compose a tsunami-evacuation operations map.</summary>
-    [IntegrationTest]
-    [Operation(Operations.ContractTesting)]
-    public async Task PackageMapTsunami_PassesEndToEnd()
-    {
-        await RunScenarioAsync("package-map-tsunami");
+        await RunScenarioAsync(scenarioId);
     }
 
     /// <summary>
@@ -67,6 +56,18 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
         gpServerProbe.Assertion.Should().Be("submit-job-surface");
         gpServerProbe.Status.Should().Be(EvalStageStatus.Skipped);
         gpServerProbe.Outcome.Should().Be("task-resolution-unavailable");
+    }
+
+    /// <summary>
+    /// Enumerates every scenario id under <c>tests/Eval/scenarios/</c> so the harness
+    /// suite expands automatically as the corpus grows.
+    /// </summary>
+    public static IEnumerable<object[]> DiscoveredScenarioIds()
+    {
+        foreach (var id in EvalScenarioLoader.DiscoverScenarioIds())
+        {
+            yield return [id];
+        }
     }
 
     private async Task RunScenarioAsync(string scenarioId)

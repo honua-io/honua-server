@@ -72,7 +72,10 @@ public sealed class EvalRunner
             .ConfigureAwait(false);
         stages.Add(dryRunOutcome.Stage);
 
+        var parityStopwatch = Stopwatch.StartNew();
         parity = await RunProtocolParityAsync(scenario, validateOutcome.Response, cancellationToken).ConfigureAwait(false);
+        parityStopwatch.Stop();
+        stages.Add(BuildProtocolParityStageOutcome(parity, parityStopwatch.ElapsedMilliseconds));
 
         var submitOutcome = await RunSubmitPlanJobAsync(scenario, client, domainPlan, grpcHeaders, cancellationToken)
             .ConfigureAwait(false);
@@ -640,6 +643,22 @@ public sealed class EvalRunner
             Detail = detail,
             ElapsedMs = 0
         };
+
+    private static EvalStageOutcome BuildProtocolParityStageOutcome(EvalProtocolParityOutcome parity, long elapsedMs)
+    {
+        var detail = parity.Probes.Count == 0
+            ? null
+            : string.Join("; ", parity.Probes.Select(p => $"{p.Protocol}:{p.Assertion}={p.Outcome}"));
+
+        return new EvalStageOutcome
+        {
+            Stage = EvalStageKind.ProtocolParity,
+            Status = parity.Status,
+            Reason = parity.Reason,
+            Detail = detail,
+            ElapsedMs = elapsedMs
+        };
+    }
 
     private static EvalStageOutcome BuildModeScopedStage(
         EvalScenario scenario,
