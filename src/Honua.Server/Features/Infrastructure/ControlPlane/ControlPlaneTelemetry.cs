@@ -21,6 +21,9 @@ internal static class ControlPlaneTelemetry
         public const string BackendStart = "honua.controlplane.backend.start";
         public const string BackendObserve = "honua.controlplane.backend.observe";
         public const string BackendRollback = "honua.controlplane.backend.rollback";
+        public const string ExecutionStart = "honua.controlplane.execution.start";
+        public const string ExecutionObserve = "honua.controlplane.execution.observe";
+        public const string ExecutionCancel = "honua.controlplane.execution.cancel";
     }
 
     internal static class Tags
@@ -32,6 +35,10 @@ internal static class ControlPlaneTelemetry
         public const string TargetKind = "honua.controlplane.target_kind";
         public const string Backend = "honua.controlplane.backend";
         public const string Environment = "honua.controlplane.environment";
+        public const string ExecutionKind = "honua.controlplane.execution.kind";
+        public const string ExecutionStatus = "honua.controlplane.execution.status";
+        public const string ExecutionPreviousStatus = "honua.controlplane.execution.previous_status";
+        public const string ExecutionResult = "honua.controlplane.execution.result";
     }
 
     public static readonly Counter<long> WorkflowRequests = HonuaTelemetry.Meter.CreateCounter<long>(
@@ -53,6 +60,21 @@ internal static class ControlPlaneTelemetry
         "honua.controlplane.workflow.reconcile_duration_ms",
         "ms",
         "Elapsed time spent reconciling workflow operations.");
+
+    public static readonly Counter<long> ExecutionRequests = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.controlplane.execution.requests_total",
+        "requests",
+        "Number of execution-job backend requests by operation and result.");
+
+    public static readonly Counter<long> ExecutionTransitions = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.controlplane.execution.transitions_total",
+        "transitions",
+        "Number of execution-job state transitions observed by the control plane.");
+
+    public static readonly Histogram<double> ExecutionDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
+        "honua.controlplane.execution.duration_ms",
+        "ms",
+        "Elapsed time for execution jobs that reached terminal states.");
 
     public static Activity? StartWorkflowActivity(
         string activityName,
@@ -148,5 +170,72 @@ internal static class ControlPlaneTelemetry
         tags.Add(Tags.TargetKind, spec.TargetKind.ToString());
         tags.Add(Tags.Backend, spec.Backend);
         tags.Add(Tags.Environment, spec.Environment);
+    }
+
+    public static Activity? StartExecutionActivity(
+        string activityName,
+        ExecutionJobRecord job)
+    {
+        var activity = HonuaTelemetry.ActivitySource.StartActivity(activityName, ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Admin);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, activityName);
+        activity?.SetTag(Tags.ExecutionKind, job.Spec.Kind.ToString());
+        activity?.SetTag(Tags.TargetKind, job.Spec.TargetKind.ToString());
+        activity?.SetTag(Tags.Backend, job.Spec.Backend);
+        if (!string.IsNullOrWhiteSpace(job.Audit.CorrelationId))
+        {
+            activity?.SetTag(HonuaTelemetry.Tags.CorrelationId, job.Audit.CorrelationId);
+        }
+
+        return activity;
+    }
+
+    public static TagList CreateExecutionTags(ExecutionJobRecord job, string? result = null, string? previousStatus = null)
+    {
+        var tags = new TagList
+        {
+            { Tags.ExecutionKind, job.Spec.Kind.ToString() },
+            { Tags.ExecutionStatus, job.Status.ToString() },
+            { Tags.TargetKind, job.Spec.TargetKind.ToString() },
+            { Tags.Backend, job.Spec.Backend }
+        };
+
+        if (!string.IsNullOrWhiteSpace(previousStatus))
+        {
+            tags.Add(Tags.ExecutionPreviousStatus, previousStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            tags.Add(Tags.ExecutionResult, result);
+        }
+
+        return tags;
+    }
+
+    public static void RecordExecutionRequest(ExecutionJobRecord job, string operation, string result)
+    {
+        var tags = CreateExecutionTags(job, result: result);
+        tags.Add(HonuaTelemetry.Tags.Operation, operation);
+        ExecutionRequests.Add(1, tags);
+    }
+
+    public static void RecordExecutionTransition(ExecutionJobRecord previous, ExecutionJobRecord current)
+    {
+        if (previous.Status == current.Status)
+        {
+            return;
+        }
+
+        ExecutionTransitions.Add(1, CreateExecutionTags(current, previousStatus: previous.Status.ToString()));
+
+        if (current.CompletedAt.HasValue)
+        {
+            var durationMs = (current.CompletedAt.Value - current.CreatedAt).TotalMilliseconds;
+            if (durationMs >= 0)
+            {
+                ExecutionDurations.Record(durationMs, CreateExecutionTags(current));
+            }
+        }
     }
 }

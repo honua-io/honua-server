@@ -195,11 +195,22 @@ artifact reference, and parameters; otherwise the spec defaults to the
 > The reconciler observes worker-published progress via
 > `IUniversalProgressStore` and bridges it into the canonical job store
 > once a worker host is available.
-> Remote backends (AWS Batch, Azure Container Apps, etc.) are defined by
-> the pluggable `IBatchComputeBackend` contract but are not yet registered;
-> see provider tickets for implementation. Once registered, remote jobs
-> are started synchronously on submission and subsequently observed by the
-> reconciler on any Redis-enabled host.
+> Kubernetes Jobs is available as an optional remote backend
+> (`honua-kubernetes-job`, target kind `KubernetesJob`) — configure under
+> `ControlPlane:Kubernetes` (namespace, default image, node selector, resource
+> requests, service account, active deadline). The adapter auto-detects the
+> in-cluster service account projection and accepts explicit bearer tokens for
+> out-of-cluster development; set `ControlPlane:Kubernetes:CaBundlePath` to a
+> PEM-encoded bundle when the target cluster's API server uses a private or
+> self-signed CA that does not chain to the OS trust store. Misconfiguration
+> (missing/invalid `ApiServerUrl`, unreadable bearer token file) is caught at
+> startup by `ControlPlaneOptions` validation; runtime adapter failures are
+> surfaced as failed submissions rather than 500s. Remote jobs are started
+> synchronously on submission and subsequently observed by the reconciler on
+> any Redis-enabled host.
+> Additional remote backends (AWS Batch, Azure Container Apps, etc.) are
+> defined by the pluggable `IBatchComputeBackend` contract but are not yet
+> registered; see provider tickets for implementation.
 > Dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute
 > on separate hosts is not yet wired; see
 > [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).

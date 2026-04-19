@@ -44,6 +44,11 @@ internal static partial class ExecutionJobSubmissionHelper
 
             var committed = await jobStore.TrySetAsync(failedJob, cancellationToken: cancellationToken).ConfigureAwait(false);
 
+            if (committed)
+            {
+                ControlPlaneTelemetry.RecordExecutionTransition(current, failedJob);
+            }
+
             if (progressStore != null && committed)
             {
                 await BridgeTerminalSubmissionProgressAsync(
@@ -92,6 +97,8 @@ internal static partial class ExecutionJobSubmissionHelper
             return current ?? job;
         }
 
+        ControlPlaneTelemetry.RecordExecutionTransition(job, provisioning);
+
         var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var updated = provisioning with
@@ -120,6 +127,8 @@ internal static partial class ExecutionJobSubmissionHelper
 
             return current ?? updated;
         }
+
+        ControlPlaneTelemetry.RecordExecutionTransition(provisioning, updated);
 
         await BridgeTerminalSubmissionProgressAsync(progressStore, updated, progressRetention, logger, cancellationToken)
             .ConfigureAwait(false);

@@ -85,4 +85,78 @@ public sealed class ControlPlaneOptionsValidatorTests
         Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("AuthHeaderName") &&
             failure.Contains("not allowed", StringComparison.OrdinalIgnoreCase));
     }
+
+    [UnitTest]
+    public void Validate_WithMalformedKubernetesApiServerUrl_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            Kubernetes = new KubernetesExecutionOptions
+            {
+                InClusterAutoDetect = false,
+                ApiServerUrl = "not-a-url"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("ApiServerUrl") &&
+            failure.Contains("absolute URL", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    public void Validate_WithAutoDetectDisabledAndNoApiServerUrl_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            Kubernetes = new KubernetesExecutionOptions
+            {
+                InClusterAutoDetect = false,
+                ApiServerUrl = null
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("ApiServerUrl") &&
+            failure.Contains("InClusterAutoDetect", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_WithMissingKubernetesCaBundlePath_ReturnsFailure()
+    {
+        var options = new ControlPlaneOptions
+        {
+            Kubernetes = new KubernetesExecutionOptions
+            {
+                InClusterAutoDetect = false,
+                ApiServerUrl = "https://cluster.example.test",
+                CaBundlePath = "/this/path/does/not/exist/ca.pem"
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("CaBundlePath"));
+    }
+
+    [UnitTest]
+    public void Validate_WithInClusterAutoDetect_AndNoApiServerUrl_Succeeds()
+    {
+        var options = new ControlPlaneOptions
+        {
+            Kubernetes = new KubernetesExecutionOptions
+            {
+                InClusterAutoDetect = true,
+                ApiServerUrl = null
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join(" | ", result.Failures ?? []));
+    }
 }

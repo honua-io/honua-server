@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -8,6 +9,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -35,6 +37,9 @@ public sealed class ExecutionJobReconcilerTests
             progressStore,
             NullLogger<ExecutionJobReconciler>.Instance);
 
+        var transitions = new List<MeasurementSample>();
+        using var listener = CreateTransitionListener(transitions);
+
         await sut.ReconcileExecutionJobAsync("job-missing");
 
         var stored = await jobStore.GetAsync("job-missing");
@@ -47,6 +52,13 @@ public sealed class ExecutionJobReconcilerTests
         progress.Should().NotBeNull();
         progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
         progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
+
+        listener.RecordObservableInstruments();
+        transitions.Should().NotBeEmpty(
+            "a Queued -> Failed transition must increment honua.controlplane.execution.transitions_total");
+        transitions.Should().Contain(sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Queued" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Failed");
     }
 
     [Fact]
@@ -1318,6 +1330,45 @@ public sealed class ExecutionJobReconcilerTests
                 }
             }
         };
+
+    private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
+
+    private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == "honua.controlplane.execution.transitions_total")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
+    {
+        foreach (var tag in tags)
+        {
+            if (tag.Key == name)
+            {
+                return tag.Value?.ToString();
+            }
+        }
+
+        return null;
+    }
 
     private sealed class InMemoryExecutionJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {
