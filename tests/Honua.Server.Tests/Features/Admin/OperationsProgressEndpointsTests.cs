@@ -364,6 +364,62 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenProgressAlreadyCancelledAndDurableJobNonterminal_BridgesProgressToNonterminal()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return;
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-1),
+            UpdatedAt = now,
+            ClaimedBy = "worker-local",
+            ClaimedAt = now.AddSeconds(-30),
+            LastHeartbeatAt = now.AddSeconds(-5),
+            CurrentPhase = "Running",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-reconcile-bridges-progress"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "stale-cancelled-progress") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+            CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+            CompletedAt = now
+        };
+        await _progressStore.SetProgressAsync(operationId, staleProgress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Processing,
+            "nonterminal durable job must be bridged over stale Cancelled progress so admin polling reflects the live state");
+        updatedProgress.CompletedAt.Should().BeNull("bridging a nonterminal job must clear stale terminal timestamps");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelOperation_WhenProgressCancelledButDurableJobSucceeded_Returns409AndBridgesProgress()
     {
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();

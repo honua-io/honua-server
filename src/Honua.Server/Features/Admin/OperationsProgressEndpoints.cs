@@ -223,6 +223,7 @@ internal static partial class OperationsProgressEndpoints
 
         if (!string.Equals(executionJob.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
         {
+            var effectiveJob = executionJob;
             if (!executionJob.CancellationRequestedAt.HasValue)
             {
                 var backends = httpContext.RequestServices.GetService<IEnumerable<IBatchComputeBackend>>();
@@ -250,7 +251,11 @@ internal static partial class OperationsProgressEndpoints
                     CancellationRequestedAt = now,
                     UpdatedAt = now
                 };
-                if (!await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                if (await jobStore.TrySetAsync(requested, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    effectiveJob = requested;
+                }
+                else
                 {
                     var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
                     if (fresh == null)
@@ -263,7 +268,8 @@ internal static partial class OperationsProgressEndpoints
 
                     if (fresh.Status == ExecutionJobStatus.Cancelled)
                     {
-                        // Already cancelled — idempotent success, fall through.
+                        // Already cancelled — idempotent success.
+                        effectiveJob = fresh;
                     }
                     else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
                     {
@@ -277,7 +283,8 @@ internal static partial class OperationsProgressEndpoints
                     }
                     else if (fresh.CancellationRequestedAt.HasValue)
                     {
-                        // Another path already set the cancellation signal — idempotent success, fall through.
+                        // Another path already set the cancellation signal — idempotent success.
+                        effectiveJob = fresh;
                     }
                     else
                     {
@@ -294,8 +301,16 @@ internal static partial class OperationsProgressEndpoints
                                 "Conflict",
                                 $"Operation '{operationId}' cancellation could not be confirmed after retries.");
                         }
+
+                        effectiveJob = retryRequested;
                     }
                 }
+            }
+
+            if (!ExecutionJobCancellationHelper.IsTerminal(effectiveJob.Status))
+            {
+                await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
+                    progressStore, effectiveJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
             return null;
@@ -314,6 +329,13 @@ internal static partial class OperationsProgressEndpoints
                 await TryRemoveJobQueueEntryAsync(httpContext, operationId, cancellationToken).ConfigureAwait(false);
                 return null;
             case ExecutionJobCancellationState.CancellationRequested:
+                if (cancelOutcome.Job != null && !ExecutionJobCancellationHelper.IsTerminal(cancelOutcome.Job.Status))
+                {
+                    await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
+                        progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                }
+
+                return null;
             case ExecutionJobCancellationState.Missing:
                 return null;
             case ExecutionJobCancellationState.TerminalConflict:

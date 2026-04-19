@@ -1208,6 +1208,89 @@ public sealed class ExecutionJobReconcilerTests
             "CAS conflict with non-terminal record must not modify progress");
     }
 
+    [Fact]
+    public void BuildProgress_NonterminalJobOverStaleTerminalProgress_ClearsTerminalMetadata()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var staleCompletedAt = now.AddMinutes(-2);
+        var existing = GeoprocessingProgress.CreateForSubmittedJob("job-stale-terminal", "plan-stale") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Failed,
+            CurrentStageStatus = GeoprocessingStageStatus.Failed,
+            ErrorMessage = "Prior attempt failed",
+            CompletedAt = staleCompletedAt,
+            StepsCompleted = 10,
+            TotalSteps = 10
+        };
+
+        var runningJob = CreateJobRecord(
+            operationId: "job-stale-terminal",
+            status: ExecutionJobStatus.Running,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch,
+            currentPhase: "Running") with
+        {
+            CompletedAt = null,
+            ErrorMessage = null
+        };
+
+        var bridged = ExecutionJobReconciler.BuildProgress(runningJob, existing);
+
+        bridged.Should().NotBeNull();
+        bridged!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Running);
+        bridged.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Pending);
+        bridged.ErrorMessage.Should().BeNull(
+            "nonterminal job observation must clear stale terminal error text");
+        bridged.CompletedAt.Should().BeNull(
+            "nonterminal job observation must clear stale terminal completion timestamp");
+        bridged.StepsCompleted.Should().Be(0,
+            "nonterminal job observation over a stale Completed projection must reset step counters so PercentComplete does not report 100%");
+        bridged.TotalSteps.Should().Be(10,
+            "TotalSteps (plan shape) should remain so the caller sees the same denominator");
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_StartJobAsync_ProvisioningCasConflict_DoesNotCallBackendStart()
+    {
+        var operationId = "job-provisioning-cas";
+        var queuedJob = CreateJobRecord(
+            operationId: operationId,
+            status: ExecutionJobStatus.Queued,
+            backend: "aws-batch",
+            targetKind: BatchComputeTargetKind.AwsBatch);
+
+        var concurrentCancelledJob = queuedJob with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        jobStore.TryAcquireLeaseAsync(operationId, Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.RenewLeaseAsync(operationId, Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+            .Returns(queuedJob, concurrentCancelledJob);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync(operationId);
+
+        await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+    }
+
     private static ExecutionJobRecord CreateJobRecord(
         string operationId,
         ExecutionJobStatus status,

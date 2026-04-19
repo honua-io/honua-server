@@ -171,22 +171,35 @@ internal sealed partial class ExecutionJobReconciler(
         };
     }
 
-    private static async Task<ExecutionJobRecord> StartJobAsync(
+    private async Task<ExecutionJobRecord> StartJobAsync(
         ExecutionJobRecord job,
         IBatchComputeBackend backend,
         CancellationToken cancellationToken)
     {
-        var submission = await backend.StartAsync(job, cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-        return job with
+        // Delegate to the shared helper which CAS-gates the Provisioning transition
+        // before calling backend.StartAsync. Without that gate, a concurrent operator
+        // cancel (setting CancellationRequestedAt) would lose the post-start CAS race
+        // after the backend already launched the provider job, leaving the durable
+        // record as Queued with no provider marker and tricking a later poll into
+        // treating the job as "not submitted" (including pre-submission cancel).
+        var updated = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+                job, backend, jobStore, progressStore, ProgressRetention, logger, cancellationToken)
+            .ConfigureAwait(false);
+
+        // The submission helper only bridges terminal progress; reconciliation historically
+        // also reflected nonterminal phase/percent changes. Mirror that so polled progress
+        // picks up "Queued on provider" etc. without waiting a full reconciler interval.
+        if (!ReferenceEquals(updated, job) && !IsTerminal(updated.Status))
         {
-            Status = submission.Status,
-            UpdatedAt = now,
-            CompletedAt = IsTerminal(submission.Status) ? now : job.CompletedAt,
-            ProviderOperationId = submission.ProviderOperationId ?? job.ProviderOperationId,
-            CurrentPhase = submission.Message ?? job.CurrentPhase,
-            AttemptCount = job.AttemptCount + 1
-        };
+            await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
+                    progressStore, updated, ProgressRetention, logger, cancellationToken)
+                .ConfigureAwait(false);
+            Log.ExecutionJobReconciled(logger, job.OperationId, updated.Status.ToString(), updated.PercentComplete ?? double.NaN);
+        }
+
+        // StartOnRemoteBackendAsync owns the CAS. Return the original reference so the
+        // outer reconciler skips another CAS attempt against the now-stale record.
+        return job;
     }
 
     private static async Task<ExecutionJobRecord> CancelJobAsync(
@@ -341,7 +354,8 @@ internal sealed partial class ExecutionJobReconciler(
 
         var workflowStatus = MapWorkflowStatus(job.Status);
         var stageStatus = MapStageStatus(job.Status);
-        var (stepsCompleted, totalSteps) = ResolveSyntheticSteps(existing, job.PercentComplete);
+        var jobIsTerminal = IsTerminal(job.Status);
+        var (stepsCompleted, totalSteps) = ResolveSyntheticSteps(existing, job.PercentComplete, jobIsTerminal);
         var planId = existing?.PlanId
             ?? job.Spec.Parameters.GetValueOrDefault(ExecutionJobParameterKeys.GeoprocessingPlanId)
             ?? job.Spec.WorkloadId;
@@ -355,8 +369,8 @@ internal sealed partial class ExecutionJobReconciler(
                 StepsCompleted = stepsCompleted,
                 TotalSteps = totalSteps,
                 CurrentPhase = job.CurrentPhase ?? existing.CurrentPhase,
-                ErrorMessage = job.ErrorMessage ?? existing.ErrorMessage,
-                CompletedAt = job.CompletedAt ?? existing.CompletedAt
+                ErrorMessage = jobIsTerminal ? job.ErrorMessage ?? existing.ErrorMessage : null,
+                CompletedAt = jobIsTerminal ? job.CompletedAt ?? existing.CompletedAt : null
             };
         }
 
@@ -378,10 +392,19 @@ internal sealed partial class ExecutionJobReconciler(
 
     internal static (int StepsCompleted, int? TotalSteps) ResolveSyntheticSteps(
         GeoprocessingProgress? existing,
-        double? percentComplete)
+        double? percentComplete,
+        bool jobIsTerminal = true)
     {
         if (!percentComplete.HasValue)
         {
+            // On a nonterminal transition, treat a prior terminal observation's
+            // step counters as stale (a Completed projection carries StepsCompleted==TotalSteps
+            // even though the job is now Running/AwaitingExecution again).
+            if (!jobIsTerminal && existing?.CompletedAt.HasValue == true)
+            {
+                return (0, existing.TotalSteps);
+            }
+
             return (existing?.StepsCompleted ?? 0, existing?.TotalSteps);
         }
 
