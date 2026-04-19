@@ -186,6 +186,10 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                 active.Add(records[i]);
             }
         }
+        // Impose a deterministic order before truncating so `truncated=true`
+        // responses return the same prefix across calls regardless of the
+        // backing store's iteration order.
+        active.Sort(static (a, b) => string.CompareOrdinal(a.ServiceId, b.ServiceId));
         var truncated = active.Count > _pageSize;
         var items = active
             .Take(_pageSize)
@@ -230,8 +234,14 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // in PackageViewFactory.
         var records = await _deployments.ListActiveAsync(cancellationToken).ConfigureAwait(false);
         var published = PackageViewFactory.FilterPublished(records);
-        var truncated = published.Count > _pageSize;
-        var items = published
+        // Impose a deterministic order before truncating so `truncated=true`
+        // responses return the same prefix across calls regardless of the
+        // backing store's iteration order.
+        var orderedPublished = published
+            .OrderBy(deployment => deployment.DeploymentId, StringComparer.Ordinal)
+            .ToList();
+        var truncated = orderedPublished.Count > _pageSize;
+        var items = orderedPublished
             .Take(_pageSize)
             .Select(deployment => new McpDeploymentSummary
             {
@@ -285,6 +295,10 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
                 deployment.Source.Kind == packageKind
                 && PackageViewFactory.IsPublished(deployment))
             .GroupBy(deployment => deployment.Source.SourceId, StringComparer.Ordinal)
+            // Impose a deterministic order before truncating so `truncated=true`
+            // responses return the same prefix across calls regardless of the
+            // backing store's iteration order.
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
             .ToList();
 
         var truncated = grouped.Count > _pageSize;

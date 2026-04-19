@@ -24,20 +24,17 @@ internal sealed class PublishedServiceResource : IMcpResource
     public const string Template = McpResourceUris.PublishedServicesPrefix + "{serviceId}";
 
     private readonly IPublishedServiceStore _services;
-    private readonly IPublishIntentStore _intents;
     private readonly IDeploymentStore _deployments;
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<PublishedServiceResource> _logger;
 
     public PublishedServiceResource(
         IPublishedServiceStore services,
-        IPublishIntentStore intents,
         IDeploymentStore deployments,
         IGeoprocessingJobService jobService,
         ILogger<PublishedServiceResource> logger)
     {
         _services = services;
-        _intents = intents;
         _deployments = deployments;
         _jobService = jobService;
         _logger = logger;
@@ -88,7 +85,6 @@ internal sealed class PublishedServiceResource : IMcpResource
             throw new GeoprocessingNotFoundException($"Published service '{serviceId}' not found.");
         }
 
-        var intent = await _intents.GetAsync(record.IntentId, cancellationToken).ConfigureAwait(false);
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.PublishedService, serviceId, cancellationToken)
             .ConfigureAwait(false);
@@ -96,13 +92,12 @@ internal sealed class PublishedServiceResource : IMcpResource
 
         McpLog.PublishedServiceRead(_logger, serviceId, record.Status.ToString());
 
-        var view = ToView(record, intent, deployments);
+        var view = ToView(record, deployments);
         return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpPublishedServiceView);
     }
 
     internal static McpPublishedServiceView ToView(
         PublishedServiceRecord record,
-        PublishIntent? intent,
         IReadOnlyList<Deployment> deployments)
     {
         // Sort by deployment id so multi-deployment services produce stable output
@@ -143,7 +138,12 @@ internal sealed class PublishedServiceResource : IMcpResource
             Provenance = new McpHostedProvenance
             {
                 OriginatingIntentId = record.IntentId,
-                ResultPackageId = intent?.SourceKind == PublishSourceKind.ResultPackage ? intent.SourceId : null,
+                // Source-package provenance is persisted on the canonical service record
+                // (SourceKind/SourceId are required fields), so deriving from `record`
+                // keeps the provenance edge stable even when the intent row is missing
+                // or stale — the intent is a planning artifact and can be cleaned up
+                // independently of the published service.
+                ResultPackageId = record.SourceKind == PublishSourceKind.ResultPackage ? record.SourceId : null,
                 PublishedServiceResourceUri = McpResourceUris.PublishedServiceUri(record.ServiceId)
             }
         };

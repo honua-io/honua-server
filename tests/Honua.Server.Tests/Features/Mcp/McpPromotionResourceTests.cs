@@ -35,7 +35,6 @@ public sealed class McpPromotionResourceTests
 
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
     private readonly IPublishedServiceStore _services = Substitute.For<IPublishedServiceStore>();
-    private readonly IPublishIntentStore _intents = Substitute.For<IPublishIntentStore>();
     private readonly IDeploymentStore _deployments = Substitute.For<IDeploymentStore>();
 
     // ------------------------------------------------------------------
@@ -46,10 +45,8 @@ public sealed class McpPromotionResourceTests
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task PublishedServiceResource_Read_SerializesRecordAndProvenance()
     {
-        var service = BuildPublishedService("svc-1", intentId: "intent-1");
+        var service = BuildPublishedService("svc-1", intentId: "intent-1", sourceId: "pkg-7");
         _services.GetAsync("svc-1", Arg.Any<CancellationToken>()).Returns(service);
-        _intents.GetAsync("intent-1", Arg.Any<CancellationToken>())
-            .Returns(BuildIntent("intent-1", sourceKind: PublishSourceKind.ResultPackage, sourceId: "pkg-7"));
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-1", Arg.Any<CancellationToken>())
             .Returns([BuildDeployment("dep-1", DeploymentSource.FromPublishedService("svc-1"))]);
 
@@ -77,12 +74,65 @@ public sealed class McpPromotionResourceTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task PublishedServiceResource_Read_ProvenanceUsesRecordSourceNotIntentLookup()
+    {
+        // Intent rows are planning artifacts and can be cleaned up independently
+        // of the published service; `SourceKind`/`SourceId` are persisted on the
+        // canonical service record itself, so the result-package edge must come
+        // from there rather than a best-effort intent lookup.
+        var service = BuildPublishedService(
+            "svc-from-record",
+            intentId: "intent-missing",
+            sourceId: "pkg-from-record");
+        _services.GetAsync("svc-from-record", Arg.Any<CancellationToken>()).Returns(service);
+        _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-from-record", Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var resource = BuildPublishedServiceResource();
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services/svc-from-record",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        var provenance = body.GetProperty("provenance");
+        provenance.GetProperty("originatingIntentId").GetString().Should().Be("intent-missing");
+        provenance.GetProperty("resultPackageId").GetString().Should().Be("pkg-from-record");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task PublishedServiceResource_Read_NonResultPackageSourceOmitsResultPackageEdge()
+    {
+        // Services published from a workspace/layer/dataset source do not have a
+        // result-package edge; the provenance should surface the originating
+        // intent but leave `resultPackageId` null.
+        var service = BuildPublishedService(
+            "svc-workspace",
+            sourceKind: PublishSourceKind.WorkspaceArtifact,
+            sourceId: "ws-42");
+        _services.GetAsync("svc-workspace", Arg.Any<CancellationToken>()).Returns(service);
+        _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-workspace", Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var resource = BuildPublishedServiceResource();
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services/svc-workspace",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        var provenance = body.GetProperty("provenance");
+        provenance.TryGetProperty("resultPackageId", out _).Should().BeFalse(
+            "non-result-package sources have no result-package edge to expose.");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
     public async Task PublishedServiceResource_Read_ExposesAllActiveDeploymentsSortedStably()
     {
         var service = BuildPublishedService("svc-multi");
         _services.GetAsync("svc-multi", Arg.Any<CancellationToken>()).Returns(service);
-        _intents.GetAsync("intent-1", Arg.Any<CancellationToken>())
-            .Returns(BuildIntent("intent-1"));
         // Return in reverse alphabetical order to verify sort is applied.
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-multi", Arg.Any<CancellationToken>())
             .Returns(
@@ -111,8 +161,6 @@ public sealed class McpPromotionResourceTests
     {
         var service = BuildPublishedService("svc-mix");
         _services.GetAsync("svc-mix", Arg.Any<CancellationToken>()).Returns(service);
-        _intents.GetAsync("intent-1", Arg.Any<CancellationToken>())
-            .Returns(BuildIntent("intent-1"));
         _deployments.ListBySourceAsync(DeploymentSourceKind.PublishedService, "svc-mix", Arg.Any<CancellationToken>())
             .Returns(
             [
@@ -503,6 +551,96 @@ public sealed class McpPromotionResourceTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services")]
+    public async Task PromotionIndex_PublishedServices_TruncatesAfterStableOrder()
+    {
+        // Return records in reverse id order; the truncated prefix must be the
+        // alphabetic prefix so cursorless responses are stable regardless of
+        // backing-store iteration order.
+        _services.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildPublishedService("svc-d"),
+            BuildPublishedService("svc-c"),
+            BuildPublishedService("svc-b"),
+            BuildPublishedService("svc-a")
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance, pageSize: 2);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://published-services",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        var ids = body.GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty("serviceId").GetString()!)
+            .ToArray();
+        ids.Should().Equal("svc-a", "svc-b");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://deployments")]
+    public async Task PromotionIndex_Deployments_TruncatesAfterStableOrder()
+    {
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildDeployment("dep-d", DeploymentSource.FromPublishedService("svc-1")),
+            BuildDeployment("dep-c", DeploymentSource.FromPublishedService("svc-1")),
+            BuildDeployment("dep-b", DeploymentSource.FromPublishedService("svc-1")),
+            BuildDeployment("dep-a", DeploymentSource.FromPublishedService("svc-1"))
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance, pageSize: 2);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://deployments",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        var ids = body.GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty("deploymentId").GetString()!)
+            .ToArray();
+        ids.Should().Equal("dep-a", "dep-b");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://map-packages")]
+    public async Task PromotionIndex_MapPackages_TruncatesAfterStableOrder()
+    {
+        _deployments.ListActiveAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            BuildDeployment("dep-1", DeploymentSource.FromMapPackage("map-d")),
+            BuildDeployment("dep-2", DeploymentSource.FromMapPackage("map-c")),
+            BuildDeployment("dep-3", DeploymentSource.FromMapPackage("map-b")),
+            BuildDeployment("dep-4", DeploymentSource.FromMapPackage("map-a"))
+        ]);
+
+        var resource = new PromotionSurfaceIndexResource(
+            _services, _deployments, _jobService,
+            NullLogger<PromotionSurfaceIndexResource>.Instance, pageSize: 2);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://map-packages",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        var ids = body.GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty("packageId").GetString()!)
+            .ToArray();
+        ids.Should().Equal("map-a", "map-b");
+    }
+
+    [UnitTest]
     [Endpoint("POST /mcp resources/read honua://deployments")]
     public async Task PromotionIndex_Deployments_SurfacesSummaryFields()
     {
@@ -842,7 +980,7 @@ public sealed class McpPromotionResourceTests
     // ------------------------------------------------------------------
 
     private PublishedServiceResource BuildPublishedServiceResource()
-        => new(_services, _intents, _deployments, _jobService, NullLogger<PublishedServiceResource>.Instance);
+        => new(_services, _deployments, _jobService, NullLogger<PublishedServiceResource>.Instance);
 
     private DeploymentResource BuildDeploymentResource()
         => new(_deployments, _jobService, NullLogger<DeploymentResource>.Instance);
@@ -850,31 +988,18 @@ public sealed class McpPromotionResourceTests
     private static PublishedServiceRecord BuildPublishedService(
         string serviceId,
         string intentId = "intent-1",
-        PublishedServiceStatus status = PublishedServiceStatus.Active)
-        => new()
-        {
-            ServiceId = serviceId,
-            IntentId = intentId,
-            SourceKind = PublishSourceKind.ResultPackage,
-            SourceId = "pkg-source",
-            TargetKind = PublishTargetKind.FeatureService,
-            Status = status,
-            PublishedAt = PublishedAt,
-            UpdatedAt = UpdatedAt
-        };
-
-    private static PublishIntent BuildIntent(
-        string intentId,
+        PublishedServiceStatus status = PublishedServiceStatus.Active,
         PublishSourceKind sourceKind = PublishSourceKind.ResultPackage,
         string sourceId = "pkg-source")
         => new()
         {
+            ServiceId = serviceId,
             IntentId = intentId,
             SourceKind = sourceKind,
             SourceId = sourceId,
             TargetKind = PublishTargetKind.FeatureService,
-            Status = PublishIntentStatus.Completed,
-            CreatedAt = PublishedAt,
+            Status = status,
+            PublishedAt = PublishedAt,
             UpdatedAt = UpdatedAt
         };
 

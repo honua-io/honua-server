@@ -290,7 +290,6 @@ public sealed class McpTaxonomyAlignmentTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var services = Substitute.For<IPublishedServiceStore>();
-        var intents = Substitute.For<IPublishIntentStore>();
         var deployments = Substitute.For<IDeploymentStore>();
         return
         [
@@ -299,7 +298,7 @@ public sealed class McpTaxonomyAlignmentTests
             new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(jobService, NullLogger<ProcessCatalogResource>.Instance),
             new PublishedServiceResource(
-                services, intents, deployments, jobService,
+                services, deployments, jobService,
                 NullLogger<PublishedServiceResource>.Instance),
             new DeploymentResource(deployments, jobService, NullLogger<DeploymentResource>.Instance),
             new MapPackageResource(deployments, jobService, NullLogger<MapPackageResource>.Instance),

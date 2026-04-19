@@ -554,7 +554,10 @@ audit-trail plus monotonic ETag (where exposed) is the observability contract.
   (max 200). When the canonical store returns more items, the response
   sets `truncated: true`; a scrolling cursor is not part of v1 — agents
   requiring full enumeration should filter server-side via the canonical
-  publishing / deployment APIs.
+  publishing / deployment APIs. Items are ordinal-sorted by their
+  identifier (`serviceId`, `deploymentId`, or package id) before the cap
+  is applied so the truncated prefix is stable across calls regardless
+  of the backing store's iteration order.
 
 - `honua://published-services/{serviceId}` returns
   `{ serviceId, resourceUri, status, sourceKind, sourceId, targetKind, endpoint?, publishedAt, lastRefreshedAt?, updatedAt, etag, artifacts, warnings, deploymentCount, deploymentResourceUris, provenance }`.
