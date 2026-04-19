@@ -178,21 +178,32 @@ Honua uses a layered caching approach:
 
 The durable job orchestration substrate provides queuing, claim/heartbeat
 liveness, retry, cancellation, progress reporting, and structured execution
-logs for geoprocessing, ETL, and tile-cache workloads. The substrate
-contract and infrastructure are implemented; end-to-end wiring from
-submission endpoints through the queue to worker execution lands with the
-per-kind executor tickets (#721, #724, #727).
+logs for geoprocessing, ETL, and tile-cache workloads. Submission endpoints
+(gRPC `ProcessService.SubmitPlanJob`, OGC API Processes `/execute`, GPServer
+`submitJob`) resolve an optional `ExecutionWorkloadOptions` entry from the
+`ControlPlane:ExecutionWorkloads` catalog. When a matching workload is
+configured, the job spec inherits the workload's `Backend`, `TargetKind`,
+artifact reference, and parameters; otherwise the spec defaults to the
+`local` in-process backend.
 
-> **Deployment note:** The substrate is split into API-side and worker-side
-> registrations. The API image registers shared infrastructure (queue, log
-> store) via `AddJobOrchestration()`. A future worker or combined-mode image
-> will additionally register the execution host and reconciliation sweep via
-> `AddJobWorker()`. `AddJobWorker()` is not yet invoked from a host
-> entrypoint; it will be wired when the first concrete executor is
-> integrated in follow-on tickets (#721, #724, #727). Lean API-only
-> deployments will not run execution or reconciliation overhead. See
-> [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md)
-> and [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
+> **Deployment note:** Every Redis-enabled host registers the execution-job
+> reconciliation background service, which polls active jobs and bridges
+> status from pluggable batch-compute backends into the canonical job store.
+> Local (in-process) jobs are queued by the geoprocessing submission path.
+> Execution requires a worker host registered via `AddJobWorker()`;
+> the combined host does not currently wire this (see below).
+> The reconciler observes worker-published progress via
+> `IUniversalProgressStore` and bridges it into the canonical job store
+> once a worker host is available.
+> Remote backends (AWS Batch, Azure Container Apps, etc.) are defined by
+> the pluggable `IBatchComputeBackend` contract but are not yet registered;
+> see provider tickets for implementation. Once registered, remote jobs
+> are started synchronously on submission and subsequently observed by the
+> reconciler on any Redis-enabled host.
+> Dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute
+> on separate hosts is not yet wired; see
+> [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
+> See [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md).
 
 ### Supported Job Kinds
 
@@ -325,9 +336,12 @@ Active jobs surface through the existing operations endpoints:
 - `GET /api/v1/admin/operations/type/Geoprocessing` — geoprocessing jobs
 
 > **Note:** The operations endpoints read from `IUniversalProgressStore`.
-> Execution job progress written through `IJobExecutionContext` is stored in
-> `IExecutionJobStore` and is not yet projected to the operations surface.
-> A substrate-level projection is a follow-on integration point.
+> The execution-job reconciler bridges progress from `IExecutionJobStore`
+> into `IUniversalProgressStore` on each reconcile pass, so jobs managed
+> by pluggable batch-compute backends surface through the standard
+> operations endpoints. For local in-process jobs, progress written
+> through `IJobExecutionContext` is observed by the reconciler and
+> projected in the same way.
 
 The reconciliation service logs sweep results at Debug level only when at
 least one job was reconciled; clean sweeps are silent. Heartbeat and

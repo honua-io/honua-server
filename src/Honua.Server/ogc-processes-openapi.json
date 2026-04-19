@@ -368,8 +368,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Job succeeded. Document-mode results keyed by output identifier per OGC API Processes Part 1 §7.11.1. V1 declares no value-typed outputs on the canonical process, so the body is an empty object; populated entries land here once result storage ships.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Results" }
+              }
+            }
+          },
           "404": {
-            "description": "Job not found, not yet in a terminal state, or result storage not yet available. V1: result storage is not yet implemented; successful jobs return 404 until the execution engine is wired up.",
+            "description": "Job not found or not yet in a terminal state",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -654,6 +662,11 @@
           "status": { "type": "integer" },
           "detail": { "type": "string" }
         }
+      },
+      "Results": {
+        "type": "object",
+        "description": "Document-mode results map keyed by output identifier (OGC API Processes Part 1 §7.11.1). V1 canonical process declares no value-typed outputs, so the map is empty.",
+        "additionalProperties": true
       }
     }
   }

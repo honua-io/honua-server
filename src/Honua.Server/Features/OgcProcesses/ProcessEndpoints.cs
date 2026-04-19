@@ -62,14 +62,19 @@ internal static class ProcessEndpoints
         OutputTransmission = ImmutableArray.Create("value")
     };
 
+    // V1 canonical process declares no value-typed outputs. `/jobs/{id}/results` returns
+    // `200 OK` with an empty document-mode body (OGC API Processes Part 1 §7.11.1) until
+    // result storage is populated; the empty `Outputs` map keeps the published
+    // description in sync with that contract.
     private static readonly OgcProcessDescription CanonicalProcessDescription = new()
     {
         Id = CanonicalProcessId,
         Title = "Honua Geoprocessing",
         Description = "Executes an analysis plan through the Honua canonical geoprocessing runtime. " +
                       "Accepts a plan specification with steps, inputs, and output expectations. " +
-                      "Job status can be polled via the jobs endpoint. " +
-                      "Result retrieval will be available once the execution engine is integrated.",
+                      "Job status is available on the job endpoint; successful jobs return a " +
+                      "document-mode results body (empty until the canonical process declares " +
+                      "value-typed outputs).",
         Version = "1.0.0",
         JobControlOptions = ImmutableArray.Create("async-execute", "dismiss"),
         OutputTransmission = ImmutableArray.Create("value"),
@@ -82,15 +87,7 @@ internal static class ProcessEndpoints
                 Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = "application/json" }
             })
         }),
-        Outputs = ImmutableDictionary.CreateRange(new[]
-        {
-            KeyValuePair.Create("results", new OgcProcessIoDescription
-            {
-                Title = "Results",
-                Description = "Analysis result package containing artifacts produced by the plan execution.",
-                Schema = new OgcProcessIoSchema { Type = "object", ContentMediaType = "application/json" }
-            })
-        })
+        Outputs = ImmutableDictionary<string, OgcProcessIoDescription>.Empty
     };
 
     public static void MapOgcProcessesProcessEndpoints(this IEndpointRouteBuilder endpoints)
@@ -191,7 +188,9 @@ internal static class ProcessEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         IUniversalProgressStore progressStore,
         [FromServices] IExecutionJobStore? jobStore = null,
-        [FromServices] IJobQueue? jobQueue = null)
+        [FromServices] IJobQueue? jobQueue = null,
+        [FromServices] IExecutionJobDefinitionRegistry? workloadRegistry = null,
+        [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
     {
         EnrichActivity("ExecuteProcess");
 
@@ -374,6 +373,15 @@ internal static class ProcessEndpoints
         var now = DateTimeOffset.UtcNow;
         var jobId = $"gp-{Guid.NewGuid():N}";
 
+        var workload = workloadRegistry == null
+            ? null
+            : (await workloadRegistry.ListAsync(context.RequestAborted).ConfigureAwait(false))
+                .FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
+        var specParameters = workload?.Parameters.Count > 0
+            ? new Dictionary<string, string>(workload.Parameters, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+        specParameters[ExecutionJobParameterKeys.GeoprocessingPlanId] = planId;
+
         var jobRecord = new ExecutionJobRecord
         {
             OperationId = jobId,
@@ -386,13 +394,26 @@ internal static class ProcessEndpoints
                 RequestedBy = context.User.Identity?.Name,
                 RequestFingerprint = CreateRequestFingerprint(processId, planJson)
             },
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
-                WorkloadName = $"geoprocessing:{planId}"
-            }
+            Spec = workload == null
+                ? new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = LocalBatchComputeBackend.BackendId,
+                    WorkloadName = $"geoprocessing:{planId}",
+                    Parameters = specParameters
+                }
+                : new ExecutionJobSpec
+                {
+                    Kind = workload.Kind,
+                    TargetKind = workload.TargetKind,
+                    Backend = workload.Backend,
+                    WorkloadId = workload.WorkloadId,
+                    WorkloadName = workload.WorkloadName,
+                    Artifact = workload.ArtifactReference,
+                    RuntimeProfile = workload.RuntimeProfile,
+                    Parameters = specParameters
+                }
         };
 
         await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.RequestAborted).ConfigureAwait(false);
@@ -403,17 +424,22 @@ internal static class ProcessEndpoints
             await progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromDays(7), context.RequestAborted)
                 .ConfigureAwait(false);
 
-            if (jobQueue != null)
+            if (jobQueue != null && string.Equals(jobRecord.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
             {
                 await jobQueue.EnqueueAsync(jobId, cancellationToken: context.RequestAborted).ConfigureAwait(false);
             }
+
+            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, progressStore, backends, logger, context.RequestAborted).ConfigureAwait(false);
         }
-        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
+        catch (Exception ex) when (!context.RequestAborted.IsCancellationRequested)
         {
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
                 jobId,
-                CancellationToken.None).ConfigureAwait(false);
+                progressStore: progressStore,
+                progressRetention: TimeSpan.FromDays(7),
+                failureMessage: $"Submission failed: {ex.Message}",
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }
@@ -671,6 +697,32 @@ internal static class ProcessEndpoints
     {
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes($"ogc-execute:{processId}:{planJson}"));
         return Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant();
+    }
+
+    private static async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
+        ExecutionJobRecord job,
+        IExecutionJobStore jobStore,
+        IUniversalProgressStore progressStore,
+        IEnumerable<IBatchComputeBackend>? backends,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
+        if (backends == null ||
+            string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            return job;
+        }
+
+        var backend = backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            throw new InvalidOperationException(
+                $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
+        }
+
+        return await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            job, backend, jobStore, progressStore, TimeSpan.FromDays(7), logger, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     internal static IResult FormatOgcAuthError(Core.Features.Security.Abstractions.AccessDecision decision)

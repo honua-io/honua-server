@@ -91,11 +91,14 @@ separates API-side and worker-side concerns at the service-registration level:
   reconciliation sweep. Intended for worker or combined-mode hosts.
 
 **Current release:** The geoprocessing feature registration calls
-`AddJobOrchestration()` to wire the shared queue and log store. `AddJobWorker()`
-(execution host + reconciliation sweep) is not yet invoked from a host
-entrypoint; it will be wired when the first concrete executor is integrated in
-follow-on tickets. Separate API-only and worker-only images are a planned
-topology for Scenario 3 (enterprise scale-out).
+`AddJobOrchestration()` to wire the shared queue and log store. The pluggable
+batch-compute backend contract (`IBatchComputeBackend`) and execution-job
+reconciler are registered directly in the combined host; `LocalBatchComputeBackend`
+observes in-process worker progress (actual execution requires `AddJobWorker()`
+wiring on a worker host). `AddJobWorker()` (queue-based claim/execute for
+dedicated worker hosts) is not yet invoked from a host entrypoint. Separate
+API-only and worker-only images are a planned topology for Scenario 3
+(enterprise scale-out).
 
 In Scenarios 1–2, the combined host is the expected deployment mode. The
 registration split exists so that future enterprise deployments can scale API

@@ -37,6 +37,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly IProcessCatalog _processCatalog;
     private readonly AnalyticsLimits _analyticsLimits;
+    private readonly IExecutionJobDefinitionRegistry? _workloadRegistry;
+    private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     public GeoprocessingJobService(
@@ -48,7 +50,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IExecutionJobStore? jobStore = null,
         IJobQueue? jobQueue = null,
-        IOptions<LimitsOptions>? limitsOptions = null)
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IExecutionJobDefinitionRegistry? workloadRegistry = null,
+        IEnumerable<IBatchComputeBackend>? backends = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -59,6 +63,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _logger = logger;
         _jobStore = jobStore;
         _jobQueue = jobQueue;
+        _workloadRegistry = workloadRegistry;
+        _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
     }
 
     public void EnsureCallerAuthorized(
@@ -175,6 +181,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
 
+        var workload = await ResolveWorkloadAsync(cancellationToken).ConfigureAwait(false);
+        var spec = BuildSpec(plan, specParams, workload);
+
         var jobRecord = new ExecutionJobRecord
         {
             OperationId = jobId,
@@ -188,14 +197,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 RequestedBy = principal.Identity?.Name,
                 RequestFingerprint = requestFingerprint
             },
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
-                WorkloadName = $"geoprocessing:{plan.PlanId}",
-                Parameters = specParams
-            }
+            Spec = spec
         };
 
         var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
@@ -221,17 +223,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (_jobQueue != null)
+            if (_jobQueue != null && string.Equals(jobRecord.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
             {
                 await _jobQueue.EnqueueAsync(jobId, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
+
+            jobRecord = await TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                 jobStore,
                 jobId,
-                CancellationToken.None).ConfigureAwait(false);
+                progressStore: _progressStore,
+                progressRetention: ProgressRetention,
+                failureMessage: $"Submission failed: {ex.Message}",
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
 
             throw;
         }
@@ -239,6 +246,76 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
 
         return jobRecord;
+    }
+
+    private async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(CancellationToken cancellationToken)
+    {
+        if (_workloadRegistry == null)
+        {
+            return null;
+        }
+
+        var definitions = await _workloadRegistry.ListAsync(cancellationToken).ConfigureAwait(false);
+        return definitions.FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
+    }
+
+    private static ExecutionJobSpec BuildSpec(
+        AnalysisPlan plan,
+        Dictionary<string, string> specParams,
+        ExecutionJobDefinition? workload)
+    {
+        specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
+
+        if (workload == null)
+        {
+            return new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = LocalBatchComputeBackend.BackendId,
+                WorkloadName = $"geoprocessing:{plan.PlanId}",
+                Parameters = specParams
+            };
+        }
+
+        foreach (var kv in workload.Parameters)
+        {
+            specParams.TryAdd(kv.Key, kv.Value);
+        }
+
+        return new ExecutionJobSpec
+        {
+            Kind = workload.Kind,
+            TargetKind = workload.TargetKind,
+            Backend = workload.Backend,
+            WorkloadId = workload.WorkloadId,
+            WorkloadName = workload.WorkloadName,
+            Artifact = workload.ArtifactReference,
+            RuntimeProfile = workload.RuntimeProfile,
+            Parameters = specParams
+        };
+    }
+
+    private async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
+        ExecutionJobRecord job,
+        IExecutionJobStore jobStore,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            return job;
+        }
+
+        var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            throw new InvalidOperationException(
+                $"No batch compute backend registered for '{job.Spec.Backend}' ({job.Spec.TargetKind}).");
+        }
+
+        return await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            job, backend, jobStore, _progressStore, ProgressRetention, _logger, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<ExecutionJobRecord> GetJobAsync(
@@ -346,6 +423,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         if (IsTerminal(job.Status))
         {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
             GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, job.Status.ToString());
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' is in terminal state '{job.Status}' and cannot be cancelled.");
@@ -386,6 +465,40 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 $"Job '{jobId}' was not found on re-read and could not be cancelled.");
         }
 
+        if (!IsTerminal(latest.Status))
+        {
+            var backendResult = await TryCancelViaBackendAsync(latest, cancellationToken).ConfigureAwait(false);
+            switch (backendResult.Outcome)
+            {
+                case RemoteCancelOutcome.Delegated:
+                    GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
+                    return;
+                case RemoteCancelOutcome.TerminalConflict:
+                    var terminalStatus = backendResult.TerminalStatus ?? latest.Status;
+                    GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, terminalStatus.ToString());
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' reached terminal state '{terminalStatus}' before cancellation could be applied.");
+                case RemoteCancelOutcome.Missing:
+                    GeoprocessingServiceLog.JobNotFound(_logger, jobId);
+                    throw new GeoprocessingNotFoundException(
+                        $"Job '{jobId}' was deleted during cancellation.");
+                case RemoteCancelOutcome.Unconfirmed:
+                    GeoprocessingServiceLog.RemoteCancelCasExhausted(_logger, jobId);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' remote cancellation could not be confirmed after retries.");
+                case RemoteCancelOutcome.Unsupported:
+                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support cancellation.");
+                case RemoteCancelOutcome.BackendNotFound:
+                    GeoprocessingServiceLog.RemoteCancelUnavailable(_logger, jobId, latest.Spec.Backend);
+                    throw new GeoprocessingPreconditionFailedException(
+                        $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which is not registered.");
+                case RemoteCancelOutcome.NotRemote:
+                    break;
+            }
+        }
+
         if (IsTerminal(latest.Status))
         {
             if (latest.Status == ExecutionJobStatus.Cancelled)
@@ -414,6 +527,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 return;
             }
 
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, latest, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
             GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, latest.Status.ToString());
             throw new GeoprocessingPreconditionFailedException(
                 $"Job '{jobId}' is in terminal state '{latest.Status}' and cannot be cancelled.");
@@ -432,6 +547,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 GeoprocessingServiceLog.JobCancellationDelegated(_logger, jobId);
                 return;
             case ExecutionJobCancellationState.TerminalConflict:
+                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                    _progressStore, cancelOutcome.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
                 GeoprocessingServiceLog.CancelRejectedTerminal(_logger, jobId, cancelOutcome.Job!.Status.ToString());
                 throw new GeoprocessingPreconditionFailedException(
                     $"Job '{jobId}' reached terminal state '{cancelOutcome.Job.Status}' before cancellation could be applied.");
@@ -526,6 +643,143 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private IExecutionJobStore RequireJobStore()
         => _jobStore ?? throw new GeoprocessingStoreUnavailableException();
+
+    private enum RemoteCancelOutcome
+    {
+        Delegated,
+        TerminalConflict,
+        Missing,
+        Unconfirmed,
+        Unsupported,
+        BackendNotFound,
+        NotRemote
+    }
+
+    private readonly record struct RemoteCancelResult(
+        RemoteCancelOutcome Outcome,
+        ExecutionJobStatus? TerminalStatus = null);
+
+    private async Task<RemoteCancelResult> TryCancelViaBackendAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+        {
+            return new(RemoteCancelOutcome.NotRemote);
+        }
+
+        if (IsTerminal(job.Status))
+        {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                _progressStore, job, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return job.Status == ExecutionJobStatus.Cancelled
+                ? new(RemoteCancelOutcome.Delegated)
+                : new(RemoteCancelOutcome.TerminalConflict, job.Status);
+        }
+
+        var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            return new(RemoteCancelOutcome.BackendNotFound);
+        }
+
+        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (!capabilities.SupportsCancellation)
+        {
+            return new(RemoteCancelOutcome.Unsupported);
+        }
+
+        var jobStore = RequireJobStore();
+
+        if (job.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(job))
+        {
+            var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
+                jobStore, job, cancellationToken).ConfigureAwait(false);
+
+            switch (preResult.Outcome)
+            {
+                case PreSubmissionCancelOutcome.Cancelled:
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        _progressStore, preResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    return new(RemoteCancelOutcome.Delegated);
+                case PreSubmissionCancelOutcome.TerminalConflict:
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        _progressStore, preResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    return new(RemoteCancelOutcome.TerminalConflict, preResult.Job!.Status);
+                case PreSubmissionCancelOutcome.Missing:
+                    return new(RemoteCancelOutcome.Missing);
+                default:
+                    return new(RemoteCancelOutcome.Unconfirmed);
+            }
+        }
+
+        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        var updated = job with
+        {
+            Status = observation.Status,
+            UpdatedAt = now,
+            CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
+            ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
+            PercentComplete = observation.PercentComplete ?? job.PercentComplete,
+            CurrentPhase = observation.Message ?? job.CurrentPhase,
+            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                ? observation.Message ?? job.ErrorMessage
+                : job.ErrorMessage,
+            CancellationRequestedAt = IsTerminal(observation.Status) ? job.CancellationRequestedAt : (job.CancellationRequestedAt ?? now)
+        };
+        var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!persisted)
+        {
+            GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
+            var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (fresh == null)
+            {
+                return new(RemoteCancelOutcome.Missing);
+            }
+
+            if (fresh.Status == ExecutionJobStatus.Cancelled)
+            {
+                updated = fresh;
+            }
+            else if (IsTerminal(fresh.Status))
+            {
+                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                    _progressStore, fresh, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return new(RemoteCancelOutcome.TerminalConflict, fresh.Status);
+            }
+            else
+            {
+                var retryNow = DateTimeOffset.UtcNow;
+                var retryUpdate = fresh with
+                {
+                    Status = observation.Status,
+                    UpdatedAt = retryNow,
+                    CompletedAt = IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
+                    ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
+                    PercentComplete = observation.PercentComplete ?? fresh.PercentComplete,
+                    CurrentPhase = observation.Message ?? fresh.CurrentPhase,
+                    ErrorMessage = observation.Status == ExecutionJobStatus.Failed
+                        ? observation.Message ?? fresh.ErrorMessage
+                        : fresh.ErrorMessage,
+                    CancellationRequestedAt = IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
+                };
+                if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    updated = retryUpdate;
+                }
+                else
+                {
+                    return new(RemoteCancelOutcome.Unconfirmed);
+                }
+            }
+        }
+
+        await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
+            _progressStore, updated, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return updated.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed
+            ? new(RemoteCancelOutcome.TerminalConflict, updated.Status)
+            : new(RemoteCancelOutcome.Delegated);
+    }
 
     private static void ValidatePlanStructure(AnalysisPlan plan)
     {

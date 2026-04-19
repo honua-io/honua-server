@@ -26,7 +26,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 {
     private readonly StubDatabaseMigrationRunner _migrationRunner = new();
     private readonly InMemoryWorkflowOperationStore _workflowStore = new();
-    private readonly StubOperationReconciler _reconciler = new();
+    private readonly StubWorkflowOperationReconciler _reconciler = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -39,10 +39,10 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
                 services.RemoveAll<IDeployTargetRegistry>();
                 services.RemoveAll<IWorkflowOperationStore>();
-                services.RemoveAll<IOperationReconciler>();
+                services.RemoveAll<IWorkflowOperationReconciler>();
                 services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
                 services.AddSingleton<IWorkflowOperationStore>(_workflowStore);
-                services.AddSingleton<IOperationReconciler>(_reconciler);
+                services.AddSingleton<IWorkflowOperationReconciler>(_reconciler);
             });
     }
 
@@ -349,10 +349,10 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
                 services.RemoveAll<IDeployTargetRegistry>();
                 services.RemoveAll<IWorkflowOperationStore>();
-                services.RemoveAll<IOperationReconciler>();
+                services.RemoveAll<IWorkflowOperationReconciler>();
                 services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
                 services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
-                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.AddSingleton<IWorkflowOperationReconciler>(new StubWorkflowOperationReconciler());
                 services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
                 services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
                     new AlwaysRequiresApprovalEvaluator());
@@ -406,10 +406,10 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
                 services.RemoveAll<IDeployTargetRegistry>();
                 services.RemoveAll<IWorkflowOperationStore>();
-                services.RemoveAll<IOperationReconciler>();
+                services.RemoveAll<IWorkflowOperationReconciler>();
                 services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
                 services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
-                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.AddSingleton<IWorkflowOperationReconciler>(new StubWorkflowOperationReconciler());
                 services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
                 services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
                     new AlwaysRequiresApprovalEvaluator());
@@ -451,10 +451,10 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
                 services.RemoveAll<IDeployTargetRegistry>();
                 services.RemoveAll<IWorkflowOperationStore>();
-                services.RemoveAll<IOperationReconciler>();
+                services.RemoveAll<IWorkflowOperationReconciler>();
                 services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
                 services.AddSingleton<IWorkflowOperationStore>(new InMemoryWorkflowOperationStore());
-                services.AddSingleton<IOperationReconciler>(new StubOperationReconciler());
+                services.AddSingleton<IWorkflowOperationReconciler>(new StubWorkflowOperationReconciler());
                 services.RemoveAll<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>();
                 services.AddSingleton<Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator>(
                     new AlwaysRequiresApprovalEvaluator());
@@ -581,14 +581,11 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         }
     }
 
-    private sealed class StubOperationReconciler : IOperationReconciler
+    private sealed class StubWorkflowOperationReconciler : IWorkflowOperationReconciler
     {
         public Func<string, CancellationToken, Task>? OnReconcileAsync { get; set; }
 
         public Task ReconcileWorkflowOperationAsync(string operationId, CancellationToken cancellationToken = default)
             => OnReconcileAsync?.Invoke(operationId, cancellationToken) ?? Task.CompletedTask;
-
-        public Task ReconcileExecutionJobAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

@@ -470,11 +470,11 @@ curl "http://localhost:8080/ogc/processes/jobs?limit=10"
 curl http://localhost:8080/ogc/processes/jobs/{jobId}
 ```
 
-V1 `StatusInfo` documents do not include a results link because `/results` is still stubbed.
+Succeeded jobs include the OGC `results` relation in the `StatusInfo` document so clients can follow the link to `/jobs/{jobId}/results`.
 
 ### **Retrieve Results**
 
-V1 keeps `/results` stubbed. Non-terminal jobs return `404` (result not ready). Successful jobs currently also return `404` until the execution engine populates result storage. Failed jobs return `500`, and dismissed jobs return `410 Gone`.
+Succeeded jobs return `200 OK` with a document-mode, by-value JSON body keyed by stable output identifiers (OGC API Processes Part 1 §7.11.1). V1's canonical process declares no value-typed outputs, so the body is an empty object (`{}`) until the execution engine populates result storage. Non-terminal jobs return `404` (result not ready), failed jobs return `500`, and dismissed jobs return `410 Gone`.
 
 ```bash
 curl http://localhost:8080/ogc/processes/jobs/{jobId}/results

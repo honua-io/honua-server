@@ -290,9 +290,9 @@ public interface IBatchComputeBackend
 }
 
 /// <summary>
-/// Reconciles workflow operations and execution jobs against external provider state.
+/// Reconciles durable workflow operations such as deploy and rollback against external provider state.
 /// </summary>
-public interface IOperationReconciler
+public interface IWorkflowOperationReconciler
 {
     /// <summary>
     /// Reconciles a workflow operation by identifier.
@@ -302,7 +302,13 @@ public interface IOperationReconciler
     Task ReconcileWorkflowOperationAsync(
         string operationId,
         CancellationToken cancellationToken = default);
+}
 
+/// <summary>
+/// Reconciles durable execution jobs such as geoprocessing and ETL against external provider state.
+/// </summary>
+public interface IExecutionJobReconciler
+{
     /// <summary>
     /// Reconciles an execution job by identifier.
     /// </summary>

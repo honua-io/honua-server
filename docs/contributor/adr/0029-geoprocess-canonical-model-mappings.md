@@ -85,10 +85,11 @@ Adapters reshape it:
   output parameter names via `ArtifactRef.Metadata` or a follow-on field
 - **OGC API Processes (v1 subset)**: target all `Artifacts` in a single
   `/jobs/{jobId}/results` JSON response using document-mode, by-value
-  transmission. The current `#529` implementation still stubs `/results`
-  until the execution engine populates result storage; successful jobs return
-  `404`, failed jobs return `500`, and dismissed jobs return `410`. This is a
-  Honua v1 adapter decision — the full OGC spec (§7.13) also supports
+  transmission. The `#529` implementation returns `200 OK` with the
+  document-mode body on success (empty `{}` until the canonical process
+  declares value-typed outputs and the execution engine populates result
+  storage); failed jobs return `500`, and dismissed jobs return `410`. This
+  is a Honua v1 adapter decision — the full OGC spec (§7.13) also supports
   raw-mode responses and reference-based transmission, which are deferred
 
 ### Parameter Translation Is An Adapter Concern

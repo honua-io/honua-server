@@ -131,4 +131,25 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string planId,
         string processId);
+
+    [LoggerMessage(8027, LogLevel.Warning, "Cancel refused for job {JobId}: remote backend '{Backend}' does not support cancellation")]
+    public static partial void RemoteCancelUnavailable(
+        ILogger logger,
+        string jobId,
+        string backend);
+
+    [LoggerMessage(8024, LogLevel.Warning, "Remote cancel CAS conflict for job {JobId}: retrying with fresh record")]
+    public static partial void RemoteCancelCasRetry(
+        ILogger logger,
+        string jobId);
+
+    [LoggerMessage(8025, LogLevel.Warning, "Post-start CAS conflict for job {JobId}: returning authoritative store record")]
+    public static partial void SubmitPostStartCasConflict(
+        ILogger logger,
+        string jobId);
+
+    [LoggerMessage(8026, LogLevel.Warning, "Remote cancel CAS exhausted for job {JobId}: cancellation could not be confirmed")]
+    public static partial void RemoteCancelCasExhausted(
+        ILogger logger,
+        string jobId);
 }
