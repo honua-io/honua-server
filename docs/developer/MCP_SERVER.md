@@ -2,15 +2,22 @@
 
 Honua ships an MCP server package in the `honua-sdk-js` repository (path `mcp`, package `@honua/mcp-server`) so AI clients can safely discover services, inspect layer schema, and run filtered geospatial queries.
 
-That SDK-hosted package is the current focused discovery/query MCP surface. The
-forward-looking AI operator MCP surface for planning, execution, publishing,
-packaging, and deployment is expected to be owned canonically by
-`honua-server` as the server-side implementation of the `geospatial-mcp`
-standard. The SDK MCP package may proxy or federate that server-owned surface
-later, but it is not the semantic source of truth for operator workflows.
+That SDK-hosted package is the current focused discovery/query MCP surface.
+The forward-looking AI operator MCP surface for planning, execution,
+publishing, packaging, and deployment is owned canonically by `honua-server`
+as the server-side implementation of the `geospatial-mcp` standard. The SDK
+MCP package may proxy or federate that server-owned surface later, but it is
+not the semantic source of truth for operator workflows.
 
-This document covers the public/open-core MCP data-access surface. It does **not** describe Honua's private operator tooling or AI DevOps rollout automation layer.
-Forward-looking operator-workflow design notes are maintained as historical design material and are intentionally excluded from the current developer contract index.
+This document covers both the SDK-hosted discovery/query surface and, in
+[Operator Surface](#operator-surface), the server-owned operator surface that
+implements the taxonomy defined in the archived
+[AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md).
+
+For the archived AI-first analyst and builder design notes, see:
+
+- [AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md)
+- [Deterministic Operator Workflow Results](../archive/developer/DETERMINISTIC_OPERATOR_WORKFLOW_RESULTS.md)
 
 ## Capabilities
 
@@ -91,3 +98,86 @@ See [MCP Certification](../contributor/mcp-certification.md) for contributor gui
 
 - Prefer `grpc-web` for performance when available.
 - Use server-side auth controls (API key or OIDC) exactly as you do for direct client calls.
+
+## Operator Surface
+
+The server-owned operator surface lives in `src/Honua.Server/Features/Mcp/`
+and implements the geospatial-mcp taxonomy described in the archived
+[AI Operator Contract](../archive/developer/AI_OPERATOR_CONTRACT.md#mcp-contract-families).
+It is a thin adapter over `IGeoprocessingJobService` — the same transport-neutral
+domain service the gRPC `ProcessService` and the GeoServices `GPServer`
+adapter delegate to — so every protocol enforces identical authorization and
+validation rules.
+
+### Endpoint
+
+- **Route**: `POST /mcp`
+- **Wire**: JSON-RPC 2.0
+- **Methods**: `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`
+
+### Tools
+
+| Tool | Status | Domain delegate | Workflow family |
+|------|--------|-----------------|-----------------|
+| `honua_validate_plan` | functional | `IGeoprocessingJobService.ValidatePlan` | `planning` |
+| `honua_dry_run_plan` | functional | `IGeoprocessingJobService.DryRunPlan` | `planning` |
+| `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
+| `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
+| `honua_plan_analysis` | contract stub | blocked by `honua.planner.service` | `planning` |
+| `honua_ground_candidates` | contract stub | blocked by `honua.grounding.service` | `planning` |
+| `honua_clarify_intent` | contract stub | blocked by `honua.clarifier.service` | `planning` |
+
+Stub tools still enforce authentication and return a structured
+`not_implemented` envelope with `blockedBy`, `contract`, and `nextSteps`
+fields so operators can bind today and pick up behavior when the upstream
+service lands.
+
+### Resources
+
+| URI template | Status | Description |
+|--------------|--------|-------------|
+| `honua://jobs/{jobId}` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
+| `honua://jobs/{jobId}/results` | functional | `AnalysisResultPackage` including artifacts, workspaces, provenance, errors, and `mapPackageId` |
+| `honua://workspaces/{workspaceId}` | contract stub | Stable template pending workspace store |
+| `honua://catalog/processes` | contract stub | Stable URI pending catalog service |
+
+`honua://jobs/{jobId}/results` is the canonical output channel for the
+map-package artifact — `mapPackageId` flows through directly from
+`AnalysisResultPackage` when a run composes a map.
+
+### Error envelope
+
+Domain exceptions are translated by `McpErrorMapper` into a JSON-RPC error
+object whose `data` field mirrors the gRPC status vocabulary:
+
+| Exception | `data.code` | JSON-RPC code | Extra signal |
+|-----------|-------------|---------------|--------------|
+| `GeoprocessingAuthorizationException(requiresAuthentication: true)` | `unauthenticated` | `-32000` | `requiresReauthentication: true` |
+| `GeoprocessingAuthorizationException(false)` | `permission_denied` | `-32000` | |
+| `GeoprocessingApprovalRequiredException` | `failed_precondition` | `-32000` | `approvalRequired: true`, `policyRef` |
+| `GeoprocessingPreconditionFailedException` | `failed_precondition` | `-32000` | |
+| `GeoprocessingNotFoundException` | `not_found` | `-32000` | |
+| `GeoprocessingValidationException` | `invalid_argument` | `-32602` | |
+| `GeoprocessingStoreUnavailableException` | `unavailable` | `-32000` | `retryable: true` |
+| `GeoprocessingIdempotencyConflictException` | `already_exists` | `-32000` | |
+| anything else | `internal` | `-32000` | |
+
+Clients can drive retry, re-auth, and approval flows from `data.code`
+without parsing human-readable strings.
+
+### Telemetry
+
+- `honua.mcp.tool.call` — counter tagged by `tool_name`, `status`, `workflow_family`
+- `honua.mcp.resource.read` — counter tagged by `resource_family`, `status`
+- `honua.mcp.boundary.rejection` — counter tagged by `rejection_reason` (taxonomy non-goals)
+
+Activities emitted inside the surface are tagged with
+`honua.protocol = "Mcp"` so spans roll up alongside gRPC and GPServer
+traffic.
+
+### Source
+
+- Vertical slice: `src/Honua.Server/Features/Mcp/`
+- Tools: `src/Honua.Server/Features/Mcp/Tools/`
+- Resources: `src/Honua.Server/Features/Mcp/Resources/`
+- Tests: `tests/Honua.Server.Tests/Features/Mcp/`

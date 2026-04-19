@@ -134,4 +134,9 @@ public static class Protocols
     /// GeoServices GPServer REST API (geoprocessing tasks).
     /// </summary>
     public const string GPServer = "GPServer";
+
+    /// <summary>
+    /// Model Context Protocol operator surface (planning, execution, lifecycle).
+    /// </summary>
+    public const string Mcp = "Mcp";
 }
