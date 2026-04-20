@@ -192,6 +192,7 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        ControlPlaneTelemetry.RecordExecutionTransition(job, running);
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
 
         // Create execution context with heartbeat pump.
@@ -329,6 +330,7 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        ControlPlaneTelemetry.RecordExecutionTransition(job, final);
         cancellationTokens.Remove(operationId, workerId);
 
         try
@@ -392,6 +394,7 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
+        ControlPlaneTelemetry.RecordExecutionTransition(job, terminal);
         cancellationTokens.Remove(operationId, workerId);
 
         try
@@ -455,6 +458,7 @@ internal sealed partial class JobExecutionService(
                 return;
             }
 
+            ControlPlaneTelemetry.RecordExecutionTransition(current, cancelled);
             cancellationTokens.Remove(current.OperationId, workerId);
 
             try
@@ -554,6 +558,8 @@ internal sealed partial class JobExecutionService(
                 return;
             }
 
+            ControlPlaneTelemetry.RecordExecutionTransition(latestBeforeRequeue, abandoned);
+
             // Clear the tracked CTS immediately after the authoritative store
             // transition to Queued, before the queue write. If RequeueAsync
             // fails, cancel paths will not delegate to the dead worker and
@@ -600,6 +606,7 @@ internal sealed partial class JobExecutionService(
                 return;
             }
 
+            ControlPlaneTelemetry.RecordExecutionTransition(latestBeforeFail, failed);
             cancellationTokens.Remove(latestBeforeFail.OperationId, workerId);
 
             try
