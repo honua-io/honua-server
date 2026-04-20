@@ -1471,17 +1471,114 @@ public sealed class ExecutionJobReconcilerTests
             "the winner's cancellation-request stamp must not be overwritten by the merge");
         lastPersisted.Status.Should().Be(ExecutionJobStatus.Queued,
             "the merge must not clobber the winner's status field");
+        lastPersisted.AttemptCount.Should().Be(1,
+            "AttemptCount must be advanced to the submitted value so later observe/cancel target the same Job the adapter just created");
+        lastPersisted.NextRetryAt.Should().BeNull(
+            "NextRetryAt must be cleared once the retry has been dispatched");
 
         result.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns");
         result.ProviderOperationId.Should().Be("k8s-uid-1");
     }
 
     [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_RetryAttempt_PersistsAttemptCountSoObserveTargetsNewJob()
+    {
+        // Scenario: a retry has been requeued (AttemptCount=1, NextRetryAt scheduled).
+        // The reconciler dispatches the retry; the Kubernetes adapter creates a fresh
+        // "...-a2" Job. Before the post-start CAS fires, a concurrent cancellation-
+        // request writer stamps the record, winning the CAS. The merge helper must
+        // still advance AttemptCount (1→2) and clear NextRetryAt on the winner,
+        // otherwise the Kubernetes adapter's ResolveCoordinates would resolve the Job
+        // name against the stale AttemptCount=1 and target the prior attempt's Job
+        // (which no longer exists) instead of the "...-a2" Job it just created.
+        var cancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var retryScheduledAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var winnerRecord = CreateJobRecord(
+            operationId: "job-retry-cas",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1,
+            NextRetryAt = retryScheduledAt,
+            CancellationRequestedAt = cancellationRequestedAt
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var setCallCount = 0;
+        ExecutionJobRecord? lastPersisted = null;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                setCallCount++;
+                var record = (ExecutionJobRecord)call[0];
+                if (setCallCount == 2)
+                {
+                    // Post-start CAS: simulated conflict (concurrent cancel stamp).
+                    return false;
+                }
+
+                lastPersisted = record;
+                return true;
+            });
+        jobStore.GetAsync("job-retry-cas", Arg.Any<CancellationToken>())
+            .Returns(winnerRecord);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "k8s-uid-a2",
+                Message = "Submitted Kubernetes Job default/honua-job-retry-cas-a2.",
+                ResolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["k8s.namespace"] = "default"
+                }
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        var retryJob = CreateJobRecord(
+            operationId: "job-retry-cas",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1,
+            NextRetryAt = retryScheduledAt
+        };
+
+        var result = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            retryJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        setCallCount.Should().Be(3,
+            "the helper must re-CAS to carry the retry-attempt provenance forward");
+        lastPersisted.Should().NotBeNull();
+        lastPersisted!.AttemptCount.Should().Be(2,
+            "the merged record must reflect the submitted attempt number so the Kubernetes adapter's ResolveCoordinates produces the '...-a2' Job name the retry Job was created under");
+        lastPersisted.NextRetryAt.Should().BeNull(
+            "NextRetryAt must be cleared once the retry has been dispatched; leaving it set would re-arm the retry scheduler against an already-live Job");
+        lastPersisted.ProviderOperationId.Should().Be("k8s-uid-a2",
+            "the retry attempt's provider id must survive the CAS conflict so observe/cancel route to the new Job");
+        lastPersisted.CancellationRequestedAt.Should().Be(cancellationRequestedAt,
+            "the winner's cancellation-request stamp must not be overwritten by the merge");
+        lastPersisted.Status.Should().Be(ExecutionJobStatus.Queued,
+            "the winner's status field wins; the reconciler will transition from there");
+
+        // Sanity: the Kubernetes adapter must derive the same "...-a2" Job name from
+        // the merged record so the next observe/cancel hop targets the Job just created.
+        KubernetesJobBatchComputeBackend.BuildJobName(result.OperationId, Math.Max(result.AttemptCount, 1))
+            .Should().Be("honua-job-retry-cas-a2");
+        result.AttemptCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task StartOnRemoteBackendAsync_PostStartCasConflict_ExistingPinOnWinner_SkipsRedundantMerge()
     {
-        // If the winner already carries a pinned namespace and provider id (e.g., a
-        // concurrent reconciler re-observed the same adapter), the helper must not
-        // churn an extra CAS write just to re-stamp identical provenance.
+        // If the winner already carries a pinned namespace, provider id, and the
+        // submitted AttemptCount (e.g., a concurrent reconciler re-observed the same
+        // adapter), the helper must not churn an extra CAS write just to re-stamp
+        // identical provenance.
         var alreadyPinnedWinner = CreateJobRecord(
             operationId: "job-cas-nochange",
             status: ExecutionJobStatus.Running,
@@ -1489,6 +1586,7 @@ public sealed class ExecutionJobReconcilerTests
             targetKind: BatchComputeTargetKind.KubernetesJob) with
         {
             ProviderOperationId = "k8s-uid-1",
+            AttemptCount = 1,
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,

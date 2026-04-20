@@ -102,6 +102,7 @@ internal static partial class ExecutionJobSubmissionHelper
         var submission = await backend.StartAsync(provisioning, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var mergedSpec = MergeResolvedParameters(provisioning.Spec, submission.ResolvedParameters);
+        var submittedAttemptCount = provisioning.AttemptCount + 1;
         var updated = provisioning with
         {
             Status = submission.Status,
@@ -109,7 +110,7 @@ internal static partial class ExecutionJobSubmissionHelper
             CompletedAt = ExecutionJobReconciler.IsTerminal(submission.Status) ? now : provisioning.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
             CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
-            AttemptCount = provisioning.AttemptCount + 1,
+            AttemptCount = submittedAttemptCount,
             NextRetryAt = null,
             Spec = mergedSpec
         };
@@ -122,13 +123,14 @@ internal static partial class ExecutionJobSubmissionHelper
             }
 
             // The provider job has already been created, so the resolved coordinates
-            // (e.g., Kubernetes namespace) and provider identifier must survive even
-            // when a concurrent writer (for example a cancellation-request stamp) wins
-            // the post-start CAS; otherwise a later observe/cancel/retry would re-resolve
-            // namespace from mutable defaults and target the wrong Job, or misclassify the
-            // record as "not submitted" and orphan the provider object.
+            // (e.g., Kubernetes namespace), provider identifier, and the attempt number
+            // the Job name was derived from must survive even when a concurrent writer
+            // (for example a cancellation-request stamp) wins the post-start CAS. Without
+            // the attempt number the retry path's "...-aN" Job name is unreachable: a
+            // later observe/cancel would re-resolve coordinates from the stale AttemptCount
+            // and target the previous attempt's Job instead of the one just created.
             var current = await MergeSubmissionProvenanceOnCasConflictAsync(
-                jobStore, job.OperationId, submission, logger, cancellationToken).ConfigureAwait(false);
+                jobStore, job.OperationId, submission, submittedAttemptCount, logger, cancellationToken).ConfigureAwait(false);
             if (current != null)
             {
                 await BridgeTerminalSubmissionProgressAsync(progressStore, current, progressRetention, logger, cancellationToken)
@@ -220,14 +222,19 @@ internal static partial class ExecutionJobSubmissionHelper
 
     // Bounded CAS loop that re-reads the authoritative record after a post-start
     // conflict and re-persists only the submission provenance the winner could not
-    // have known about (resolved spec parameters and ProviderOperationId). The
-    // winner's status, cancellation request, and other mutable fields are preserved.
-    // Terminal records short-circuit: no future observe/cancel/retry will consult
-    // the pinned coordinates, so there is nothing to fix.
+    // have known about: resolved spec parameters, ProviderOperationId, and the
+    // submitted AttemptCount with its NextRetryAt cleared. The submitted attempt
+    // number identifies the "...-aN" Job name just created, so later observe/cancel
+    // calls must resolve coordinates against this value rather than the winner's
+    // pre-submission AttemptCount. The winner's status, cancellation request, and
+    // other mutable fields are preserved. Terminal records short-circuit: no future
+    // observe/cancel/retry will consult the pinned coordinates, so there is nothing
+    // to fix.
     private static async Task<ExecutionJobRecord?> MergeSubmissionProvenanceOnCasConflictAsync(
         IExecutionJobStore jobStore,
         string operationId,
         BatchComputeSubmissionResult submission,
+        int submittedAttemptCount,
         ILogger? logger,
         CancellationToken cancellationToken)
     {
@@ -241,7 +248,7 @@ internal static partial class ExecutionJobSubmissionHelper
                 return current;
             }
 
-            if (!NeedsProvenanceMerge(current, submission))
+            if (!NeedsProvenanceMerge(current, submission, submittedAttemptCount))
             {
                 return current;
             }
@@ -250,10 +257,16 @@ internal static partial class ExecutionJobSubmissionHelper
             var mergedProviderId = string.IsNullOrEmpty(current.ProviderOperationId)
                 ? submission.ProviderOperationId ?? current.ProviderOperationId
                 : current.ProviderOperationId;
+            // Never reduce AttemptCount: another writer that legitimately advanced
+            // past our submission must win. In practice the helper is the sole writer
+            // of AttemptCount, so the max degenerates to submittedAttemptCount.
+            var mergedAttemptCount = Math.Max(current.AttemptCount, submittedAttemptCount);
             var merged = current with
             {
                 Spec = mergedSpec,
                 ProviderOperationId = mergedProviderId,
+                AttemptCount = mergedAttemptCount,
+                NextRetryAt = null,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
 
@@ -273,10 +286,21 @@ internal static partial class ExecutionJobSubmissionHelper
 
     private static bool NeedsProvenanceMerge(
         ExecutionJobRecord current,
-        BatchComputeSubmissionResult submission)
+        BatchComputeSubmissionResult submission,
+        int submittedAttemptCount)
     {
         if (!string.IsNullOrEmpty(submission.ProviderOperationId)
             && string.IsNullOrEmpty(current.ProviderOperationId))
+        {
+            return true;
+        }
+
+        if (current.AttemptCount < submittedAttemptCount)
+        {
+            return true;
+        }
+
+        if (current.NextRetryAt.HasValue)
         {
             return true;
         }
