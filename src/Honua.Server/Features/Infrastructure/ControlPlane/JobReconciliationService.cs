@@ -253,6 +253,7 @@ internal sealed partial class JobReconciliationService(
             }
 
             ControlPlaneTelemetry.RecordExecutionTransition(preFail, failed);
+
             cancellationTokens.Revoke(preFail.OperationId, snapshot.ClaimedBy!);
 
             try
@@ -395,6 +396,7 @@ internal sealed partial class JobReconciliationService(
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, cancelledJob);
+
         cancellationTokens.Revoke(job.OperationId, claimedBy);
 
         try

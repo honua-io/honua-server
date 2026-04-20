@@ -187,6 +187,139 @@ public sealed class ExecutionJobCancellationHelperTests
     }
 
     [Fact]
+    public async Task TryStampRemoteCancelRequestedAtAsync_UnstampedNonterminalRecord_StampsAndBumpsUpdatedAt()
+    {
+        // First remote cancel attempt on an in-flight job must durably stamp
+        // CancellationRequestedAt before the backend is called so that a racing
+        // repeat caller observing NotFound on the provider side routes to
+        // BuildObservationForMissingJob's cancellation-intent branch (Cancelled)
+        // rather than Failed.
+        var updatedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var job = CreateJobRecord("job-stamp", ExecutionJobStatus.Running) with
+        {
+            UpdatedAt = updatedAt,
+            ClaimedBy = "worker-stamp",
+            CancellationRequestedAt = null
+        };
+        var jobStore = new RecordingJobStore(job);
+
+        var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, job);
+
+        result.Outcome.Should().Be(RemoteCancelStampOutcome.Stamped);
+        result.Job!.CancellationRequestedAt.Should().NotBeNull();
+        result.Job.UpdatedAt.Should().BeAfter(updatedAt);
+        result.Job.Status.Should().Be(ExecutionJobStatus.Running,
+            "stamping records cancellation intent without terminalizing the record");
+        jobStore.TrySetInvocations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryStampRemoteCancelRequestedAtAsync_AlreadyStamped_ReturnsAlreadyStampedWithoutWrite()
+    {
+        // Idempotent: a repeat remote cancel on a record that already has
+        // CancellationRequestedAt set must not refresh UpdatedAt — the reconciler's
+        // missing-registration grace window relies on an unchanged UpdatedAt for
+        // repeated idempotent cancel observations.
+        var updatedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var stampedAt = updatedAt;
+        var job = CreateJobRecord("job-already-stamped", ExecutionJobStatus.Running) with
+        {
+            UpdatedAt = updatedAt,
+            ClaimedBy = "worker-already",
+            CancellationRequestedAt = stampedAt
+        };
+        var jobStore = new RecordingJobStore(job);
+
+        var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, job);
+
+        result.Outcome.Should().Be(RemoteCancelStampOutcome.AlreadyStamped);
+        result.Job.Should().BeSameAs(job,
+            "already-stamped records must return the same reference to avoid bumping UpdatedAt");
+        jobStore.TrySetInvocations.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TryStampRemoteCancelRequestedAtAsync_TerminalRecord_ReturnsTerminalConflict()
+    {
+        var job = CreateJobRecord("job-terminal-stamp", ExecutionJobStatus.Succeeded) with
+        {
+            CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        var jobStore = new RecordingJobStore(job);
+
+        var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, job);
+
+        result.Outcome.Should().Be(RemoteCancelStampOutcome.TerminalConflict);
+        result.TerminalStatus.Should().Be(ExecutionJobStatus.Succeeded);
+        jobStore.TrySetInvocations.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TryStampRemoteCancelRequestedAtAsync_CasLosesToConcurrentTerminal_ReturnsTerminalConflict()
+    {
+        // CAS race: between the caller's Get and this stamp the provider already
+        // transitioned the record to Failed (for example, the worker crashed). The
+        // stamp must surface the terminal state so the caller reports a conflict
+        // instead of silently overwriting the finalized record.
+        var stale = CreateJobRecord("job-race-terminal", ExecutionJobStatus.Running);
+        var fresh = stale with
+        {
+            Status = ExecutionJobStatus.Failed,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = "worker died"
+        };
+        var jobStore = new RecordingJobStore(fresh) { RejectAllTrySet = true };
+
+        var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, stale);
+
+        result.Outcome.Should().Be(RemoteCancelStampOutcome.TerminalConflict);
+        result.TerminalStatus.Should().Be(ExecutionJobStatus.Failed);
+        result.Job!.ErrorMessage.Should().Be("worker died");
+    }
+
+    [Fact]
+    public async Task TryStampRemoteCancelRequestedAtAsync_MissingRecord_ReturnsMissing()
+    {
+        var job = CreateJobRecord("job-missing-stamp", ExecutionJobStatus.Running);
+        var jobStore = new RecordingJobStore() { RejectAllTrySet = true };
+
+        var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, job);
+
+        result.Outcome.Should().Be(RemoteCancelStampOutcome.Missing);
+        result.Job.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TryStampRemoteCancelRequestedAtAsync_CasLosesToConcurrentStamper_ReturnsAlreadyStamped()
+    {
+        // The exact race the stamp protects against: a concurrent caller stamps
+        // CancellationRequestedAt first. The losing CAS must re-read, see the stamp,
+        // and fall through as AlreadyStamped — not retry-and-overwrite. This is what
+        // makes the downstream backend.CancelAsync see CancellationRequestedAt set
+        // and map NotFound -> Cancelled instead of Failed.
+        var stale = CreateJobRecord("job-race-stamped", ExecutionJobStatus.Running);
+        var concurrentlyStamped = stale with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddMilliseconds(-1),
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        var jobStore = new RecordingJobStore(concurrentlyStamped) { RejectAllTrySet = true };
+
+        var result = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, stale);
+
+        result.Outcome.Should().Be(RemoteCancelStampOutcome.AlreadyStamped);
+        result.Job!.CancellationRequestedAt.Should().Be(concurrentlyStamped.CancellationRequestedAt);
+        result.Job.Status.Should().Be(ExecutionJobStatus.Running,
+            "the losing caller must not terminalize the record — only surface the durable intent");
+    }
+
+    [Fact]
     public void MergeBackendCancelObservation_IdenticalObservation_ReturnsOriginalRecordReference()
     {
         var now = DateTimeOffset.UtcNow;
@@ -220,7 +353,7 @@ public sealed class ExecutionJobCancellationHelperTests
             InstrumentPublished = (instrument, l) =>
             {
                 if (instrument.Meter.Name == HonuaTelemetry.ServiceName
-                    && instrument.Name == "honua.execution.job.transitions_total")
+                    && instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }

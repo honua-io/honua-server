@@ -1,0 +1,102 @@
+{
+  "$comment": "Deterministic grounding-pass fixtures replayed by Honua.Server.Tests/Features/Grounding/GroundingFixtureReplayTests and by the honua-server-734 eval harness. Each scenario pins a load-bearing slice of the canonical output of the default (deterministic) engine against the built-in process catalog. Keep edits aligned with DeterministicGroundingEngine and BuiltInProcessCatalog — a change on either side should trip the replay.",
+  "engine": "deterministic",
+  "scenarios": [
+    {
+      "id": "analyze-buffer-goal",
+      "notes": "Natural-language buffer request with an explicit layer classifies as Analyze at the High confidence band. The service still emits a clarification because the ranked buffer process has required parameters that are not expressed in the goal — the fixture pins the family and the clarification presence but does not overspecify the process ranking (which can reshuffle as the catalog grows).",
+      "input": {
+        "goal": "Buffer the parcels by 50 meters",
+        "assumptionPolicy": "UseDefaults"
+      },
+      "expected": {
+        "workflowFamily": "Analyze",
+        "classificationConfidenceBand": "High",
+        "draftIntent": {
+          "kind": "Analysis",
+          "requestedOutputs": ["FeatureLayer"]
+        }
+      }
+    },
+    {
+      "id": "publish-data-goal",
+      "notes": "Publish verb with an explicit source pins the PublishIntent envelope and wires the source through provenance.",
+      "input": {
+        "goal": "Publish the parcels layer",
+        "explicitInputs": ["parcels"],
+        "assumptionPolicy": "UseDefaults"
+      },
+      "expected": {
+        "workflowFamily": "PublishData",
+        "draftIntent": {
+          "kind": "Publishing",
+          "publishSourceKind": "FeatureLayer",
+          "publishTargetKind": "FeatureService",
+          "publishStatus": "Draft"
+        }
+      }
+    },
+    {
+      "id": "build-app-envelope-stub",
+      "notes": "BuildApp family is schema-stable but the typed intent has not shipped — the drafter emits an envelope with the AppBundle requested output and the service returns a PolicyBoundary clarification so the operator confirms the envelope-only mode.",
+      "input": {
+        "goal": "Compose a dashboard for incident response",
+        "assumptionPolicy": "UseDefaults"
+      },
+      "expected": {
+        "workflowFamily": "BuildApp",
+        "draftIntent": {
+          "kind": "EnvelopeStub",
+          "requestedOutputs": ["AppBundle"]
+        },
+        "clarificationPresent": true,
+        "clarificationReasonCodes": ["PolicyBoundary"]
+      }
+    },
+    {
+      "id": "automate-deploy-envelope-stub",
+      "notes": "AutomateDeploy family is a schema-stable stub awaiting a typed DeployIntent. Same envelope-only confirmation flow as BuildApp.",
+      "input": {
+        "goal": "Deploy the pipeline to production",
+        "assumptionPolicy": "UseDefaults"
+      },
+      "expected": {
+        "workflowFamily": "AutomateDeploy",
+        "draftIntent": {
+          "kind": "EnvelopeStub"
+        },
+        "clarificationPresent": true,
+        "clarificationReasonCodes": ["PolicyBoundary"]
+      }
+    },
+    {
+      "id": "low-confidence-triggers-clarification",
+      "notes": "A vague goal with no family-discriminating verbs falls back to Analyze with low confidence, which the material-ambiguity evaluator trips into a LowConfidence clarification.",
+      "input": {
+        "goal": "Something abstract",
+        "assumptionPolicy": "AskWhenMaterial"
+      },
+      "expected": {
+        "workflowFamily": "Analyze",
+        "classificationConfidenceBand": "Low",
+        "clarificationPresent": true,
+        "clarificationReasonCodes": ["LowConfidence"]
+      }
+    },
+    {
+      "id": "hint-honored-at-full-confidence",
+      "notes": "An explicit workflowFamilyHint pins the classification at confidence=1.0 with a single 'hint' evidence entry, independent of the goal text.",
+      "input": {
+        "goal": "anything here",
+        "workflowFamilyHint": "PublishData",
+        "explicitInputs": ["layer-1"],
+        "assumptionPolicy": "UseDefaults"
+      },
+      "expected": {
+        "workflowFamily": "PublishData",
+        "classificationConfidenceBand": "High",
+        "classificationEvidenceContains": ["hint"]
+      }
+    }
+  ]
+}

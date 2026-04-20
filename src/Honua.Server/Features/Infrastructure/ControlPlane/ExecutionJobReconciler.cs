@@ -96,12 +96,14 @@ internal sealed partial class ExecutionJobReconciler(
                 ExecutionJobStatus.Queued when string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
-                    && (!string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0)
+                    && ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job)
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
-                ExecutionJobStatus.Queued when !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0
+                ExecutionJobStatus.Queued when ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job)
                     => await ObserveJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Queued when job.CancellationRequestedAt.HasValue
                     => CancelQueuedJob(job),
+                ExecutionJobStatus.Queued when job.NextRetryAt.HasValue && job.NextRetryAt.Value > DateTimeOffset.UtcNow
+                    => job,
                 ExecutionJobStatus.Queued => await StartJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
                 ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running when job.CancellationRequestedAt.HasValue
                     => await CancelJobAsync(job, backend, reconciliationCancellation.Token).ConfigureAwait(false),
@@ -175,7 +177,8 @@ internal sealed partial class ExecutionJobReconciler(
             Status = ExecutionJobStatus.Cancelled,
             UpdatedAt = now,
             CompletedAt = now,
-            CurrentPhase = "Cancelled before submission"
+            CurrentPhase = "Cancelled before submission",
+            NextRetryAt = null
         };
     }
 
@@ -231,6 +234,12 @@ internal sealed partial class ExecutionJobReconciler(
         CancellationToken cancellationToken)
     {
         var observation = await backend.ObserveAsync(job, cancellationToken).ConfigureAwait(false);
+        var retried = await TryRequeueFailedRemoteJobAsync(job, backend, observation, cancellationToken).ConfigureAwait(false);
+        if (retried != null)
+        {
+            return retried;
+        }
+
         return ApplyObservation(job, observation);
     }
 
@@ -261,7 +270,47 @@ internal sealed partial class ExecutionJobReconciler(
             ProviderOperationId = newProviderOpId,
             PercentComplete = newPercent,
             CurrentPhase = newPhase,
-            ErrorMessage = newError
+            ErrorMessage = newError,
+            NextRetryAt = null
+        };
+    }
+
+    private static async Task<ExecutionJobRecord?> TryRequeueFailedRemoteJobAsync(
+        ExecutionJobRecord job,
+        IBatchComputeBackend backend,
+        BatchComputeObservation observation,
+        CancellationToken cancellationToken)
+    {
+        if (observation.Status != ExecutionJobStatus.Failed)
+        {
+            return null;
+        }
+
+        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (!capabilities.SupportsRetry)
+        {
+            return null;
+        }
+
+        var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
+        if (!retryPolicy.ShouldRetry(job.AttemptCount))
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var delay = retryPolicy.ComputeDelay(job.AttemptCount + 1);
+        return job with
+        {
+            Status = ExecutionJobStatus.Queued,
+            UpdatedAt = now,
+            CompletedAt = null,
+            ProviderOperationId = null,
+            PercentComplete = null,
+            CurrentPhase = $"Retrying (attempt {job.AttemptCount + 1}/{retryPolicy.MaxAttempts})",
+            ErrorMessage = null,
+            ArtifactReferences = Array.Empty<string>(),
+            NextRetryAt = now.Add(delay)
         };
     }
 

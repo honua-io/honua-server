@@ -95,10 +95,13 @@ separates API-side and worker-side concerns at the service-registration level:
 batch-compute backend contract (`IBatchComputeBackend`) and execution-job
 reconciler are registered directly in the combined host; `LocalBatchComputeBackend`
 observes in-process worker progress (actual execution requires `AddJobWorker()`
-wiring on a worker host). `AddJobWorker()` (queue-based claim/execute for
-dedicated worker hosts) is not yet invoked from a host entrypoint. Separate
-API-only and worker-only images are a planned topology for Scenario 3
-(enterprise scale-out).
+wiring on a worker host). The optional `KubernetesJobBatchComputeBackend` is
+also registered — when `ControlPlane:Kubernetes` is configured and the cluster
+is reachable, jobs targeting `KubernetesJob` are dispatched as Kubernetes Jobs
+and the reconciler observes their lifecycle. `AddJobWorker()` (queue-based
+claim/execute for dedicated worker hosts) is not yet invoked from a host
+entrypoint. Separate API-only and worker-only images are a planned topology
+for Scenario 3 (enterprise scale-out).
 
 In Scenarios 1–2, the combined host is the expected deployment mode. The
 registration split exists so that future enterprise deployments can scale API
