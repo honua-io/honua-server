@@ -193,6 +193,7 @@ internal sealed partial class JobExecutionService(
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, running);
+
         Log.JobExecutionStarted(logger, operationId, executor.Kind.ToString());
 
         // Create execution context with heartbeat pump.
@@ -331,6 +332,7 @@ internal sealed partial class JobExecutionService(
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, final);
+
         cancellationTokens.Remove(operationId, workerId);
 
         try
@@ -395,6 +397,7 @@ internal sealed partial class JobExecutionService(
         }
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, terminal);
+
         cancellationTokens.Remove(operationId, workerId);
 
         try
@@ -459,6 +462,7 @@ internal sealed partial class JobExecutionService(
             }
 
             ControlPlaneTelemetry.RecordExecutionTransition(current, cancelled);
+
             cancellationTokens.Remove(current.OperationId, workerId);
 
             try
@@ -607,6 +611,7 @@ internal sealed partial class JobExecutionService(
             }
 
             ControlPlaneTelemetry.RecordExecutionTransition(latestBeforeFail, failed);
+
             cancellationTokens.Remove(latestBeforeFail.OperationId, workerId);
 
             try

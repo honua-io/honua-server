@@ -236,6 +236,8 @@ builder.Services.AddSingleton<IValidateOptions<ControlPlaneOptions>, ControlPlan
 builder.Services.AddOptions<ControlPlaneOptions>()
     .Bind(builder.Configuration.GetSection(ControlPlaneOptions.SectionName))
     .ValidateOnStart();
+builder.Services.AddOptions<KubernetesExecutionOptions>()
+    .Bind(builder.Configuration.GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes"));
 builder.Services.AddResilientHttpClient(
     "import-source",
     "import-source",
@@ -249,6 +251,18 @@ builder.Services.AddResilientHttpClient(
     "control-plane-azure",
     "control-plane-azure",
     HttpResiliencePolicies.FastApiDefaults);
+var kubernetesExecutionOptions = builder.Configuration
+    .GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes")
+    .Get<KubernetesExecutionOptions>() ?? new KubernetesExecutionOptions();
+var kubernetesCaBundlePath = kubernetesExecutionOptions.CaBundlePath;
+var kubernetesInClusterAutoDetect = kubernetesExecutionOptions.InClusterAutoDetect;
+builder.Services.AddResilientHttpClient(
+    KubernetesJobClient.HttpClientName,
+    "control-plane-kubernetes",
+    HttpResiliencePolicies.FastApiDefaults,
+    configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(
+        kubernetesInClusterAutoDetect,
+        kubernetesCaBundlePath));
 builder.Services.AddResilientHttpClient(
     AzureBatchDataPlaneClient.HttpClientName,
     "control-plane-azure-batch",
@@ -278,6 +292,10 @@ builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureF
 builder.Services.AddSingleton<LocalBatchComputeBackend>();
 builder.Services.AddSingleton<IBatchComputeBackend>(sp =>
     sp.GetRequiredService<LocalBatchComputeBackend>());
+builder.Services.AddSingleton<IKubernetesJobClient, KubernetesJobClient>();
+builder.Services.AddSingleton<KubernetesJobBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp =>
+    sp.GetRequiredService<KubernetesJobBatchComputeBackend>());
 if (connectedRedis != null)
 {
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();

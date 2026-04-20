@@ -44,6 +44,20 @@ internal readonly record struct BackendCancelApplyResult(
     ExecutionJobRecord? Job,
     ExecutionJobStatus? TerminalStatus = null);
 
+internal enum RemoteCancelStampOutcome
+{
+    Stamped,
+    AlreadyStamped,
+    TerminalConflict,
+    Missing,
+    Unconfirmed
+}
+
+internal readonly record struct RemoteCancelStampResult(
+    RemoteCancelStampOutcome Outcome,
+    ExecutionJobRecord? Job,
+    ExecutionJobStatus? TerminalStatus = null);
+
 internal static class ExecutionJobCancellationHelper
 {
     public static bool IsTerminal(ExecutionJobStatus status)
@@ -52,11 +66,18 @@ internal static class ExecutionJobCancellationHelper
             or ExecutionJobStatus.Cancelled;
 
     /// <summary>
-    /// Returns <c>true</c> when the job has evidence of provider-side state,
-    /// meaning the backend has seen the job and a remote cancel is valid.
+    /// Returns <c>true</c> when the job has a live provider-side counterpart that a remote
+    /// cancel should target. A failed remote job that was requeued for retry sits at
+    /// <see cref="ExecutionJobStatus.Queued"/> with <see cref="ExecutionJobRecord.AttemptCount"/> &gt; 0,
+    /// no <see cref="ExecutionJobRecord.ProviderOperationId"/>, and a populated
+    /// <see cref="ExecutionJobRecord.NextRetryAt"/>; calling the backend against that stale
+    /// attempt (whose provider object may already be terminal or TTL-cleaned) would surface a
+    /// false terminal conflict, so treat it as not-yet-submitted and route to the
+    /// pre-submission cancel path. Mirrors the reconciler's submission-gate predicate.
     /// </summary>
-    public static bool WasSubmittedToProvider(ExecutionJobRecord job)
-        => !string.IsNullOrEmpty(job.ProviderOperationId) || job.AttemptCount > 0;
+    public static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
+        => !string.IsNullOrEmpty(job.ProviderOperationId)
+            || (job.AttemptCount > 0 && !job.NextRetryAt.HasValue);
 
     public static async Task<PreSubmissionCancelResult> TryCancelPreSubmissionAsync(
         IExecutionJobStore jobStore,
@@ -184,6 +205,71 @@ internal static class ExecutionJobCancellationHelper
         }
 
         return new(ExecutionJobCancellationState.Unconfirmed, current);
+    }
+
+    /// <summary>
+    /// Durable pre-cancel signal: stamps <see cref="ExecutionJobRecord.CancellationRequestedAt"/>
+    /// before the first <c>backend.CancelAsync</c> call so a concurrent or repeated
+    /// remote cancel that races ahead and sees the provider object already gone maps
+    /// NotFound → Cancelled (via <c>BuildObservationForMissingJob</c>'s cancellation-intent
+    /// branch) rather than reclassifying the record as Failed. Without this stamp, two
+    /// callers that both observe the same pre-cancel snapshot can have the "saw the delete"
+    /// observation lose a CAS race to the "saw NotFound" observation, and the durable
+    /// record ends up Failed even though the provider job was successfully cancelled.
+    /// </summary>
+    public static async Task<RemoteCancelStampResult> TryStampRemoteCancelRequestedAtAsync(
+        IExecutionJobStore jobStore,
+        ExecutionJobRecord job,
+        int maxAttempts = 3,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobStore);
+        ArgumentNullException.ThrowIfNull(job);
+
+        var current = job;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            if (IsTerminal(current.Status))
+            {
+                return new(RemoteCancelStampOutcome.TerminalConflict, current, current.Status);
+            }
+
+            if (current.CancellationRequestedAt.HasValue)
+            {
+                return new(RemoteCancelStampOutcome.AlreadyStamped, current);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var stamped = current with
+            {
+                CancellationRequestedAt = now,
+                UpdatedAt = now
+            };
+
+            if (await jobStore.TrySetAsync(stamped, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                return new(RemoteCancelStampOutcome.Stamped, stamped);
+            }
+
+            var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            if (fresh == null)
+            {
+                return new(RemoteCancelStampOutcome.Missing, null);
+            }
+            current = fresh;
+        }
+
+        if (IsTerminal(current.Status))
+        {
+            return new(RemoteCancelStampOutcome.TerminalConflict, current, current.Status);
+        }
+
+        if (current.CancellationRequestedAt.HasValue)
+        {
+            return new(RemoteCancelStampOutcome.AlreadyStamped, current);
+        }
+
+        return new(RemoteCancelStampOutcome.Unconfirmed, current);
     }
 
     /// <summary>
