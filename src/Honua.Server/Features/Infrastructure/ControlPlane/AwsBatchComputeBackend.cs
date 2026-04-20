@@ -147,19 +147,75 @@ internal sealed partial class AwsBatchComputeBackend(
         return false;
     }
 
-    private static bool IsSubmissionOutcomeUncertain(AmazonServiceException ex)
+    /// <summary>
+    /// True when the durable record has already crossed the remote-start boundary but is
+    /// missing a concrete provider id. Happens when a crash or CAS conflict lost the
+    /// post-start write in <see cref="ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync"/>
+    /// after AWS Batch accepted (or may have accepted) the submission. Without this
+    /// recovery path, observe/cancel would short-circuit to "not submitted yet" and orphan
+    /// the real provider job. The per-attempt job name is deterministic, so reconciliation
+    /// can rediscover the job via ListJobsByName.
+    /// </summary>
+    internal static bool TryDeriveOrphanedSubmissionName(ExecutionJobRecord job, out string jobName)
     {
-        // A zero-valued StatusCode means no HTTP response reached the SDK (credential
-        // acquisition, DNS, socket). 408/429/5xx mean the provider may still have accepted
-        // the SubmitJob call despite returning an error — treat as ambiguous and defer to
-        // the reconciler instead of stamping the durable record terminal Failed.
-        if ((int)ex.StatusCode == 0)
+        if (!string.IsNullOrWhiteSpace(job.ProviderOperationId))
+        {
+            jobName = string.Empty;
+            return false;
+        }
+
+        // The initial pre-submission state is Status=Queued with AttemptCount=0. Anything
+        // else means StartAsync ran at least once: Status was advanced to Provisioning
+        // before the first call, or AttemptCount was incremented after a prior success.
+        if (job.Status == ExecutionJobStatus.Queued && job.AttemptCount == 0)
+        {
+            jobName = string.Empty;
+            return false;
+        }
+
+        jobName = BuildJobName(job.OperationId, job.AttemptCount);
+        return true;
+    }
+
+    /// <summary>
+    /// True when the exception is part of the AWS SDK runtime exception family
+    /// (<see cref="AmazonServiceException"/> for service-level failures or
+    /// <see cref="AmazonClientException"/> for client-side identity/transport failures).
+    /// In AWS SDK v4 these are sibling types rooted at <see cref="Exception"/>, so both
+    /// must be caught explicitly — the adapter comments promise uncertain-submit and
+    /// status-preservation behavior for the entire class.
+    /// </summary>
+    private static bool IsAwsRuntimeException(Exception ex)
+        => ex is AmazonServiceException or AmazonClientException;
+
+    private static bool IsSubmissionOutcomeUncertain(Exception ex)
+    {
+        // AmazonClientException (credential resolution, DNS, socket) never reached AWS —
+        // the SubmitJob call did not get far enough to be rejected, so the outcome is
+        // ambiguous by definition. In AWS SDK v4 AmazonClientException and
+        // AmazonServiceException are sibling types rooted at Exception, so the check
+        // here is exclusive.
+        if (ex is AmazonClientException)
         {
             return true;
         }
 
-        return ex.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
-            || (int)ex.StatusCode >= 500;
+        if (ex is not AmazonServiceException serviceEx)
+        {
+            return false;
+        }
+
+        // A zero-valued StatusCode means no HTTP response reached the SDK. 408/429/5xx
+        // mean the provider may still have accepted the SubmitJob call despite returning
+        // an error — treat as ambiguous and defer to the reconciler instead of stamping
+        // the durable record terminal Failed.
+        if ((int)serviceEx.StatusCode == 0)
+        {
+            return true;
+        }
+
+        return serviceEx.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || (int)serviceEx.StatusCode >= 500;
     }
 
     public string BackendName => AdapterBackendName;
@@ -209,7 +265,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = $"Submitted AWS Batch job '{result.JobName}' ({result.JobId}) to queue '{jobQueue}'."
             };
         }
-        catch (AmazonServiceException ex) when (IsSubmissionOutcomeUncertain(ex))
+        catch (Exception ex) when (IsAwsRuntimeException(ex) && IsSubmissionOutcomeUncertain(ex))
         {
             // Transport-ambiguous submit (5xx/429/408/credential/network): AWS Batch may
             // have accepted the job even though we never got a response. Preserve the
@@ -227,8 +283,11 @@ internal sealed partial class AwsBatchComputeBackend(
         }
         catch (AmazonServiceException ex)
         {
-            // Definite provider rejection (4xx with a real status): fail fast so operators
-            // get an actionable message instead of the job getting stuck in Queued retries.
+            // Definite provider rejection (4xx with a real status code): fail fast so
+            // operators get an actionable message instead of the job getting stuck in
+            // Queued retries. Pure AmazonClientException (identity/transport) is always
+            // uncertain and takes the branch above, so only resolved service-level
+            // rejections reach this catch.
             Log.BatchJobSubmissionFailed(logger, job.OperationId, jobName, ex.Message);
 
             return new BatchComputeSubmissionResult
@@ -248,16 +307,26 @@ internal sealed partial class AwsBatchComputeBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var providerId = job.ProviderOperationId;
+        var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+
         if (string.IsNullOrWhiteSpace(providerId))
         {
+            // A record that already crossed the remote-start boundary but lost its provider
+            // id (crash or CAS conflict on the post-start write) must not be treated as
+            // "not submitted". Recover ownership by running the deterministic per-attempt
+            // name through the pending-discovery path: ListJobsByName will bind to the
+            // real AWS Batch job if the provider accepted the submission.
+            if (TryDeriveOrphanedSubmissionName(job, out var orphanedJobName))
+            {
+                return await ObservePendingDiscoveryAsync(job, orphanedJobName, region, cancellationToken).ConfigureAwait(false);
+            }
+
             return new BatchComputeObservation
             {
                 Status = job.Status,
                 Message = "AWS Batch job has not been submitted yet."
             };
         }
-
-        var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
 
         if (TryExtractPendingJobName(providerId, out var pendingJobName))
         {
@@ -289,11 +358,14 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = message
             };
         }
-        catch (AmazonServiceException ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
-            // Preserve durable state on provider/transport/auth failures. If we threw, the
-            // reconciler's generic catch would stamp the record terminal Failed even though
-            // the AWS Batch job could still be running.
+            // Preserve durable state on provider/transport/auth failures, covering both
+            // AmazonServiceException (HTTP-level errors) and AmazonClientException
+            // (credential resolution, DNS, socket). Those are sibling types in AWS SDK
+            // v4, so both must be caught here; if either threw through, the reconciler's
+            // generic catch would stamp the record terminal Failed even though the AWS
+            // Batch job could still be running.
             Log.BatchJobObservationFailed(logger, job.OperationId, providerId, ex.Message);
             return new BatchComputeObservation
             {
@@ -381,7 +453,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = $"Discovered AWS Batch job '{summary.JobId}' by name '{pendingJobName}' in state {summary.Status ?? "UNKNOWN"}."
             };
         }
-        catch (AmazonServiceException ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
             Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation
@@ -410,16 +482,26 @@ internal sealed partial class AwsBatchComputeBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var providerId = job.ProviderOperationId;
+        var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+
         if (string.IsNullOrWhiteSpace(providerId))
         {
+            // A record that already crossed the remote-start boundary but lost its provider
+            // id (crash or CAS conflict on the post-start write) must not be treated as
+            // "cancelled before submission" — that would orphan an accepted AWS Batch job.
+            // Route through the discovery cancel path using the deterministic per-attempt
+            // name so ListJobsByName can rediscover and cancel the real provider job.
+            if (TryDeriveOrphanedSubmissionName(job, out var orphanedJobName))
+            {
+                return await CancelPendingDiscoveryAsync(job, orphanedJobName, region, cancellationToken).ConfigureAwait(false);
+            }
+
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Cancelled,
                 Message = "AWS Batch job was cancelled before submission."
             };
         }
-
-        var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
 
         if (TryExtractPendingJobName(providerId, out var pendingJobName))
         {
@@ -487,12 +569,14 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = message
             };
         }
-        catch (AmazonServiceException ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
-            // Preserve durable state on provider/transport/auth failures. Without this catch,
-            // a transient AWS SDK blip during a user cancel would surface as an unhandled
-            // 500 to the caller and stamp the durable record terminal Failed via the
-            // reconciler's generic catch.
+            // Preserve durable state on provider/transport/auth failures, covering both
+            // AmazonServiceException (HTTP-level errors) and AmazonClientException
+            // (credential resolution, DNS, socket). Without this catch, a transient AWS
+            // SDK blip during a user cancel would surface as an unhandled 500 to the
+            // caller and stamp the durable record terminal Failed via the reconciler's
+            // generic catch.
             Log.BatchJobCancellationFailed(logger, job.OperationId, providerId, ex.Message);
             return new BatchComputeObservation
             {
@@ -575,7 +659,7 @@ internal sealed partial class AwsBatchComputeBackend(
             var hydrated = job with { ProviderOperationId = summary.JobId };
             return await CancelAsync(hydrated, cancellationToken).ConfigureAwait(false);
         }
-        catch (AmazonServiceException ex)
+        catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
             Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation

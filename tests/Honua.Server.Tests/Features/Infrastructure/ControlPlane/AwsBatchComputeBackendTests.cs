@@ -842,6 +842,237 @@ public sealed class AwsBatchComputeBackendTests
             out pendingName).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ObserveAsync_RecoversProviderOwnershipWhenProvisioningWithBlankProviderId()
+    {
+        // Regression for post-submit write loss: Status=Provisioning with a blank
+        // ProviderOperationId means the submission helper advanced the record before
+        // StartAsync, then lost the second CAS write. The deterministic per-attempt
+        // job name must re-bind ownership via ListJobsByName so we do not orphan a
+        // real AWS Batch job.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult =
+            [
+                new AwsBatchJobState { JobId = "aws-job-recovered", Status = "RUNNABLE" }
+            ]
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Provisioning);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.ProviderOperationId.Should().Be("aws-job-recovered",
+            "the orphaned provisioning record must recover its provider job via ListJobsByName");
+        observation.Status.Should().Be(ExecutionJobStatus.Queued);
+        client.ListJobsCallCount.Should().Be(1);
+        client.LastListJobsName.Should().Be(AwsBatchComputeBackend.BuildJobName(job.OperationId, 0));
+    }
+
+    [Fact]
+    public async Task ObserveAsync_RecoversProviderOwnershipWhenQueuedWithAttemptCountAboveZero()
+    {
+        // Regression for retry post-submit write loss: Status=Queued with AttemptCount>0
+        // means a prior StartAsync succeeded but the follow-up transition lost its write.
+        // The per-attempt name uses the current AttemptCount so we re-bind only to the
+        // current retry, not an earlier AWS Batch job under the same operation id.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult =
+            [
+                new AwsBatchJobState { JobId = "aws-job-retry", Status = "RUNNABLE" }
+            ]
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Queued) with
+        {
+            AttemptCount = 2
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.ProviderOperationId.Should().Be("aws-job-retry");
+        client.LastListJobsName.Should().EndWith("-a2",
+            "recovery must query the current attempt's job name, not an earlier attempt");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_OrphanRecoveryFailsAfterGraceWindowWhenStillUnseen()
+    {
+        // If the orphan record sits past the grace window with no AWS match, the
+        // pending-discovery path terminalizes to Failed so operators see a signal.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult = Array.Empty<AwsBatchJobState>()
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Provisioning) with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow - AwsBatchComputeBackend.PendingDiscoveryGracePeriod - TimeSpan.FromSeconds(5)
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("did not register with the provider");
+    }
+
+    [Fact]
+    public async Task CancelAsync_RecoversProviderOwnershipAndTerminatesWhenProvisioningWithBlankProviderId()
+    {
+        // Regression for post-submit write loss on cancel: a record that crossed the
+        // remote-start boundary without a persisted provider id must NOT short-circuit
+        // to "cancelled before submission"; that would orphan an accepted AWS Batch
+        // job. Instead, rediscover by per-attempt name and route through the normal
+        // describe/cancel path.
+        var client = new StubAwsBatchJobClient();
+        client.NextListJobsResult =
+        [
+            new AwsBatchJobState { JobId = "aws-job-recovered", Status = "RUNNABLE" }
+        ];
+        client.DescribeResults.Enqueue(new AwsBatchJobState
+        {
+            JobId = "aws-job-recovered",
+            Status = "RUNNABLE"
+        });
+        client.DescribeResults.Enqueue(new AwsBatchJobState
+        {
+            JobId = "aws-job-recovered",
+            Status = "FAILED",
+            StatusReason = AwsBatchStateMapper.CancelReason
+        });
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Provisioning);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        observation.ProviderOperationId.Should().Be("aws-job-recovered");
+        client.LastListJobsName.Should().Be(AwsBatchComputeBackend.BuildJobName(job.OperationId, 0));
+        client.CancelCallCount.Should().Be(1,
+            "orphan recovery must still issue a provider-level cancel against the recovered job id");
+    }
+
+    [Fact]
+    public async Task CancelAsync_OrphanRecoveryStaysNonterminalWithinGraceWindow()
+    {
+        // Mirrors the pending-marker cancel rule: if AWS has no record yet and we are
+        // still within the verification grace window, keep the durable record active
+        // so the reconciler can keep retrying discovery.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult = Array.Empty<AwsBatchJobState>()
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Provisioning);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Provisioning,
+            "within the grace window the orphaned cancel must stay non-terminal pending discovery");
+        observation.Message.Should().Contain("still being verified before cancellation completes");
+    }
+
+    [Fact]
+    public async Task StartAsync_TreatsClientSideIdentityFailureAsUncertain()
+    {
+        // Regression for client-side AWS SDK failures: the credential-resolution path
+        // throws AmazonClientException directly (not AmazonServiceException). Those
+        // must keep the record nonterminal via the uncertain-submit marker, not escape
+        // into the reconciler's generic catch.
+        var client = new StubAwsBatchJobClient
+        {
+            SubmitException = new AmazonClientException("Unable to resolve identity: token expired")
+        };
+        var backend = CreateBackend(client);
+
+        var submission = await backend.StartAsync(CreateJob());
+
+        submission.Status.Should().Be(ExecutionJobStatus.Queued);
+        submission.ProviderOperationId.Should().StartWith(AwsBatchComputeBackend.PendingSubmissionMarkerPrefix);
+        submission.Message.Should().Contain("Unable to resolve identity");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_PreservesStatusOnClientSideIdentityFailure()
+    {
+        // Client-side failures (AmazonClientException) during observe must stay inside
+        // the adapter so the reconciler's generic catch does not stamp the durable
+        // record terminal Failed while the AWS Batch job could still be running.
+        var client = new StubAwsBatchJobClient
+        {
+            DescribeException = new AmazonClientException("identity resolution failed: missing profile")
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running);
+        observation.Message.Should().Contain("observation failed");
+        observation.Message.Should().Contain("identity resolution failed");
+    }
+
+    [Fact]
+    public async Task CancelAsync_PreservesStatusOnClientSideIdentityFailure()
+    {
+        // Client-side failures during cancel must preserve durable state. Without this,
+        // a transient credential blip would surface as an unhandled 500 to the caller.
+        var client = new StubAwsBatchJobClient
+        {
+            DescribeException = new AmazonClientException("identity resolution failed: missing profile")
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Running);
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Running);
+        observation.Message.Should().Contain("cancellation failed");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_OrphanRecoveryPreservesStatusOnClientSideFailure()
+    {
+        // Client-side identity/transport failure hit while rediscovering an orphaned
+        // record must leave the durable record non-terminal so reconciliation can
+        // retry on the next cycle.
+        var client = new StubAwsBatchJobClient
+        {
+            ListJobsException = new AmazonClientException("credential provider chain returned no credentials")
+        };
+        var backend = CreateBackend(client);
+        var job = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Provisioning);
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        observation.Message.Should().Contain("discovery failed");
+        observation.Message.Should().Contain("credential provider chain");
+    }
+
+    [Fact]
+    public void TryDeriveOrphanedSubmissionName_OnlyTriggersAfterRemoteStartBoundary()
+    {
+        // Initial pre-submission state (Queued + AttemptCount=0 + blank providerId) must
+        // stay on the normal StartAsync path.
+        var freshJob = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Queued);
+        AwsBatchComputeBackend.TryDeriveOrphanedSubmissionName(freshJob, out _).Should().BeFalse();
+
+        // A record with a real providerId is not orphaned.
+        var submittedJob = CreateJob(providerOperationId: "aws-job-1", status: ExecutionJobStatus.Queued);
+        AwsBatchComputeBackend.TryDeriveOrphanedSubmissionName(submittedJob, out _).Should().BeFalse();
+
+        // Boundary-crossed records with blank providerId trigger recovery.
+        var provisioningJob = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Provisioning);
+        AwsBatchComputeBackend.TryDeriveOrphanedSubmissionName(provisioningJob, out var provisioningName).Should().BeTrue();
+        provisioningName.Should().EndWith("-a0");
+
+        var retryJob = CreateJob(providerOperationId: null, status: ExecutionJobStatus.Queued) with { AttemptCount = 3 };
+        AwsBatchComputeBackend.TryDeriveOrphanedSubmissionName(retryJob, out var retryName).Should().BeTrue();
+        retryName.Should().EndWith("-a3");
+    }
+
     private static AwsBatchComputeBackend CreateBackend(IAwsBatchJobClient client)
         => new(client, NullLogger<AwsBatchComputeBackend>.Instance);
 
@@ -905,15 +1136,15 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
     /// </summary>
     public IReadOnlyList<AwsBatchJobState>? NextListJobsResult { get; set; }
 
-    public AmazonServiceException? SubmitException { get; set; }
+    public Exception? SubmitException { get; set; }
 
-    public AmazonServiceException? DescribeException { get; set; }
+    public Exception? DescribeException { get; set; }
 
-    public AmazonServiceException? ListJobsException { get; set; }
+    public Exception? ListJobsException { get; set; }
 
-    public AmazonServiceException? CancelException { get; set; }
+    public Exception? CancelException { get; set; }
 
-    public AmazonServiceException? TerminateException { get; set; }
+    public Exception? TerminateException { get; set; }
 
     public AwsBatchJobSubmission? LastSubmission { get; private set; }
 
