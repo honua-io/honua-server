@@ -788,6 +788,88 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_ProcessSelectionAnswer_PinnedCandidateBelowShortlistCap_PromotedNotRejected()
+    {
+        // Regression: pin application must run against the post-authorization
+        // ranking, not the post-cap ranking. A still-authorized candidate
+        // that has fallen just below MaxCandidatesPerKind must be promoted
+        // to the front rather than rejected as invalid_argument because the
+        // shortlist trim hid it from ApplyPin. Contract is documented in
+        // docs/developer/GROUNDING.md (`process.selection` reorders the
+        // post-authorization ranking).
+        _options.MaxCandidatesPerKind = 2;
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns(
+            [
+                Candidate("p-top", 0.95, CandidateKind.Process),
+                Candidate("p-second", 0.90, CandidateKind.Process),
+                Candidate("p-below-cap", 0.80, CandidateKind.Process)
+            ]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "buffer",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["process.selection"] = ["p-below-cap"]
+                    }
+                }
+            },
+            Principal);
+
+        result.Candidates.Processes.Should().HaveCount(2);
+        result.Candidates.Processes.Select(c => c.Id).Should().ContainInOrder("p-below-cap", "p-top");
+        result.DraftIntent.Provenance.ClarificationsAnswered.Should().Contain("process.selection");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_DatasetSelectionAnswer_PinnedCandidateBelowShortlistCap_PromotedNotRejected()
+    {
+        // Regression for the dataset side of the same finding: a pinned
+        // dataset that is still authorized but ranks below the shortlist
+        // cap must be promoted instead of trimmed-then-rejected.
+        _options.MaxCandidatesPerKind = 2;
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns(
+            [
+                Candidate("svc-top", 0.95, CandidateKind.Dataset),
+                Candidate("svc-second", 0.90, CandidateKind.Dataset),
+                Candidate("svc-below-cap", 0.80, CandidateKind.Dataset)
+            ]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "incidents",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["dataset.selection"] = ["svc-below-cap"]
+                    }
+                }
+            },
+            Principal);
+
+        result.Candidates.Datasets.Should().HaveCount(2);
+        result.Candidates.Datasets.Select(c => c.Id).Should().ContainInOrder("svc-below-cap", "svc-top");
+        result.DraftIntent.Provenance.ClarificationsAnswered.Should().Contain("dataset.selection");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_PublishTargetAnswer_AppliedToDraftedPublishIntent()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification

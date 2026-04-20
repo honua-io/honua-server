@@ -114,24 +114,30 @@ internal sealed class GroundingService : IGroundingService
         // no IO is required here. Authorization runs before the shortlist
         // cap so denied top hits cannot consume the MaxCandidatesPerKind
         // budget and hide an authorized candidate ranked just below them.
+        // Pin application also runs before the cap so a still-authorized
+        // selection that has fallen just below MaxCandidatesPerKind is
+        // promoted to the front instead of being trimmed and then rejected
+        // as invalid_argument. The contract pins against the post-
+        // authorization ranking (see docs/developer/GROUNDING.md).
         var processes = _processCatalog.ListProcesses();
         var processCandidates = _engine.ScoreProcesses(request, processes);
         processCandidates = _authorizationFilter.Filter(principal, processCandidates);
-        processCandidates = ApplyBandsAndCap(processCandidates);
         processCandidates = ClarificationAnswerResolver.ApplyPin(
             processCandidates, applied.PinnedProcessId, "process.selection", appliedIds);
+        processCandidates = ApplyBandsAndCap(processCandidates);
 
         // 3. Rank layers / services. Layer catalog is optional because some
         // deployments (e.g. read-only raster servers, pre-provisioning test
         // harnesses) may not have it wired. Missing catalog → empty dataset
         // list rather than a hard failure; the clarification envelope will
-        // prompt for explicit inputs. Authorization runs before the shortlist
-        // cap for the same reason as processes above.
+        // prompt for explicit inputs. Authorization and pin application
+        // both run before the shortlist cap for the same reasons as
+        // processes above.
         var datasetCandidates = await RankDatasetsAsync(request, cancellationToken).ConfigureAwait(false);
         datasetCandidates = _authorizationFilter.Filter(principal, datasetCandidates);
-        datasetCandidates = ApplyBandsAndCap(datasetCandidates);
         datasetCandidates = ClarificationAnswerResolver.ApplyPin(
             datasetCandidates, applied.PinnedDatasetId, "dataset.selection", appliedIds);
+        datasetCandidates = ApplyBandsAndCap(datasetCandidates);
 
         var ranking = new CandidateRanking
         {
