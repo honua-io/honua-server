@@ -95,7 +95,7 @@ finding so the caller can answer them in one turn.
 | 3 | `AmbiguousDataset` | Two or more dataset candidates at `≥ HighConfidenceFloor` within `MaterialSpread` | Single-select over the tied candidates |
 | 4 | `AmbiguousProcess` | Two or more process candidates at `≥ HighConfidenceFloor` within `MaterialSpread` | Single-select over the tied candidates |
 | 5 | `DestructiveAction` | Top process candidate is flagged destructive by `ProcessDestructiveClassifier` | Confirmation |
-| 6 | `MissingRequiredInput` (`publish.source`) | Classified as `PublishData` but no `explicitInputs` and the top dataset is not `High` confidence | Single-select over ranked datasets when available, free-text fallback otherwise |
+| 6 | `MissingRequiredInput` (`publish.source`) | Classified as `PublishData` with no resolvable layer-backed source: no `explicitInputs` and the top dataset is either not `High` confidence or a `DatasetSubtype.Service` entry; or `explicitInputs[0]` matches a service candidate in the ranking | Single-select over ranked non-service datasets when available, free-text fallback otherwise |
 | 7 | `PublishAction` | Classified as `PublishData` | Single-select over publish target kinds |
 | 8 | `PolicyBoundary` | Classified as `BuildApp` or `AutomateDeploy` | Confirmation (proceed with envelope-only stub) |
 
@@ -160,6 +160,12 @@ harness can re-tune from data without a contract change.
 }
 ```
 
+`GroundingOptionsValidator` runs under `ValidateOnStart` so misconfigured
+thresholds (e.g. a band boundary outside `[0, 1]`, `MediumConfidenceFloor`
+above `HighConfidenceFloor`, or a non-positive `MaxCandidatesPerKind`)
+fail the host at startup rather than silently corrupting banding, capping,
+or ambiguity evaluation.
+
 ## Deterministic engine
 
 `DeterministicGroundingEngine` ships as the default `IGroundingEngine` and
@@ -175,10 +181,14 @@ is the engine the conformance harness pins against.
   category: 0.20, description: 0.15, parameter: 0.10 }`.
 - **Layer / service rankers**: name + description overlap.
 
-Every candidate carries an `Evidence` list (e.g. `title:buffer`,
-`category:analysis`) for explainability. Classification, ranking, and
-clarification emission are deterministic and pure given `(request, catalog
-snapshot)`; initial `intentId` allocation is intentionally unique per call.
+Every candidate carries an `Evidence` list whose entries report hit counts
+per text field (e.g. `title:2`, `category:1`, `description:3`,
+`parameter:1` on processes; `name:*`, `description:*` on layers and
+services) for explainability. Classification, ranking, and clarification
+emission are deterministic and pure given `(request, catalog snapshot)`;
+equal-score candidates tie-break ordinally on `(kind, id, displayName)`
+via `GroundingCandidateComparer`, and initial `intentId` allocation is
+intentionally unique per call.
 
 ## Pluggable engine extension point
 
@@ -187,7 +197,7 @@ rest of the pipeline. A model-backed engine (e.g. an embeddings reranker)
 replaces the default registration:
 
 ```csharp
-services.AddGroundingFeature();
+services.AddGroundingServices(configuration);
 services.Replace(ServiceDescriptor.Singleton<IGroundingEngine, MyEmbeddingsEngine>());
 ```
 
