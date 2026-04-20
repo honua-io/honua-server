@@ -70,6 +70,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AWSSDK.Batch" Version="4.0.8.8" />
     <PackageReference Include="AWSSDK.Lambda" Version="4.0.14.1" />
     <PackageReference Include="Grpc.Tools" Version="2.80.0" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.27" />
