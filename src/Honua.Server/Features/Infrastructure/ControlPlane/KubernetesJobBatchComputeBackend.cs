@@ -59,7 +59,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         ArgumentNullException.ThrowIfNull(job);
 
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
-            ControlPlaneTelemetry.Activities.ExecutionStart, job);
+            ControlPlaneTelemetry.Activities.ExecutionStart, "start", job);
 
         var image = ResolveImage(job);
         if (string.IsNullOrWhiteSpace(image))
@@ -136,7 +136,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         ArgumentNullException.ThrowIfNull(job);
 
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
-            ControlPlaneTelemetry.Activities.ExecutionObserve, job);
+            ControlPlaneTelemetry.Activities.ExecutionObserve, "observe", job);
 
         var (namespaceName, jobName) = ResolveCoordinates(job);
 
@@ -208,7 +208,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         ArgumentNullException.ThrowIfNull(job);
 
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
-            ControlPlaneTelemetry.Activities.ExecutionCancel, job);
+            ControlPlaneTelemetry.Activities.ExecutionCancel, "cancel", job);
 
         var (namespaceName, jobName) = ResolveCoordinates(job);
 

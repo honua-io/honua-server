@@ -202,11 +202,12 @@ internal static class ControlPlaneTelemetry
 
     public static Activity? StartExecutionActivity(
         string activityName,
+        string operation,
         ExecutionJobRecord job)
     {
         var activity = HonuaTelemetry.ActivitySource.StartActivity(activityName, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Admin);
-        activity?.SetTag(HonuaTelemetry.Tags.Operation, activityName);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, operation);
         activity?.SetTag(Tags.ExecutionJobKind, job.Spec.Kind.ToString());
         activity?.SetTag(Tags.TargetKind, job.Spec.TargetKind.ToString());
         activity?.SetTag(Tags.Backend, job.Spec.Backend);

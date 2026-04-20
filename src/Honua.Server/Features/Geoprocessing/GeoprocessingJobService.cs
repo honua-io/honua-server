@@ -810,9 +810,30 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
+        // Stamp CancellationRequestedAt before the remote cancel so a concurrent caller
+        // that races ahead and sees the provider job already gone maps NotFound →
+        // Cancelled rather than Failed. Without this, two callers that both observed the
+        // same pre-cancel snapshot could have the "saw the delete" observation lose the
+        // CAS race to the "saw NotFound" observation.
+        var stampResult = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+            jobStore, job, cancellationToken: cancellationToken).ConfigureAwait(false);
+        switch (stampResult.Outcome)
+        {
+            case RemoteCancelStampOutcome.Missing:
+                return new(RemoteCancelOutcome.Missing);
+            case RemoteCancelStampOutcome.TerminalConflict:
+                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                    _progressStore, stampResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return new(RemoteCancelOutcome.TerminalConflict, stampResult.TerminalStatus ?? stampResult.Job!.Status);
+            case RemoteCancelStampOutcome.Unconfirmed:
+                GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
+                return new(RemoteCancelOutcome.Unconfirmed);
+        }
+
+        var stampedJob = stampResult.Job!;
+        var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
         var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-            jobStore, job, observation, cancellationToken).ConfigureAwait(false);
+            jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
 
         switch (applyResult.Outcome)
         {

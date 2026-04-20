@@ -658,9 +658,36 @@ internal static partial class OperationsProgressEndpoints
                         return Results.Json(localResponse, OperationsProgressJsonContext.Default.CancelOperationResponse);
                     }
 
-                    var observation = await backend.CancelAsync(executionJob, cancellationToken).ConfigureAwait(false);
+                    // Stamp CancellationRequestedAt before the remote cancel so a concurrent
+                    // caller that races ahead and sees the provider job already gone maps
+                    // NotFound → Cancelled rather than reclassifying the record as Failed.
+                    var stampResult = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+                        jobStore, executionJob, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    switch (stampResult.Outcome)
+                    {
+                        case RemoteCancelStampOutcome.Missing:
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' was deleted before remote cancellation could be applied");
+                        case RemoteCancelStampOutcome.TerminalConflict:
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, stampResult.Job!, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' reached terminal state '{stampResult.TerminalStatus ?? stampResult.Job!.Status}' in the durable job store before remote cancellation could be applied");
+                        case RemoteCancelStampOutcome.Unconfirmed:
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' remote cancellation could not be confirmed after retries.");
+                    }
+
+                    var stampedJob = stampResult.Job!;
+                    var observation = await backend.CancelAsync(stampedJob, cancellationToken).ConfigureAwait(false);
                     var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-                        jobStore, executionJob, observation, cancellationToken).ConfigureAwait(false);
+                        jobStore, stampedJob, observation, cancellationToken).ConfigureAwait(false);
 
                     switch (applyResult.Outcome)
                     {

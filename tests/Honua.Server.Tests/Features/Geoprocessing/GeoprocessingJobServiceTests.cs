@@ -1685,11 +1685,16 @@ public sealed class GeoprocessingJobServiceTests
                 Message = "Cancellation confirmed"
             });
 
+        // Pre-stamp CancellationRequestedAt so the remote cancel path skips the stamp
+        // helper and exercises TryApplyBackendCancelAsync's CAS-retry loop directly.
         var record = CreateJobRecord(
             "job-1",
             ExecutionJobStatus.Running,
             backend: "aws-batch",
-            targetKind: BatchComputeTargetKind.AwsBatch);
+            targetKind: BatchComputeTargetKind.AwsBatch) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-10)
+        };
         var freshRecord = record with { UpdatedAt = DateTimeOffset.UtcNow };
         _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>())
             .Returns(record, record, freshRecord);

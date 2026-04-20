@@ -446,9 +446,49 @@ internal static class JobEndpoints
                                 MediaTypes.Json);
                         }
 
-                        var observation = await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
+                        // Stamp CancellationRequestedAt before the remote cancel so a
+                        // concurrent dismiss that races ahead and sees the provider job
+                        // already gone maps NotFound → Cancelled rather than Failed.
+                        var stampResult = await ExecutionJobCancellationHelper.TryStampRemoteCancelRequestedAtAsync(
+                            jobStore, latest, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                        switch (stampResult.Outcome)
+                        {
+                            case RemoteCancelStampOutcome.Missing:
+                                OgcProcessesLog.JobNotFound(logger, jobId);
+                                return JobNotFoundResult(jobId);
+                            case RemoteCancelStampOutcome.TerminalConflict:
+                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                    progressStore, stampResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                                OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(stampResult.Job!.Status));
+                                return Results.Json(
+                                    new OgcProcessError
+                                    {
+                                        Type = "about:blank",
+                                        Title = "Cannot dismiss completed job",
+                                        Status = StatusCodes.Status409Conflict,
+                                        Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(stampResult.Job!.Status)}' before dismiss could be applied."
+                                    },
+                                    OgcProcessesJsonContext.Default.OgcProcessError,
+                                    MediaTypes.Json,
+                                    StatusCodes.Status409Conflict);
+                            case RemoteCancelStampOutcome.Unconfirmed:
+                                return Results.Json(
+                                    new OgcProcessError
+                                    {
+                                        Type = "about:blank",
+                                        Title = "Dismiss could not be confirmed",
+                                        Status = StatusCodes.Status409Conflict,
+                                        Detail = $"Job '{jobId}' dismiss could not be confirmed after retries."
+                                    },
+                                    OgcProcessesJsonContext.Default.OgcProcessError,
+                                    MediaTypes.Json,
+                                    StatusCodes.Status409Conflict);
+                        }
+
+                        var stampedJob = stampResult.Job!;
+                        var observation = await backend.CancelAsync(stampedJob, context.RequestAborted).ConfigureAwait(false);
                         var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
-                            jobStore, latest, observation, context.RequestAborted).ConfigureAwait(false);
+                            jobStore, stampedJob, observation, context.RequestAborted).ConfigureAwait(false);
 
                         switch (applyResult.Outcome)
                         {
