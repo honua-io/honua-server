@@ -184,6 +184,6 @@ internals.
 - Implement Redis-backed operation stores with lease semantics.
 - Add deploy backend adapters for Kubernetes, AWS Lambda, Azure Functions, and
   Azure Container Apps.
-- Add batch compute backend adapters for AWS Batch and Kubernetes Jobs.
+- Add batch compute backend adapters for AWS Batch (the Kubernetes Jobs adapter ships as `honua-kubernetes-job`).
 - Add control-plane endpoints for planning, submission, observation, and
   rollback based on the workflow operation model.

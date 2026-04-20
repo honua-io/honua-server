@@ -51,6 +51,7 @@
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [MCP Server](developer/MCP_SERVER.md)
+- [Grounding & Intent Drafting](developer/GROUNDING.md)
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
 - [Service Registration Consolidation](developer/SERVICE_REGISTRATION_CONSOLIDATION.md)
 - [Versioning Policy](developer/CONTROL_PLANE_VERSIONING_POLICY.md)

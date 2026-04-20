@@ -37,6 +37,9 @@ public sealed class ExecutionJobReconcilerTests
             progressStore,
             NullLogger<ExecutionJobReconciler>.Instance);
 
+        var transitions = new List<MeasurementSample>();
+        using var listener = CreateTransitionListener(transitions);
+
         await sut.ReconcileExecutionJobAsync("job-missing");
 
         var stored = await jobStore.GetAsync("job-missing");
@@ -49,6 +52,13 @@ public sealed class ExecutionJobReconcilerTests
         progress.Should().NotBeNull();
         progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Failed);
         progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Failed);
+
+        listener.RecordObservableInstruments();
+        transitions.Should().NotBeEmpty(
+            $"a Queued -> Failed transition must increment {ControlPlaneTelemetry.Metrics.ExecutionJobTransitions}");
+        transitions.Should().Contain(sample =>
+            GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Queued" &&
+            GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Failed");
     }
 
     [Fact]
@@ -645,6 +655,178 @@ public sealed class ExecutionJobReconcilerTests
         var stored = await jobStore.GetAsync("job-attempt-marker");
         stored.Should().NotBeNull();
         stored!.Status.Should().Be(ExecutionJobStatus.Provisioning);
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_RemoteFailureWithRetryBudget_RequeuesForRetry()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(KubernetesJobBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(BatchComputeTargetKind.KubernetesJob);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeBackendCapabilities { SupportsRetry = true });
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = "provider-failed",
+                PercentComplete = 80,
+                Message = "Pod OOMKilled"
+            });
+
+        var retryPolicy = new JobRetryPolicy
+        {
+            MaxAttempts = 3,
+            Strategy = BackoffStrategy.Fixed,
+            BaseDelay = TimeSpan.FromSeconds(15),
+            MaxDelay = TimeSpan.FromSeconds(15)
+        };
+        var job = CreateJobRecord(
+            operationId: "job-remote-retry",
+            status: ExecutionJobStatus.Running,
+            backend: KubernetesJobBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            percentComplete: 80,
+            currentPhase: "Attempt 1 failed") with
+        {
+            AttemptCount = 1,
+            ProviderOperationId = "provider-failed",
+            RetryPolicy = retryPolicy
+        };
+
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-remote-retry",
+            GeoprocessingProgress.CreateForSubmittedJob("job-remote-retry", "plan-remote") with
+            {
+                WorkflowStatus = GeoprocessingWorkflowStatus.Running,
+                CurrentStageStatus = GeoprocessingStageStatus.Pending,
+                CurrentPhase = "Attempt 1 failed"
+            });
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+        var before = DateTimeOffset.UtcNow;
+
+        await sut.ReconcileExecutionJobAsync("job-remote-retry");
+
+        var stored = await jobStore.GetAsync("job-remote-retry");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+        stored.AttemptCount.Should().Be(1, "requeue preserves completed-attempt count until the next submission starts");
+        stored.ProviderOperationId.Should().BeNull();
+        stored.PercentComplete.Should().BeNull();
+        stored.ErrorMessage.Should().BeNull();
+        stored.CurrentPhase.Should().Be("Retrying (attempt 2/3)");
+        stored.NextRetryAt.Should().NotBeNull();
+        stored.NextRetryAt!.Value.Should().BeCloseTo(before.AddSeconds(15), TimeSpan.FromSeconds(3));
+
+        await backend.Received(1).ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+
+        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>("job-remote-retry");
+        progress.Should().NotBeNull();
+        progress!.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.AwaitingExecution);
+        progress.CurrentStageStatus.Should().Be(GeoprocessingStageStatus.Pending);
+        progress.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_QueuedRemoteRetryBeforeNextRetryAt_WaitsWithoutBackendCall()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(KubernetesJobBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(BatchComputeTargetKind.KubernetesJob);
+
+        var nextRetryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        var job = CreateJobRecord(
+            operationId: "job-remote-wait",
+            status: ExecutionJobStatus.Queued,
+            backend: KubernetesJobBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            currentPhase: "Retrying (attempt 2/3)") with
+        {
+            AttemptCount = 1,
+            NextRetryAt = nextRetryAt
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-remote-wait");
+
+        var stored = await jobStore.GetAsync("job-remote-wait");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Queued);
+        stored.NextRetryAt.Should().Be(nextRetryAt);
+
+        await backend.DidNotReceive().StartAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().ObserveAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReconcileExecutionJob_QueuedRemoteRetryWhenDue_StartsNextAttemptAndClearsRetryMarker()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns(KubernetesJobBatchComputeBackend.BackendId);
+        backend.TargetKind.Returns(BatchComputeTargetKind.KubernetesJob);
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Provisioning,
+                ProviderOperationId = "provider-attempt-2",
+                Message = "Submitted retry attempt"
+            });
+
+        var job = CreateJobRecord(
+            operationId: "job-remote-due",
+            status: ExecutionJobStatus.Queued,
+            backend: KubernetesJobBatchComputeBackend.BackendId,
+            targetKind: BatchComputeTargetKind.KubernetesJob,
+            currentPhase: "Retrying (attempt 2/3)") with
+        {
+            AttemptCount = 1,
+            NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(-5)
+        };
+        var jobStore = new InMemoryExecutionJobStore(job);
+        var progressStore = new InMemoryProgressStore();
+        var sut = new ExecutionJobReconciler(
+            jobStore,
+            [backend],
+            progressStore,
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync("job-remote-due");
+
+        await backend.Received(1).StartAsync(
+            Arg.Is<ExecutionJobRecord>(record =>
+                record.Status == ExecutionJobStatus.Provisioning &&
+                record.AttemptCount == 1 &&
+                record.NextRetryAt == job.NextRetryAt),
+            Arg.Any<CancellationToken>());
+
+        var stored = await jobStore.GetAsync("job-remote-due");
+        stored.Should().NotBeNull();
+        stored!.Status.Should().Be(ExecutionJobStatus.Provisioning);
+        stored.AttemptCount.Should().Be(2);
+        stored.ProviderOperationId.Should().Be("provider-attempt-2");
+        stored.CurrentPhase.Should().Be("Submitted retry attempt");
+        stored.NextRetryAt.Should().BeNull();
     }
 
     [Fact]
@@ -1264,6 +1446,256 @@ public sealed class ExecutionJobReconcilerTests
     }
 
     [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_NonTerminalCurrent_MergesResolvedProvenance()
+    {
+        // Winner is a concurrent cancellation request: Queued + CancellationRequestedAt
+        // set, no provider marker. Without the merge-on-conflict loop the pinned namespace
+        // and ProviderOperationId would be dropped, so a later cancel would re-resolve
+        // namespace from mutable defaults or misclassify the record as pre-submission and
+        // orphan the already-created Kubernetes Job.
+        var cancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var winnerRecord = CreateJobRecord(
+            operationId: "job-cas-merge",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            CancellationRequestedAt = cancellationRequestedAt
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var setCallCount = 0;
+        ExecutionJobRecord? lastPersisted = null;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                setCallCount++;
+                var record = (ExecutionJobRecord)call[0];
+                // 1st call: Provisioning transition → succeed.
+                // 2nd call: Post-start update → simulated CAS conflict (winner raced in).
+                // 3rd call: Merge-provenance CAS over the fetched winner → succeed.
+                if (setCallCount == 2)
+                {
+                    return false;
+                }
+
+                lastPersisted = record;
+                return true;
+            });
+        jobStore.GetAsync("job-cas-merge", Arg.Any<CancellationToken>())
+            .Returns(winnerRecord);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "k8s-uid-1",
+                Message = "Started",
+                ResolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["k8s.namespace"] = "pinned-ns"
+                }
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        await progressStore.SetProgressAsync(
+            "job-cas-merge",
+            GeoprocessingProgress.CreateForSubmittedJob("job-cas-merge", "plan-cas-merge"));
+
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-merge",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob);
+
+        var result = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        setCallCount.Should().Be(3,
+            "the helper must re-CAS with merged submission provenance after the post-start conflict");
+        lastPersisted.Should().NotBeNull();
+        lastPersisted!.Spec.Parameters.Should().ContainKey("k8s.namespace");
+        lastPersisted.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns",
+            "the resolved Kubernetes namespace must be pinned onto the winning record");
+        lastPersisted.ProviderOperationId.Should().Be("k8s-uid-1",
+            "the provider-side job identifier must survive the CAS conflict so observe/cancel/retry target the right Job");
+        lastPersisted.CancellationRequestedAt.Should().Be(cancellationRequestedAt,
+            "the winner's cancellation-request stamp must not be overwritten by the merge");
+        lastPersisted.Status.Should().Be(ExecutionJobStatus.Queued,
+            "the merge must not clobber the winner's status field");
+        lastPersisted.AttemptCount.Should().Be(1,
+            "AttemptCount must be advanced to the submitted value so later observe/cancel target the same Job the adapter just created");
+        lastPersisted.NextRetryAt.Should().BeNull(
+            "NextRetryAt must be cleared once the retry has been dispatched");
+
+        result.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns");
+        result.ProviderOperationId.Should().Be("k8s-uid-1");
+    }
+
+    [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_RetryAttempt_PersistsAttemptCountSoObserveTargetsNewJob()
+    {
+        // Scenario: a retry has been requeued (AttemptCount=1, NextRetryAt scheduled).
+        // The reconciler dispatches the retry; the Kubernetes adapter creates a fresh
+        // "...-a2" Job. Before the post-start CAS fires, a concurrent cancellation-
+        // request writer stamps the record, winning the CAS. The merge helper must
+        // still advance AttemptCount (1→2) and clear NextRetryAt on the winner,
+        // otherwise the Kubernetes adapter's ResolveCoordinates would resolve the Job
+        // name against the stale AttemptCount=1 and target the prior attempt's Job
+        // (which no longer exists) instead of the "...-a2" Job it just created.
+        var cancellationRequestedAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var retryScheduledAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var winnerRecord = CreateJobRecord(
+            operationId: "job-retry-cas",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1,
+            NextRetryAt = retryScheduledAt,
+            CancellationRequestedAt = cancellationRequestedAt
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var setCallCount = 0;
+        ExecutionJobRecord? lastPersisted = null;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                setCallCount++;
+                var record = (ExecutionJobRecord)call[0];
+                if (setCallCount == 2)
+                {
+                    // Post-start CAS: simulated conflict (concurrent cancel stamp).
+                    return false;
+                }
+
+                lastPersisted = record;
+                return true;
+            });
+        jobStore.GetAsync("job-retry-cas", Arg.Any<CancellationToken>())
+            .Returns(winnerRecord);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "k8s-uid-a2",
+                Message = "Submitted Kubernetes Job default/honua-job-retry-cas-a2.",
+                ResolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["k8s.namespace"] = "default"
+                }
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        var retryJob = CreateJobRecord(
+            operationId: "job-retry-cas",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            AttemptCount = 1,
+            NextRetryAt = retryScheduledAt
+        };
+
+        var result = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            retryJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        setCallCount.Should().Be(3,
+            "the helper must re-CAS to carry the retry-attempt provenance forward");
+        lastPersisted.Should().NotBeNull();
+        lastPersisted!.AttemptCount.Should().Be(2,
+            "the merged record must reflect the submitted attempt number so the Kubernetes adapter's ResolveCoordinates produces the '...-a2' Job name the retry Job was created under");
+        lastPersisted.NextRetryAt.Should().BeNull(
+            "NextRetryAt must be cleared once the retry has been dispatched; leaving it set would re-arm the retry scheduler against an already-live Job");
+        lastPersisted.ProviderOperationId.Should().Be("k8s-uid-a2",
+            "the retry attempt's provider id must survive the CAS conflict so observe/cancel route to the new Job");
+        lastPersisted.CancellationRequestedAt.Should().Be(cancellationRequestedAt,
+            "the winner's cancellation-request stamp must not be overwritten by the merge");
+        lastPersisted.Status.Should().Be(ExecutionJobStatus.Queued,
+            "the winner's status field wins; the reconciler will transition from there");
+
+        // Sanity: the Kubernetes adapter must derive the same "...-a2" Job name from
+        // the merged record so the next observe/cancel hop targets the Job just created.
+        KubernetesJobBatchComputeBackend.BuildJobName(result.OperationId, Math.Max(result.AttemptCount, 1))
+            .Should().Be("honua-job-retry-cas-a2");
+        result.AttemptCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task StartOnRemoteBackendAsync_PostStartCasConflict_ExistingPinOnWinner_SkipsRedundantMerge()
+    {
+        // If the winner already carries a pinned namespace, provider id, and the
+        // submitted AttemptCount (e.g., a concurrent reconciler re-observed the same
+        // adapter), the helper must not churn an extra CAS write just to re-stamp
+        // identical provenance.
+        var alreadyPinnedWinner = CreateJobRecord(
+            operationId: "job-cas-nochange",
+            status: ExecutionJobStatus.Running,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob) with
+        {
+            ProviderOperationId = "k8s-uid-1",
+            AttemptCount = 1,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "honua-kubernetes-job",
+                WorkloadId = "plan-remote",
+                WorkloadName = "Geoprocessing",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingPlanId] = "plan-remote",
+                    ["k8s.namespace"] = "pinned-ns"
+                }
+            }
+        };
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var setCallCount = 0;
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                setCallCount++;
+                return setCallCount != 2;
+            });
+        jobStore.GetAsync("job-cas-nochange", Arg.Any<CancellationToken>())
+            .Returns(alreadyPinnedWinner);
+
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "k8s-uid-1",
+                Message = "Started",
+                ResolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["k8s.namespace"] = "pinned-ns"
+                }
+            });
+
+        var progressStore = new InMemoryProgressStore();
+        var queuedJob = CreateJobRecord(
+            operationId: "job-cas-nochange",
+            status: ExecutionJobStatus.Queued,
+            backend: "honua-kubernetes-job",
+            targetKind: BatchComputeTargetKind.KubernetesJob);
+
+        var result = await ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync(
+            queuedJob, backend, jobStore, progressStore, TimeSpan.FromDays(7), null, CancellationToken.None);
+
+        setCallCount.Should().Be(2,
+            "when the winner already matches the resolved provenance, no redundant CAS write should fire");
+        result.Spec.Parameters["k8s.namespace"].Should().Be("pinned-ns");
+        result.ProviderOperationId.Should().Be("k8s-uid-1");
+    }
+
+    [Fact]
     public async Task StartOnRemoteBackendAsync_FailedSubmission_PersistsErrorMessageAndProgress()
     {
         var jobStore = new InMemoryExecutionJobStore(
@@ -1406,8 +1838,8 @@ public sealed class ExecutionJobReconcilerTests
                     return;
                 }
 
-                if (instrument.Name == "honua.execution.reconcile.cycle"
-                    || instrument.Name == "honua.execution.job.transitions_total")
+                if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionReconcileCycles
+                    || instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }
@@ -1415,14 +1847,14 @@ public sealed class ExecutionJobReconcilerTests
         };
         listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
         {
-            if (instrument.Name == "honua.execution.reconcile.cycle")
+            if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionReconcileCycles)
             {
                 lock (cycles)
                 {
                     cycles.Add(measurement);
                 }
             }
-            else if (instrument.Name == "honua.execution.job.transitions_total")
+            else if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
             {
                 string? status = null;
                 string? previous = null;
@@ -1494,6 +1926,47 @@ public sealed class ExecutionJobReconcilerTests
                 }
             }
         };
+
+    private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
+
+    private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
+    {
+        // Bind to the production counter instance so this listener cannot drift from the
+        // instrument name registered by ControlPlaneTelemetry.
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
+    {
+        foreach (var tag in tags)
+        {
+            if (tag.Key == name)
+            {
+                return tag.Value?.ToString();
+            }
+        }
+
+        return null;
+    }
 
     private sealed class InMemoryExecutionJobStore(params ExecutionJobRecord[] jobs) : IExecutionJobStore
     {

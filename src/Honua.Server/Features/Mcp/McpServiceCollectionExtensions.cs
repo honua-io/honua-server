@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Mcp.Resources;
 using Honua.Server.Features.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -34,6 +35,8 @@ internal static class McpServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddGroundingServices(configuration);
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());

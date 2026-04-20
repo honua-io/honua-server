@@ -387,8 +387,8 @@ List parameterized resource URIs:
 | `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
 | `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
 | `honua_plan_analysis` | contract stub | blocked by `honua.planner.service` | `planning` |
-| `honua_ground_candidates` | contract stub | blocked by `honua.grounding.service` | `planning` |
-| `honua_clarify_intent` | contract stub | blocked by `honua.clarifier.service` | `planning` |
+| `honua_ground_candidates` | functional | `IGroundingService.GroundAsync` | `planning` |
+| `honua_clarify_intent` | functional | `IGroundingService.GroundAsync` | `planning` |
 
 Stub tools still enforce authentication and the same operator-grant
 authorization as their functional counterparts (via
@@ -397,6 +397,10 @@ structured `not_implemented` envelope with `blockedBy`, `contract`, and
 `nextSteps` fields so operators can bind today and pick up behavior when
 the upstream service lands. Authenticated callers without the required
 grant receive a `permission_denied` error, matching the functional tools.
+The grounding tools delegate to `IGroundingService`, which layers
+catalog discovery on top of the same authorization graph via
+`IOperatorAuthorizationEvaluator` — see
+[GROUNDING.md](GROUNDING.md) for the full pipeline.
 
 #### Tool payload notes
 
@@ -429,9 +433,58 @@ grant receive a `permission_denied` error, matching the functional tools.
 - `honua_cancel_job` accepts `{ jobId }`. Blank job ids fail with
   `invalid_argument`. Success returns
   `{ jobId, status: "cancellation_requested", cancellationRequested: true }`.
-- `honua_plan_analysis`, `honua_ground_candidates`, and
-  `honua_clarify_intent` accept `{}` and return
+- `honua_plan_analysis` accepts `{}` and returns
   `{ status: "not_implemented", tool, blockedBy, contract, nextSteps }`.
+- `honua_ground_candidates` accepts
+  `{ goal, workflowFamilyHint?, constraints?, explicitInputs?, assumptionPolicy?, context?, intentId? }`
+  and returns
+  `{ workflowFamily, draftIntent, candidates, clarification?, engine }`.
+  `workflowFamily.value` is one of `Analyze`, `PublishData`, `BuildApp`,
+  `AutomateDeploy`. `draftIntent` carries a canonical intent envelope with
+  optional `analysis` and `publishing` blocks per the drafted family.
+  `workflowFamilyHint` and `assumptionPolicy` accept the case-insensitive
+  enum names only; numeric strings (e.g. `"999"`) and any other unknown
+  value are rejected with `invalid_argument` so out-of-contract enum
+  values cannot leak onto `workflowFamily.value` or the drafted intent.
+  The published schema pins `goal.minLength = 1`, `intentId.minLength = 1`,
+  and `explicitInputs.items.minLength = 1`; the server mapper also
+  normalizes a whitespace-only `intentId` on the initial grounding call
+  to an omitted value (so `GroundingService` allocates a fresh id
+  instead of propagating an empty string through `draftIntent` and the
+  clarification envelope), drops blank `explicitInputs` entries, and
+  trims leading/trailing whitespace on retained entries so
+  `IntentDrafter` cannot lock a padded value like `"  parcels-layer  "`
+  into `PublishIntent.SourceId`.
+- `honua_clarify_intent` accepts the same shape plus a required
+  `{ intentId, response: { answers: Record<string, string[]> } }`. The
+  published schema also marks `goal` as required and requires at least
+  one entry in `answers` (`minProperties: 1`); each answer item also
+  advertises `minLength = 1`. The server mapper rejects blank goals,
+  empty answer maps, and any question whose answer list contains only
+  blank / whitespace values with `invalid_argument`. The tool
+  requires the same `(Catalog, Discover)` authorization grant as
+  `honua_ground_candidates` — both halves of the grounding flow
+  delegate to `IGroundingService.GroundAsync`, so asymmetric permissions
+  would let a caller start grounding but fail to answer its own
+  clarification envelope. The service is stateless — callers carry
+  `goal`, `constraints`, and `explicitInputs` forward across turns; the
+  tool mapper copies `intentId` into both `request.intentId` and
+  `response.intentId` so `IGroundingService` can enforce intent-id
+  parity and reject answers targeting a different intent with
+  `invalid_argument`. Answers are *applied* rather than merely
+  acknowledged: `workflow_family` overrides the classifier
+  (confidence `1.0`, evidence `clarification`), `dataset.selection` and
+  `process.selection` pin the chosen candidate to the front of its
+  ranking (unknown ids fail with `invalid_argument`), `publish.source`
+  pins the drafted `PublishIntent.SourceId` when no `explicitInputs`
+  and no high-confidence dataset are available (free-text or a dataset
+  option id from the ranked list; leading/trailing whitespace is
+  trimmed before application), `publish.target` flows into the
+  drafted `PublishIntent.TargetKind`, and `param.<name>` answers skip
+  the matching parameter-gap clarification and surface as
+  `param.<name>=<value>` entries on `provenance.assumptions`. See
+  [GROUNDING.md](GROUNDING.md) for the material-ambiguity rule set and
+  clarification reason codes.
 
 ### Resources
 
@@ -645,6 +698,9 @@ of `result.content`).
 | `GeoprocessingValidationException` | `invalid_argument` | |
 | `GeoprocessingStoreUnavailableException` | `unavailable` | `retryable: true` |
 | `GeoprocessingIdempotencyConflictException` | `already_exists` | |
+| `GroundingException(EmptyGoal \| UnsupportedWorkflowFamily)` | `invalid_argument` | |
+| `GroundingException(UnknownIntent)` | `not_found` | |
+| `GroundingException(CatalogUnavailable)` | `unavailable` | `retryable: true` |
 | anything else | `internal` | |
 
 `structuredContent` always includes `status: "error"`, `code`, and
@@ -659,6 +715,7 @@ through this error path.
 - `honua.mcp.tool.call` — emitted today, tagged by `tool_name`, `status`, `workflow_family`
 - `honua.mcp.resource.read` — emitted today, tagged by `resource_family`, `status`
 - `honua.mcp.boundary.rejection` — reserved counter tagged by `rejection_reason` for future taxonomy non-goal rejections
+- `honua.grounding.result` — emitted on every successful grounding pass, tagged by `engine`, `workflow_family`, and `clarified` (`"true"` / `"false"`), so the honua-server-734 eval harness can watch engine mix and clarification rate
 
 The dispatcher tags the ambient activity with `honua.protocol = "Mcp"`
 and `honua.operation = <method>` as soon as the JSON-RPC method has been

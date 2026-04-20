@@ -216,6 +216,8 @@ internal sealed partial class RedisJobQueue(
                     throw;
                 }
 
+                ControlPlaneTelemetry.RecordExecutionTransition(job, claimed);
+
                 Log.JobClaimed(logger, operationId, workerId);
                 return operationId;
             }

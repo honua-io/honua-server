@@ -79,7 +79,7 @@
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.25" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.6" />
     <PackageReference Include="ParquetSharp" Version="21.0.0" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.13.22" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />

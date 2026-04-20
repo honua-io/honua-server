@@ -353,6 +353,88 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
+    public async Task DismissJob_RemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        var cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
+        cancellationNotifier.Cancel(JobId).Returns(false);
+
+        // Between-retries state: the prior submission failed, the reconciler requeued
+        // the job and cleared ProviderOperationId, and NextRetryAt is still in the future.
+        // No provider-side job exists to cancel, so we must short-circuit locally.
+        var retryAwaitingResubmission = new ExecutionJobRecord
+        {
+            OperationId = JobId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            AttemptCount = 1,
+            ProviderOperationId = null,
+            NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(15),
+            Spec = new ExecutionJobSpec
+            {
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                Kind = ExecutionJobKind.Geoprocessing,
+                WorkloadName = "geo-workload"
+            }
+        };
+
+        jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(retryAwaitingResubmission);
+        jobStore.GetAsync(Arg.Is<string>(id => id != JobId), Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+        jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ExecutionJobRecord>());
+
+        var fixture = new WebAppFixture()
+            .ReplaceService(jobStore)
+            .ReplaceService(jobQueue)
+            .ReplaceService(progressStore)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(cancellationNotifier);
+                services.AddSingleton(backend);
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await backend.DidNotReceive().CancelAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<CancellationToken>());
+            await jobStore.Received(1).TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(job =>
+                    job.OperationId == JobId &&
+                    job.Status == ExecutionJobStatus.Cancelled &&
+                    job.CompletedAt.HasValue &&
+                    job.CurrentPhase == "Cancelled before submission"),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_RemoteQueuedNeverSubmitted_CasFailure_Returns409()
     {
         var backend = Substitute.For<IBatchComputeBackend>();
