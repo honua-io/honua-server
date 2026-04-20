@@ -811,71 +811,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var observation = await backend.CancelAsync(job, cancellationToken).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-        var updated = job with
-        {
-            Status = observation.Status,
-            UpdatedAt = now,
-            CompletedAt = IsTerminal(observation.Status) ? now : job.CompletedAt,
-            ProviderOperationId = observation.ProviderOperationId ?? job.ProviderOperationId,
-            PercentComplete = observation.PercentComplete ?? job.PercentComplete,
-            CurrentPhase = observation.Message ?? job.CurrentPhase,
-            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                ? observation.Message ?? job.ErrorMessage
-                : job.ErrorMessage,
-            CancellationRequestedAt = IsTerminal(observation.Status) ? job.CancellationRequestedAt : (job.CancellationRequestedAt ?? now)
-        };
-        var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (persisted)
-        {
-            ControlPlaneTelemetry.RecordExecutionTransition(job, updated);
-        }
-        else
-        {
-            GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
-            var fresh = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
-            if (fresh == null)
-            {
-                return new(RemoteCancelOutcome.Missing);
-            }
+        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
+            jobStore, job, observation, cancellationToken).ConfigureAwait(false);
 
-            if (fresh.Status == ExecutionJobStatus.Cancelled)
-            {
-                updated = fresh;
-            }
-            else if (IsTerminal(fresh.Status))
-            {
+        switch (applyResult.Outcome)
+        {
+            case BackendCancelApplyOutcome.Missing:
+                return new(RemoteCancelOutcome.Missing);
+            case BackendCancelApplyOutcome.TerminalConflict:
                 await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                    _progressStore, fresh, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
-                return new(RemoteCancelOutcome.TerminalConflict, fresh.Status);
-            }
-            else
-            {
-                var retryNow = DateTimeOffset.UtcNow;
-                var retryUpdate = fresh with
-                {
-                    Status = observation.Status,
-                    UpdatedAt = retryNow,
-                    CompletedAt = IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
-                    ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
-                    PercentComplete = observation.PercentComplete ?? fresh.PercentComplete,
-                    CurrentPhase = observation.Message ?? fresh.CurrentPhase,
-                    ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                        ? observation.Message ?? fresh.ErrorMessage
-                        : fresh.ErrorMessage,
-                    CancellationRequestedAt = IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
-                };
-                if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
-                {
-                    ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryUpdate);
-                    updated = retryUpdate;
-                }
-                else
-                {
-                    return new(RemoteCancelOutcome.Unconfirmed);
-                }
-            }
+                    _progressStore, applyResult.Job!, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return new(RemoteCancelOutcome.TerminalConflict, applyResult.TerminalStatus ?? applyResult.Job!.Status);
+            case BackendCancelApplyOutcome.Unconfirmed:
+                GeoprocessingServiceLog.RemoteCancelCasRetry(_logger, job.OperationId);
+                return new(RemoteCancelOutcome.Unconfirmed);
         }
+
+        var updated = applyResult.Job!;
 
         await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
             _progressStore, updated, ProgressRetention, cancellationToken: cancellationToken).ConfigureAwait(false);

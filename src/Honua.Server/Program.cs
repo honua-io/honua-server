@@ -263,9 +263,16 @@ builder.Services.AddResilientHttpClient(
     configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(
         kubernetesInClusterAutoDetect,
         kubernetesCaBundlePath));
+builder.Services.AddResilientHttpClient(
+    AzureBatchDataPlaneClient.HttpClientName,
+    "control-plane-azure-batch",
+    HttpResiliencePolicies.FastApiDefaults);
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
 builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
 builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
+builder.Services.AddSingleton<IAzureBatchClient, AzureBatchDataPlaneClient>();
+builder.Services.AddSingleton<AzureBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AzureBatchComputeBackend>());
 builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
 builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
 builder.Services.AddSingleton<DeployWorkflowService>();

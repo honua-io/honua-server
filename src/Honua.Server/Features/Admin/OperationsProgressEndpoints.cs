@@ -659,80 +659,32 @@ internal static partial class OperationsProgressEndpoints
                     }
 
                     var observation = await backend.CancelAsync(executionJob, cancellationToken).ConfigureAwait(false);
-                    var now = DateTimeOffset.UtcNow;
-                    var updated = executionJob with
+                    var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
+                        jobStore, executionJob, observation, cancellationToken).ConfigureAwait(false);
+
+                    switch (applyResult.Outcome)
                     {
-                        Status = observation.Status,
-                        UpdatedAt = now,
-                        CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? now : executionJob.CompletedAt,
-                        ProviderOperationId = observation.ProviderOperationId ?? executionJob.ProviderOperationId,
-                        PercentComplete = observation.PercentComplete ?? executionJob.PercentComplete,
-                        CurrentPhase = observation.Message ?? executionJob.CurrentPhase,
-                        ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                            ? observation.Message ?? executionJob.ErrorMessage
-                            : executionJob.ErrorMessage,
-                        CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? executionJob.CancellationRequestedAt : (executionJob.CancellationRequestedAt ?? now)
-                    };
-                    var persisted = await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
-                    if (persisted)
-                    {
-                        ControlPlaneTelemetry.RecordExecutionTransition(executionJob, updated);
-                    }
-                    else
-                    {
-                        var fresh = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                        if (fresh == null)
-                        {
+                        case BackendCancelApplyOutcome.Missing:
                             return ProblemDetailsHelpers.CreateAdminProblem(
                                 StatusCodes.Status409Conflict,
                                 "Conflict",
                                 $"Operation '{operationId}' was deleted before remote cancellation could be applied");
-                        }
-
-                        if (fresh.Status == ExecutionJobStatus.Cancelled)
-                        {
-                            updated = fresh;
-                        }
-                        else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
-                        {
+                        case BackendCancelApplyOutcome.TerminalConflict:
                             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
+                                progressStore, applyResult.Job!, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
 
                             return ProblemDetailsHelpers.CreateAdminProblem(
                                 StatusCodes.Status409Conflict,
                                 "Conflict",
-                                $"Operation '{operationId}' reached terminal state '{fresh.Status}' in the durable job store before remote cancellation could be applied");
-                        }
-                        else
-                        {
-                            var retryNow = DateTimeOffset.UtcNow;
-                            var retryUpdate = fresh with
-                            {
-                                Status = observation.Status,
-                                UpdatedAt = retryNow,
-                                CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
-                                ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
-                                PercentComplete = observation.PercentComplete ?? fresh.PercentComplete,
-                                CurrentPhase = observation.Message ?? fresh.CurrentPhase,
-                                ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                                    ? observation.Message ?? fresh.ErrorMessage
-                                    : fresh.ErrorMessage,
-                                CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
-                            };
-                            if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: cancellationToken).ConfigureAwait(false))
-                            {
-                                ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryUpdate);
-                                updated = retryUpdate;
-                            }
-                            else
-                            {
-                                return ProblemDetailsHelpers.CreateAdminProblem(
-                                    StatusCodes.Status409Conflict,
-                                    "Conflict",
-                                    $"Operation '{operationId}' remote cancellation could not be confirmed after retries.");
-                            }
-                        }
+                                $"Operation '{operationId}' reached terminal state '{applyResult.TerminalStatus ?? applyResult.Job!.Status}' in the durable job store before remote cancellation could be applied");
+                        case BackendCancelApplyOutcome.Unconfirmed:
+                            return ProblemDetailsHelpers.CreateAdminProblem(
+                                StatusCodes.Status409Conflict,
+                                "Conflict",
+                                $"Operation '{operationId}' remote cancellation could not be confirmed after retries.");
                     }
+
+                    var updated = applyResult.Job!;
 
                     if (ExecutionJobCancellationHelper.IsTerminal(updated.Status))
                     {

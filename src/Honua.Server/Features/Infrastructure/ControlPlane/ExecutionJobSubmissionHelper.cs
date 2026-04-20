@@ -110,6 +110,9 @@ internal static partial class ExecutionJobSubmissionHelper
             CompletedAt = ExecutionJobReconciler.IsTerminal(submission.Status) ? now : provisioning.CompletedAt,
             ProviderOperationId = submission.ProviderOperationId ?? provisioning.ProviderOperationId,
             CurrentPhase = submission.Message ?? provisioning.CurrentPhase,
+            ErrorMessage = submission.Status == ExecutionJobStatus.Failed
+                ? submission.Message ?? provisioning.ErrorMessage
+                : provisioning.ErrorMessage,
             AttemptCount = submittedAttemptCount,
             NextRetryAt = null,
             Spec = mergedSpec

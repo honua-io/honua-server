@@ -176,7 +176,12 @@ public enum BatchComputeTargetKind
     /// <summary>
     /// AWS Batch backend.
     /// </summary>
-    AwsBatch
+    AwsBatch,
+
+    /// <summary>
+    /// Azure Batch backend.
+    /// </summary>
+    AzureBatch
 }
 
 /// <summary>

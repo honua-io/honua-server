@@ -447,92 +447,44 @@ internal static class JobEndpoints
                         }
 
                         var observation = await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
-                        var cancelNow = DateTimeOffset.UtcNow;
-                        var cancelled = latest with
+                        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
+                            jobStore, latest, observation, context.RequestAborted).ConfigureAwait(false);
+
+                        switch (applyResult.Outcome)
                         {
-                            Status = observation.Status,
-                            UpdatedAt = cancelNow,
-                            CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? cancelNow : latest.CompletedAt,
-                            ProviderOperationId = observation.ProviderOperationId ?? latest.ProviderOperationId,
-                            PercentComplete = observation.PercentComplete ?? latest.PercentComplete,
-                            CurrentPhase = observation.Message ?? latest.CurrentPhase,
-                            ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                                ? observation.Message ?? latest.ErrorMessage
-                                : latest.ErrorMessage,
-                            CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? latest.CancellationRequestedAt : (latest.CancellationRequestedAt ?? cancelNow)
-                        };
-                        var persisted = await jobStore.TrySetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
-                        if (persisted)
-                        {
-                            ControlPlaneTelemetry.RecordExecutionTransition(latest, cancelled);
-                        }
-                        else
-                        {
-                            var fresh = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-                            if (fresh == null)
-                            {
+                            case BackendCancelApplyOutcome.Missing:
                                 OgcProcessesLog.JobNotFound(logger, jobId);
                                 return JobNotFoundResult(jobId);
-                            }
-
-                            if (fresh.Status == ExecutionJobStatus.Cancelled)
-                            {
-                                cancelled = fresh;
-                            }
-                            else if (ExecutionJobCancellationHelper.IsTerminal(fresh.Status))
-                            {
+                            case BackendCancelApplyOutcome.TerminalConflict:
                                 await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
-                                    progressStore, fresh, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
-                                OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status));
+                                    progressStore, applyResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                                OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(applyResult.Job!.Status));
                                 return Results.Json(
                                     new OgcProcessError
                                     {
                                         Type = "about:blank",
                                         Title = "Cannot dismiss completed job",
                                         Status = StatusCodes.Status409Conflict,
-                                        Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(fresh.Status)}' before dismiss could be applied."
+                                        Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(applyResult.Job!.Status)}' before dismiss could be applied."
                                     },
                                     OgcProcessesJsonContext.Default.OgcProcessError,
                                     MediaTypes.Json,
                                     StatusCodes.Status409Conflict);
-                            }
-                            else
-                            {
-                                var retryNow = DateTimeOffset.UtcNow;
-                                var retryUpdate = fresh with
-                                {
-                                    Status = observation.Status,
-                                    UpdatedAt = retryNow,
-                                    CompletedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? retryNow : fresh.CompletedAt,
-                                    ProviderOperationId = observation.ProviderOperationId ?? fresh.ProviderOperationId,
-                                    PercentComplete = observation.PercentComplete ?? fresh.PercentComplete,
-                                    CurrentPhase = observation.Message ?? fresh.CurrentPhase,
-                                    ErrorMessage = observation.Status == ExecutionJobStatus.Failed
-                                        ? observation.Message ?? fresh.ErrorMessage
-                                        : fresh.ErrorMessage,
-                                    CancellationRequestedAt = ExecutionJobCancellationHelper.IsTerminal(observation.Status) ? fresh.CancellationRequestedAt : (fresh.CancellationRequestedAt ?? retryNow)
-                                };
-                                if (await jobStore.TrySetAsync(retryUpdate, cancellationToken: context.RequestAborted).ConfigureAwait(false))
-                                {
-                                    ControlPlaneTelemetry.RecordExecutionTransition(fresh, retryUpdate);
-                                    cancelled = retryUpdate;
-                                }
-                                else
-                                {
-                                    return Results.Json(
-                                        new OgcProcessError
-                                        {
-                                            Type = "about:blank",
-                                            Title = "Dismiss could not be confirmed",
-                                            Status = StatusCodes.Status409Conflict,
-                                            Detail = $"Job '{jobId}' dismiss could not be confirmed after retries."
-                                        },
-                                        OgcProcessesJsonContext.Default.OgcProcessError,
-                                        MediaTypes.Json,
-                                        StatusCodes.Status409Conflict);
-                                }
-                            }
+                            case BackendCancelApplyOutcome.Unconfirmed:
+                                return Results.Json(
+                                    new OgcProcessError
+                                    {
+                                        Type = "about:blank",
+                                        Title = "Dismiss could not be confirmed",
+                                        Status = StatusCodes.Status409Conflict,
+                                        Detail = $"Job '{jobId}' dismiss could not be confirmed after retries."
+                                    },
+                                    OgcProcessesJsonContext.Default.OgcProcessError,
+                                    MediaTypes.Json,
+                                    StatusCodes.Status409Conflict);
                         }
+
+                        var cancelled = applyResult.Job!;
 
                         await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
                             progressStore, cancelled, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
