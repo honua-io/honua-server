@@ -78,6 +78,12 @@ internal interface IAwsBatchJobClient
         string? region,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AwsBatchJobState>> ListJobsByNameAsync(
+        string jobQueue,
+        string jobName,
+        string? region,
+        CancellationToken cancellationToken = default);
+
     Task CancelJobAsync(
         string jobId,
         string reason,
@@ -170,6 +176,51 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
             StatusReason = detail.StatusReason,
             ExitCode = latestExitCode
         };
+    }
+
+    public async Task<IReadOnlyList<AwsBatchJobState>> ListJobsByNameAsync(
+        string jobQueue,
+        string jobName,
+        string? region,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobQueue);
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobName);
+
+        using var client = CreateClient(region);
+        var response = await client.ListJobsAsync(
+            new ListJobsRequest
+            {
+                JobQueue = jobQueue,
+                Filters =
+                [
+                    new Amazon.Batch.Model.KeyValuesPair
+                    {
+                        Name = "JOB_NAME",
+                        Values = [jobName]
+                    }
+                ]
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (response.JobSummaryList == null || response.JobSummaryList.Count == 0)
+        {
+            return Array.Empty<AwsBatchJobState>();
+        }
+
+        var states = new List<AwsBatchJobState>(response.JobSummaryList.Count);
+        foreach (var summary in response.JobSummaryList)
+        {
+            states.Add(new AwsBatchJobState
+            {
+                JobId = summary.JobId,
+                JobArn = summary.JobArn,
+                Status = summary.Status?.Value,
+                StatusReason = summary.StatusReason
+            });
+        }
+
+        return states;
     }
 
     public async Task CancelJobAsync(

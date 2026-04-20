@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Net;
+using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -106,6 +108,16 @@ internal sealed partial class AwsBatchComputeBackend(
 {
     internal const string AdapterBackendName = "honua-aws-batch";
 
+    /// <summary>
+    /// Sentinel prefix stored in <see cref="ExecutionJobRecord.ProviderOperationId"/> when a
+    /// SubmitJob call failed with a transport-ambiguous error. The remainder is the deterministic
+    /// AWS Batch job name, which reconciliation resolves to a concrete provider job id via
+    /// <see cref="IAwsBatchJobClient.ListJobsByNameAsync"/>. Using a sentinel keeps the record
+    /// nonterminal (so the reconciler takes the Observe path) without pretending we have a real
+    /// provider id.
+    /// </summary>
+    internal const string PendingSubmissionMarkerPrefix = "aws-batch-pending:";
+
     private static readonly BatchComputeBackendCapabilities CapabilitiesSnapshot = new()
     {
         SupportsCancellation = true,
@@ -114,6 +126,34 @@ internal sealed partial class AwsBatchComputeBackend(
         SupportsLogStreaming = false,
         SupportsArtifactStaging = false
     };
+
+    internal static bool TryExtractPendingJobName(string? providerOperationId, out string jobName)
+    {
+        if (!string.IsNullOrWhiteSpace(providerOperationId)
+            && providerOperationId.StartsWith(PendingSubmissionMarkerPrefix, StringComparison.Ordinal))
+        {
+            jobName = providerOperationId[PendingSubmissionMarkerPrefix.Length..];
+            return !string.IsNullOrWhiteSpace(jobName);
+        }
+
+        jobName = string.Empty;
+        return false;
+    }
+
+    private static bool IsSubmissionOutcomeUncertain(AmazonServiceException ex)
+    {
+        // A zero-valued StatusCode means no HTTP response reached the SDK (credential
+        // acquisition, DNS, socket). 408/429/5xx mean the provider may still have accepted
+        // the SubmitJob call despite returning an error — treat as ambiguous and defer to
+        // the reconciler instead of stamping the durable record terminal Failed.
+        if ((int)ex.StatusCode == 0)
+        {
+            return true;
+        }
+
+        return ex.StatusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || (int)ex.StatusCode >= 500;
+    }
 
     public string BackendName => AdapterBackendName;
 
@@ -134,9 +174,10 @@ internal sealed partial class AwsBatchComputeBackend(
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
 
+        var jobName = BuildJobName(job.OperationId);
         var submission = new AwsBatchJobSubmission
         {
-            JobName = BuildJobName(job.OperationId),
+            JobName = jobName,
             JobDefinition = jobDefinition,
             JobQueue = jobQueue,
             EnvironmentOverrides = BuildEnvironmentOverrides(job),
@@ -148,15 +189,48 @@ internal sealed partial class AwsBatchComputeBackend(
             ShareIdentifier = GetOptionalParameter(parameters, AwsBatchParameterKeys.ShareIdentifier)
         };
 
-        var result = await batchClient.SubmitJobAsync(submission, region, cancellationToken).ConfigureAwait(false);
-        Log.BatchJobSubmitted(logger, job.OperationId, result.JobId, jobQueue, jobDefinition);
-
-        return new BatchComputeSubmissionResult
+        try
         {
-            Status = ExecutionJobStatus.Queued,
-            ProviderOperationId = result.JobId,
-            Message = $"Submitted AWS Batch job '{result.JobName}' ({result.JobId}) to queue '{jobQueue}'."
-        };
+            var result = await batchClient.SubmitJobAsync(submission, region, cancellationToken).ConfigureAwait(false);
+            Log.BatchJobSubmitted(logger, job.OperationId, result.JobId, jobQueue, jobDefinition);
+            ControlPlaneTelemetry.RecordExecutionSubmission(job);
+
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Queued,
+                ProviderOperationId = result.JobId,
+                Message = $"Submitted AWS Batch job '{result.JobName}' ({result.JobId}) to queue '{jobQueue}'."
+            };
+        }
+        catch (AmazonServiceException ex) when (IsSubmissionOutcomeUncertain(ex))
+        {
+            // Transport-ambiguous submit (5xx/429/408/credential/network): AWS Batch may
+            // have accepted the job even though we never got a response. Preserve the
+            // deterministic JobName as a discovery key under the pending marker so the
+            // reconciler can verify acceptance via ListJobs on the next cycle instead of
+            // stamping the durable record terminal Failed.
+            Log.BatchJobSubmissionUncertain(logger, job.OperationId, jobName, ex.Message);
+
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Queued,
+                ProviderOperationId = PendingSubmissionMarkerPrefix + jobName,
+                Message = $"AWS Batch submission outcome is uncertain for job '{jobName}' in queue '{jobQueue}': {ex.Message}. Reconciliation will verify whether the provider accepted the job."
+            };
+        }
+        catch (AmazonServiceException ex)
+        {
+            // Definite provider rejection (4xx with a real status): fail fast so operators
+            // get an actionable message instead of the job getting stuck in Queued retries.
+            Log.BatchJobSubmissionFailed(logger, job.OperationId, jobName, ex.Message);
+
+            return new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                ProviderOperationId = null,
+                Message = $"AWS Batch rejected job submission: {ex.Message}"
+            };
+        }
     }
 
     public async Task<BatchComputeObservation> ObserveAsync(
@@ -177,28 +251,116 @@ internal sealed partial class AwsBatchComputeBackend(
         }
 
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
-        var state = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
-        if (state == null)
+
+        if (TryExtractPendingJobName(providerId, out var pendingJobName))
         {
-            Log.BatchJobNotFound(logger, job.OperationId, providerId);
+            return await ObservePendingDiscoveryAsync(job, pendingJobName, region, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            var state = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+            if (state == null)
+            {
+                Log.BatchJobNotFound(logger, job.OperationId, providerId);
+                return new BatchComputeObservation
+                {
+                    Status = ExecutionJobStatus.Failed,
+                    ProviderOperationId = providerId,
+                    Message = $"AWS Batch job '{providerId}' was not found."
+                };
+            }
+
+            var mapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
+            var message = BuildObservationMessage(state);
+            Log.BatchJobObserved(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN", mapped.ToString());
+
             return new BatchComputeObservation
             {
-                Status = ExecutionJobStatus.Failed,
+                Status = mapped,
                 ProviderOperationId = providerId,
-                Message = $"AWS Batch job '{providerId}' was not found."
+                Message = message
+            };
+        }
+        catch (AmazonServiceException ex)
+        {
+            // Preserve durable state on provider/transport/auth failures. If we threw, the
+            // reconciler's generic catch would stamp the record terminal Failed even though
+            // the AWS Batch job could still be running.
+            Log.BatchJobObservationFailed(logger, job.OperationId, providerId, ex.Message);
+            return new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = providerId,
+                PercentComplete = job.PercentComplete,
+                Message = $"AWS Batch observation failed: {ex.Message}"
+            };
+        }
+    }
+
+    private async Task<BatchComputeObservation> ObservePendingDiscoveryAsync(
+        ExecutionJobRecord job,
+        string pendingJobName,
+        string? region,
+        CancellationToken cancellationToken)
+    {
+        var jobQueue = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.JobQueueArn);
+        if (string.IsNullOrWhiteSpace(jobQueue))
+        {
+            // Discovery requires the queue ARN; without it we cannot disambiguate. Leave the
+            // record nonterminal so an operator can repair the workload definition.
+            return new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = job.ProviderOperationId,
+                PercentComplete = job.PercentComplete,
+                Message = $"AWS Batch submission outcome for '{pendingJobName}' cannot be verified without a job queue."
             };
         }
 
-        var mapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
-        var message = BuildObservationMessage(state);
-        Log.BatchJobObserved(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN", mapped.ToString());
-
-        return new BatchComputeObservation
+        try
         {
-            Status = mapped,
-            ProviderOperationId = providerId,
-            Message = message
-        };
+            var matches = await batchClient
+                .ListJobsByNameAsync(jobQueue, pendingJobName, region, cancellationToken)
+                .ConfigureAwait(false);
+            if (matches.Count == 0)
+            {
+                return new BatchComputeObservation
+                {
+                    Status = job.Status,
+                    ProviderOperationId = job.ProviderOperationId,
+                    PercentComplete = job.PercentComplete,
+                    Message = $"AWS Batch submission outcome for '{pendingJobName}' is still being verified; the provider has not yet acknowledged the job."
+                };
+            }
+
+            var summary = matches[0];
+            var mapped = AwsBatchStateMapper.MapStatusWithReason(summary.Status, summary.StatusReason);
+            Log.BatchJobDiscoveryResolved(
+                logger,
+                job.OperationId,
+                pendingJobName,
+                summary.JobId,
+                summary.Status ?? "UNKNOWN");
+
+            return new BatchComputeObservation
+            {
+                Status = mapped,
+                ProviderOperationId = summary.JobId,
+                Message = $"Discovered AWS Batch job '{summary.JobId}' by name '{pendingJobName}' in state {summary.Status ?? "UNKNOWN"}."
+            };
+        }
+        catch (AmazonServiceException ex)
+        {
+            Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ex.Message);
+            return new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = job.ProviderOperationId,
+                PercentComplete = job.PercentComplete,
+                Message = $"AWS Batch discovery failed for pending job '{pendingJobName}': {ex.Message}"
+            };
+        }
     }
 
     public async Task<BatchComputeObservation> CancelAsync(
@@ -219,64 +381,150 @@ internal sealed partial class AwsBatchComputeBackend(
         }
 
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
-        var state = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
-        if (state == null)
+
+        if (TryExtractPendingJobName(providerId, out var pendingJobName))
         {
+            return await CancelPendingDiscoveryAsync(job, pendingJobName, region, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            var state = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+            if (state == null)
+            {
+                return new BatchComputeObservation
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    ProviderOperationId = providerId,
+                    Message = $"AWS Batch job '{providerId}' was not found; treating as cancelled."
+                };
+            }
+
+            var currentMapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
+            if (AwsBatchStateMapper.IsTerminal(currentMapped))
+            {
+                return new BatchComputeObservation
+                {
+                    Status = currentMapped,
+                    ProviderOperationId = providerId,
+                    Message = BuildObservationMessage(state)
+                };
+            }
+
+            if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
+            {
+                await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
+                Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
+            }
+            else
+            {
+                await batchClient.TerminateJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
+                Log.BatchJobTerminated(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
+            }
+
+            // Re-observe so we only report terminal Cancelled once AWS has actually reached a
+            // terminal state. If AWS has not yet transitioned (e.g. TerminateJob is still propagating
+            // SIGTERM), surface the current non-terminal state so the reconciler keeps polling.
+            var postCancelState = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
+            if (postCancelState == null)
+            {
+                return new BatchComputeObservation
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    ProviderOperationId = providerId,
+                    Message = $"AWS Batch job '{providerId}' disappeared after cancellation; treating as cancelled."
+                };
+            }
+
+            var postMapped = AwsBatchStateMapper.MapStatusWithReason(postCancelState.Status, postCancelState.StatusReason);
+            var message = AwsBatchStateMapper.IsTerminal(postMapped)
+                ? $"AWS Batch job '{providerId}' reached {postCancelState.Status ?? "UNKNOWN"} after cancellation from state {state.Status ?? "UNKNOWN"}."
+                : $"AWS Batch job '{providerId}' cancellation requested from state {state.Status ?? "UNKNOWN"}; provider still at {postCancelState.Status ?? "UNKNOWN"}.";
+
+            return new BatchComputeObservation
+            {
+                Status = postMapped,
+                ProviderOperationId = providerId,
+                Message = message
+            };
+        }
+        catch (AmazonServiceException ex)
+        {
+            // Preserve durable state on provider/transport/auth failures. Without this catch,
+            // a transient AWS SDK blip during a user cancel would surface as an unhandled
+            // 500 to the caller and stamp the durable record terminal Failed via the
+            // reconciler's generic catch.
+            Log.BatchJobCancellationFailed(logger, job.OperationId, providerId, ex.Message);
+            return new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = providerId,
+                PercentComplete = job.PercentComplete,
+                Message = $"AWS Batch cancellation failed: {ex.Message}"
+            };
+        }
+    }
+
+    private async Task<BatchComputeObservation> CancelPendingDiscoveryAsync(
+        ExecutionJobRecord job,
+        string pendingJobName,
+        string? region,
+        CancellationToken cancellationToken)
+    {
+        var jobQueue = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.JobQueueArn);
+        if (string.IsNullOrWhiteSpace(jobQueue))
+        {
+            // Without a queue we cannot discover the pending job. Treat as cancelled-before-
+            // submission rather than escalating to Failed: the caller is asking us to cancel
+            // and we never confirmed provider ownership.
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Cancelled,
-                ProviderOperationId = providerId,
-                Message = $"AWS Batch job '{providerId}' was not found; treating as cancelled."
+                ProviderOperationId = job.ProviderOperationId,
+                Message = $"AWS Batch job '{pendingJobName}' has no queue for discovery; treating cancellation as completed."
             };
         }
 
-        var currentMapped = AwsBatchStateMapper.MapStatusWithReason(state.Status, state.StatusReason);
-        if (AwsBatchStateMapper.IsTerminal(currentMapped))
+        try
         {
+            var matches = await batchClient
+                .ListJobsByNameAsync(jobQueue, pendingJobName, region, cancellationToken)
+                .ConfigureAwait(false);
+            if (matches.Count == 0)
+            {
+                return new BatchComputeObservation
+                {
+                    Status = ExecutionJobStatus.Cancelled,
+                    ProviderOperationId = job.ProviderOperationId,
+                    Message = $"AWS Batch submission for '{pendingJobName}' was not discoverable; treating as cancelled before provider ownership."
+                };
+            }
+
+            var summary = matches[0];
+            Log.BatchJobDiscoveryResolved(
+                logger,
+                job.OperationId,
+                pendingJobName,
+                summary.JobId,
+                summary.Status ?? "UNKNOWN");
+
+            // Re-enter the normal cancel path now that we have a concrete provider id. The
+            // hydrated record drops the pending marker so the recursive call takes the
+            // DescribeJob/CancelJob/TerminateJob branch.
+            var hydrated = job with { ProviderOperationId = summary.JobId };
+            return await CancelAsync(hydrated, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AmazonServiceException ex)
+        {
+            Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ex.Message);
             return new BatchComputeObservation
             {
-                Status = currentMapped,
-                ProviderOperationId = providerId,
-                Message = BuildObservationMessage(state)
+                Status = job.Status,
+                ProviderOperationId = job.ProviderOperationId,
+                PercentComplete = job.PercentComplete,
+                Message = $"AWS Batch discovery failed during cancellation for pending job '{pendingJobName}': {ex.Message}"
             };
         }
-
-        if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
-        {
-            await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
-            Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
-        }
-        else
-        {
-            await batchClient.TerminateJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, cancellationToken).ConfigureAwait(false);
-            Log.BatchJobTerminated(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
-        }
-
-        // Re-observe so we only report terminal Cancelled once AWS has actually reached a
-        // terminal state. If AWS has not yet transitioned (e.g. TerminateJob is still propagating
-        // SIGTERM), surface the current non-terminal state so the reconciler keeps polling.
-        var postCancelState = await batchClient.DescribeJobAsync(providerId, region, cancellationToken).ConfigureAwait(false);
-        if (postCancelState == null)
-        {
-            return new BatchComputeObservation
-            {
-                Status = ExecutionJobStatus.Cancelled,
-                ProviderOperationId = providerId,
-                Message = $"AWS Batch job '{providerId}' disappeared after cancellation; treating as cancelled."
-            };
-        }
-
-        var postMapped = AwsBatchStateMapper.MapStatusWithReason(postCancelState.Status, postCancelState.StatusReason);
-        var message = AwsBatchStateMapper.IsTerminal(postMapped)
-            ? $"AWS Batch job '{providerId}' reached {postCancelState.Status ?? "UNKNOWN"} after cancellation from state {state.Status ?? "UNKNOWN"}."
-            : $"AWS Batch job '{providerId}' cancellation requested from state {state.Status ?? "UNKNOWN"}; provider still at {postCancelState.Status ?? "UNKNOWN"}.";
-
-        return new BatchComputeObservation
-        {
-            Status = postMapped,
-            ProviderOperationId = providerId,
-            Message = message
-        };
     }
 
     private static string BuildJobName(string operationId)
@@ -402,5 +650,20 @@ internal sealed partial class AwsBatchComputeBackend(
 
         [LoggerMessage(9044, LogLevel.Information, "Terminated AWS Batch job {OperationId} ({ProviderJobId}) from state {AwsStatus}")]
         public static partial void BatchJobTerminated(ILogger logger, string operationId, string providerJobId, string awsStatus);
+
+        [LoggerMessage(9045, LogLevel.Warning, "AWS Batch submission outcome is uncertain for execution job {OperationId} (job name {JobName}): {ErrorMessage}")]
+        public static partial void BatchJobSubmissionUncertain(ILogger logger, string operationId, string jobName, string errorMessage);
+
+        [LoggerMessage(9046, LogLevel.Warning, "AWS Batch rejected submission for execution job {OperationId} (job name {JobName}): {ErrorMessage}")]
+        public static partial void BatchJobSubmissionFailed(ILogger logger, string operationId, string jobName, string errorMessage);
+
+        [LoggerMessage(9047, LogLevel.Debug, "AWS Batch observation failed for execution job {OperationId} ({ProviderJobId}): {ErrorMessage}")]
+        public static partial void BatchJobObservationFailed(ILogger logger, string operationId, string providerJobId, string errorMessage);
+
+        [LoggerMessage(9048, LogLevel.Warning, "AWS Batch cancellation failed for execution job {OperationId} ({ProviderJobId}): {ErrorMessage}")]
+        public static partial void BatchJobCancellationFailed(ILogger logger, string operationId, string providerJobId, string errorMessage);
+
+        [LoggerMessage(9049, LogLevel.Information, "Discovered AWS Batch job for execution job {OperationId} (pending name {PendingJobName}) as {ProviderJobId} in state {AwsStatus}")]
+        public static partial void BatchJobDiscoveryResolved(ILogger logger, string operationId, string pendingJobName, string providerJobId, string awsStatus);
     }
 }
