@@ -117,7 +117,7 @@ reshapes the result, not just the acknowledged-question set:
 | `workflow_family` | Overrides the classifier. Confidence reports as `1.0` with evidence `clarification`. Unknown values raise `invalid_argument`. |
 | `dataset.selection` | Reorders the post-authorization dataset ranking so the pinned id is first. Unknown ids raise `invalid_argument`. |
 | `process.selection` | Same pin semantics as `dataset.selection`, applied to the process ranking. |
-| `publish.source` | Treated as the draft `PublishIntent.SourceId` when no `explicitInputs` or high-confidence dataset is available. Free-text or an option id from the ranked dataset list; leading/trailing whitespace is trimmed before application. |
+| `publish.source` | Treated as the draft `PublishIntent.SourceId` when no `explicitInputs` or high-confidence dataset is available. Free-text or an option id from the ranked dataset list; leading/trailing whitespace is trimmed before application. Answers (and `explicitInputs` values) that match a `DatasetSubtype.Service` candidate in the ranking are rejected — `PublishSourceKind` has no `FeatureService` value, so the `publishing` block is omitted and `publish.source` is re-emitted so the caller picks a publishable layer-backed source. |
 | `publish.target` | Flows into the drafted `PublishIntent.TargetKind`. Unknown values raise `invalid_argument`. |
 | `param.<name>` | Skips the matching `MissingRequiredInput` clarification and records `param.<name>=<value>` on `provenance.assumptions`. |
 | `destructive.confirm`, `workflow_family.blocked` | Confirmation-only; any non-blank value counts as acknowledgement. |
