@@ -451,9 +451,10 @@ catalog discovery on top of the same authorization graph via
   normalizes a whitespace-only `intentId` on the initial grounding call
   to an omitted value (so `GroundingService` allocates a fresh id
   instead of propagating an empty string through `draftIntent` and the
-  clarification envelope) and drops blank `explicitInputs` entries so
-  `IntentDrafter` cannot pick a whitespace string as a publish
-  `sourceId`.
+  clarification envelope), drops blank `explicitInputs` entries, and
+  trims leading/trailing whitespace on retained entries so
+  `IntentDrafter` cannot lock a padded value like `"  parcels-layer  "`
+  into `PublishIntent.SourceId`.
 - `honua_clarify_intent` accepts the same shape plus a required
   `{ intentId, response: { answers: Record<string, string[]> } }`. The
   published schema also marks `goal` as required and requires at least

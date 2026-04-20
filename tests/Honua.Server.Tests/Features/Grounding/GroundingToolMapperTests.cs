@@ -142,6 +142,22 @@ public sealed class GroundingToolMapperTests
     }
 
     [UnitTest]
+    public void GroundCandidatesToDomain_ExplicitInputs_AreTrimmed()
+    {
+        // Padded values like "  parcels-layer  " must be trimmed here — IntentDrafter
+        // uses ExplicitInputs[0] as PublishIntent.SourceId, and downstream source
+        // lookups match on the exact id, so retained padding would silently break
+        // resolution while also suppressing the publish.source clarification.
+        var request = GroundingToolMapper.ToDomain(new McpGroundCandidatesArgument
+        {
+            Goal = "publish parcels",
+            ExplicitInputs = ["  parcels-layer  ", "\tstreets\n"]
+        });
+
+        request.ExplicitInputs.Should().BeEquivalentTo(["parcels-layer", "streets"]);
+    }
+
+    [UnitTest]
     public void GroundCandidatesArgumentSchema_RequiresMinLengthOnIdentifierFields()
     {
         // Schema-driven clients rely on the advertised contract to prevent

@@ -119,10 +119,12 @@ internal static class GroundingToolMapper
 
     private static List<string> NormalizeExplicitInputs(IReadOnlyList<string>? inputs)
     {
-        // Drop blank / whitespace-only entries so IntentDrafter cannot pick them as
-        // `sourceId` for a draft publish intent (PublishIntent.CreateDraft keeps
-        // whatever it is handed). Treat the overall field as optional — fully blank
-        // lists collapse to an empty list exactly like an omitted field.
+        // Drop blank / whitespace-only entries and trim surrounding whitespace on
+        // retained entries so IntentDrafter cannot lock a padded value like
+        // "  parcels-layer  " into PublishIntent.SourceId (which would break
+        // downstream lookups and suppress the publish.source clarification).
+        // Treat the overall field as optional — fully blank lists collapse to an
+        // empty list exactly like an omitted field.
         if (inputs is null || inputs.Count == 0)
         {
             return [];
@@ -134,7 +136,7 @@ internal static class GroundingToolMapper
             var value = inputs[i];
             if (!string.IsNullOrWhiteSpace(value))
             {
-                normalized.Add(value);
+                normalized.Add(value.Trim());
             }
         }
         return normalized;
