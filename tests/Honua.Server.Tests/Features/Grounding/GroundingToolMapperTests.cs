@@ -333,6 +333,29 @@ public sealed class GroundingToolMapperTests
             .WithMessage("*publish.source*non-blank*");
     }
 
+    [UnitTest]
+    public void ClarifyIntentToDomain_BlankAnswerQuestionId_ThrowsValidation()
+    {
+        // ClarificationAnswerResolver drops blank/whitespace question ids, so
+        // the MCP boundary must reject them up front instead of accepting a
+        // silently-ignored clarification turn.
+        var act = () => GroundingToolMapper.ToDomain(new McpClarifyIntentArgument
+        {
+            IntentId = "intent-1",
+            Goal = "Buffer the parcels",
+            Response = new McpClarificationResponseInput
+            {
+                Answers = new Dictionary<string, IReadOnlyList<string>>
+                {
+                    [""] = ["x"]
+                }
+            }
+        });
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .WithMessage("*questionId*non-blank*");
+    }
+
     // -----------------------------------------------------------------------
     // GroundingResult → McpGroundingOutput
     // -----------------------------------------------------------------------

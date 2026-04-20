@@ -201,14 +201,23 @@ internal static class GroundingToolMapper
     {
         foreach (var (questionId, values) in answers)
         {
+            // Blank/whitespace question ids are dropped silently by
+            // ClarificationAnswerResolver.Parse, so reject them at the MCP
+            // boundary to surface the caller mistake as invalid_argument
+            // instead of a no-op clarification turn.
+            if (string.IsNullOrWhiteSpace(questionId))
+            {
+                throw new GeoprocessingValidationException(
+                    "Clarification answer questionId must be a non-blank string.");
+            }
+
             if (values.Any(value => !string.IsNullOrWhiteSpace(value)))
             {
                 continue;
             }
 
-            var label = string.IsNullOrWhiteSpace(questionId) ? "<blank>" : questionId;
             throw new GeoprocessingValidationException(
-                $"Clarification answer '{label}' must include at least one non-blank value.");
+                $"Clarification answer '{questionId}' must include at least one non-blank value.");
         }
     }
 

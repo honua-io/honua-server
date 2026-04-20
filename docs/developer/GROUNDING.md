@@ -128,7 +128,10 @@ left out of `provenance.clarificationsAnswered`.
 For MCP callers, each `response.answers[questionId]` entry must contain at
 least one non-blank string. Empty strings are blocked by the published
 schema (`minLength = 1`), and whitespace-only values are rejected with
-`invalid_argument` instead of being silently dropped.
+`invalid_argument` instead of being silently dropped. The `questionId`
+key itself is also required to be non-blank — a blank key would be
+dropped by `ClarificationAnswerResolver`, so the MCP mapper rejects it
+up front with `invalid_argument`.
 
 `GroundingService.GroundAsync` also enforces intent-id parity before
 applying any answers: when a `ClarificationResponse` is supplied, the
