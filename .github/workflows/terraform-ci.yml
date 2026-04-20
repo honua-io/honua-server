@@ -33,6 +33,10 @@ permissions:
   security-events: write
   id-token: write
 
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   changes:
     name: Detect Terraform Changes

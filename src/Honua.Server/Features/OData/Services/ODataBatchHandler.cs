@@ -1153,7 +1153,8 @@ internal sealed partial class ODataBatchHandler
                 200,
                 new Dictionary<string, object?>
                 {
-                    ["@odata.id"] = ODataUtilityService.CreateLocationHeader(baseUrl, layer.Id, objectId.Value)
+                    ["@odata.id"] = ODataUtilityService.CreateLocationHeader(baseUrl, layer.Id, objectId.Value),
+                    ["@odata.editLink"] = ODataUtilityService.CreateLocationHeader(baseUrl, layer.Id, objectId.Value)
                 }),
             ODataPathTailKind.Value => CreateSuccessResponse(
                 requestId,

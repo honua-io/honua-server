@@ -60,9 +60,14 @@ public sealed record GeoServerImportApiRequest
     public string? Username { get; init; }
 
     /// <summary>
-    /// Optional password for GeoServer authentication.
+    /// Optional password for GeoServer authentication. Discovery accepts plaintext credentials, but queued imports must use <see cref="PasswordSecretReference"/>.
     /// </summary>
     public string? Password { get; init; }
+
+    /// <summary>
+    /// Optional secret reference for the GeoServer password used by queued import jobs.
+    /// </summary>
+    public string? PasswordSecretReference { get; init; }
 
     /// <summary>
     /// Target Honua server base URL for the migration.
@@ -70,9 +75,14 @@ public sealed record GeoServerImportApiRequest
     public string? TargetHonuaUrl { get; init; }
 
     /// <summary>
-    /// Honua API key for authentication (if required).
+    /// Honua API key for authentication (if required). Queued imports must use <see cref="HonuaApiKeySecretReference"/>.
     /// </summary>
     public string? HonuaApiKey { get; init; }
+
+    /// <summary>
+    /// Optional secret reference for the Honua API key used by queued import jobs.
+    /// </summary>
+    public string? HonuaApiKeySecretReference { get; init; }
 
     /// <summary>
     /// Specific workspaces to import (null imports all).

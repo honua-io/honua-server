@@ -1,0 +1,59 @@
+{
+  "id": "package-map-tsunami",
+  "name": "Package a tsunami-evacuation operations map",
+  "mode": "Package",
+  "fixtureProfile": "ogc",
+  "intent": {
+    "intentId": "intent-package-map-tsunami",
+    "goal": "Compose a map package that overlays roads on buffered places for tsunami evacuation ops.",
+    "mode": "package",
+    "requestedOutputs": ["Map", "Report"],
+    "constraints": {
+      "areaOfInterest": "POLYGON((-180 -90,180 -90,180 90,-180 90,-180 -90))",
+      "spatialReferenceId": 4326,
+      "units": "meters"
+    },
+    "inputs": ["places", "roads"],
+    "assumptionPolicy": "AskWhenMaterial"
+  },
+  "precompiledPlan": {
+    "planId": "plan-package-map-tsunami",
+    "intentId": "intent-package-map-tsunami",
+    "steps": [
+      {
+        "stepId": "query-places",
+        "kind": "QueryFeatures",
+        "inputs": { "layer": "places" },
+        "dependsOn": []
+      },
+      {
+        "stepId": "buffer-places",
+        "kind": "Geoprocess",
+        "processId": "analytics.buffer-aggregate",
+        "inputs": { "layerId": "0", "distance": "1000", "unit": "meters" },
+        "dependsOn": ["query-places"]
+      },
+      {
+        "stepId": "query-roads",
+        "kind": "QueryFeatures",
+        "inputs": { "layer": "roads" },
+        "dependsOn": []
+      },
+      {
+        "stepId": "render-ops-map",
+        "kind": "RenderMap",
+        "inputs": { "mapTitle": "Tsunami Evacuation Ops" },
+        "dependsOn": ["buffer-places", "query-roads"]
+      }
+    ],
+    "outputs": ["Map", "Report"]
+  },
+  "expectedOutcome": {
+    "isExecutable": true,
+    "requiresApproval": false,
+    "estimatedArtifactKinds": ["Map", "Report"],
+    "terminalWorkflowStatus": "Completed",
+    "expectsMapPackage": true,
+    "expectsAppPackage": false
+  }
+}

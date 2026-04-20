@@ -38,6 +38,9 @@ public sealed class OgcCrsResolverTests
     [Theory]
     [InlineData("CRS84")]
     [InlineData("OGC:CRS84")]
+    [InlineData("[CRS84]")]
+    [InlineData("[OGC:CRS84]")]
+    [InlineData("<OGC:CRS84>")]
     [Trait("Category", "Unit")]
     public void TryResolveCrs_WithCrs84Aliases_ReturnsDefinition(string alias)
     {
@@ -55,6 +58,35 @@ public sealed class OgcCrsResolverTests
             .BeTrue(error);
         definition.Uri.Should().Be(OgcFeaturesUtilities.Crs84Uri);
         definition.Srid.Should().Be(4326);
+        definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
+    }
+
+    [Theory]
+    [InlineData("[EPSG:26910]")]
+    [InlineData("<EPSG:26910>")]
+    [InlineData("[urn:ogc:def:crs:EPSG::26910]")]
+    [Trait("Category", "Unit")]
+    public void TryResolveCrs_WithWrappedEpsgAliases_ReturnsDefinition(string alias)
+    {
+        var supportedCrs = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            [OgcFeaturesUtilities.Crs84Uri] = new CrsDefinition(
+                OgcFeaturesUtilities.Crs84Uri,
+                4326,
+                AxisOrder.EastNorth,
+                true),
+            ["http://www.opengis.net/def/crs/EPSG/0/26910"] = new CrsDefinition(
+                "http://www.opengis.net/def/crs/EPSG/0/26910",
+                26910,
+                AxisOrder.EastNorth,
+                false)
+        };
+
+        OgcFeaturesUtilities.TryResolveCrs(alias, supportedCrs, out var definition, out var error)
+            .Should()
+            .BeTrue(error);
+        definition.Uri.Should().Be("http://www.opengis.net/def/crs/EPSG/0/26910");
+        definition.Srid.Should().Be(26910);
         definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.NlQuery.Domain;
@@ -114,7 +115,7 @@ public sealed class SpatialClause
     /// GeoJSON geometry object for the spatial predicate.
     /// </summary>
     [JsonPropertyName("geometry")]
-    public object? Geometry { get; set; }
+    public JsonElement? Geometry { get; set; }
 
     /// <summary>
     /// Distance value (required when operator is "dwithin").

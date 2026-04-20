@@ -14,6 +14,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -27,6 +28,20 @@ namespace Honua.Server.Features.Import;
 internal static partial class ImportEndpoints
 {
     private const string InvalidMultipartImportRequestMessage = "Multipart import request is invalid.";
+    private static readonly string[] NonGetMethods =
+    [
+        HttpMethods.Post,
+        HttpMethods.Put,
+        HttpMethods.Delete,
+        HttpMethods.Patch
+    ];
+    private static readonly string[] NonPostMethods =
+    [
+        HttpMethods.Get,
+        HttpMethods.Put,
+        HttpMethods.Delete,
+        HttpMethods.Patch
+    ];
     internal sealed class ImportEndpointsLog
     {
     }
@@ -54,76 +69,112 @@ internal static partial class ImportEndpoints
         var nameSuffix = isV1 ? "V1" : "";
 
         // Get supported file formats
-        _ = group.Map("/formats", HandleGetSupportedFormats)
+        _ = group.MapMethods("/formats", [HttpMethods.Get], HandleGetSupportedFormats)
             .WithName($"GetSupportedFileFormats{nameSuffix}")
             .WithSummary("Get supported geospatial file formats")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetSupportedFileFormats{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get supported geospatial file formats method not allowed");
 
         // Preview file before import
-        _ = group.Map("/preview", HandlePreviewFile)
+        _ = group.MapMethods("/preview", [HttpMethods.Post], HandlePreviewFile)
             .WithName($"PreviewFile{nameSuffix}")
             .WithSummary("Preview geospatial file contents")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .DisableAntiforgery(); // For file uploads
+        _ = group.MapMethods("/preview", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"PreviewFile{nameSuffix}MethodNotAllowed")
+            .WithSummary("Preview geospatial file contents method not allowed");
 
-        _ = group.Map("/preview-url", HandlePreviewFileFromUrl)
+        _ = group.MapMethods("/preview-url", [HttpMethods.Post], HandlePreviewFileFromUrl)
             .WithName($"PreviewFileFromUrl{nameSuffix}")
             .WithSummary("Preview geospatial file contents from a public object URL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/preview-url", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"PreviewFileFromUrl{nameSuffix}MethodNotAllowed")
+            .WithSummary("Preview geospatial file contents from a public object URL method not allowed");
 
         // Import geospatial file
-        _ = group.Map("/upload", HandleImportFile)
+        _ = group.MapMethods("/upload", [HttpMethods.Post], HandleImportFile)
             .WithName($"ImportFile{nameSuffix}")
             .WithSummary("Import geospatial file to PostgreSQL using streamed multipart ingest")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .DisableAntiforgery(); // For file uploads
+        _ = group.MapMethods("/upload", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"ImportFile{nameSuffix}MethodNotAllowed")
+            .WithSummary("Import geospatial file to PostgreSQL using streamed multipart ingest method not allowed");
 
-        _ = group.Map("/upload-url", HandleImportFileFromUrl)
+        _ = group.MapMethods("/upload-url", [HttpMethods.Post], HandleImportFileFromUrl)
             .WithName($"ImportFileFromUrl{nameSuffix}")
             .WithSummary("Import geospatial data from a public object URL")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/upload-url", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"ImportFileFromUrl{nameSuffix}MethodNotAllowed")
+            .WithSummary("Import geospatial data from a public object URL method not allowed");
 
         // Get upload progress
-        _ = group.Map("/uploads/{uploadId}/progress", HandleGetUploadProgress)
+        _ = group.MapMethods("/uploads/{uploadId}/progress", [HttpMethods.Get], HandleGetUploadProgress)
             .WithName($"GetUploadProgress{nameSuffix}")
             .WithSummary("Get the progress of a file upload operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/uploads/{uploadId}/progress", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetUploadProgress{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get the progress of a file upload operation method not allowed");
 
         // Cancel upload
-        _ = group.Map("/uploads/{uploadId}/cancel", HandleCancelUpload)
+        _ = group.MapMethods("/uploads/{uploadId}/cancel", [HttpMethods.Post], HandleCancelUpload)
             .WithName($"CancelUpload{nameSuffix}")
             .WithSummary("Cancel a running file upload operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/uploads/{uploadId}/cancel", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"CancelUpload{nameSuffix}MethodNotAllowed")
+            .WithSummary("Cancel a running file upload operation method not allowed");
 
         // Get all active uploads
-        _ = group.Map("/uploads", HandleGetActiveUploads)
+        _ = group.MapMethods("/uploads", [HttpMethods.Get], HandleGetActiveUploads)
             .WithName($"GetActiveUploads{nameSuffix}")
             .WithSummary("Get all active file upload operations")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/uploads", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetActiveUploads{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get all active file upload operations method not allowed");
 
         // Get active import jobs
-        _ = group.Map("/jobs", HandleGetActiveJobs)
+        _ = group.MapMethods("/jobs", [HttpMethods.Get], HandleGetActiveJobs)
             .WithName($"GetActiveImportJobs{nameSuffix}")
             .WithSummary("Get all active import jobs")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/jobs", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetActiveImportJobs{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get all active import jobs method not allowed");
 
         // Get import job status
-        _ = group.Map("/jobs/{jobId}", HandleGetImportJobStatus)
+        _ = group.MapMethods("/jobs/{jobId}", [HttpMethods.Get], HandleGetImportJobStatus)
             .WithName($"GetImportJobStatus{nameSuffix}")
             .WithSummary("Get the status of an import job")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/jobs/{jobId}", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetImportJobStatus{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get the status of an import job method not allowed");
 
         // Cancel import job
-        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelImportJob)
+        _ = group.MapMethods("/jobs/{jobId}/cancel", [HttpMethods.Post], HandleCancelImportJob)
             .WithName($"CancelImportJob{nameSuffix}")
             .WithSummary("Cancel a running import job")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        _ = group.MapMethods("/jobs/{jobId}/cancel", NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName($"CancelImportJob{nameSuffix}MethodNotAllowed")
+            .WithSummary("Cancel a running import job method not allowed");
 
         // Get import limits configuration
-        _ = group.Map("/limits", HandleGetLimits)
+        _ = group.MapMethods("/limits", [HttpMethods.Get], HandleGetLimits)
             .WithName($"GetImportLimits{nameSuffix}")
             .WithSummary("Get current import configuration limits")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = group.MapMethods("/limits", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName($"GetImportLimits{nameSuffix}MethodNotAllowed")
+            .WithSummary("Get current import configuration limits method not allowed");
     }
 
     /// <summary>
@@ -131,16 +182,6 @@ internal static partial class ImportEndpoints
     /// </summary>
     private static async Task HandleGetSupportedFormats(HttpContext context)
     {
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         string[] extensions = importService.GetSupportedExtensions();
         var formatDescriptions = new Dictionary<string, string>
@@ -179,16 +220,6 @@ internal static partial class ImportEndpoints
     /// </summary>
     private static async Task HandlePreviewFile(HttpContext context)
     {
-        if (!HttpMethods.IsPost(context.Request.Method))
-        {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
-            return;
-        }
-
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
         IFormFile? file = GetFormFile(form, "file", "File");
@@ -262,11 +293,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandlePostMethodNotAllowed(context);
             return;
         }
 
@@ -313,15 +340,23 @@ internal static partial class ImportEndpoints
         }
     }
 
+    private static Task HandleGetMethodNotAllowed(HttpContext context)
+    {
+        var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { HttpMethods.Get };
+        return ValidationErrorHelpers.WriteAdminMethodNotAllowedAsync(context, allowedMethods, context.RequestAborted);
+    }
+
+    private static Task HandlePostMethodNotAllowed(HttpContext context)
+    {
+        var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { HttpMethods.Post };
+        return ValidationErrorHelpers.WriteAdminMethodNotAllowedAsync(context, allowedMethods, context.RequestAborted);
+    }
+
     private static async Task HandlePreviewFileFromUrl(HttpContext context)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandlePostMethodNotAllowed(context);
             return;
         }
 
@@ -395,11 +430,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandlePostMethodNotAllowed(context);
             return;
         }
 
@@ -580,6 +611,23 @@ internal static partial class ImportEndpoints
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
                     Log.CleanupFailed(logger, uploadId, cleanupEx);
+                }
+            }
+
+            throw;
+        }
+        catch
+        {
+            if (cloudStorage != null && !string.IsNullOrWhiteSpace(cloudFileId))
+            {
+                try
+                {
+                    _ = await cloudStorage.DeleteAsync(cloudFileId, CancellationToken.None);
+                }
+                catch (Exception cleanupEx)
+                {
+                    var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+                    Log.CleanupFailed(logger, cloudFileId, cleanupEx);
                 }
             }
 
@@ -977,11 +1025,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandleGetMethodNotAllowed(context);
             return;
         }
 
@@ -999,11 +1043,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandleGetMethodNotAllowed(context);
             return;
         }
 
@@ -1041,11 +1081,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandlePostMethodNotAllowed(context);
             return;
         }
 
@@ -1084,11 +1120,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandleGetMethodNotAllowed(context);
             return;
         }
 
@@ -1114,11 +1146,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandleGetMethodNotAllowed(context);
             return;
         }
 
@@ -1153,11 +1181,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandleGetMethodNotAllowed(context);
             return;
         }
 
@@ -1204,11 +1228,7 @@ internal static partial class ImportEndpoints
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status405MethodNotAllowed,
-                    "Method not allowed.")
-                .ExecuteAsync(context);
+            await HandlePostMethodNotAllowed(context);
             return;
         }
 

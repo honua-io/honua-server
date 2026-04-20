@@ -3,7 +3,6 @@
 
 using Amazon.S3;
 using Azure.Storage.Blobs;
-using Google.Cloud.Storage.V1;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
@@ -84,33 +83,6 @@ internal static class CloudCogServiceCollectionExtensions
 
                 var serviceClient = new BlobServiceClient(azureOptions.ConnectionString);
                 return new AzureBlobRangeReader(serviceClient);
-            });
-        }
-
-        // Register GCS range reader if GCS configuration is present
-        if (fileStorageSection.GetSection("GoogleCloudStorage").Exists())
-        {
-            services.AddSingleton<ICloudRangeReader>(sp =>
-            {
-                var options = sp.GetRequiredService<IOptions<CloudStorageOptions>>();
-                var gcsOptions = options.Value.GoogleCloudStorage;
-                if (gcsOptions == null)
-                {
-                    throw new InvalidOperationException("Google Cloud Storage options not configured for range reader.");
-                }
-
-                StorageClient client;
-                if (!string.IsNullOrWhiteSpace(gcsOptions.CredentialPath))
-                {
-                    var credential = Google.Apis.Auth.OAuth2.GoogleCredential.FromFile(gcsOptions.CredentialPath);
-                    client = StorageClient.Create(credential);
-                }
-                else
-                {
-                    client = StorageClient.Create();
-                }
-
-                return new GcsRangeReader(client);
             });
         }
 

@@ -18,9 +18,9 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Services;
 
@@ -31,6 +31,7 @@ namespace Honua.Server.Features.Admin.Services;
 public sealed class ConfigurationDiscoveryService
 {
     private readonly IServiceProvider _serviceProvider;
+    private readonly IConfigurationDiscovery _configurationDiscovery;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ConfigurationDiscoveryService> _logger;
@@ -38,12 +39,15 @@ public sealed class ConfigurationDiscoveryService
 
     public ConfigurationDiscoveryService(
         IServiceProvider serviceProvider,
+        IConfigurationValidator configurationValidator,
         IConfiguration configuration,
         IWebHostEnvironment environment,
         ILogger<ConfigurationDiscoveryService> logger,
         ConfigurationDocumentationService documentationService)
     {
         _serviceProvider = serviceProvider;
+        _configurationDiscovery = configurationValidator as IConfigurationDiscovery
+            ?? throw new InvalidOperationException("Configuration validator does not provide configuration discovery metadata.");
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
@@ -103,208 +107,70 @@ public sealed class ConfigurationDiscoveryService
     /// </summary>
     private async Task<List<ConfigurationTypeInfo>> DiscoverOptionsTypesAsync(CancellationToken cancellationToken)
     {
-        var types = new List<ConfigurationTypeInfo>();
-
-        // Well-known IOptions types
-        var knownTypes = new[]
-        {
-            typeof(CacheOptions),
-            typeof(StandardTtlOptions),
-            typeof(LimitsOptions),
-            typeof(TileOptions),
-            typeof(CloudStorageOptions),
-            typeof(TracingOptions),
-            typeof(AdaptiveSamplingOptions),
-            typeof(PerformanceMonitoringOptions),
-            typeof(ApiKeyAuthenticationOptions),
-            typeof(OidcAuthenticationOptions),
-            typeof(SecretProviderOptions)
-        };
-
-        foreach (var type in knownTypes)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var info = await ExtractTypeInfoAsync(type);
-            if (info != null)
-            {
-                types.Add(info);
-            }
-        }
-
-        // Discover additional types through reflection
-        var additionalTypes = await DiscoverAdditionalOptionsTypesAsync(cancellationToken);
-        types.AddRange(additionalTypes);
-
-        return types;
-    }
-
-    /// <summary>
-    /// Discovers additional IOptions types through assembly reflection.
-    /// </summary>
-    private async Task<List<ConfigurationTypeInfo>> DiscoverAdditionalOptionsTypesAsync(CancellationToken cancellationToken)
-    {
-        var types = new List<ConfigurationTypeInfo>();
-
-        // Get all assemblies in the current domain that belong to the Honua project
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => a.FullName?.StartsWith("Honua.", StringComparison.OrdinalIgnoreCase) == true)
+        var registeredOptions = _configurationDiscovery.GetAllOptions()
+            .DistinctBy(metadata => metadata.OptionsType)
             .ToArray();
 
-        foreach (var assembly in assemblies)
+        var discoveredTypes = new List<ConfigurationTypeInfo>(registeredOptions.Length);
+        foreach (var metadata in registeredOptions)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            discoveredTypes.Add(await CreateTypeInfoAsync(metadata));
+        }
 
-            try
+        return discoveredTypes;
+    }
+
+    /// <summary>
+    /// Creates type information for a registered configuration class.
+    /// </summary>
+    private async Task<ConfigurationTypeInfo> CreateTypeInfoAsync(ConfigurationOptionsMetadata metadata)
+    {
+        var optionsType = metadata.OptionsType;
+        var currentValues = await GetCurrentConfigurationValuesAsync(optionsType, metadata.SectionName);
+
+        return new ConfigurationTypeInfo
+        {
+            Type = optionsType,
+            SectionName = metadata.SectionName,
+            TypeName = optionsType.Name,
+            FullTypeName = optionsType.FullName ?? optionsType.Name,
+            Assembly = optionsType.Assembly.GetName().Name ?? "Unknown",
+            Properties = MapPropertyMetadata(optionsType, metadata.Properties),
+            IsRegisteredInDi = true,
+            CurrentValues = currentValues
+        };
+    }
+
+    /// <summary>
+    /// Maps configuration property metadata from the registration catalog into the admin discovery model.
+    /// </summary>
+    private static List<PropertyMetadata> MapPropertyMetadata(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type optionsType,
+        IReadOnlyList<ConfigurationPropertyMetadata> properties)
+    {
+        var mappedProperties = new List<PropertyMetadata>(properties.Count);
+        foreach (var property in properties)
+        {
+            var propertyInfo = optionsType.GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance);
+            mappedProperties.Add(new PropertyMetadata
             {
-                var assemblyTypes = assembly.GetTypes()
-                    .Where(t => t.IsClass && !t.IsAbstract && HasSectionNameProperty(t))
-                    .ToArray();
-
-                foreach (var type in assemblyTypes)
-                {
-                    var info = await ExtractTypeInfoAsync(type);
-                    if (info != null && !types.Any(t => t.Type == type))
-                    {
-                        types.Add(info);
-                    }
-                }
-            }
-            catch (ReflectionTypeLoadException ex)
-            {
-                ConfigurationDiscoveryLog.AssemblyLoadWarning(_logger, assembly.FullName ?? "Unknown", ex.Message);
-            }
+                Name = property.Name,
+                Type = property.PropertyType.Name,
+                FullType = property.PropertyType.FullName ?? property.PropertyType.Name,
+                IsRequired = property.IsRequired,
+                DefaultValue = property.DefaultValue,
+                Description = property.Description,
+                ValidationRules = propertyInfo is not null
+                    ? ExtractValidationRules(propertyInfo)
+                    : ExtractValidationRules(property.ValidationAttributes),
+                IsSecret = propertyInfo is not null
+                    ? IsSecretProperty(propertyInfo)
+                    : IsSecretPropertyName(property.Name)
+            });
         }
 
-        return types;
-    }
-
-    /// <summary>
-    /// Checks if a type has a SectionName constant property.
-    /// </summary>
-    private static bool HasSectionNameProperty(Type type)
-    {
-        return type.GetField("SectionName", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy) != null
-            || type.GetProperty("SectionName", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy) != null;
-    }
-
-    /// <summary>
-    /// Extracts type information for a configuration class.
-    /// </summary>
-    private async Task<ConfigurationTypeInfo?> ExtractTypeInfoAsync(Type type)
-    {
-        try
-        {
-            // Get section name
-            var sectionName = GetSectionName(type);
-            if (sectionName == null)
-            {
-                return null;
-            }
-
-            // Extract properties
-            var properties = ExtractPropertyMetadata(type);
-
-            // Check if registered in DI
-            var isRegistered = IsRegisteredInServiceProvider(type);
-
-            // Get current values if available
-            var currentValues = await GetCurrentConfigurationValuesAsync(type, sectionName);
-
-            return new ConfigurationTypeInfo
-            {
-                Type = type,
-                SectionName = sectionName,
-                TypeName = type.Name,
-                FullTypeName = type.FullName ?? type.Name,
-                Assembly = type.Assembly.GetName().Name ?? "Unknown",
-                Properties = properties,
-                IsRegisteredInDi = isRegistered,
-                CurrentValues = currentValues
-            };
-        }
-        catch (Exception ex)
-        {
-            ConfigurationDiscoveryLog.TypeExtractionError(_logger, type.FullName ?? type.Name, ex.Message);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Gets the section name for a configuration type.
-    /// </summary>
-    private static string? GetSectionName(Type type)
-    {
-        // Try static field first
-        var field = type.GetField("SectionName", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-        if (field?.GetValue(null) is string fieldValue)
-        {
-            return fieldValue;
-        }
-
-        // Try static property
-        var property = type.GetProperty("SectionName", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-        if (property?.GetValue(null) is string propertyValue)
-        {
-            return propertyValue;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Extracts property metadata from a type.
-    /// </summary>
-    private static List<PropertyMetadata> ExtractPropertyMetadata(Type type)
-    {
-        var properties = new List<PropertyMetadata>();
-
-        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (prop.CanRead && prop.GetIndexParameters().Length == 0)
-            {
-                var metadata = new PropertyMetadata
-                {
-                    Name = prop.Name,
-                    Type = prop.PropertyType.Name,
-                    FullType = prop.PropertyType.FullName ?? prop.PropertyType.Name,
-                    IsRequired = IsPropertyRequired(prop),
-                    DefaultValue = GetDefaultValue(prop),
-                    Description = GetPropertyDescription(prop),
-                    ValidationRules = ExtractValidationRules(prop),
-                    IsSecret = IsSecretProperty(prop)
-                };
-
-                properties.Add(metadata);
-            }
-        }
-
-        return properties;
-    }
-
-    /// <summary>
-    /// Determines if a property is required.
-    /// </summary>
-    private static bool IsPropertyRequired(PropertyInfo property)
-    {
-        return property.GetCustomAttribute<RequiredAttribute>() != null
-            || property.GetCustomAttribute<RequiredConfigurationAttribute>() != null;
-    }
-
-    /// <summary>
-    /// Gets the default value for a property.
-    /// </summary>
-    private static object? GetDefaultValue(PropertyInfo property)
-    {
-        try
-        {
-            var instance = Activator.CreateInstance(property.DeclaringType!);
-            return property.GetValue(instance);
-        }
-        catch
-        {
-            return null;
-        }
+        return mappedProperties;
     }
 
     /// <summary>
@@ -337,9 +203,17 @@ public sealed class ConfigurationDiscoveryService
     /// </summary>
     private static List<ValidationRuleInfo> ExtractValidationRules(PropertyInfo property)
     {
+        return ExtractValidationRules(property.GetCustomAttributes<ValidationAttribute>());
+    }
+
+    /// <summary>
+    /// Extracts validation rules from validation attributes.
+    /// </summary>
+    private static List<ValidationRuleInfo> ExtractValidationRules(IEnumerable<ValidationAttribute> validationAttributes)
+    {
         var rules = new List<ValidationRuleInfo>();
 
-        foreach (var attr in property.GetCustomAttributes<ValidationAttribute>())
+        foreach (var attr in validationAttributes)
         {
             var rule = new ValidationRuleInfo
             {
@@ -378,59 +252,48 @@ public sealed class ConfigurationDiscoveryService
     private static bool IsSecretProperty(PropertyInfo property)
     {
         var name = property.Name.ToLowerInvariant();
-        return name.Contains("password") || name.Contains("secret") || name.Contains("key") || name.Contains("token")
+        return IsSecretPropertyName(name)
             || property.GetCustomAttribute<SecretReferenceAttribute>() != null;
     }
 
     /// <summary>
-    /// Checks if a type is registered in the service provider.
+    /// Determines if a property name implies secret data.
     /// </summary>
-    private bool IsRegisteredInServiceProvider(Type type)
+    private static bool IsSecretPropertyName(string propertyName)
     {
-        try
-        {
-            var optionsType = typeof(IOptions<>).MakeGenericType(type);
-            return _serviceProvider.GetService(optionsType) != null;
-        }
-        catch
-        {
-            return false;
-        }
+        var name = propertyName.ToLowerInvariant();
+        return name.Contains("password") || name.Contains("secret") || name.Contains("key") || name.Contains("token");
     }
 
     /// <summary>
     /// Gets current configuration values for a type.
     /// </summary>
-    private async Task<Dictionary<string, object?>> GetCurrentConfigurationValuesAsync(Type type, string sectionName)
+    private async Task<Dictionary<string, object?>> GetCurrentConfigurationValuesAsync(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type type,
+        string sectionName)
     {
         var values = new Dictionary<string, object?>();
 
         try
         {
-            // Try to get from IOptions if registered
-            var optionsType = typeof(IOptions<>).MakeGenericType(type);
-            var options = _serviceProvider.GetService(optionsType);
+            var registration = _serviceProvider
+                .GetServices<IConfigurationOptionsRegistration>()
+                .FirstOrDefault(candidate => candidate.Metadata.OptionsType == type);
 
-            if (options != null)
+            if (registration?.GetConfiguredOptions(_serviceProvider) is { } instance)
             {
-                var valueProperty = optionsType.GetProperty("Value");
-                var instance = valueProperty?.GetValue(options);
-
-                if (instance != null)
+                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                 {
-                    foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                    if (prop.CanRead && prop.GetIndexParameters().Length == 0)
                     {
-                        if (prop.CanRead && prop.GetIndexParameters().Length == 0)
+                        try
                         {
-                            try
-                            {
-                                var value = prop.GetValue(instance);
-                                values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
-                            }
-                            catch
-                            {
-                                values[prop.Name] = null;
-                            }
+                            var value = prop.GetValue(instance);
+                            values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
+                        }
+                        catch
+                        {
+                            values[prop.Name] = null;
                         }
                     }
                 }
@@ -494,14 +357,16 @@ public sealed class ConfigurationDiscoveryService
         try
         {
             var assembly = type.Assembly;
-            var location = assembly.Location;
+            var assemblyPath = Path.Combine(AppContext.BaseDirectory, $"{assembly.GetName().Name}.dll");
 
-            if (!string.IsNullOrEmpty(location) && File.Exists(location))
+            if (File.Exists(assemblyPath))
             {
-                return File.GetLastWriteTimeUtc(location);
+                return File.GetLastWriteTimeUtc(assemblyPath);
             }
 
-            return DateTimeOffset.UtcNow;
+            return Directory.Exists(AppContext.BaseDirectory)
+                ? Directory.GetLastWriteTimeUtc(AppContext.BaseDirectory)
+                : DateTimeOffset.UtcNow;
         }
         catch
         {
@@ -814,6 +679,7 @@ public sealed class ConfigurationTypeInfo
     /// The .NET type.
     /// </summary>
     [JsonIgnore]
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
     public Type Type { get; set; } = null!;
 
     /// <summary>

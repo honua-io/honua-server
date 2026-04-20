@@ -49,11 +49,18 @@ internal static class OgcProcessesConversionHelpers
 
         var ogcStatus = ToOgcStatus(job.Status);
 
-        // V1: Do not advertise the results relation. The /results endpoint is
-        // stubbed (returns 404/410/500 for all terminal states) because result
-        // storage is not yet implemented. Emitting the link would cause clients
-        // to follow a relation that never resolves to a results document.
-        // Re-enable when the execution engine populates result packages.
+        // Per OGC API Processes Part 1 §7.11.1, succeeded jobs expose a results
+        // resource. Only Succeeded resolves to a usable results document today —
+        // Failed returns 500 and Cancelled returns 410, so those states keep the
+        // link suppressed to avoid misdirecting clients.
+        if (job.Status == ExecutionJobStatus.Succeeded)
+        {
+            linksBuilder.Add(Link.Create(
+                $"{jobUrl}/results",
+                RelationTypes.OgcResults,
+                MediaTypes.Json,
+                "Job results"));
+        }
 
         return new OgcStatusInfo
         {

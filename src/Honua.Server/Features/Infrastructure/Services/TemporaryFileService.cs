@@ -101,6 +101,7 @@ internal sealed class TemporaryStorageLimitExceededException : InvalidOperationE
 internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService, IDisposable
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> SharedWriteGates = new(StringComparer.Ordinal);
+    private static readonly TimeSpan OrphanDataFileSweepAge = TimeSpan.FromMinutes(1);
     private static readonly HashSet<string> _allowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/png",
@@ -315,6 +316,9 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         try
         {
             var metadataFiles = Directory.GetFiles(_options.StorageDirectory, "*.meta");
+            var dataFiles = Directory.EnumerateFiles(_options.StorageDirectory)
+                .Where(path => !string.Equals(Path.GetExtension(path), ".meta", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
             var now = DateTimeOffset.UtcNow;
             var cleanedCount = 0;
 
@@ -335,6 +339,32 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 catch (Exception ex)
                 {
                     LogProcessMetadataFailed(_logger, metadataPath, ex);
+                }
+            }
+
+            foreach (var dataPath in dataFiles)
+            {
+                try
+                {
+                    var fileId = Path.GetFileNameWithoutExtension(dataPath);
+                    var metadataPath = Path.Combine(_options.StorageDirectory, $"{fileId}.meta");
+                    if (File.Exists(metadataPath))
+                    {
+                        continue;
+                    }
+
+                    var age = now - File.GetLastWriteTimeUtc(dataPath);
+                    if (age < OrphanDataFileSweepAge)
+                    {
+                        continue;
+                    }
+
+                    File.Delete(dataPath);
+                    cleanedCount++;
+                }
+                catch (Exception ex)
+                {
+                    LogProcessMetadataFailed(_logger, dataPath, ex);
                 }
             }
 

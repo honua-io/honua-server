@@ -38,6 +38,7 @@ public static class Fes20Parser
             throw new Fes20ParseException("Filter element must contain at least one child element");
         }
 
+        ValidateExpressionDepth(firstChild, depth: 1);
         return ParseExpression(firstChild);
     }
 
@@ -62,6 +63,26 @@ public static class Fes20Parser
         catch (XmlException ex)
         {
             throw new Fes20ParseException($"Invalid filter XML: {ex.Message}", ex);
+        }
+    }
+
+    private static void ValidateExpressionDepth(XElement element, int depth)
+    {
+        try
+        {
+            FilterParserGuard.EnsureExpressionDepth(depth);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new Fes20ParseException(ex.Message, ex);
+        }
+
+        foreach (var child in element.Elements())
+        {
+            if (child.Name.NamespaceName == FesNamespace)
+            {
+                ValidateExpressionDepth(child, depth + 1);
+            }
         }
     }
 
@@ -686,24 +707,46 @@ public static class Fes20Parser
             throw new Fes20ParseException($"{element.Name.LocalName} must contain coordinate positions.");
         }
 
+        try
+        {
+            FilterParserGuard.EnsureCoordinateCount(positions.Length, "FES geometry literal");
+        }
+        catch (ArgumentException ex)
+        {
+            throw new Fes20ParseException(ex.Message, ex);
+        }
+
         return positions;
     }
 
     private static Coordinate[] ParsePosList(string rawPosList, AxisOrder axisOrder)
     {
-        var ordinates = rawPosList
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
-            .ToArray();
-        if (ordinates.Length < 2 || ordinates.Length % 2 != 0)
+        var values = rawPosList
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (values.Length < 2 || values.Length % 2 != 0)
         {
             throw new Fes20ParseException("gml:posList must contain an even number of ordinates.");
         }
 
-        var coordinates = new Coordinate[ordinates.Length / 2];
-        for (var i = 0; i < ordinates.Length; i += 2)
+        try
         {
-            coordinates[i / 2] = CreateCoordinate(ordinates[i], ordinates[i + 1], axisOrder);
+            FilterParserGuard.EnsureCoordinateCount(values.Length / 2, "FES geometry literal");
+        }
+        catch (ArgumentException ex)
+        {
+            throw new Fes20ParseException(ex.Message, ex);
+        }
+
+        var coordinates = new Coordinate[values.Length / 2];
+        for (var i = 0; i < values.Length; i += 2)
+        {
+            if (!double.TryParse(values[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
+                !double.TryParse(values[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second))
+            {
+                throw new Fes20ParseException("gml:posList contains invalid numeric ordinates.");
+            }
+
+            coordinates[i / 2] = CreateCoordinate(first, second, axisOrder);
         }
 
         return coordinates;
@@ -722,6 +765,13 @@ public static class Fes20Parser
             !double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second))
         {
             throw new Fes20ParseException("Coordinate position contains invalid numeric ordinates.");
+        }
+
+        // NumberStyles.Float parses "NaN"/"Infinity" and silently returns Infinity on
+        // exponent overflow. Either would produce a topologically invalid geometry.
+        if (!double.IsFinite(first) || !double.IsFinite(second))
+        {
+            throw new Fes20ParseException("Coordinate ordinates must be finite numbers.");
         }
 
         return CreateCoordinate(first, second, axisOrder);
@@ -899,25 +949,48 @@ public static class Fes20Parser
     }
 
     /// <summary>
-    /// Parses SRID from CRS identifier
+    /// Parses SRID from CRS identifier. Accepts the three OGC-registered forms:
+    /// <c>EPSG:4326</c>, <c>urn:ogc:def:crs:EPSG::4326</c> (double-colon), and
+    /// <c>http://www.opengis.net/def/crs/EPSG/0/4326</c> (OGC URL). Falls back to
+    /// WGS84 when the CRS identifier is unrecognized so downstream logic can still
+    /// proceed; callers that need strict validation should check srsName separately.
     /// </summary>
     private static int ParseSrid(string srsName)
     {
-        // Handle various CRS identifier formats
         if (srsName.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
         {
-            if (int.TryParse(srsName[5..], out var epsgCode))
+            if (int.TryParse(srsName[5..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var epsgCode))
                 return epsgCode;
         }
 
+        // Canonical OGC URN uses a double colon between authority and code:
+        //   urn:ogc:def:crs:EPSG::4326  → parts = [urn, ogc, def, crs, EPSG, "", 4326]
         if (srsName.StartsWith("urn:ogc:def:crs:EPSG:", StringComparison.OrdinalIgnoreCase))
         {
             var parts = srsName.Split(':');
-            if (parts.Length >= 7 && int.TryParse(parts[6], out var urnEpsgCode))
+            if (parts.Length == 7
+                && string.IsNullOrEmpty(parts[5])
+                && int.TryParse(parts[6], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var urnEpsgCode))
+            {
                 return urnEpsgCode;
+            }
         }
 
-        // Default to WGS84
+        // OGC URL form: http[s]://www.opengis.net/def/crs/EPSG/<version>/<code>
+        const string OgcUrlPrefix = "://www.opengis.net/def/crs/";
+        var urlMarker = srsName.IndexOf(OgcUrlPrefix, StringComparison.OrdinalIgnoreCase);
+        if (urlMarker > 0)
+        {
+            var remainder = srsName[(urlMarker + OgcUrlPrefix.Length)..];
+            var segments = remainder.Split('/');
+            if (segments.Length >= 3
+                && string.Equals(segments[0], "EPSG", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(segments[^1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var urlEpsgCode))
+            {
+                return urlEpsgCode;
+            }
+        }
+
         return 4326;
     }
 

@@ -164,6 +164,11 @@ internal static partial class MapServerEndpoints
                     $"Unsupported REQUEST value '{requestType}'.");
             }
 
+            if (!IsWmtsCapabilitiesAcceptable(context.Request.Headers.Accept.ToString()))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+            }
+
             var responseMimeType = WmtsMimeType;
             if (request.ContainsKey("ACCEPTFORMATS"))
             {
@@ -1768,6 +1773,11 @@ internal static partial class MapServerEndpoints
         var mediaTypes = acceptHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var mediaTypeWithParameters in mediaTypes)
         {
+            if (IsRejectedByQuality(mediaTypeWithParameters))
+            {
+                continue;
+            }
+
             var mediaType = mediaTypeWithParameters.Split(';', 2, StringSplitOptions.TrimEntries)[0];
             if (mediaType.Length == 0)
             {
@@ -1802,6 +1812,26 @@ internal static partial class MapServerEndpoints
         }
 
         return hasWildcardType;
+    }
+
+    private static bool IsRejectedByQuality(string mediaTypeWithParameters)
+    {
+        var parameters = mediaTypeWithParameters.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        foreach (var parameter in parameters.Skip(1))
+        {
+            var parts = parameter.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 || !string.Equals(parts[0], "q", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (double.TryParse(parts[1], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var quality))
+            {
+                return quality <= 0;
+            }
+        }
+
+        return false;
     }
 
     private static bool ShouldDisableWmtsCaching(HttpContext context)

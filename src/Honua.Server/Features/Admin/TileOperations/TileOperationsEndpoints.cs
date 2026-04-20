@@ -269,6 +269,7 @@ internal sealed record TileOperationListResponse
 
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartRequest))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(PersistedTileOperationRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress[]))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartResponse))]

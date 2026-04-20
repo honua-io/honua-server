@@ -19,6 +19,8 @@ CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HONUA_HEALTHCHECK_TIMEOUT=300  # 5 minutes
 POSTGRES_HEALTHCHECK_TIMEOUT=120  # 2 minutes
+HONUA_CITE_POSTGRES_PORT="${HONUA_CITE_POSTGRES_PORT:-5433}"
+export HONUA_CITE_POSTGRES_PORT
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -257,7 +259,7 @@ if [[ "$INTERACTIVE" == "true" ]]; then
     echo "Services are running at:"
     echo "  Honua Server:     http://localhost:8080"
     echo "  CITE Team Engine: http://localhost:8081/teamengine"
-    echo "  PostgreSQL:       localhost:5433"
+    echo "  PostgreSQL:       localhost:${HONUA_CITE_POSTGRES_PORT}"
     echo ""
     echo "Run CITE tests manually via Team Engine web interface"
     echo "Press Ctrl+C to stop all services"

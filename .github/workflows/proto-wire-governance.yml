@@ -24,6 +24,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: proto-wire-governance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   proto-wire-breaking:
     runs-on: ubuntu-latest

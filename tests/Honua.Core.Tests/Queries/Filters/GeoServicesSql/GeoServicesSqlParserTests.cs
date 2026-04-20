@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
@@ -51,6 +52,19 @@ public class GeoServicesSqlParserTests
         expression.Should().BeOfType<BinaryExpression>();
         var binary = (BinaryExpression)expression;
         binary.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [Fact]
+    public void Parse_WithNestedParenthesesBeyondLimit_ThrowsArgumentException()
+    {
+        var filter = string.Concat(Enumerable.Repeat("(", FilterParserGuard.MaxExpressionDepth + 1)) +
+            "name = 'deep'" +
+            string.Concat(Enumerable.Repeat(")", FilterParserGuard.MaxExpressionDepth + 1));
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
     [Fact]

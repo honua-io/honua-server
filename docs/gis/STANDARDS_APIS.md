@@ -1,6 +1,6 @@
 # Geospatial Data APIs (Standards-Based)
 
-Honua exposes multiple industry-standard geospatial APIs. This page helps you choose the right protocol and understand the shape of each API at a high level.
+Honua exposes multiple industry-standard geospatial APIs. This page highlights the major protocol families and helps you choose the right surface at a high level. For the exhaustive launch support matrix and caveats, use [MVP Compatibility and Limitations](MVP_COMPATIBILITY_CONTRACT.md).
 
 ## **Quick Protocol Selection**
 
@@ -136,7 +136,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - Items and search hits preserve declared `stac_extensions` when item-level extension metadata is configured.
 - Items always include `properties.datetime`; when a layer has no resolvable time field, the property remains present with a `null` value.
 - Pagination links preserve encoded `bbox` and `datetime` filters so clients can replay sampled queries exactly.
-- Search supports GET and POST with `fields`, `sortby`, and CQL2 filtering (`filter` plus `filter-lang`).
+- Search supports GET and POST with `fields`, `sortby`, and CQL2 filtering (`filter`, `filter-lang`, and registry-backed `filter-crs` / explicit geometry CRS for CQL2 spatial literals).
 
 **Typical use cases:**
 - STAC browser and catalog interoperability
@@ -175,11 +175,12 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /conformance
 |-- /map
 |-- /collections/{id}/map
-|-- /collections/{id}/styles/{styleId}/map
 |-- /collections/{id}/map/tiles
 ```
 
 **Output formats:** PNG, JPEG, TIFF
+
+**Current scope:** Core map rendering, collection maps, and map tiles. The optional styled-map conformance class is not claimed in MVP.
 
 **Typical use cases:**
 - Server-rendered maps via open standards
@@ -218,10 +219,10 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - This is a protocol adapter over the canonical Honua geoprocessing runtime, not a separate processing framework.
 - V1 supports async execution only; synchronous execution returns `501 Not Implemented`.
 - Execution requires `Prefer: respond-async`, accepts only `response=document`, and returns `201 Created` with `Location` plus `Preference-Applied: respond-async` on success.
-- V1: result storage is not yet available; `/results` remains stubbed (`404` for non-terminal and successful jobs, `500` for failed jobs, `410 Gone` for dismissed jobs). When results are populated, the successful shape will be document-mode JSON (by-value).
-- `StatusInfo` documents intentionally omit the OGC results relation until `/results` can return a real results document.
+- V1: Succeeded jobs return `200 OK` with a document-mode, by-value JSON body (empty `{}` until the canonical process declares value-typed outputs and result storage is populated). Non-terminal jobs return `404`, failed jobs return `500`, and dismissed jobs return `410 Gone`.
+- Succeeded jobs advertise the OGC `results` relation in their `StatusInfo` document so clients can follow it to `/jobs/{jobId}/results`.
 - Async execution and job routes require Redis-backed durable storage; execution/job list/status/results/dismiss return `503 Service Unavailable` when the store is not configured.
-- V1 exposes one canonical process (`honua-geoprocessing`); catalog formalization is follow-on work.
+- V1 exposes one canonical process (`honua-geoprocessing`) in `/processes`; the internal `IProcessCatalog` enumerates 19 built-in processes across four families — 10 `geometry.*` (`buffer`, `simplify`, `project`, `make-valid`, `union`, `intersect`, `clip`, `difference`, `area`, `length`), 4 `analytics.*` (`cluster`, `spatial-join`, `buffer-aggregate`, `density`), 2 `generalization.*` (`simplify-layer`, `dissolve`), and 3 `data-management.*` (`copy-features`, `delete-features`, `calculate-field`) — and plan submissions are validated against it (`MISSING_PROCESS_ID`, `UNKNOWN_PROCESS`, `MISSING_REQUIRED_PARAMETER`, `UNKNOWN_PARAMETER`, `INVALID_PARAMETER_VALUE`). Validation mirrors the live handlers across (1) enum value sets (`analytics.cluster` `algorithm`, `analytics.spatial-join` `predicate`, `analytics.density` `mode`, `analytics.buffer-aggregate` `unit`), (2) configured numeric ranges honoring `Limits:Analytics` bounds (`eps` > 0 and ≤ `MaxDbscanEpsMeters`, dwithin `distance` > 0 and ≤ `MaxDWithinDistanceMeters`, `cellSize` within `[MinDensityCellSizeMeters, MaxDensityCellSizeMeters]`, buffer-aggregate `distance` ≥ 0 with `MaxBufferDistanceMeters` applied after unit conversion, `minPoints` ≥ 1, `k` ≥ 1 and ≤ `MaxKMeansK`, `generalization.simplify-layer` `tolerance` > 0 in SRID units), (3) conditional requiredness (`eps`+`minPoints` when `algorithm=dbscan`, `k` when `algorithm=kmeans`, `distance` when `predicate=dwithin`, at least one of `where`/`objectIds` on `data-management.delete-features`; blank whitespace values are treated as "not supplied" so they surface as `MISSING_REQUIRED_PARAMETER`), (4) cross-field invariants (`analytics.spatial-join` rejects `joinLayerId == layerId`; `analytics.cluster` requires `returnHullPerCluster=true` when `outStatistics` is supplied; `analytics.buffer-aggregate` and `generalization.dissolve` both require `dissolve=true` when `outStatistics` is supplied), (5) structured Text-input parsing for the dependency-free fields the handlers parse (`outStatistics` JSON shape with `statisticType` ∈ {`count`,`sum`,`min`,`max`,`avg`,`stddev`,`var`} and each entry field required to be a JSON string, `objectIds` as comma-separated integers, `spatialRel` rejection of distance-based variants `esriSpatialRelWithinDistance`/`esriSpatialRelBeyondDistance` only when a `geometry` filter is supplied, matching `AnalyticsFeatureQueryFactory`, `data-management.calculate-field` `fieldName` restricted to a simple unquoted identifier), and (6) `LayerId`-typed inputs require non-negative integers — zero-based layer ids are accepted to match the live `RouteParameterValidator.ValidateLayerId` contract and the analytics REST `{layerId:int}` route. The remaining shared analytics filter inputs (`where`, `geometry`, `geometryType`, `inSR`, `time`, `timeRelation`) are accepted opaquely at this gate and validated at execution time by `AnalyticsFeatureQueryFactory`, which needs runtime services not available at catalog-validation time. Destructive `data-management.*` ids (`delete-features`, `calculate-field`) additionally route through `OperatorApprovalGate` with `IsDestructive = true`. When `Operator:Approval:DestructiveActionsRequireApproval` is on, submissions hard-fail at the gate (gRPC `FailedPrecondition`, OGC `403 Approval required`) before any job or progress record is created; pending-approval persistence and a `Validated → AwaitingApproval` status projection are follow-on work. See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for the full per-process validation table. Per-process projection into the OGC adapter surface is follow-on work.
 - Conforms to OGC API Processes Part 1: Core conformance classes: `core`, `json`, `dismiss`, plus OGC API Common `core` and `json`. The `job-list` conformance class is implemented at MVP level but not advertised (V1 lacks required filters and pagination).
 
 ---
@@ -308,7 +309,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 ## **GeoServices REST GPServer**
 
-**Best for**: Esri geoprocessing workflows (job status polling and cancellation functional; submission and result retrieval routes registered, pending process catalog)
+**Best for**: Esri geoprocessing workflows (job status polling and cancellation functional; submission and result retrieval routes registered, pending per-task projection of the built-in process catalog into the GPServer surface)
 
 **Endpoint structure:**
 ```
@@ -324,7 +325,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Output formats:** JSON (Esri camelCase convention)
 
-**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Task info and `submitJob` return 501 until a formal process catalog is available for task resolution. Service info returns stub metadata (empty task list) until the catalog is formalized. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
+**Limitations:** Synchronous `execute` returns 501 until canonical `ExecutePlan` is wired (#721). Task info and `submitJob` return 501 pending GPServer adapter projection of the built-in `IProcessCatalog` into per-task routes. Service info returns stub metadata (empty task list) until that projection lands. Unsupported GP environment controls (`env:*`, `context`) are rejected with 400. Per-parameter result retrieval route is registered but actual output retrieval is pending execution-engine and result-storage support.
 
 **Typical use cases:**
 - ArcGIS Pro / SDK geoprocessing tool connectivity
@@ -334,7 +335,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 **Contract notes:**
 - GPServer is a protocol adapter over the canonical process runtime; it does not define its own job or result storage.
 - `execute`, `submitJob`, and `cancel` accept both GET and POST per Esri GP convention. All other endpoints are GET-only. For POST requests, query-string parameters are read first and then overlaid by form-encoded body values (body takes precedence on key collision).
-- `submitJob` currently returns 501 because task resolution requires a formal process catalog (not yet available). Once the catalog is wired, `submitJob` will return HTTP 202 (Accepted) with the job envelope (`jobId`, `jobStatus`), differing from Esri's convention of HTTP 200 but carrying the same response body shape.
+- `submitJob` currently returns 501 because the GPServer adapter has not yet been updated to resolve tasks against the built-in `IProcessCatalog`. Once that projection lands, `submitJob` will return HTTP 202 (Accepted) with the job envelope (`jobId`, `jobStatus`), differing from Esri's convention of HTTP 200 but carrying the same response body shape.
 - Canonical `ExecutionJobStatus` maps to Esri status strings: `Queued`→`esriJobSubmitted`, `Provisioning`→`esriJobWaiting`, `Running`→`esriJobExecuting`, `Succeeded`→`esriJobSucceeded`, `Failed`→`esriJobFailed`, `Cancelled`→`esriJobCancelled`.
 - Parameter translation converts Esri GP types (GPDataFile, GPLinearUnit, GPFeatureRecordSetLayer, etc.) to canonical opaque step inputs and maps `ArtifactKind` back to GP data types on output.
 - Route binding is validated: job status/result/cancel endpoints verify the `serviceId` and `taskName` match the stored job metadata, returning 404 for mismatches. Jobs submitted via other protocols (e.g. gRPC) are rejected to prevent cross-protocol access.
@@ -378,7 +379,7 @@ Backward compatibility for standards APIs is defined by the external standard, n
 
 Compatibility is validated through:
 - **Coverage matrices** tracking supported operations per standard (see [Coverage and Compliance](#coverage-and-compliance) below).
-- **CITE conformance results** for OGC standards (automated in CI, 100% pass rate required).
+- **CITE conformance results** for OGC standards (scheduled nightly/manual workflows, 100% pass rate required).
 - **Client template validation** via the [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
 - **Release notes** documenting any changes to standards API behavior.
 

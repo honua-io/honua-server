@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Configuration;
 using System.ComponentModel.DataAnnotations;
 
@@ -26,7 +27,11 @@ public interface IConfigurationValidator
     /// <param name="sectionName">The configuration section name.</param>
     /// <param name="isDevelopment">Whether validation is running in development mode.</param>
     /// <returns>The validation result.</returns>
-    ConfigurationValidationResult ValidateOptions<TOptions>(TOptions options, string sectionName, bool isDevelopment = false)
+    ConfigurationValidationResult ValidateOptions<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        TOptions options,
+        string sectionName,
+        bool isDevelopment = false)
         where TOptions : class;
 
     /// <summary>
@@ -43,14 +48,20 @@ public interface IConfigurationValidator
     /// <typeparam name="TOptions">The options type.</typeparam>
     /// <param name="sectionName">The configuration section name.</param>
     /// <param name="isRequired">Whether the section is required.</param>
-    void RegisterOptionsType<TOptions>(string sectionName, bool isRequired = true) where TOptions : class;
+    void RegisterOptionsType<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        string sectionName,
+        bool isRequired = true)
+        where TOptions : class;
 
     /// <summary>
     /// Gets metadata for a registered options type.
     /// </summary>
     /// <typeparam name="TOptions">The options type.</typeparam>
     /// <returns>The metadata for the options type.</returns>
-    ConfigurationOptionsMetadata GetOptionsMetadata<TOptions>() where TOptions : class;
+    ConfigurationOptionsMetadata GetOptionsMetadata<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>()
+        where TOptions : class;
 
     /// <summary>
     /// Gets the configuration section this validator applies to.

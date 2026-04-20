@@ -6,12 +6,12 @@ This document specifies extensions to OGC API Features Part 1: Core, enabling se
 ## Key Requirements
 
 ### Discovery ✅ IMPLEMENTED
-- **CRS Listing**: Each spatial feature collection must advertise supported CRS identifiers in a `crs` property
+- **CRS Listing**: Each spatial feature collection advertises the common output CRSs Honua surfaces directly (`CRS84`, `EPSG:4326`, `EPSG:3857`, plus storage CRS when distinct)
 - **Storage CRS**: Collections may declare a `storageCrs` property indicating which CRS requires no transformation
 
 ### Query Parameters ✅ IMPLEMENTED
-- **`crs` Parameter**: Clients request geometry in specific CRS using this parameter
-- **`bbox-crs` Parameter**: Declares the CRS for bounding box coordinates in requests
+- **`crs` Parameter**: Clients request geometry in specific CRS using this parameter; Honua also accepts additional EPSG identifiers resolved by the CRS registry/PostGIS
+- **`bbox-crs` Parameter**: Declares the CRS for bounding box coordinates in requests; Honua also accepts additional EPSG identifiers resolved by the CRS registry/PostGIS
 
 ### Response Headers ✅ IMPLEMENTED
 **`Content-Crs` Header**: All responses containing geometry must include this HTTP header asserting the CRS used

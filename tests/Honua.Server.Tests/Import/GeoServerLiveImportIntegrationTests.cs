@@ -78,30 +78,41 @@ public sealed class GeoServerLiveImportIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoserver/start")]
     public async Task Start_LiveGeoServerHarnessDryRun_Completes()
     {
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+        const string envKey = "HONUA_TEST_GEOSERVER_LIVE_PASSWORD";
+        var previousValue = Environment.GetEnvironmentVariable(envKey);
+        Environment.SetEnvironmentVariable(envKey, _geoServer.Password);
+
+        try
         {
-            GeoServerRestUrl = _geoServer.RestUrl,
-            Username = _geoServer.Username,
-            Password = _geoServer.Password,
-            DryRun = true,
-            ImportStyles = false,
-            RequestTimeoutSeconds = 120
-        });
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+            {
+                GeoServerRestUrl = _geoServer.RestUrl,
+                Username = _geoServer.Username,
+                PasswordSecretReference = $"env:{envKey}",
+                DryRun = true,
+                ImportStyles = false,
+                RequestTimeoutSeconds = 120
+            });
 
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var jobId = await GetJobIdAsync(response);
-        var completed = await WaitForJobStatusAsync(jobId, "Completed", TimeSpan.FromMinutes(3));
+            var jobId = await GetJobIdAsync(response);
+            var completed = await WaitForJobStatusAsync(jobId, "Completed", TimeSpan.FromMinutes(3));
 
-        completed.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
-        completed.RootElement.GetProperty("status").GetString().Should().Be("Completed");
-        completed.RootElement.GetProperty("geoServerUrl").GetString().Should().Be(_geoServer.RestUrl);
-        completed.RootElement.GetProperty("progress").GetProperty("currentPhase").GetString().Should().Be("Dry run completed");
-        completed.RootElement.GetProperty("progress").GetProperty("sourceGeoServerUrl").GetString().Should().Be(_geoServer.RestUrl);
+            completed.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+            completed.RootElement.GetProperty("status").GetString().Should().Be("Completed");
+            completed.RootElement.GetProperty("geoServerUrl").GetString().Should().Be(_geoServer.RestUrl);
+            completed.RootElement.GetProperty("progress").GetProperty("currentPhase").GetString().Should().Be("Dry run completed");
+            completed.RootElement.GetProperty("progress").GetProperty("sourceGeoServerUrl").GetString().Should().Be(_geoServer.RestUrl);
 
-        if (completed.RootElement.GetProperty("progress").TryGetProperty("estimatedTotalResources", out var estimatedTotalResources))
+            if (completed.RootElement.GetProperty("progress").TryGetProperty("estimatedTotalResources", out var estimatedTotalResources))
+            {
+                estimatedTotalResources.GetInt32().Should().BeGreaterThan(0);
+            }
+        }
+        finally
         {
-            estimatedTotalResources.GetInt32().Should().BeGreaterThan(0);
+            Environment.SetEnvironmentVariable(envKey, previousValue);
         }
     }
 

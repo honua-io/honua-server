@@ -15,7 +15,7 @@ internal sealed partial class DeployWorkflowReconciler(
     IDeployTargetRegistry targetRegistry,
     IEnumerable<IDeployBackend> backends,
     IDeployTelemetrySignalEvaluator telemetrySignalEvaluator,
-    ILogger<DeployWorkflowReconciler> logger)
+    ILogger<DeployWorkflowReconciler> logger) : IWorkflowOperationReconciler
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
@@ -309,7 +309,7 @@ internal sealed partial class DeployWorkflowReconciler(
 /// </summary>
 internal sealed class DeployWorkflowReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
-    IOperationReconciler reconciler,
+    IWorkflowOperationReconciler reconciler,
     ILogger<DeployWorkflowReconcilerBackgroundService> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);

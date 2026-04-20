@@ -172,7 +172,8 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
         {
             StepId = "step-1",
             Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            ProcessId = "geometry.buffer",
+            Inputs = { { "wkb", "AAAA" }, { "srid", "4326" }, { "distance", "100" } }
         });
         return plan;
     }

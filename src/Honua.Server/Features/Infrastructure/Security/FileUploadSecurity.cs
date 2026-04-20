@@ -382,8 +382,8 @@ internal static class FileUploadSecurity
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             if (IsTextFile(extension))
             {
-                await using var limitedStream = new LimitedReadStream(openReadStream(), scanLimit);
-                var textValidationResult = await ValidateTextFileContentAsync(limitedStream, cancellationToken);
+                await using var textStream = openReadStream();
+                var textValidationResult = await ValidateTextFileContentAsync(textStream, cancellationToken);
                 if (!textValidationResult.IsValid)
                 {
                     return textValidationResult;

@@ -22,6 +22,10 @@ internal static class CoreEndpoints
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json",
         "http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss",
+        // conf/job-list intentionally omitted: the V1 /jobs endpoint lists jobs
+        // but does not yet implement the full conf/job-list requirements
+        // (filtering, paging semantics, links shape). Declare it only when
+        // the implementation fully matches the class.
         "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/core",
         "http://www.opengis.net/spec/ogcapi-common-1/1.0/conf/json");
 

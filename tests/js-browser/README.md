@@ -1,6 +1,8 @@
 # JavaScript Browser Compatibility Tests
 
-Documentation has moved to [docs/contributor/testing-javascript.md](../../docs/contributor/testing-javascript.md).
+This directory contains the Playwright-based browser compatibility suite used by the JavaScript certification lane.
+
+Canonical contributor documentation: [docs/contributor/testing-javascript.md](../../docs/contributor/testing-javascript.md).
 
 Quick start:
 

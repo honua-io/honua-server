@@ -33,6 +33,207 @@ Admin-only diagnostics:
 | `GET /api/v1/admin/observability/telemetry` | Tracing status |
 | `GET /api/v1/admin/performance/database/query-cache/statistics` | Prepared statement cache health |
 
+Detailed operational diagnostics (also admin-authenticated):
+
+| Endpoint | What it shows |
+|----------|---------------|
+| `GET /monitoring/health/production` | Combined health snapshot built from live request/cache/connection telemetry |
+| `GET /monitoring/health/comprehensive` | Sanitized ASP.NET health check report for critical dependencies |
+| `GET /monitoring/metrics/connection-pool` | Connection pool utilization, failures, and timeouts |
+| `GET /monitoring/metrics/cache` | Cache health summary with hit ratio |
+| `GET /monitoring/metrics/resources` | Process memory and GC snapshot |
+| `GET /monitoring/metrics/upload-queue` | Upload queue depth and utilization |
+| `GET /monitoring/metrics/database-resilience` | Database resilience summary and active alerts |
+| `GET /monitoring/alerts` | Current alert conditions derived from production thresholds |
+
+---
+
+## Job Orchestration Observability
+
+Worker hosts running `AddJobWorker()` emit log entries from the
+`JobExecutionService` claim loop and the `JobReconciliationService`
+background sweep.
+
+**JobExecutionService** (claim and execution):
+
+| Level | Signal |
+|-------|--------|
+| Information | Worker started/stopped, job execution started, job completed, operator cancellation, durable cancellation signal honoured during abandon |
+| Warning | Job not found after claim, no executor for job kind, job abandoned for retry, no executors registered at startup, job timeout, state transition skipped (job cancelled or reclaimed between claim and Running, or reconciler intervention), heartbeat pump faulted (finalization still proceeds), transient heartbeat write failure (pump retries on next interval), per-attempt warning log append failed (requeue/terminal transition still proceeds) |
+| Error | Job execution exception, claim loop error, pre-execution shutdown requeue failed (stale-claim reconciliation will recover) |
+
+**JobReconciliationService** (liveness sweep):
+
+| Level | Signal |
+|-------|--------|
+| Information | Service started/stopped, reconciliation skipped — job already terminal or claim owner changed since sweep snapshot; heartbeat refreshed since sweep snapshot (worker still alive); timeout no longer expired since sweep snapshot (job reclaimed with fresh claim time) |
+| Debug | Sweep results when at least one job was reconciled (count out of active total) |
+| Warning | Heartbeat expired — job requeued for retry |
+| Error | Heartbeat expired with no retries remaining, timeout expiry, or sweep failure |
+
+**RedisJobQueue** (queue operations and claim recovery):
+
+| Level | Signal |
+|-------|--------|
+| Information | Job enqueued, job claimed, job requeued |
+| Warning | Orphaned claim requeued (claim succeeded but store update failed), claim rolled back after store failure, claim scan traverse threshold exceeded |
+| Error | Claim rollback failed (orphaned claim will be caught by reconciliation) |
+
+Monitor for `JobExecutionService`, `JobReconciliationService`, and
+`RedisJobQueue` entries in worker hosts to detect execution failures,
+stale heartbeats, abandoned jobs, retry exhaustion, and claim-recovery
+events. For lifecycle details and tuning, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Repeated heartbeat expiry | > 2 expiry events in 10 min | `JobReconciliationService` Warning/Error |
+| Retry exhaustion spike | > 1 exhaustion event in 5 min | `JobReconciliationService` Error |
+| Claim rollback failures | Any occurrence | `RedisJobQueue` Error (`ClaimRollbackFailed`) |
+| Worker with no executors | Any occurrence at startup | `JobExecutionService` Warning |
+| Sustained claim-loop errors | > 3 errors in 5 min | `JobExecutionService` Error |
+| Claim scan traverse threshold exceeded | > 1 occurrence in 5 min | `RedisJobQueue` Warning (`ClaimScanTraverseThresholdExceeded`) |
+
+Queue depth is available via `IJobQueue.GetQueueDepthAsync` but is not yet
+exposed through a public metrics endpoint. Operators requiring queue depth
+alerting can query the Redis sorted set `controlplane:jobqueue:pending`
+directly until a metrics projection is added.
+
+---
+
+## Execution Job Reconciler Observability
+
+The `ExecutionJobReconciler` and its background service
+(`ExecutionJobReconcilerBackgroundService`) reconcile active execution jobs
+against pluggable `IBatchComputeBackend` adapters, bridging status and
+progress into `IUniversalProgressStore`. The reconciler runs on every
+Redis-enabled host and emits structured logs in the `9030-9036` event-id
+band.
+
+**ExecutionJobReconciler** (per-job reconciliation):
+
+| EventId | Level | Signal |
+|---------|-------|--------|
+| 9030 | Debug | Execution job reconciled to new status and percent complete |
+| 9031 | Warning | Execution-job reconciliation failed for a specific operation |
+| 9033 | Debug | Reconciliation lease was lost; another node may continue |
+| 9034 | Warning | No batch compute backend registered for the job's `(Backend, TargetKind)` |
+| 9035 | Warning | Failed to bridge execution-job progress into `IUniversalProgressStore` |
+
+**ExecutionJobReconcilerBackgroundService** (poll loop):
+
+| EventId | Level | Signal |
+|---------|-------|--------|
+| 9032 | Warning | Reconciliation poll loop failed |
+| 9036 | Information | Background service started |
+
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Missing backend registrations | Any occurrence | `ExecutionJobReconciler` Warning (9034) |
+| Sustained reconciliation failures | > 3 in 5 min | `ExecutionJobReconciler` Warning (9031) |
+| Poll loop failures | Any occurrence | `ExecutionJobReconciler` Warning (9032) |
+| Progress bridge failures | Sustained volume | `ExecutionJobReconciler` Warning (9035) |
+
+For lifecycle details and backend configuration, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+---
+
+## Workflow Orchestration Observability
+
+The declarative workflow engine (`WorkflowOrchestrationEngine`), its
+reconciler loop, and the cron scheduler emit structured logs in the
+`8100-8199` event-id band via `OrchestrationLog`.
+
+**Key log events:**
+
+| EventId | Name | Level | Signal |
+|---------|------|-------|--------|
+| 8100 | WorkflowRunCreated | Information | A new workflow run was created |
+| 8101 | WorkflowRunCompleted | Information | Run reached a terminal state (succeeded, failed, or cancelled) |
+| 8102 | WorkflowStepSubmitted | Debug | Step job submitted to the execution substrate |
+| 8103 | WorkflowStepCompleted | Debug | Step reached a terminal state |
+| 8104 | WorkflowStepRetrying | Information | Step failed and is being retried per its retry policy |
+| 8105 | WorkflowStepSkipped | Information | Step was skipped because its dependency used a `Skip` failure policy |
+| 8107 | InputBindingFailed | Warning | Artifact-to-input binding resolution failed for a step |
+| 8108 | SchedulerTriggered | Information | Cron scheduler created a run for a scheduled workflow |
+| 8110 | ReconciliationFailed | Warning | Reconciliation loop encountered an unhandled error |
+| 8111 | PollLoopFailed | Warning | Reconciler background service poll loop failed |
+| 8114 | SchedulerTickFailed | Warning | Scheduler background service tick failed |
+| 8115 | WorkflowStepFailed | Warning | A workflow step failed (exhausted retries or no retry policy) |
+| 8116 | SchedulerDefinitionInvalid | Warning | Scheduled workflow has an invalid cron expression or time zone |
+| 8117 | WorkflowStepCancelJobFailed | Warning | Best-effort cascade cancel of a child job failed |
+| 8118 | WorkflowStepObservationTransientFailure | Warning | Transient job-observation failure; step preserved for retry on next reconcile tick |
+| 8119 | WorkflowCancelLeaseContention | Information | Cancel request could not acquire reconcile lease (409 returned) |
+| 8120 | WorkflowStepArtifactsUnavailableForBoundDependents | Warning | Step artifact retrieval failed; bound dependents marked Failed |
+| 8121 | DefinitionStepSetMismatch | Error | Definition step-set changed during active run; run failed deterministically |
+| 8122 | ProgressProjectionFailed | Warning | Progress store write failed after authoritative run state was durable; progress view may be stale |
+
+**Activities and metrics** (under `honua.orchestration.*`):
+
+| Type | Name |
+|------|------|
+| Activity | `honua.orchestration.reconcile_run` |
+| Activity | `honua.orchestration.execute_step` |
+| Activity | `honua.orchestration.resolve_bindings` |
+| Activity | `honua.orchestration.scheduler_tick` |
+| Metric | `honua.orchestration.runs_created_total` |
+| Metric | `honua.orchestration.runs_completed_total` |
+| Metric | `honua.orchestration.steps_completed_total` |
+| Metric | `honua.orchestration.steps_retried_total` |
+| Metric | `honua.orchestration.run_duration_ms` |
+| Metric | `honua.orchestration.step_duration_ms` |
+
+**Recommended alerts:**
+
+| Condition | Suggested threshold | Signal source |
+|-----------|---------------------|---------------|
+| Reconciliation failures | Any occurrence | `OrchestrationLog` Warning (8110) / Warning (8111) |
+| Sustained step retries | > 3 retry events in 5 min | `OrchestrationLog` Information (8104) |
+| Artifact binding failures | Any occurrence | `OrchestrationLog` Warning (8107) / Warning (8120) |
+| Scheduler tick failures | Any occurrence | `OrchestrationLog` Warning (8114) |
+| Scheduler definition invalid | Any occurrence | `OrchestrationLog` Warning (8116) |
+| Workflow step failures | Sustained volume | `OrchestrationLog` Warning (8115) |
+| Observation transport failures | Sustained volume | `OrchestrationLog` Warning (8118) |
+| Cancel lease contention | > 2 in 5 min | `OrchestrationLog` Information (8119) |
+| Definition step-set mismatch | Any occurrence | `OrchestrationLog` Error (8121) |
+| Progress projection failures | Sustained volume | `OrchestrationLog` Warning (8122) |
+
+For lifecycle details, scheduler semantics, and policy tuning, see
+[Operations — Workflow Orchestration](operations.md#workflow-orchestration).
+
+---
+
+## Workspace Lifecycle Observability
+
+Background cleanup and lifecycle operations emit log entries from
+`WorkspaceCleanupService` and `WorkspaceLifecycleService`.
+
+**WorkspaceCleanupService** (periodic sweep):
+
+| Level | Signal |
+|-------|--------|
+| Information | Service started/stopped, cleanup disabled, sweep results (expired/deleted/artifact counts) |
+| Debug | Sweep started |
+| Warning | Partial error during cleanup (individual workspace failure) |
+| Error | Sweep failed |
+
+**WorkspaceLifecycleService** (workspace and artifact operations):
+
+| Level | Signal |
+|-------|--------|
+| Information | Workspace created, workspace expired, workspace deleted, artifact promoted |
+| Warning | Artifact addition rejected (wrong state or expired), promotion source transition failed, cleanup skipped (orphan risk) |
+| Error | Cleanup error for individual workspace, promotion rollback failed (duplicate artifact may exist) |
+
+Monitor for these entries to detect cleanup failures, quota-related
+rejections, and promotion errors. For configuration and retention
+details, see [Operations — Workspace Lifecycle](operations.md#workspace-lifecycle).
+
 ---
 
 ## OpenTelemetry

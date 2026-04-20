@@ -188,7 +188,10 @@ internal sealed class GlobalExceptionMiddleware(
         if (string.IsNullOrEmpty(input))
             return string.Empty;
 
-        return input.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        // JsonEncodedText produces a spec-conformant JSON string body (handles all
+        // control characters 0x00–0x1F, surrogate pairs, and quote/backslash) rather
+        // than the hand-rolled Replace chain which missed \b, \f, and C0 controls.
+        return System.Text.Json.JsonEncodedText.Encode(input).Value;
     }
 }
 

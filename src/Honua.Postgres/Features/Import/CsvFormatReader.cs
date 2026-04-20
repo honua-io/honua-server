@@ -425,7 +425,11 @@ internal static class CsvFormatReader
             var nextLine = await reader.ReadLineAsync(cancellationToken);
             if (nextLine == null)
             {
-                break;
+                // EOF reached with an open quote — the CSV is malformed and any
+                // downstream parse would yield a silently truncated record.
+                throw new InvalidDataException(
+                    "CSV file ended while still inside a quoted field. "
+                    + "The last record contains an unbalanced double-quote.");
             }
 
             // Check size before appending to prevent memory exhaustion

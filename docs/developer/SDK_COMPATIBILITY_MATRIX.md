@@ -10,7 +10,7 @@ Use this page first when you need to:
 - decide whether release notes require SDK regeneration
 
 Use it together with:
-- [Control Plane API](CONTROL_PLANE_API.md)
+- [Control Plane API](../operator/CONTROL_PLANE_API.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
 - [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
 - [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)

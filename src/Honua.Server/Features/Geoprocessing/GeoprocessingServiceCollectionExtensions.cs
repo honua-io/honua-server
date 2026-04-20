@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,8 +18,8 @@ namespace Honua.Server.Features.Geoprocessing;
 internal static class GeoprocessingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers geoprocessing service dependencies including workspace lifecycle
-    /// and the execution job store.
+    /// Registers geoprocessing service dependencies including workspace lifecycle,
+    /// the execution job store, and built-in process catalog.
     /// </summary>
     public static IServiceCollection AddGeoprocessing(
         this IServiceCollection services,
@@ -49,6 +50,9 @@ internal static class GeoprocessingServiceCollectionExtensions
             services.AddHostedService<WorkspaceCleanupService>();
         }
 
+        // Built-in process catalog (ticket #735)
+        services.TryAddSingleton<IProcessCatalog, BuiltInProcessCatalog>();
+
         // Execution job store (ticket #722)
         if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
         {
@@ -58,8 +62,24 @@ internal static class GeoprocessingServiceCollectionExtensions
                     sp.GetRequiredService<ILogger<RedisExecutionJobStore>>()));
         }
 
+        // Execution admission controls (ticket #739) — rate, concurrency, cost, backpressure
+        services
+            .AddOptions<ExecutionAdmissionOptions>()
+            .Bind(configuration.GetSection(ExecutionAdmissionOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
+
         // Shared geoprocessing job service (#723) — consumed by gRPC and REST adapters
         services.TryAddSingleton<IGeoprocessingJobService, GeoprocessingJobService>();
+
+        // Workflow orchestration substrate (#724) — exposes geoprocessing as the
+        // canonical job executor consumed by the orchestration engine.
+        services.TryAddSingleton<IWorkflowJobExecutor, GeoprocessingWorkflowJobExecutor>();
+
+        // Job orchestration substrate: queue, log store (ticket #681)
+        services.AddJobOrchestration();
 
         return services;
     }

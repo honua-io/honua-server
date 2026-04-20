@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.HealthCheck;
 
@@ -13,10 +14,16 @@ namespace Honua.Postgres.Features.HealthCheck;
 /// Marked as internal to prevent exposure of database-specific implementations
 /// outside the Infrastructure layer (Clean Architecture principle).
 /// </remarks>
-internal sealed class PostgresDatabaseHealthChecker(IDatabaseConnectionProvider connectionProvider) : IDatabaseHealthChecker
+internal sealed partial class PostgresDatabaseHealthChecker(
+    IDatabaseConnectionProvider connectionProvider,
+    ILogger<PostgresDatabaseHealthChecker> logger)
+    : IDatabaseHealthChecker
 {
     private readonly IDatabaseConnectionProvider _connectionProvider =
         connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+
+    private readonly ILogger<PostgresDatabaseHealthChecker> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
     /// Checks PostgreSQL database connectivity and responsiveness
@@ -33,9 +40,23 @@ internal sealed class PostgresDatabaseHealthChecker(IDatabaseConnectionProvider 
 
             return true;
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.HealthCheckFailed(_logger, ex);
             return false;
         }
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = 2100,
+            Level = LogLevel.Warning,
+            Message = "PostgreSQL database health check failed")]
+        public static partial void HealthCheckFailed(ILogger logger, Exception exception);
     }
 }

@@ -312,7 +312,7 @@ public sealed class FileUploadSecurityTests
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/addAttachment")]
-    public async Task ValidateFileContentAsync_WithScanLimit_IgnoresContentBeyondLimit()
+    public async Task ValidateFileContentAsync_WithScanLimit_DetectsContentBeyondPrefix()
     {
         // Arrange
         var content = new string('a', 2000) + "<script>alert('x')</script>";
@@ -323,7 +323,8 @@ public sealed class FileUploadSecurityTests
         var result = await FileUploadSecurity.ValidateFileContentAsync(file, maxScanSizeBytes: 1024);
 
         // Assert
-        result.IsValid.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("dangerous script content");
     }
 
     [IntegrationTest]

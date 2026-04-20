@@ -28,6 +28,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: parity-scorecard-governance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-parity-scorecard:
     runs-on: ubuntu-latest

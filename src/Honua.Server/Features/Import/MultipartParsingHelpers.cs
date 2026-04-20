@@ -31,12 +31,17 @@ internal static class MultipartParsingHelpers
 
     /// <summary>
     /// Best-effort deletion of a staged temporary file.
+    /// Failures are logged at Debug when a logger is supplied so that
+    /// dangling uploads and permission errors remain diagnosable.
     /// </summary>
-    public static void TryDeleteFile(string? path)
+    public static void TryDeleteFile(string? path, ILogger? logger = null)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         try { File.Delete(path); }
-        catch { /* Best-effort cleanup */ }
+        catch (Exception ex)
+        {
+            logger?.LogDebug(ex, "Best-effort cleanup of staged file failed: {Path}", path);
+        }
     }
 
     /// <summary>

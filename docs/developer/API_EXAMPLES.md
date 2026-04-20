@@ -429,7 +429,7 @@ curl http://localhost:8080/ogc/processes/processes/honua-geoprocessing
 
 ### **Execute (Async)**
 
-Async execution requires the `Prefer: respond-async` header and only accepts `response: "document"` in V1. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`); step input values and `dependsOn` entries must be strings, and `outputs` must be an array of supported artifact-kind strings when present. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` headers.
+Async execution requires the `Prefer: respond-async` header and only accepts `response: "document"` in V1. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`); step input values and `dependsOn` entries must be strings, and `outputs` must be an array of supported artifact-kind strings when present. Geoprocess steps are additionally validated against the built-in process catalog: `processId` must match a catalog entry (e.g. `geometry.buffer`) and required parameters must be supplied. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` headers.
 
 ```bash
 curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/execution \
@@ -443,8 +443,12 @@ curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/e
           {
             "stepId": "s1",
             "kind": "geoprocess",
-            "processId": "buffer",
-            "inputs": {"distance": "100"}
+            "processId": "geometry.buffer",
+            "inputs": {
+              "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "srid": "4326",
+              "distance": "100"
+            }
           }
         ]
       }
@@ -466,11 +470,11 @@ curl "http://localhost:8080/ogc/processes/jobs?limit=10"
 curl http://localhost:8080/ogc/processes/jobs/{jobId}
 ```
 
-V1 `StatusInfo` documents do not include a results link because `/results` is still stubbed.
+Succeeded jobs include the OGC `results` relation in the `StatusInfo` document so clients can follow the link to `/jobs/{jobId}/results`.
 
 ### **Retrieve Results**
 
-V1 keeps `/results` stubbed. Non-terminal jobs return `404` (result not ready). Successful jobs currently also return `404` until the execution engine populates result storage. Failed jobs return `500`, and dismissed jobs return `410 Gone`.
+Succeeded jobs return `200 OK` with a document-mode, by-value JSON body keyed by stable output identifiers (OGC API Processes Part 1 §7.11.1). V1's canonical process declares no value-typed outputs, so the body is an empty object (`{}`) until the execution engine populates result storage. Non-terminal jobs return `404` (result not ready), failed jobs return `500`, and dismissed jobs return `410 Gone`.
 
 ```bash
 curl http://localhost:8080/ogc/processes/jobs/{jobId}/results

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
@@ -195,6 +196,22 @@ public class Cql2ParserTests
         geometryProperty.PropertyName.Should().Be("geom");
         geometry.Srid.Should().Be(4326); // Default SRID if not specified by NTS
         geometry.OriginalFormat.Should().StartWith("POINT");
+    }
+
+    [Fact]
+    public void Parse_WithNestedParenthesesBeyondLimit_ThrowsArgumentException()
+    {
+        var cql = string.Concat(Enumerable.Repeat("(", FilterParserGuard.MaxExpressionDepth + 1)) +
+            "name = 'deep'" +
+            string.Concat(Enumerable.Repeat(")", FilterParserGuard.MaxExpressionDepth + 1));
+
+        var act = () => _parser.Parse(cql);
+
+        var ex = act.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Contain("Failed to parse CQL2 expression");
+        ex.InnerException.Should().NotBeNull();
+        ex.InnerException!.Message.Should().Contain(
+            $"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
     }
 
     [Fact]

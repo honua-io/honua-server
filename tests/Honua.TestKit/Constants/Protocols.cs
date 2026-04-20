@@ -134,4 +134,15 @@ public static class Protocols
     /// GeoServices GPServer REST API (geoprocessing tasks).
     /// </summary>
     public const string GPServer = "GPServer";
+
+    /// <summary>
+    /// Model Context Protocol operator surface (planning, execution, lifecycle).
+    /// </summary>
+    public const string Mcp = "Mcp";
+
+    /// <summary>
+    /// End-to-end operator workflow eval harness (analyst workflows,
+    /// result packages, map/app outputs).
+    /// </summary>
+    public const string OperatorEval = "OperatorEval";
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Server.Features.Infrastructure.RateLimiting;
@@ -49,6 +50,27 @@ public sealed class RateLimitingMiddlewareTests
         secondContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
     }
 
+    [UnitTest]
+    public async Task InvokeAsync_WhenRateLimitExceeded_ReturnsExpectedJsonContract()
+    {
+        var middleware = CreateMiddleware();
+
+        var firstContext = CreateContext("198.51.100.30");
+        await middleware.InvokeAsync(firstContext);
+
+        var secondContext = CreateContext("198.51.100.30");
+        await middleware.InvokeAsync(secondContext);
+
+        secondContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        secondContext.Response.Body.Position = 0;
+
+        using var responseDocument = await JsonDocument.ParseAsync(secondContext.Response.Body);
+        responseDocument.RootElement.GetProperty("error").GetString().Should().Be("rate_limit_exceeded");
+        responseDocument.RootElement.GetProperty("message").GetString().Should().Be("Too many requests. Please try again later.");
+        responseDocument.RootElement.GetProperty("details").GetProperty("limit").GetInt32().Should().Be(1);
+        responseDocument.RootElement.GetProperty("details").TryGetProperty("window_reset", out _).Should().BeTrue();
+    }
+
     private static RateLimitingMiddleware CreateMiddleware()
     {
         var policyStore = Substitute.For<IRateLimitPolicyStore>();
@@ -75,6 +97,7 @@ public sealed class RateLimitingMiddlewareTests
     {
         var context = new DefaultHttpContext();
         context.Request.Path = "/rest/services/test/FeatureServer/0/query";
+        context.Response.Body = new MemoryStream();
         context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
         if (!string.IsNullOrWhiteSpace(localIp))
         {

@@ -24,6 +24,10 @@ internal static partial class WebhookDeliveryHelper
         return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
+            // Cap outbound concurrency per destination to prevent a slow webhook consumer
+            // from absorbing the entire thread pool's worth of sockets. The default is
+            // unbounded; 64 is enough for hot burst workloads without starving the host.
+            MaxConnectionsPerServer = 64,
             ConnectCallback = (context, cancellationToken) =>
                 ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
         };

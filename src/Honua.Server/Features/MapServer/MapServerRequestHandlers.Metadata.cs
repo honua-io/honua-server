@@ -300,7 +300,12 @@ internal static partial class MapServerEndpoints
             SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.SupportedFormats)),
             SupportsOrderBy = true,
             SupportsDistinct = true,
-            SupportsPagination = true
+            SupportsPagination = true,
+            // The FeatureServer-backed query path supports outStatistics on the same
+            // layer, so advertise the capability here too — previously this flag was
+            // left false, and clients reading MapServer layer metadata incorrectly
+            // concluded statistics were unavailable.
+            SupportsStatistics = true
         };
     }
 

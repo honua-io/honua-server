@@ -98,6 +98,20 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /odata/$metadata")]
+    public async Task Metadata_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;q=1"));
+        request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/xml;q=0"));
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsODataVersionHeader()

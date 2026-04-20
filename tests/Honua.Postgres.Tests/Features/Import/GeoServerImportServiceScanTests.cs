@@ -19,7 +19,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WorkspaceQualifiedStyle_UsesScopedStyleAndContainerCompatibility()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var service = CreateService(restClient);
 
         var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
@@ -39,7 +39,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithPartialCredentials_ReportsAnonymousAuthPosture()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var service = CreateService(restClient);
 
         var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
@@ -60,7 +60,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithLayerGroupStylesAndBounds_PopulatesArtifactLinksAndSpatialReferences()
     {
         using var httpClient = new HttpClient(new LayerGroupGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
         crsRegistry.Setup(registry => registry.ResolveBySridAsync(3857, It.IsAny<CancellationToken>()))
             .Returns(new ValueTask<CrsDefinition?>((CrsDefinition?)null));
@@ -93,7 +93,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithExternalGraphicUrls_SanitizesDependencyAddressesAndIds()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var service = CreateService(restClient);
 
         var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
@@ -119,7 +119,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithSldNamespaceDeclarations_DoesNotTreatSchemaUrisAsExternalDependencies()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var service = CreateService(restClient);
 
         var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
@@ -140,7 +140,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithCredentialBearingStoreUrls_RedactsDependencyMetadataAndAddress()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var service = CreateService(restClient);
 
         var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
@@ -162,7 +162,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithoutCrsMetadata_OmitsPlaceholderSpatialReferences()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var service = CreateService(restClient);
 
         var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
@@ -179,7 +179,7 @@ public sealed class GeoServerImportServiceScanTests
     public async Task ScanSourceAsync_WithLayerBounds_PopulatesLayerBoundsSpatialReferences()
     {
         using var httpClient = new HttpClient(new LayerBoundsGeoServerHandler());
-        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
         crsRegistry.Setup(registry => registry.ResolveBySridAsync(4326, It.IsAny<CancellationToken>()))
             .Returns(new ValueTask<CrsDefinition?>((CrsDefinition?)null));

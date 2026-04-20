@@ -172,10 +172,12 @@ public sealed record StacItem
     public required ImmutableArray<Link> Links { get; init; }
 
     /// <summary>
-    /// Asset dictionary keyed by role.
+    /// Asset dictionary keyed by role. STAC 1.0.0 requires every Item to carry an
+    /// <c>assets</c> object (§7.1); an empty dictionary satisfies the spec when no
+    /// assets are known.
     /// </summary>
     [JsonPropertyName("assets")]
-    public Dictionary<string, StacAsset>? Assets { get; init; }
+    public required Dictionary<string, StacAsset> Assets { get; init; }
 
     /// <summary>
     /// Parent collection identifier.

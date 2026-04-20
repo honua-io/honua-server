@@ -575,7 +575,7 @@ public class ImageServerExportHandlerTests
         string? responseFormat = null) => new()
         {
             Bbox = bbox,
-            Size = size,
+            Size = size?.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Format = format ?? "png",
             Interpolation = interpolation,
             ImageSr = imageSr,

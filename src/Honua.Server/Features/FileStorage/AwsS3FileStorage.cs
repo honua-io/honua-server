@@ -297,29 +297,40 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         CancellationToken cancellationToken = default)
     {
         var prefix = CloudStoragePath.BuildPrefix(folder, _options.KeyPrefix);
-        var request = new ListObjectsV2Request
-        {
-            BucketName = _options.BucketName,
-            Prefix = prefix,
-            MaxKeys = maxResults
-        };
-
-        var response = await _client.ListObjectsV2Async(request, cancellationToken);
         var results = new List<CloudFile>();
+        string? continuationToken = null;
 
-        foreach (var item in response.S3Objects)
+        do
         {
-            var metadata = await GetMetadataAsync(item.Key, cancellationToken);
-            if (metadata != null)
+            var remaining = maxResults == int.MaxValue
+                ? 1000
+                : Math.Max(1, Math.Min(1000, maxResults - results.Count));
+            var request = new ListObjectsV2Request
             {
-                results.Add(metadata);
+                BucketName = _options.BucketName,
+                Prefix = prefix,
+                MaxKeys = remaining,
+                ContinuationToken = continuationToken
+            };
+
+            var response = await _client.ListObjectsV2Async(request, cancellationToken);
+            foreach (var item in response.S3Objects)
+            {
+                var metadata = await GetMetadataAsync(item.Key, cancellationToken);
+                if (metadata != null)
+                {
+                    results.Add(metadata);
+                }
+
+                if (results.Count >= maxResults)
+                {
+                    return results;
+                }
             }
 
-            if (results.Count >= maxResults)
-            {
-                break;
-            }
+            continuationToken = response.IsTruncated == true ? response.NextContinuationToken : null;
         }
+        while (!string.IsNullOrWhiteSpace(continuationToken));
 
         return results;
     }

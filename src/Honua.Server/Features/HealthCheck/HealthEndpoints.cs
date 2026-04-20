@@ -13,22 +13,35 @@ namespace Honua.Server.Features.HealthCheck;
 
 internal static class HealthEndpoints
 {
+    private static readonly string[] NonGetMethods =
+    [
+        HttpMethods.Post,
+        HttpMethods.Put,
+        HttpMethods.Delete,
+        HttpMethods.Patch
+    ];
+
     /// <summary>
     /// Configure health endpoints using AOT-compatible routing
     /// </summary>
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use Map (all methods) and enforce GET in handler so non-GET returns 405.
-        _ = endpoints.Map("/healthz/live", HandleLivenessProbe)
+        _ = endpoints.MapMethods("/healthz/live", [HttpMethods.Get], HandleLivenessProbe)
             .WithDisplayName("Liveness Probe");
+        _ = endpoints.MapMethods("/healthz/live", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithDisplayName("Liveness Probe Method Not Allowed");
 
-        _ = endpoints.Map("/healthz/ready", HandleReadinessProbe)
+        _ = endpoints.MapMethods("/healthz/ready", [HttpMethods.Get], HandleReadinessProbe)
             .WithDisplayName("Readiness Probe");
+        _ = endpoints.MapMethods("/healthz/ready", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithDisplayName("Readiness Probe Method Not Allowed");
 
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
-        var metricsEndpoint = endpoints.Map("/healthz/metrics", HandlePerformanceMetrics)
+        var metricsEndpoint = endpoints.MapMethods("/healthz/metrics", [HttpMethods.Get], HandlePerformanceMetrics)
             .WithDisplayName("Performance Metrics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = endpoints.MapMethods("/healthz/metrics", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithDisplayName("Performance Metrics Method Not Allowed");
 
         metricsEndpoint.RequireAdminAuthorization();
     }
@@ -38,13 +51,6 @@ internal static class HealthEndpoints
     /// </summary>
     private static async Task HandleLivenessProbe(HttpContext context)
     {
-        // Ensure only GET requests
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            context.Response.StatusCode = 405; // Method Not Allowed
-            return;
-        }
-
         context.Response.StatusCode = 200;
         context.Response.ContentType = "text/plain; charset=utf-8";
         await context.Response.WriteAsync("Healthy");
@@ -56,13 +62,6 @@ internal static class HealthEndpoints
     /// </summary>
     private static async Task HandleReadinessProbe(HttpContext context)
     {
-        // Ensure only GET requests
-        if (!HttpMethods.IsGet(context.Request.Method))
-        {
-            context.Response.StatusCode = 405; // Method Not Allowed
-            return;
-        }
-
         // Delegate health checking to dedicated service
         IReadinessCheckService readinessCheckService = context.RequestServices.GetRequiredService<IReadinessCheckService>();
         ReadinessResult result = await readinessCheckService.CheckReadinessAsync(context.RequestAborted);
@@ -195,5 +194,12 @@ internal static class HealthEndpoints
         context.Response.StatusCode = result.StatusCode;
         context.Response.ContentType = "text/plain; charset=utf-8";
         await context.Response.WriteAsync(result.IsReady ? "Ready" : "Not Ready");
+    }
+
+    private static Task HandleGetMethodNotAllowed(HttpContext context)
+    {
+        context.Response.Headers["Allow"] = HttpMethods.Get;
+        context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+        return context.Response.CompleteAsync();
     }
 }

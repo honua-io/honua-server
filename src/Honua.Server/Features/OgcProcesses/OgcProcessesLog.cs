@@ -64,6 +64,9 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8135, LogLevel.Warning, "OGC Job dismiss rejected (terminal): JobId={JobId}, Status={Status}")]
     public static partial void DismissRejectedTerminal(ILogger logger, string jobId, string status);
 
+    [LoggerMessage(8136, LogLevel.Warning, "OGC dismiss queue cleanup failed: JobId={JobId}; stale-claim reconciler will repair")]
+    public static partial void QueueRemovalFailed(ILogger logger, string jobId, Exception exception);
+
     // 8140-8149: Job list
     [LoggerMessage(8140, LogLevel.Information, "OGC Job list requested")]
     public static partial void JobListRequested(ILogger logger);
@@ -81,4 +84,8 @@ internal static partial class OgcProcessesLog
 
     [LoggerMessage(8162, LogLevel.Warning, "OGC Job dismiss rejected (approval required): JobId={JobId}, Policy={PolicyRef}")]
     public static partial void DismissRejectedApprovalRequired(ILogger logger, string jobId, string policyRef);
+
+    // 8170-8179: Admission
+    [LoggerMessage(8170, LogLevel.Warning, "OGC Processes execution rejected by admission: Outcome={Outcome}, Dimension={Dimension}, Policy={PolicyRef}")]
+    public static partial void ExecutionRejectedByAdmission(ILogger logger, string outcome, string dimension, string policyRef);
 }

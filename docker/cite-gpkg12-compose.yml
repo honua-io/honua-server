@@ -12,13 +12,16 @@ services:
       - PUBLIC_BASE_URL=http://honua-server:8080
       - HostValidation__AllowedHosts__0=honua-server
       - HostValidation__AllowedHosts__1=localhost
-      - HONUA_ADMIN_PASSWORD=cite-admin-password
+      - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
       - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_gpkg;User Id=postgres;Password=cite_password;
       - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_gpkg;User Id=postgres;Password=cite_password;
+      - ConnectionStrings__Redis=redis:6379
       - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
       - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - cite-gpkg12-network
@@ -42,6 +45,17 @@ services:
       - cite-gpkg12-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - cite-gpkg12-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -81,7 +95,7 @@ services:
           echo 'Fetching GeoPackage from server...'
           mkdir -p /data
           curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors \
-            -H 'X-API-Key: cite-admin-password' \
+            -H 'X-API-Key: CiteAdminPassword123!' \
             'http://honua-server:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg' \
             -o /data/export.gpkg
           echo 'GeoPackage fetched successfully'

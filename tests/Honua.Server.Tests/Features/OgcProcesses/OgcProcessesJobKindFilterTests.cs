@@ -10,6 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Honua.Server.Tests.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OgcProcesses;
@@ -62,7 +63,7 @@ public sealed class OgcProcessesJobKindFilterTests : IAsyncLifetime
 
     public OgcProcessesJobKindFilterTests()
     {
-        _mockJobStore = Substitute.For<IExecutionJobStore>();
+        _mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
 
         _mockJobStore.GetAsync(EtlJobId, Arg.Any<CancellationToken>())
             .Returns(EtlJob);

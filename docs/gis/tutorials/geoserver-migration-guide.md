@@ -85,15 +85,19 @@ Review the inventory artifact before proceeding. Start with `summary`, `scanComp
 > **Note:** The GeoServer import endpoint currently supports **dry-run mode only**. A dry run validates connectivity, discovers resources, and reports what would be imported without making changes.
 
 ```bash
+export GEOSERVER_PASSWORD='geoserver'
+
 curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
   -H "Content-Type: application/json" \
   -d '{
     "geoServerRestUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
-    "password": "geoserver",
+    "passwordSecretReference": "env:GEOSERVER_PASSWORD",
     "dryRun": true
   }'
 ```
+
+Queued GeoServer imports no longer accept plaintext credentials because the request is persisted in distributed job state before the worker runs. Use a secret reference such as `env:GEOSERVER_PASSWORD` for the GeoServer password and `honuaApiKeySecretReference` when a future non-dry-run workflow needs a Honua API key.
 
 This returns a job ID for tracking progress.
 
@@ -223,6 +227,6 @@ After migrating server configuration, update client applications:
 ## Next Steps
 
 - Explore the [Interactive API Explorer](http://localhost:8080/docs) to test migrated endpoints
-- Review the [API Examples](../API_EXAMPLES.md) for protocol-specific request patterns
+- Review the [API Examples](../../developer/API_EXAMPLES.md) for protocol-specific request patterns
 - See the [Protocols Overview](../STANDARDS_APIS.md) for choosing the right protocol per client
-- Check the [Admin API Reference](../CONTROL_PLANE_API.md) for connection and layer management
+- Check the [Admin API Reference](../../operator/CONTROL_PLANE_API.md) for connection and layer management

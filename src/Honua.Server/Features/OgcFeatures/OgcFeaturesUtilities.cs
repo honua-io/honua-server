@@ -13,6 +13,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -143,45 +144,9 @@ internal static class OgcFeaturesUtilities
     public static string NormalizeCrsUri(string crs)
     {
         var trimmed = crs.Trim();
-
-        if (trimmed.Equals(Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase))
-        {
-            return Crs84Uri;
-        }
-
-        const string ogcUrnPrefix = "urn:ogc:def:crs:OGC:";
-        if (trimmed.StartsWith(ogcUrnPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            var suffix = trimmed[ogcUrnPrefix.Length..];
-            if (suffix.EndsWith(":CRS84", StringComparison.OrdinalIgnoreCase) ||
-                suffix.Equals("CRS84", StringComparison.OrdinalIgnoreCase))
-            {
-                return Crs84Uri;
-            }
-        }
-
-        if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
-        {
-            var code = trimmed[5..];
-            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
-            {
-                return $"http://www.opengis.net/def/crs/EPSG/0/{srid}";
-            }
-        }
-
-        const string urnPrefix = "urn:ogc:def:crs:EPSG::";
-        if (trimmed.StartsWith(urnPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            var code = trimmed[urnPrefix.Length..];
-            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
-            {
-                return $"http://www.opengis.net/def/crs/EPSG/0/{srid}";
-            }
-        }
-
-        return trimmed;
+        return SpatialReferenceHelpers.TryParseCrsDefinition(trimmed, out var definition)
+            ? definition.Uri
+            : trimmed;
     }
 
     /// <summary>
@@ -210,6 +175,29 @@ internal static class OgcFeaturesUtilities
         definition = default;
         error = $"Unsupported CRS '{crs}'.";
         return false;
+    }
+
+    /// <summary>
+    /// Resolves request CRS parameters against the collection baseline first, then falls back to the CRS registry.
+    /// </summary>
+    public static async ValueTask<(bool IsSuccess, CrsDefinition Definition, string? Error)> TryResolveCrsAsync(
+        string? crs,
+        IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        if (TryResolveCrs(crs, supportedCrs, out var definition, out var error))
+        {
+            return (true, definition, null);
+        }
+
+        var resolvedDefinition = await crsRegistry.ResolveAsync(crs, cancellationToken).ConfigureAwait(false);
+        if (resolvedDefinition.HasValue)
+        {
+            return (true, resolvedDefinition.Value, null);
+        }
+
+        return (false, default, error ?? $"Unsupported CRS '{crs}'.");
     }
 
     /// <summary>

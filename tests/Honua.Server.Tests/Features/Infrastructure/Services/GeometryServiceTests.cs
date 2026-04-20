@@ -61,6 +61,43 @@ public sealed class GeometryServiceTests
         ex.Message.Should().NotContain("LineNumber");
     }
 
+
+    [Fact]
+    public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
+    {
+        var service = new Honua.Server.Features.Infrastructure.Services.GeometryService(
+            Options.Create(new LimitsOptions
+            {
+                Geometry = new GeometryLimits { MaxGeometrySize = 64 },
+                Validation = new GeometryValidationOptions { MaxWkbSize = 64 }
+            }));
+        var oversized = "{\"type\":\"LineString\",\"coordinates\":[" + string.Join(',', Enumerable.Repeat("[0,0]", 64)) + "]}";
+
+        var action = () => service.ConvertGeoJsonToWkb(oversized);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Contain("maximum size");
+        ex.Message.Should().NotContain("[0,0]");
+    }
+
+    [Fact]
+    public void ConvertWktToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
+    {
+        var service = new Honua.Server.Features.Infrastructure.Services.GeometryService(
+            Options.Create(new LimitsOptions
+            {
+                Geometry = new GeometryLimits { MaxGeometrySize = 64 },
+                Validation = new GeometryValidationOptions { MaxWkbSize = 64 }
+            }));
+        var oversized = "LINESTRING(" + string.Join(',', Enumerable.Repeat("0 0", 64)) + ")";
+
+        var action = () => service.ConvertWktToWkb(oversized);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Contain("maximum size");
+        ex.Message.Should().NotContain("LINESTRING(");
+    }
+
     [Fact]
     public void ConvertWkbToGeoJson_WithMalformedPayload_ReturnsSanitizedError()
     {

@@ -14,12 +14,14 @@ using Honua.Server.Features.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.MapServer;
+using Honua.Server.Features.Mcp;
 using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcMaps;
 using Honua.Server.Features.OgcProcesses;
 using Honua.Server.Features.OgcTiles;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.SpatialAnalytics;
 using Honua.Server.Features.Stac;
@@ -60,8 +62,10 @@ internal static class FeatureRegistrationExtensions
         services.AddStaticMap();
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
+        services.AddMcpOperatorSurface(configuration);
         services.AddSpatialAnalytics();
         services.AddEnhancedAdminServices();
+        services.AddOrchestration();
 
         return services;
     }
@@ -94,6 +98,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSpatialAnalyticsRestEndpoints();
         endpoints.MapSpatialAnalyticsOgcEndpoints();
         endpoints.MapGPServerEndpoints();
+        endpoints.MapMcpOperatorSurface();
 
         return endpoints;
     }

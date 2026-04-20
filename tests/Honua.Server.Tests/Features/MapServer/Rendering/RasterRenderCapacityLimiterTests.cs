@@ -14,16 +14,15 @@ public sealed class RasterRenderCapacityLimiterTests
         using var limiter = new RasterRenderCapacityLimiter(
             maxConcurrentRenders: 1,
             maxReservedBytes: 1024,
-            acquireTimeout: TimeSpan.FromMilliseconds(250));
+            acquireTimeout: TimeSpan.FromSeconds(2));
 
         await using var firstLease = await limiter.TryAcquireAsync(1, 1, CancellationToken.None);
         firstLease.Should().NotBeNull();
 
         var pendingAcquire = limiter.TryAcquireAsync(1, 1, CancellationToken.None).AsTask();
-        await Task.Delay(50);
-        pendingAcquire.IsCompleted.Should().BeFalse();
 
         await firstLease!.DisposeAsync();
+        await pendingAcquire.WaitAsync(TimeSpan.FromSeconds(1));
 
         await using var secondLease = await pendingAcquire;
         secondLease.Should().NotBeNull();

@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Import;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -21,7 +24,8 @@ internal static class ProductionMonitoringEndpoints
     {
         var group = app.MapGroup("/monitoring")
             .WithTags("Monitoring")
-            .RequireAuthorization("AdminOnly");
+            .RequireAdminAuthorization()
+            .ExcludeFromDescription();
 
         // Production health dashboard endpoint
         group.MapGet("/health/production", GetProductionHealth)
@@ -37,7 +41,7 @@ internal static class ProductionMonitoringEndpoints
 
         // Cache performance endpoint
         group.MapGet("/metrics/cache", GetCacheMetrics)
-            .WithName("GetCacheMetrics")
+            .WithName("GetProductionCacheMetrics")
             .WithSummary("Gets cache performance metrics")
             .WithDescription("Returns cache hit ratios, eviction rates, and performance data");
 
@@ -92,7 +96,7 @@ internal static class ProductionMonitoringEndpoints
             LastUpdated = DateTimeOffset.UtcNow
         };
 
-        return Results.Ok(response);
+        return Results.Json(response, MetricsJsonContext.Default.ProductionHealthResponse);
     }
 
     /// <summary>
@@ -113,7 +117,7 @@ internal static class ProductionMonitoringEndpoints
             Utilization = hasUtilization ? utilization : 0.0,
             HasUtilizationData = hasUtilization,
             UtilizationStatus = hasUtilization ? "available" : "unavailable",
-            UtilizationPercentage = hasUtilization ? $"{utilization:P2}" : "unavailable",
+            UtilizationPercentage = hasUtilization ? FormatPercentage(utilization) : "unavailable",
             TotalFailures = failures,
             TotalTimeouts = timeouts,
             HealthStatus = healthStatus,
@@ -121,7 +125,7 @@ internal static class ProductionMonitoringEndpoints
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        return Results.Ok(response);
+        return Results.Json(response, MetricsJsonContext.Default.ConnectionPoolMetricsResponse);
     }
 
     /// <summary>
@@ -137,13 +141,13 @@ internal static class ProductionMonitoringEndpoints
         var response = new CacheMetricsResponse
         {
             HitRatio = healthMetrics.CacheHitRatio,
-            HitRatioPercentage = $"{healthMetrics.CacheHitRatio:P2}",
+            HitRatioPercentage = FormatPercentage(healthMetrics.CacheHitRatio),
             IsHealthy = healthMetrics.CacheHitRatio >= 0.8,
             Recommendations = GetCacheRecommendations(healthMetrics.CacheHitRatio),
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        return Results.Ok(response);
+        return Results.Json(response, MetricsJsonContext.Default.CacheMetricsResponse);
     }
 
     /// <summary>
@@ -166,7 +170,7 @@ internal static class ProductionMonitoringEndpoints
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        return Results.Ok(response);
+        return Results.Json(response, MetricsJsonContext.Default.ResourceMetricsResponse);
     }
 
     /// <summary>
@@ -193,7 +197,7 @@ internal static class ProductionMonitoringEndpoints
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        return Results.Ok(response);
+        return Results.Json(response, MetricsJsonContext.Default.AlertsResponse);
     }
 
     /// <summary>
@@ -217,7 +221,7 @@ internal static class ProductionMonitoringEndpoints
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        return Results.Ok(response);
+        return Results.Json(response, MetricsJsonContext.Default.UploadQueueMetricsResponse);
     }
 
     /// <summary>
@@ -247,15 +251,15 @@ internal static class ProductionMonitoringEndpoints
     /// Gets garbage collection information.
     /// </summary>
     /// <returns>GC information.</returns>
-    private static object GetGcInfo()
+    private static ResourceGcInfoResponse GetGcInfo()
     {
-        return new
+        return new ResourceGcInfoResponse
         {
             Gen0Collections = GC.CollectionCount(0),
             Gen1Collections = GC.CollectionCount(1),
             Gen2Collections = GC.CollectionCount(2),
             TotalMemory = GC.GetTotalMemory(false),
-            LastGen0Time = DateTimeOffset.UtcNow // Placeholder - would need GC event tracking
+            LastGen0Time = DateTimeOffset.UtcNow
         };
     }
 
@@ -308,7 +312,7 @@ internal static class ProductionMonitoringEndpoints
                 Timestamp = DateTimeOffset.UtcNow
             };
 
-            return Results.Ok(response);
+            return Results.Json(response, MetricsJsonContext.Default.ComprehensiveHealthResponse);
         }
         catch (Exception ex)
         {
@@ -349,7 +353,7 @@ internal static class ProductionMonitoringEndpoints
                     Utilization = hasPoolUtilization ? poolUtilization : 0.0,
                     HasUtilizationData = hasPoolUtilization,
                     UtilizationStatus = hasPoolUtilization ? "available" : "unavailable",
-                    UtilizationPercentage = hasPoolUtilization ? $"{poolUtilization:P2}" : "unavailable",
+                    UtilizationPercentage = hasPoolUtilization ? FormatPercentage(poolUtilization) : "unavailable",
                     ActiveConnections = healthMetrics.ActiveConnections,
                     TotalFailures = totalFailures,
                     TotalTimeouts = totalTimeouts,
@@ -362,13 +366,13 @@ internal static class ProductionMonitoringEndpoints
                     ConnectionFailures = totalFailures,
                     QueryFailures = healthMetrics.TotalErrors,
                     ErrorRate = healthMetrics.ErrorRate,
-                    ErrorRatePercentage = $"{healthMetrics.ErrorRate:P2}"
+                    ErrorRatePercentage = FormatPercentage(healthMetrics.ErrorRate)
                 },
                 Alerts = GetDatabaseAlerts(hasPoolUtilization, poolUtilization, healthMetrics.ErrorRate),
                 Timestamp = DateTimeOffset.UtcNow
             };
 
-            return Results.Ok(response);
+            return Results.Json(response, MetricsJsonContext.Default.DatabaseResilienceMetricsResponse);
         }
         catch (Exception ex)
         {
@@ -416,6 +420,9 @@ internal static class ProductionMonitoringEndpoints
         return alerts;
     }
 
+    private static string FormatPercentage(double value)
+        => value.ToString("0.00%", CultureInfo.InvariantCulture);
+
     private static double GetQueueUtilization(int queueDepth, int maxQueueDepth)
         => maxQueueDepth > 0 ? (double)queueDepth / maxQueueDepth : 0.0;
 
@@ -432,7 +439,7 @@ internal static class ProductionMonitoringEndpoints
         return utilization <= 0.8 ? "Healthy" : "Degraded";
     }
 
-    private static Dictionary<string, object?>? SanitizeHealthCheckData(
+    private static Dictionary<string, JsonElement>? SanitizeHealthCheckData(
         IReadOnlyDictionary<string, object>? data)
     {
         if (data == null || data.Count == 0)
@@ -440,11 +447,11 @@ internal static class ProductionMonitoringEndpoints
             return null;
         }
 
-        var sanitized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var sanitized = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in data)
         {
             sanitized[key] = IsSensitiveHealthKey(key)
-                ? "[redacted]"
+                ? JsonSerializer.SerializeToElement("[redacted]")
                 : SanitizeHealthValue(value);
         }
 
@@ -452,31 +459,40 @@ internal static class ProductionMonitoringEndpoints
     }
 
     private static bool IsSensitiveHealthKey(string key)
-        => key.Contains("config", StringComparison.OrdinalIgnoreCase) ||
-           key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
-           key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
-           key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
-           key.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
-           key.Contains("error", StringComparison.OrdinalIgnoreCase);
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
 
-    private static object? SanitizeHealthValue(object? value)
+        var normalized = new string(key.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+
+        return normalized == "config" ||
+               normalized.EndsWith("configuration", StringComparison.Ordinal) ||
+               normalized.EndsWith("secret", StringComparison.Ordinal) ||
+               normalized.EndsWith("token", StringComparison.Ordinal) ||
+               normalized.EndsWith("password", StringComparison.Ordinal) ||
+               normalized.EndsWith("connectionstring", StringComparison.Ordinal);
+    }
+
+    private static JsonElement SanitizeHealthValue(object? value)
         => value switch
         {
-            null => null,
-            string stringValue => stringValue,
-            bool boolValue => boolValue,
-            byte byteValue => byteValue,
-            sbyte sbyteValue => sbyteValue,
-            short shortValue => shortValue,
-            ushort ushortValue => ushortValue,
-            int intValue => intValue,
-            uint uintValue => uintValue,
-            long longValue => longValue,
-            ulong ulongValue => ulongValue,
-            float floatValue => floatValue,
-            double doubleValue => doubleValue,
-            decimal decimalValue => decimalValue,
-            _ => value.ToString()
+            null => JsonSerializer.SerializeToElement((string?)null),
+            string stringValue => JsonSerializer.SerializeToElement(stringValue),
+            bool boolValue => JsonSerializer.SerializeToElement(boolValue),
+            byte byteValue => JsonSerializer.SerializeToElement(byteValue),
+            sbyte sbyteValue => JsonSerializer.SerializeToElement(sbyteValue),
+            short shortValue => JsonSerializer.SerializeToElement(shortValue),
+            ushort ushortValue => JsonSerializer.SerializeToElement(ushortValue),
+            int intValue => JsonSerializer.SerializeToElement(intValue),
+            uint uintValue => JsonSerializer.SerializeToElement(uintValue),
+            long longValue => JsonSerializer.SerializeToElement(longValue),
+            ulong ulongValue => JsonSerializer.SerializeToElement(ulongValue),
+            float floatValue => JsonSerializer.SerializeToElement(floatValue),
+            double doubleValue => JsonSerializer.SerializeToElement(doubleValue),
+            decimal decimalValue => JsonSerializer.SerializeToElement(decimalValue),
+            _ => JsonSerializer.SerializeToElement(value.ToString())
         };
 }
 
@@ -639,7 +655,7 @@ internal sealed class ResourceMetricsResponse
     /// Gets or sets garbage collection information.
     /// </summary>
     [JsonPropertyName("gcInfo")]
-    public required object GcInfo { get; set; }
+    public required ResourceGcInfoResponse GcInfo { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether resources are healthy.
@@ -652,6 +668,42 @@ internal sealed class ResourceMetricsResponse
     /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
+}
+
+/// <summary>
+/// Response model for garbage collection metrics.
+/// </summary>
+internal sealed class ResourceGcInfoResponse
+{
+    /// <summary>
+    /// Gets or sets the number of generation 0 collections.
+    /// </summary>
+    [JsonPropertyName("gen0Collections")]
+    public required int Gen0Collections { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of generation 1 collections.
+    /// </summary>
+    [JsonPropertyName("gen1Collections")]
+    public required int Gen1Collections { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of generation 2 collections.
+    /// </summary>
+    [JsonPropertyName("gen2Collections")]
+    public required int Gen2Collections { get; set; }
+
+    /// <summary>
+    /// Gets or sets the total memory observed during the snapshot.
+    /// </summary>
+    [JsonPropertyName("totalMemory")]
+    public required long TotalMemory { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timestamp when the GC snapshot was captured.
+    /// </summary>
+    [JsonPropertyName("lastGen0Time")]
+    public required DateTimeOffset LastGen0Time { get; set; }
 }
 
 /// <summary>
@@ -819,7 +871,7 @@ internal sealed class HealthCheckEntryResponse
     /// Gets or sets additional data.
     /// </summary>
     [JsonPropertyName("data")]
-    public IReadOnlyDictionary<string, object?>? Data { get; set; }
+    public Dictionary<string, JsonElement>? Data { get; set; }
 }
 
 /// <summary>

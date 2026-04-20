@@ -16,10 +16,10 @@ internal sealed class DeploymentOptions
     public const string SectionName = "Deployment";
 
     /// <summary>
-    /// Deployment mode (Development, Staging, Production).
+    /// Deployment mode (SingleInstance or MultiNode).
     /// </summary>
     [Required]
-    public string Mode { get; init; } = "Development";
+    public string Mode { get; init; } = "SingleInstance";
 
     /// <summary>
     /// Whether deployment control endpoints are enabled.

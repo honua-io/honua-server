@@ -15,6 +15,7 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RenewalInterval = TimeSpan.FromSeconds(20); // Renew at 1/3 of lease duration
     private static readonly TimeSpan LeadershipCheckInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DisposeReleaseTimeout = TimeSpan.FromSeconds(1);
 
     private readonly string _nodeId;
     private readonly string _leadershipKey;
@@ -244,8 +245,6 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         if (_disposed)
             return;
 
-        _disposed = true;
-
         // Stop async operations first
         _stopTokenSource?.Cancel();
         _renewalTimer.Dispose();
@@ -255,14 +254,25 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         {
             try
             {
-                ReleaseLeadershipAsync(CancellationToken.None).GetAwaiter().GetResult();
+                ReleaseLeadershipAsync(CancellationToken.None).WaitAsync(DisposeReleaseTimeout).GetAwaiter().GetResult();
+            }
+            catch (TimeoutException)
+            {
+                UpdateLeadershipStatus(false);
+                Log.DisposeReleaseTimedOut(Logger, _nodeId, DisposeReleaseTimeout);
             }
             catch (Exception ex)
             {
+                UpdateLeadershipStatus(false);
                 Log.DisposeCleanupFailed(Logger, _nodeId, ex);
             }
         }
+        else
+        {
+            UpdateLeadershipStatus(false);
+        }
 
+        _disposed = true;
         _stopTokenSource?.Dispose();
         Log.LeaderElectionDisposed(Logger, _nodeId);
     }
@@ -312,5 +322,9 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         [LoggerMessage(EventId = 9111, Level = LogLevel.Warning,
             Message = "Cleanup failed during dispose (NodeId: {NodeId})")]
         public static partial void DisposeCleanupFailed(ILogger logger, string nodeId, Exception exception);
+
+        [LoggerMessage(EventId = 9112, Level = LogLevel.Warning,
+            Message = "Timed out waiting {Timeout} to release leadership during dispose (NodeId: {NodeId})")]
+        public static partial void DisposeReleaseTimedOut(ILogger logger, string nodeId, TimeSpan timeout);
     }
 }

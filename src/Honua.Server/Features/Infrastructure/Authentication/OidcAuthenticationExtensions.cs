@@ -796,8 +796,9 @@ public static class OidcAuthenticationExtensions
             options.ClientSecret = genericOptions.ClientSecret;
             options.CallbackPath = genericOptions.CallbackPath;
             options.SignedOutCallbackPath = genericOptions.SignedOutCallbackPath;
-            options.ResponseType = genericOptions.ResponseType;
-            options.UsePkce = genericOptions.UsePkce;
+            // Generic OIDC is intentionally constrained to authorization code + PKCE.
+            options.ResponseType = "code";
+            options.UsePkce = true;
             options.SaveTokens = genericOptions.SaveTokens;
             options.GetClaimsFromUserInfoEndpoint = genericOptions.GetClaimsFromUserInfoEndpoint;
             options.RequireHttpsMetadata = oidcOptions.RequireHttps;

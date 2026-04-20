@@ -364,6 +364,162 @@ dotnet test --filter "Protocol=Health"
 dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
 ```
 
+## End-to-End Operator Eval Harness
+
+The `Honua.TestKit.Eval` namespace hosts the end-to-end operator-workflow eval
+harness. It drives the canonical `HonuaProcessService` runtime and both
+compatibility adapters (gRPC, OGC API Processes, GeoServices GPServer) through a
+single fixture-backed scenario suite and emits a versioned report that
+`honua-devops-31` treats as the canonical server-side integration gate.
+
+### Authoring scenarios
+
+Scenarios are JSON documents under `tests/Eval/scenarios/*.json`, deserialized
+through the source-generated `EvalJsonContext` (AOT-safe, no runtime
+reflection). Each scenario declares:
+
+- `id`, `name`, `mode` (`Analysis` | `Publish` | `Package` | `Deploy`)
+- `fixtureProfile` (seed profile applied to the shared eval schema; all scenarios
+  in one harness run must agree on it, and every layer named in `intent.inputs`
+  must be served by that profile's collections in `tests/seed/seed.yaml` —
+  `BundledScenario_DeclaredInputsAreServedByItsFixtureProfile` enforces this at
+  unit-test time so the harness cannot go green against a profile that omits the
+  data a scenario claims to exercise)
+- `intent` — shape of `AnalysisIntent` (goal, inputs, constraints, requested
+  outputs, `assumptionPolicy`)
+- `precompiledPlan` — shape of `AnalysisPlan` (steps, DAG edges, declared
+  outputs) used in Phase 1 until the compile seam from #529/#723 lands
+- `expectedOutcome` — Phase 1 currently asserts `isExecutable`,
+  `requiresApproval`, and `estimatedArtifactKinds`. `estimatedArtifactKinds` is
+  enforced as an exact set: missing kinds fail with `artifact-kinds-missing`
+  and unexpected kinds fail with `artifact-kinds-unexpected` so drift in either
+  direction is caught. A proto artifact kind that has no domain counterpart is
+  recorded as a deterministic `artifact-kind-unknown` `DryRun` failure rather
+  than letting the harness throw, so `eval-report.json` is always emitted when
+  the server adds a new proto enum value. It also carries forward
+  `terminalWorkflowStatus` plus `expectsMapPackage` / `expectsAppPackage` for
+  later execution/package assertions; today they are forward-declared and not
+  validated against runtime outputs yet (`expectsAppPackage` is the only one
+  that currently affects stage scoping)
+
+The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, then
+the `tests/Eval/scenarios/` directory under `Honua.sln`. When
+`HONUA_EVAL_SCENARIO_ROOT` is set but points at a directory that does not
+exist, the loader raises `EvalScenarioException` instead of silently falling
+back to the bundled corpus so a typoed override cannot mask itself as a green
+run. If the loader cannot locate a scenario under either root it also raises
+`EvalScenarioException` with both search locations in the message.
+
+### Stages and protocol parity
+
+`EvalRunner` executes each scenario through a fixed stage sequence:
+`CaptureIntent` → `CompilePlan` → `ValidatePlan` → `DryRun` → `ProtocolParity`
+→ `SubmitPlanJob` → `PollJob` → `GetJobResults` → `ComposeMapPackage` →
+`ComposeAppPackage` → `PromoteDeployment`. Stages whose upstream capability is
+not yet wired (execution engine, publish surface, package composition, deploy
+promotion) report `Skipped` with a reason rather than failing — only `Failed`
+stages break the gate today. `SubmitPlanJob` also degrades to
+`Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
+which keeps local/dev runs honest instead of treating infrastructure gaps as
+contract failures.
+
+`DryRun` is a read operation in the canonical runtime (the gRPC handler
+authorizes it as `OperatorOperation.Read`, and
+`GeoprocessingJobService.DryRunPlan` only enforces plan-structure and catalog
+validity — it does not gate on executability or approval). It therefore still
+runs for scenarios that expect `isExecutable: false` or
+`requiresApproval: true`, and the resulting `DryRun` outcome is scored against
+the scenario's declared `estimatedArtifactKinds` just like any other scenario.
+
+Only `SubmitPlanJob` enforces the execution-only invariants through
+`EnsurePlanExecutable` (rejects non-executable plans as `InvalidArgument`) and
+`EnsureApproved` (rejects approval-gated plans as `FailedPrecondition`). When a
+scenario intentionally expects one of those rejections and `ValidatePlan`
+matches that expectation, `SubmitPlanJob` is recorded as
+`Skipped(plan-non-executable)` or `Skipped(plan-approval-required)` rather
+than invoking the RPC that is contractually guaranteed to reject. This keeps
+negative scenarios expressible without polluting the gate with false failures.
+
+`ProtocolParity` cross-checks plan acceptance across gRPC and OGC API Processes
+against the scenario's expected state, and it probes the GPServer `submitJob`
+surface separately. The gRPC probe reports `matched-acceptance` or
+`matched-rejection:{n}-violations` when the validate response matches the
+expected `isExecutable` value, and `mismatch:{actual}` when it diverges. The
+OGC probe treats `201 Created` as `matched-acceptance` for executable scenarios
+and as `unexpected-acceptance` (Failed) for scenarios that expected rejection;
+conversely `400 Bad Request` is `matched-rejection` (Passed) when the scenario
+expected rejection and `unexpected-rejection` (Failed) otherwise. `403
+Forbidden` is the OGC adapter's approval-gate rejection emitted after catalog
+validation, so it is `matched-approval-required` (Passed) when the scenario
+expected `requiresApproval: true` and `unexpected-approval-required` (Failed)
+otherwise. `503` / `501` remain environmental skips, and when OGC execution
+cannot enqueue because Redis is unavailable, that probe is recorded as
+`Skipped(service-unavailable)` rather than `Failed`. Because the GPServer
+adapter still lacks a formal task catalog binding, its probe is recorded as
+`Skipped(task-resolution-unavailable)` instead of a false `Passed`. When an
+HTTP probe is canceled for a reason other than the outer run's own
+`CancellationToken` (for example an `HttpClient.Timeout` firing), the probe is
+recorded as `Failed(http-timeout)` so the overall scenario keeps its no-throw
+reporting contract instead of aborting mid-run. Spans are emitted from the
+`Honua.Tests.Eval` `ActivitySource` (one span per scenario, one per stage).
+
+### Fixture corpus
+
+Fixture resolution is routed through `IEvalFixtureSource` and applied to the
+shared `WebAppFixture` before host startup:
+
+- `SharedCorpusFixtureSource` — binds to the geospatial-mcp corpus located by
+  `HONUA_EVAL_CORPUS_PATH`, which must point to a YAML seed file or a directory
+  containing `seed.yaml`; `HONUA_EVAL_CORPUS_VERSION` is surfaced in the report
+  envelope.
+- `LocalSeedFixtureSource` — falls back to the in-repo `tests/seed/seed.yaml`
+  baseline (`corpusVersion: seed.yaml@v1`) so the harness runs locally without
+  external mounts.
+
+The harness resolves the single `fixtureProfile` declared by the discoverable
+scenario set and applies that profile with `WebAppFixture.UseSeed(...)`. Mixed
+profiles fail fast because the eval harness intentionally uses one class-scoped
+seeded schema per run.
+
+### Report artifact
+
+Each run emits `tests/TestResults/eval-report.json` (override with
+`HONUA_EVAL_REPORT_DIR`) serialized through `EvalJsonContext`. The document is
+pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
+includes:
+
+- `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
+  `redisAvailable` (derived from observed successful `SubmitPlanJob` stages)
+- `scenarios[]` — id, mode, overall `status`
+  (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
+  probes, elapsed ms
+- `rollup` — totals, `firstFailure` pointer, `totalElapsedMs`
+
+`honua-devops-31` pins on the schema version and fails closed on mismatch.
+
+### Running the harness
+
+The harness runs in the **.NET Tests (Server - Operator Eval Harness)** CI
+lane (`ci.yml`), which filters on
+`Features.Eval|Features.Geoprocessing|Features.OgcProcesses|Features.Grpc` and
+uploads the report as the `operator-eval-report` workflow artifact.
+
+Locally:
+
+```bash
+# Run the full operator eval harness lane
+dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+  --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval"
+
+# Filter by the OperatorEval protocol trait
+dotnet test --filter "Protocol=OperatorEval"
+
+# Point at the shared corpus when available
+HONUA_EVAL_CORPUS_PATH=/path/to/geospatial-mcp \
+HONUA_EVAL_CORPUS_VERSION=core@0001 \
+  dotnet test --filter "Protocol=OperatorEval"
+```
+
 ## Environment Requirements
 
 - Docker (for Testcontainers)

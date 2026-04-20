@@ -79,7 +79,7 @@ Evaluators should run the [reproduction package](BENCHMARK_REPRODUCTION.md) on t
 - **Memory**: Sub-kilobyte per-request allocations for standard queries; zero Gen2 GC pressure under normal load.
 - **Container**: Minimal base image (`runtime-deps` only). No WAR packaging or servlet container layer.
 
-Sizing profiles for Small / Medium / Large deployments are documented in the [Enterprise Procurement Readiness](ENTERPRISE_PROCUREMENT_READINESS.md#reference-architecture-sizing-profiles) guide.
+Use the benchmark tables above plus the [reproduction package](BENCHMARK_REPRODUCTION.md) on your target infrastructure to size Small / Medium / Large deployments.
 
 ### Operational Simplicity
 
@@ -90,7 +90,7 @@ Sizing profiles for Small / Medium / Large deployments are documented in the [En
 
 ### Cost
 
-Cloud resource estimates by deployment size are available in the [Enterprise Procurement Readiness](ENTERPRISE_PROCUREMENT_READINESS.md#reference-architecture-sizing-profiles) guide. Honua's open-core model (Community edition is free under ELv2) eliminates per-core or per-user license costs for the server runtime.
+Cloud resource estimates should be derived from the benchmark tables and validated with the [reproduction package](BENCHMARK_REPRODUCTION.md) on the target environment. Honua's open-core model (Community edition is free under ELv2) eliminates per-core or per-user license costs for the server runtime.
 
 ## Disclaimer
 

@@ -19,12 +19,25 @@ public sealed class OgcProcessesConversionHelpersTests
     private const string ProcessId = "honua-geoprocessing";
     private const string ResultsRelation = "http://www.opengis.net/def/rel/ogc/1.0/results";
 
+    [Fact]
+    [Operation(Operations.JobStatus)]
+    public void ToOgcStatusInfo_SucceededJob_AdvertisesResultsLink()
+    {
+        var job = CreateJob(ExecutionJobStatus.Succeeded);
+
+        var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(job, ProcessId, BaseUrl);
+
+        statusInfo.Links.Should().NotBeNull();
+        statusInfo.Links!.Value.Should().ContainSingle(
+            l => l.Rel == ResultsRelation && l.Href == $"{BaseUrl}/ogc/processes/jobs/{job.OperationId}/results",
+            "succeeded jobs expose a results resource per OGC API Processes Part 1 §7.11.1");
+    }
+
     [Theory]
-    [InlineData(ExecutionJobStatus.Succeeded)]
     [InlineData(ExecutionJobStatus.Failed)]
     [InlineData(ExecutionJobStatus.Cancelled)]
     [Operation(Operations.JobStatus)]
-    public void ToOgcStatusInfo_TerminalJob_DoesNotAdvertiseResultsLink(ExecutionJobStatus status)
+    public void ToOgcStatusInfo_UnsuccessfulTerminalJob_DoesNotAdvertiseResultsLink(ExecutionJobStatus status)
     {
         var job = CreateJob(status);
 
@@ -32,7 +45,7 @@ public sealed class OgcProcessesConversionHelpersTests
 
         statusInfo.Links.Should().NotBeNull();
         statusInfo.Links!.Value.Should().NotContain(l => l.Rel == ResultsRelation,
-            "V1 has no usable results resource; advertising the link misleads clients");
+            "failed and cancelled jobs resolve to 500/410, so the results link would misdirect clients");
     }
 
     [Theory]

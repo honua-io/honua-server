@@ -15,6 +15,10 @@ env:
   DOTNET_VERSION: '10.0.x'
   NUGET_SOURCE: 'https://api.nuget.org/v3/index.json'
 
+concurrency:
+  group: nuget-publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-publish:
     name: Build and Publish Honua.Core
@@ -29,7 +33,7 @@ jobs:
         fetch-depth: 0
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+      uses: ./.github/actions/setup-dotnet-ci
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 

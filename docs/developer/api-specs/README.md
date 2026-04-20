@@ -50,7 +50,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - List, poll, and dismiss jobs (`GET /jobs`, `GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`)
 - Retrieve results when available (`GET /jobs/{jobId}/results`)
 
-> **V1 notes**: Async-only (sync returns `501`). Single canonical process (`honua-geoprocessing`). Job lifecycle and execution routes require Redis-backed durable storage (`503` when unavailable). Results endpoint remains stubbed until execution engine result storage is wired. See the [OGC API Processes Coverage](../../gis/specifications/ogc-api-processes-coverage.md) for conformance classes, endpoint details, and V1 limitations.
+> **V1 notes**: Async-only (sync returns `501`). Single canonical process (`honua-geoprocessing`). Job lifecycle and execution routes require Redis-backed durable storage (`503` when unavailable). Results endpoint returns `200 OK` with a document-mode JSON body on success — empty `{}` until the canonical process declares value-typed outputs and the execution engine populates result storage. See the [OGC API Processes Coverage](../../gis/specifications/ogc-api-processes-coverage.md) for conformance classes, endpoint details, and V1 limitations.
 
 ---
 
@@ -149,7 +149,7 @@ Control-plane SDK governance and contract diff checks:
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
-- [**API Examples**](../API_EXAMPLES.md) - Code examples for all protocols
+- [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols
 - [**Integration Patterns**](../INTEGRATION_PATTERNS.md) - Common integration approaches
 
 ---

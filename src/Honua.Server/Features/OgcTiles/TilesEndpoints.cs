@@ -673,6 +673,9 @@ internal static class TilesEndpoints
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
+            // Cache empty tiles for the same window as populated ones so clients do
+            // not revalidate on every pan/zoom over sparse regions.
+            context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptionsValue.CacheMaxAge}";
             return Results.NoContent();
         }
 

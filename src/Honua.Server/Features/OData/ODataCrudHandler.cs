@@ -162,9 +162,15 @@ internal sealed class ODataCrudHandler(
             return ODataUtilityService.CreateResultFromCrudResult(context, result);
         }
 
+        // Emit both @odata.id and @odata.editLink so clients can auto-discover the
+        // canonical URL for PATCH/PUT/DELETE per OData-JSON-Format §3.1.2. The two
+        // links coincide for a standalone entity reference, but absent editLink
+        // compliant clients skip optimistic-write paths.
+        var selfLink = ODataUtilityService.CreateLocationHeader(baseUrl, layerId, objectId);
         var reference = new Dictionary<string, object?>
         {
-            ["@odata.id"] = ODataUtilityService.CreateLocationHeader(baseUrl, layerId, objectId)
+            ["@odata.id"] = selfLink,
+            ["@odata.editLink"] = selfLink
         };
 
         ODataUtilityService.SetODataHeaders(context);

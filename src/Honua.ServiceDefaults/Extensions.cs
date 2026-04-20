@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -115,9 +116,19 @@ public static partial class Extensions
                         return new AdaptiveOpenTelemetrySampler(adaptiveSampler, tracingOptions);
                     }
 
-                    if (tracingOptions.SamplingRatio < 1.0)
+                    // Clamp ratio to the valid [0,1] range and short-circuit the edges.
+                    // TraceIdRatioBasedSampler accepts any double but documenting a negative
+                    // or >1 value as either "off" or "on" is clearer than relying on library
+                    // behavior for out-of-range input.
+                    var ratio = Math.Clamp(tracingOptions.SamplingRatio, 0.0, 1.0);
+                    if (ratio <= 0.0)
                     {
-                        return new TraceIdRatioBasedSampler(tracingOptions.SamplingRatio);
+                        return new AlwaysOffSampler();
+                    }
+
+                    if (ratio < 1.0)
+                    {
+                        return new TraceIdRatioBasedSampler(ratio);
                     }
 
                     return new AlwaysOnSampler();
@@ -499,6 +510,7 @@ public static partial class Extensions
     /// <summary>
     /// Adds adaptive sampling services for intelligent distributed tracing.
     /// </summary>
+    [RequiresUnreferencedCode("Calls Microsoft.Extensions.DependencyInjection.OptionsConfigurationServiceCollectionExtensions.Configure<TOptions>(IConfiguration)")]
     private static IHostApplicationBuilder AddAdaptiveSampling(this IHostApplicationBuilder builder)
     {
         // Bind adaptive sampling configuration from environment variables

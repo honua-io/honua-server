@@ -190,11 +190,15 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
             errors.Add("Generic.DisplayName should not exceed 100 characters");
         }
 
-        // Response type validation
-        var validResponseTypes = new[] { "code", "id_token", "token", "id_token token", "code id_token", "code token", "code id_token token" };
-        if (!validResponseTypes.Contains(generic.ResponseType))
+        // Generic OIDC is intentionally limited to authorization code + PKCE for v1 hardening.
+        if (!string.Equals(generic.ResponseType, "code", StringComparison.Ordinal))
         {
-            errors.Add($"Generic.ResponseType '{generic.ResponseType}' is not a valid OIDC response type");
+            errors.Add("Generic.ResponseType must be 'code' for the authorization code flow");
+        }
+
+        if (!generic.UsePkce)
+        {
+            errors.Add("Generic.UsePkce must be enabled for the authorization code flow");
         }
 
         ValidateCallbackPath(generic.CallbackPath, "Generic.CallbackPath", errors);

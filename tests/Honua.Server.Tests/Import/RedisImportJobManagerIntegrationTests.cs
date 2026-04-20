@@ -107,6 +107,37 @@ public sealed class RedisImportJobManagerIntegrationTests
     }
 
     [IntegrationTest]
+    public async Task LeaderElection_Dispose_ReleasesLeadershipForNextInstance()
+    {
+        var lockKey = $"test:leader:{Guid.NewGuid():N}";
+        using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
+        var electionA = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-a");
+        var electionB = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-b");
+        var disposedA = false;
+
+        try
+        {
+            (await electionA.TryAcquireLeadershipAsync()).Should().BeTrue();
+            (await electionB.TryAcquireLeadershipAsync()).Should().BeFalse();
+
+            electionA.Dispose();
+            disposedA = true;
+
+            (await electionB.TryAcquireLeadershipAsync()).Should().BeTrue(
+                "disposing the current leader should release the Redis lock promptly");
+        }
+        finally
+        {
+            if (!disposedA)
+            {
+                electionA.Dispose();
+            }
+
+            electionB.Dispose();
+        }
+    }
+
+    [IntegrationTest]
     public async Task RequestStore_WithRedis_PersistsAndRetrieves()
     {
         using var provider = BuildRedisServices();

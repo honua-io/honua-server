@@ -8,8 +8,11 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcProcesses.Models;
 using Honua.ServiceDefaults;
@@ -254,31 +257,24 @@ internal static class JobEndpoints
                 StatusCodes.Status410Gone);
         }
 
-        // V1: Result storage is not yet implemented. Mirror the canonical service behavior
-        // (HonuaProcessService.GetJobResults) which reports results as unavailable until
-        // the execution engine and result package storage are wired up.
-        OgcProcessesLog.JobResultsNotAvailable(logger, jobId, "successful");
-        return Results.Json(
-            new OgcProcessError
-            {
-                Type = "about:blank",
-                Title = "Results not available",
-                Status = StatusCodes.Status404NotFound,
-                Detail = $"Result package for job '{jobId}' is not yet available. " +
-                         "Result storage will be implemented with the execution engine."
-            },
-            OgcProcessesJsonContext.Default.OgcProcessError,
-            MediaTypes.Json,
-            StatusCodes.Status404NotFound);
+        // OGC API Processes — Part 1 §7.11.1: a successful job must return a results
+        // document, not a 404. The canonical process declares no value-typed outputs in
+        // V1, so the spec-conformant body is an empty object. Clients walking the job
+        // lifecycle now see 200 OK + `{}` instead of "not available".
+        // When the artifact store is wired up the dictionary will be populated from the
+        // job's ArtifactRefs; until then the endpoint stays spec-legal.
+        return Results.Text("{}", MediaTypes.Json, statusCode: StatusCodes.Status200OK);
     }
 
     private static async Task<IResult> DismissJob(
         string jobId,
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
-        IJobCancellationNotifier cancellationNotifier,
+        IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         IUniversalProgressStore progressStore,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null,
+        [FromServices] IJobQueue? jobQueue = null,
+        [FromServices] IEnumerable<IBatchComputeBackend>? backends = null)
     {
         EnrichActivity("DismissJob");
 
@@ -310,9 +306,30 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
-        // Already dismissed — return current status
+        // Already dismissed — reconcile side effects and return current status
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
+            if (jobQueue != null)
+            {
+                try
+                {
+                    await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
+                }
+            }
+
+            var staleProgress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                jobId, context.RequestAborted).ConfigureAwait(false);
+            if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+            {
+                var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Dismissed via OGC API");
+                await progressStore.SetProgressAsync(
+                    jobId, reconciledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+            }
+
             var baseUrl2 = BaseUrlResolver.GetBaseUrl(context);
             return Results.Json(
                 OgcProcessesConversionHelpers.ToOgcStatusInfo(
@@ -324,6 +341,8 @@ internal static class JobEndpoints
         // Cannot dismiss terminal jobs (succeeded/failed)
         if (OgcProcessesConversionHelpers.IsTerminal(job.Status))
         {
+            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                progressStore, job, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
             OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(job.Status));
             return Results.Json(
                 new OgcProcessError
@@ -354,32 +373,283 @@ internal static class JobEndpoints
         }
 
         // Attempt cancellation via the canonical notifier
-        var workerOwnsTerminalState = cancellationNotifier.Cancel(jobId);
+        var workerOwnsTerminalState = cancellationNotifiers.CancelAny(jobId);
 
         if (!workerOwnsTerminalState)
         {
-            // No worker handling this job — transition to cancelled directly
-            var now = DateTimeOffset.UtcNow;
-            var cancelled = job with
+            // Re-read to catch concurrent terminal transitions (e.g. reconciler
+            // revoked the stale CTS after requeue or terminal failure).
+            var latest = await jobStore.GetAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+            if (latest == null)
             {
-                Status = ExecutionJobStatus.Cancelled,
-                UpdatedAt = now,
-                CompletedAt = now,
-                CurrentPhase = "Dismissed"
-            };
-
-            await jobStore.SetAsync(cancelled, cancellationToken: context.RequestAborted).ConfigureAwait(false);
-
-            var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
-                jobId, context.RequestAborted).ConfigureAwait(false);
-            if (progress != null)
-            {
-                var cancelledProgress = progress.WithCancellation(now, "Dismissed via OGC API");
-                await progressStore.SetProgressAsync(
-                    jobId, cancelledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                OgcProcessesLog.JobNotFound(logger, jobId);
+                return JobNotFoundResult(jobId);
             }
 
-            job = cancelled;
+            if (!OgcProcessesConversionHelpers.IsTerminal(latest.Status)
+                && !string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)
+                && backends != null)
+            {
+                var backend = backends.Resolve(latest.Spec.Backend, latest.Spec.TargetKind);
+                if (backend != null)
+                {
+                    var capabilities = await backend.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+                    if (capabilities.SupportsCancellation)
+                    {
+                        if (latest.Status == ExecutionJobStatus.Queued && !ExecutionJobCancellationHelper.WasSubmittedToProvider(latest))
+                        {
+                            var preResult = await ExecutionJobCancellationHelper.TryCancelPreSubmissionAsync(
+                                jobStore, latest, context.RequestAborted).ConfigureAwait(false);
+
+                            switch (preResult.Outcome)
+                            {
+                                case PreSubmissionCancelOutcome.TerminalConflict:
+                                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                        progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                                    OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(preResult.Job!.Status));
+                                    return Results.Json(
+                                        new OgcProcessError
+                                        {
+                                            Type = "about:blank",
+                                            Title = "Cannot dismiss completed job",
+                                            Status = StatusCodes.Status409Conflict,
+                                            Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(preResult.Job!.Status)}' before dismiss could be applied."
+                                        },
+                                        OgcProcessesJsonContext.Default.OgcProcessError,
+                                        MediaTypes.Json,
+                                        StatusCodes.Status409Conflict);
+                                case PreSubmissionCancelOutcome.Missing:
+                                    OgcProcessesLog.JobNotFound(logger, jobId);
+                                    return JobNotFoundResult(jobId);
+                                case PreSubmissionCancelOutcome.Unconfirmed:
+                                    return Results.Json(
+                                        new OgcProcessError
+                                        {
+                                            Type = "about:blank",
+                                            Title = "Dismiss could not be confirmed",
+                                            Status = StatusCodes.Status409Conflict,
+                                            Detail = $"Job '{jobId}' pre-submission dismiss could not be confirmed."
+                                        },
+                                        OgcProcessesJsonContext.Default.OgcProcessError,
+                                        MediaTypes.Json,
+                                        StatusCodes.Status409Conflict);
+                            }
+
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            job = preResult.Job!;
+                            var baseUrlLocal = BaseUrlResolver.GetBaseUrl(context);
+                            return Results.Json(
+                                OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                                    job, ProcessEndpoints.CanonicalProcessId, baseUrlLocal),
+                                OgcProcessesJsonContext.Default.OgcStatusInfo,
+                                MediaTypes.Json);
+                        }
+
+                        var observation = await backend.CancelAsync(latest, context.RequestAborted).ConfigureAwait(false);
+                        var applyResult = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
+                            jobStore, latest, observation, context.RequestAborted).ConfigureAwait(false);
+
+                        switch (applyResult.Outcome)
+                        {
+                            case BackendCancelApplyOutcome.Missing:
+                                OgcProcessesLog.JobNotFound(logger, jobId);
+                                return JobNotFoundResult(jobId);
+                            case BackendCancelApplyOutcome.TerminalConflict:
+                                await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                    progressStore, applyResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                                OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(applyResult.Job!.Status));
+                                return Results.Json(
+                                    new OgcProcessError
+                                    {
+                                        Type = "about:blank",
+                                        Title = "Cannot dismiss completed job",
+                                        Status = StatusCodes.Status409Conflict,
+                                        Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(applyResult.Job!.Status)}' before dismiss could be applied."
+                                    },
+                                    OgcProcessesJsonContext.Default.OgcProcessError,
+                                    MediaTypes.Json,
+                                    StatusCodes.Status409Conflict);
+                            case BackendCancelApplyOutcome.Unconfirmed:
+                                return Results.Json(
+                                    new OgcProcessError
+                                    {
+                                        Type = "about:blank",
+                                        Title = "Dismiss could not be confirmed",
+                                        Status = StatusCodes.Status409Conflict,
+                                        Detail = $"Job '{jobId}' dismiss could not be confirmed after retries."
+                                    },
+                                    OgcProcessesJsonContext.Default.OgcProcessError,
+                                    MediaTypes.Json,
+                                    StatusCodes.Status409Conflict);
+                        }
+
+                        var cancelled = applyResult.Job!;
+
+                        await ExecutionJobSubmissionHelper.BridgeExecutionJobProgressAsync(
+                            progressStore, cancelled, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+
+                        if (cancelled.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                        {
+                            OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(cancelled.Status));
+                            return Results.Json(
+                                new OgcProcessError
+                                {
+                                    Type = "about:blank",
+                                    Title = "Cannot dismiss completed job",
+                                    Status = StatusCodes.Status409Conflict,
+                                    Detail = $"Job '{jobId}' reached terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(cancelled.Status)}' before dismiss could be applied."
+                                },
+                                OgcProcessesJsonContext.Default.OgcProcessError,
+                                MediaTypes.Json,
+                                StatusCodes.Status409Conflict);
+                        }
+
+                        job = cancelled;
+                        var baseUrlBackend = BaseUrlResolver.GetBaseUrl(context);
+                        return Results.Json(
+                            OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                                job, ProcessEndpoints.CanonicalProcessId, baseUrlBackend),
+                            OgcProcessesJsonContext.Default.OgcStatusInfo,
+                            MediaTypes.Json);
+                    }
+                }
+            }
+
+            if (OgcProcessesConversionHelpers.IsTerminal(latest.Status))
+            {
+                if (latest.Status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed)
+                {
+                    await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                        progressStore, latest, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    OgcProcessesLog.DismissRejectedTerminal(logger, jobId, OgcProcessesConversionHelpers.ToOgcStatus(latest.Status));
+                    return Results.Json(
+                        new OgcProcessError
+                        {
+                            Type = "about:blank",
+                            Title = "Cannot dismiss completed job",
+                            Status = StatusCodes.Status409Conflict,
+                            Detail = $"Job '{jobId}' is in terminal state '{OgcProcessesConversionHelpers.ToOgcStatus(latest.Status)}' and cannot be dismissed."
+                        },
+                        OgcProcessesJsonContext.Default.OgcProcessError,
+                        MediaTypes.Json,
+                        StatusCodes.Status409Conflict);
+                }
+
+                if (jobQueue != null)
+                {
+                    try
+                    {
+                        await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
+                    }
+                }
+
+                var staleProgress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                    jobId, context.RequestAborted).ConfigureAwait(false);
+                if (staleProgress != null && staleProgress.Status != OperationStatus.Cancelled)
+                {
+                    var reconciledProgress = staleProgress.WithCancellation(DateTimeOffset.UtcNow, "Dismissed via OGC API");
+                    await progressStore.SetProgressAsync(
+                        jobId, reconciledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                }
+
+                job = latest;
+            }
+            else if (!string.Equals(latest.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal))
+            {
+                return Results.Json(
+                    new OgcProcessError
+                    {
+                        Type = "about:blank",
+                        Title = "Cancellation not supported",
+                        Status = StatusCodes.Status409Conflict,
+                        Detail = $"Job '{jobId}' runs on backend '{latest.Spec.Backend}' which does not support dismissal."
+                    },
+                    OgcProcessesJsonContext.Default.OgcProcessError,
+                    MediaTypes.Json,
+                    StatusCodes.Status409Conflict);
+            }
+            else
+            {
+                var cancelOutcome = await ExecutionJobCancellationHelper.TryApplyAsync(
+                    jobStore,
+                    jobId,
+                    latest,
+                    "Dismissed",
+                    cancellationToken: context.RequestAborted).ConfigureAwait(false);
+
+                switch (cancelOutcome.State)
+                {
+                    case ExecutionJobCancellationState.Cancelled:
+                        if (jobQueue != null)
+                        {
+                            try
+                            {
+                                await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
+                            }
+                        }
+
+                        var progress = await progressStore.GetProgressAsync<GeoprocessingProgress>(
+                            jobId, context.RequestAborted).ConfigureAwait(false);
+                        if (progress != null)
+                        {
+                            var cancelledProgress = progress.WithCancellation(DateTimeOffset.UtcNow, "Dismissed via OGC API");
+                            await progressStore.SetProgressAsync(
+                                jobId, cancelledProgress, TimeSpan.FromDays(7), context.RequestAborted).ConfigureAwait(false);
+                        }
+
+                        job = cancelOutcome.Job ?? latest;
+                        break;
+                    case ExecutionJobCancellationState.CancellationRequested:
+                        job = cancelOutcome.Job ?? latest;
+                        break;
+                    case ExecutionJobCancellationState.TerminalConflict:
+                        var terminalStatus = cancelOutcome.Job != null
+                            ? OgcProcessesConversionHelpers.ToOgcStatus(cancelOutcome.Job.Status)
+                            : "unknown";
+                        if (cancelOutcome.Job != null)
+                        {
+                            await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
+                                progressStore, cancelOutcome.Job, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                        }
+                        OgcProcessesLog.DismissRejectedTerminal(logger, jobId, terminalStatus);
+                        return Results.Json(
+                            new OgcProcessError
+                            {
+                                Type = "about:blank",
+                                Title = "Cannot dismiss completed job",
+                                Status = StatusCodes.Status409Conflict,
+                                Detail = $"Job '{jobId}' reached terminal state '{terminalStatus}' before dismiss could be applied."
+                            },
+                            OgcProcessesJsonContext.Default.OgcProcessError,
+                            MediaTypes.Json,
+                            StatusCodes.Status409Conflict);
+                    case ExecutionJobCancellationState.Missing:
+                        return JobNotFoundResult(jobId);
+                    case ExecutionJobCancellationState.Unconfirmed:
+                        return Results.Json(
+                            new OgcProcessError
+                            {
+                                Type = "about:blank",
+                                Title = "Dismiss could not be confirmed",
+                                Status = StatusCodes.Status409Conflict,
+                                Detail = $"Job '{jobId}' dismiss could not be confirmed after retries."
+                            },
+                            OgcProcessesJsonContext.Default.OgcProcessError,
+                            MediaTypes.Json,
+                            StatusCodes.Status409Conflict);
+                    default:
+                        throw new InvalidOperationException($"Unexpected durable cancellation outcome '{cancelOutcome.State}'.");
+                }
+            }
         }
         else
         {

@@ -212,6 +212,12 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
     private static RpcException MapToRpcException(Exception ex) => ex switch
     {
+        OperationCanceledException => new RpcException(new Status(StatusCode.Cancelled, "The operation was cancelled.")),
+
+        TimeoutException timeoutEx => new RpcException(new Status(
+            StatusCode.DeadlineExceeded,
+            timeoutEx.Message)),
+
         GeoprocessingAuthorizationException authEx => new RpcException(new Status(
             authEx.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
             authEx.Message)),
@@ -233,6 +239,16 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         GeoprocessingIdempotencyConflictException conflictEx => new RpcException(new Status(
             StatusCode.AlreadyExists, conflictEx.Message)),
+
+        GeoprocessingAdmissionException admissionEx => new RpcException(
+            new Status(StatusCode.ResourceExhausted, admissionEx.Message),
+            new Metadata
+            {
+                { "honua-admission-outcome", admissionEx.Outcome.ToString() },
+                { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },
+                { "honua-admission-policy-ref", admissionEx.PolicyRef },
+                { "retry-after", admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+            }),
 
         InvalidOperationException opEx => new RpcException(new Status(
             StatusCode.Internal, opEx.Message)),

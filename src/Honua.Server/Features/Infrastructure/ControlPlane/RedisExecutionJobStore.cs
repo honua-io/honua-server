@@ -16,6 +16,16 @@ internal sealed partial class RedisExecutionJobStore(
     ILogger<RedisExecutionJobStore> logger) : IExecutionJobStore
 {
     private static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
+
+    private const string CasSetScript = """
+        local current = redis.call('GET', KEYS[1])
+        if current == false then return 0 end
+        local v = tonumber(string.match(current, '"version":(%d+)')) or 0
+        if v ~= tonumber(ARGV[1]) then return 0 end
+        redis.call('SET', KEYS[1], ARGV[2], 'PX', tonumber(ARGV[3]))
+        return 1
+        """;
+
     private readonly IDatabase _database = redis.GetDatabase();
 
     public Task<bool> TryAcquireLeaseAsync(
@@ -55,7 +65,8 @@ internal sealed partial class RedisExecutionJobStore(
         ArgumentNullException.ThrowIfNull(job);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var payload = JsonSerializer.Serialize(job, ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        var versioned = job with { Version = 1 };
+        var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
         var created = await _database.StringSetAsync(
                 GetJobKey(job.OperationId),
                 payload,
@@ -68,8 +79,8 @@ internal sealed partial class RedisExecutionJobStore(
             return false;
         }
 
-        await UpdateActiveIndexesAsync(job).ConfigureAwait(false);
-        Log.ExecutionJobCreated(logger, job.OperationId, job.Spec.Kind.ToString(), job.Status.ToString());
+        await UpdateActiveIndexesAsync(versioned).ConfigureAwait(false);
+        Log.ExecutionJobCreated(logger, job.OperationId, versioned.Spec.Kind.ToString(), versioned.Status.ToString());
         return true;
     }
 
@@ -96,15 +107,46 @@ internal sealed partial class RedisExecutionJobStore(
         ArgumentNullException.ThrowIfNull(job);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var payload = JsonSerializer.Serialize(job, ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        var versioned = job with { Version = job.Version + 1 };
+        var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
         await _database.StringSetAsync(
                 GetJobKey(job.OperationId),
                 payload,
                 ttl ?? DefaultRetention)
             .ConfigureAwait(false);
 
-        await UpdateActiveIndexesAsync(job).ConfigureAwait(false);
-        Log.ExecutionJobUpdated(logger, job.OperationId, job.Status.ToString());
+        await UpdateActiveIndexesAsync(versioned).ConfigureAwait(false);
+        Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TrySetAsync(
+        ExecutionJobRecord job,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var versioned = job with { Version = job.Version + 1 };
+        var payload = JsonSerializer.Serialize(versioned, ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        var retention = ttl ?? DefaultRetention;
+
+        var result = await _database.ScriptEvaluateAsync(
+            CasSetScript,
+            keys: [(RedisKey)GetJobKey(job.OperationId)],
+            values: [(RedisValue)job.Version, (RedisValue)payload, (RedisValue)(long)retention.TotalMilliseconds])
+            .ConfigureAwait(false);
+
+        if ((long)result != 1)
+        {
+            Log.CasConflict(logger, job.OperationId, job.Version);
+            return false;
+        }
+
+        await UpdateActiveIndexesAsync(versioned).ConfigureAwait(false);
+        Log.ExecutionJobUpdated(logger, job.OperationId, versioned.Status.ToString());
+        return true;
     }
 
     public async Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
@@ -197,5 +239,11 @@ internal sealed partial class RedisExecutionJobStore(
             ILogger logger,
             string operationId,
             string status);
+
+        [LoggerMessage(9012, LogLevel.Debug, "CAS conflict for execution job {OperationId} at version {Version}; concurrent write detected")]
+        public static partial void CasConflict(
+            ILogger logger,
+            string operationId,
+            long version);
     }
 }

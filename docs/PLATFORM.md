@@ -49,7 +49,8 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
 | **GeoServices REST MapServer** | ArcGIS Pro, Esri map clients | Server-rendered map images, identify, legends |
 | **GeoServices REST ImageServer** | ArcGIS raster workflows | Raster/image export, identify, tiles, raster catalog query, per-band statistics & histograms, legend swatches, raster function chain validation |
 | **GeoServices Geometry Service** | Esri geometry operations | Buffer, project, intersect, union, clip, difference |
-| **GeoServices GPServer** | ArcGIS Pro, Esri geoprocessing SDKs | Job status polling, cancellation; routes registered for submission and result retrieval (pending process catalog and execution engine) |
+| **GeoServices GPServer** | ArcGIS Pro, Esri geoprocessing SDKs | Job status polling, cancellation; routes registered for submission and result retrieval. Internal `IProcessCatalog` seeds 19 built-in processes (`geometry.*`, `analytics.*`, `generalization.*`, `data-management.*`) used for plan validation; destructive `data-management.*` ids route through the operator approval gate. Per-task projection into the GPServer surface and execution-engine result delivery remain pending. |
+| **MCP Operator JSON-RPC** | AI agents, operator automation | JSON-RPC tool/resource surface on `/mcp` for plan validation, dry runs, execution submission, cancellation, and job/result inspection. Promotion-surface resources (published services, deployments, map/app packages) with provenance edges are functional handlers wired to the publishing/deployment store interfaces; published-service and deployment reads additionally carry monotonic ETags, while map/app package views and list-root envelopes expose provenance without their own ETag. The promotion surface is opt-in via `AddMcpPromotionSurface` and is not advertised by the default composition until canonical `IPublishedServiceStore`/`IDeploymentStore` persistence is registered. Planning/grounding/clarification tools and workspace/catalog resources are stable contract stubs pending their upstream services. |
 | **OGC API Features** | QGIS, MapLibre, any OGC client | Feature CRUD with CQL2 filtering |
 | **OGC API Maps** | OGC map clients | Standards-based rendered map images |
 | **OGC API Tiles** | QGIS, MapLibre | Vector and raster tile access |
@@ -84,7 +85,7 @@ The DuckDB provider serves pre-built `.duckdb` files containing data prepared of
 ## Key Capabilities
 
 ### Multi-Protocol Query
-Every published layer is automatically available through all protocols. A single dataset published from PostGIS is simultaneously queryable via FeatureServer REST, OGC API Features, OData, WFS, and vector tiles.
+Every published layer is automatically available through the layer-scoped protocols that the service enables. A single dataset published from PostGIS can be exposed simultaneously via FeatureServer REST, OGC API Features, OData, WFS, and vector tiles, while service-scoped families such as WMS, WMTS, and OGC API Maps remain service-level surfaces.
 
 ### Feature Editing
 Full CRUD support across protocols:
@@ -116,15 +117,17 @@ REST API and GitOps-ready management:
 
 ## Deployment
 
-Honua runs as a single container. The default PostgreSQL provider requires an external PostGIS database; the DuckDB provider is fully embedded and needs no external infrastructure.
+Honua runs as a single container in combined mode. The job orchestration substrate ([ADR-0031](contributor/adr/0031-durable-job-orchestration-substrate.md)) is designed to support separate API and worker hosts for enterprise scale-out; dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute on separate hosts is not yet wired. Pluggable batch-compute backends implement `IBatchComputeBackend` and are resolved by `(BackendName, TargetKind)` at runtime; the `LocalBatchComputeBackend` observes in-process worker progress in the combined host (actual local execution requires `AddJobWorker()` wiring on a worker host), and the execution-job reconciler bridges backend state into the canonical job store on every Redis-enabled host. A declarative workflow orchestration layer ([ADR-0032](contributor/adr/0032-workflow-orchestration-layer.md)) composes canonical process steps into chained, scheduled, and DAG-style runs on top of the same substrate. See [Operations — Job Orchestration](operator/operations.md#job-orchestration), [Operations — Workflow Orchestration](operator/operations.md#workflow-orchestration), and [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md#apiworker-host-separation) for details.
 
 ```
   PostgreSQL (default):         DuckDB (embedded):
   ---------------------         ------------------
   1x Honua container            1x Honua container
   1x PostgreSQL/PostGIS         .duckdb file (bundled or mounted)
-  Redis (optional)
-  Reverse proxy (TLS)           Reverse proxy (TLS)
+  Redis (optional; required     Reverse proxy (TLS)
+    for job and workflow
+    orchestration)
+  Reverse proxy (TLS)
 ```
 
 **Deployment options:**

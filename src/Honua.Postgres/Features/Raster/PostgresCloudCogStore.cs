@@ -191,7 +191,7 @@ internal sealed class PostgresCloudCogStore : ICloudCogStore
         {
             throw new InvalidDataException(
                 $"Unknown cloud storage provider '{providerStr}' in cloud_raster_catalog row. " +
-                "Valid providers: AwsS3, AzureBlob, GoogleCloudStorage.");
+                "Valid providers: AwsS3, AzureBlob.");
         }
 
         var widthOrd = reader.GetOrdinal("width");
