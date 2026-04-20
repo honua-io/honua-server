@@ -25,6 +25,7 @@ public sealed class VerticalSliceIsolationTests
         "Geocoding",
         "Geoprocessing",
         "GeometryService",
+        "Grounding",
         "ImageServer",
         "MapServer",
         "Mcp",
@@ -57,12 +58,15 @@ public sealed class VerticalSliceIsolationTests
     /// feature's transport-neutral services. The Mcp operator surface adapts
     /// <c>IGeoprocessingJobService</c> the same way the gRPC and GPServer
     /// adapters do, but lives in its own vertical slice per ticket #728.
-    /// Each entry lists the cross-feature references permitted for the key.
+    /// Grounding is a domain feature that reuses the Geoprocessing process
+    /// catalog + destructive classifier per ticket #742. Each entry lists the
+    /// cross-feature references permitted for the key.
     /// </summary>
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
-            ["Mcp"] = new[] { "Geoprocessing" }
+            ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
+            ["Grounding"] = new[] { "Geoprocessing" }
         };
 
     [ArchitectureTest]

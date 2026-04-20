@@ -41,6 +41,29 @@ internal static class McpTelemetry
         description: "Count of MCP resource reads by family and status.");
 
     /// <summary>
+    /// Grounding-pass outcome counter. Tags: <c>engine</c>,
+    /// <c>workflow_family</c>, <c>clarified</c>. Incremented once per
+    /// successful grounding pass so honua-server-734 eval runs can watch engine
+    /// mix and clarification rate over time.
+    /// </summary>
+    public static readonly Counter<long> GroundingResultCount = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.grounding.result",
+        unit: "{result}",
+        description: "Count of grounding passes by engine, classified workflow family, and whether a clarification envelope was emitted.");
+
+    /// <summary>
+    /// Records a grounding-pass outcome sample on <see cref="GroundingResultCount"/>.
+    /// </summary>
+    public static void RecordGroundingResult(string engine, string workflowFamily, bool clarified)
+    {
+        GroundingResultCount.Add(
+            1,
+            new KeyValuePair<string, object?>("engine", engine),
+            new KeyValuePair<string, object?>("workflow_family", workflowFamily),
+            new KeyValuePair<string, object?>("clarified", clarified ? "true" : "false"));
+    }
+
+    /// <summary>
     /// Well-known status-tag values.
     /// </summary>
     public static class Status

@@ -16,10 +16,11 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Mcp;
 
 /// <summary>
-/// Locks the contract-first stub tools to <c>not_implemented</c> output with
-/// a machine-readable <c>blockedBy</c> pointer to the upstream service so
-/// operators have an unblock path while the planner/grounder/clarifier roll
-/// out. Stubs still enforce authentication and emit structured output.
+/// Locks the remaining contract-first stub tools to <c>not_implemented</c>
+/// output with a machine-readable <c>blockedBy</c> pointer to the upstream
+/// service so operators have an unblock path while the planner rolls out.
+/// Stubs still enforce authentication and emit structured output. The grounder
+/// and clarifier have shipped and are covered by their own delegation tests.
 /// </summary>
 [Protocol(Protocols.Mcp)]
 public sealed class McpStubToolTests
@@ -35,32 +36,6 @@ public sealed class McpStubToolTests
         var result = await InvokeAsync(tool);
 
         AssertNotImplemented(result, expectedTool: PlanAnalysisTool.ToolName, expectedBlocker: "honua.planner.service");
-        _jobService.Received(1).EnsureCallerAuthorized(
-            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
-    public async Task GroundCandidatesStub_ReturnsNotImplementedWithGroundingBlocker()
-    {
-        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
-
-        var result = await InvokeAsync(tool);
-
-        AssertNotImplemented(result, expectedTool: GroundCandidatesTool.ToolName, expectedBlocker: "honua.grounding.service");
-        _jobService.Received(1).EnsureCallerAuthorized(
-            Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover);
-    }
-
-    [UnitTest]
-    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
-    public async Task ClarifyIntentStub_ReturnsNotImplementedWithClarifierBlocker()
-    {
-        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
-
-        var result = await InvokeAsync(tool);
-
-        AssertNotImplemented(result, expectedTool: ClarifyIntentTool.ToolName, expectedBlocker: "honua.clarifier.service");
         _jobService.Received(1).EnsureCallerAuthorized(
             Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read);
     }
@@ -82,67 +57,26 @@ public sealed class McpStubToolTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
-    public async Task GroundCandidatesStub_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
-    {
-        _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Catalog, OperatorOperation.Discover))
-            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
-        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
-
-        var act = async () => await InvokeAsync(tool);
-
-        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
-            .Which.RequiresAuthentication.Should().BeFalse();
-    }
-
-    [UnitTest]
-    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
-    public async Task ClarifyIntentStub_AuthenticatedButUnauthorized_ThrowsPermissionDenied()
-    {
-        _jobService
-            .When(s => s.EnsureCallerAuthorized(
-                Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process, OperatorOperation.Read))
-            .Do(_ => throw new GeoprocessingAuthorizationException(requiresAuthentication: false));
-        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
-
-        var act = async () => await InvokeAsync(tool);
-
-        (await act.Should().ThrowAsync<GeoprocessingAuthorizationException>())
-            .Which.RequiresAuthentication.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public void StubsImplementIStubMcpTool_ForTelemetryTagging()
+    public void PlanAnalysisStub_ImplementsIStubMcpTool_ForTelemetryTagging()
     {
         IMcpTool plan = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
-        IMcpTool ground = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
-        IMcpTool clarify = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
 
         plan.Should().BeAssignableTo<IStubMcpTool>();
-        ground.Should().BeAssignableTo<IStubMcpTool>();
-        clarify.Should().BeAssignableTo<IStubMcpTool>();
     }
 
     [UnitTest]
-    public void StubDescriptors_ExposeEmptyObjectSchemaForContract()
+    public void PlanAnalysisStub_DescriptorExposesEmptyObjectSchemaForContract()
     {
-        var plan = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance).Describe();
-        var ground = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance).Describe();
-        var clarify = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance).Describe();
+        var descriptor = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance).Describe();
 
-        foreach (var descriptor in new[] { plan, ground, clarify })
-        {
-            descriptor.Name.Should().StartWith("honua_");
-            descriptor.Description.Should().NotBeNullOrWhiteSpace();
-            descriptor.InputSchema.ValueKind.Should().Be(JsonValueKind.Object);
-        }
+        descriptor.Name.Should().StartWith("honua_");
+        descriptor.Description.Should().NotBeNullOrWhiteSpace();
+        descriptor.InputSchema.ValueKind.Should().Be(JsonValueKind.Object);
     }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
-    public async Task Stub_RejectsArrayArguments_AsInvalidArgument()
+    public async Task PlanAnalysisStub_RejectsArrayArguments_AsInvalidArgument()
     {
         var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
 
@@ -154,34 +88,8 @@ public sealed class McpStubToolTests
     }
 
     [UnitTest]
-    [Endpoint("POST /mcp tools/call honua_ground_candidates")]
-    public async Task Stub_RejectsScalarArguments_AsInvalidArgument()
-    {
-        var tool = new GroundCandidatesTool(_jobService, NullLogger<GroundCandidatesTool>.Instance);
-
-        var invoke = async () => await InvokeWithAsync(tool, "\"just-a-string\"");
-
-        await invoke.Should()
-            .ThrowAsync<GeoprocessingValidationException>()
-            .WithMessage("*object*");
-    }
-
-    [UnitTest]
-    [Endpoint("POST /mcp tools/call honua_clarify_intent")]
-    public async Task Stub_RejectsObjectWithUnexpectedProperties_AsInvalidArgument()
-    {
-        var tool = new ClarifyIntentTool(_jobService, NullLogger<ClarifyIntentTool>.Instance);
-
-        var invoke = async () => await InvokeWithAsync(tool, """{"unexpected":"value"}""");
-
-        await invoke.Should()
-            .ThrowAsync<GeoprocessingValidationException>()
-            .WithMessage("*unexpected*");
-    }
-
-    [UnitTest]
     [Endpoint("POST /mcp tools/call honua_plan_analysis")]
-    public async Task Stub_AcceptsMissingArguments_AsEmptyObject()
+    public async Task PlanAnalysisStub_AcceptsMissingArguments_AsEmptyObject()
     {
         var tool = new PlanAnalysisTool(_jobService, NullLogger<PlanAnalysisTool>.Instance);
 
@@ -193,13 +101,13 @@ public sealed class McpStubToolTests
         AssertNotImplemented(result, expectedTool: PlanAnalysisTool.ToolName, expectedBlocker: "honua.planner.service");
     }
 
-    private static async Task<McpToolsCallResult> InvokeAsync(IMcpTool tool)
+    private static async Task<McpToolsCallResult> InvokeAsync(PlanAnalysisTool tool)
     {
         JsonElement? arguments = McpTestFactory.ParseJson("{}");
         return await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
     }
 
-    private static async Task<McpToolsCallResult> InvokeWithAsync(IMcpTool tool, string argumentsJson)
+    private static async Task<McpToolsCallResult> InvokeWithAsync(PlanAnalysisTool tool, string argumentsJson)
     {
         JsonElement? arguments = McpTestFactory.ParseJson(argumentsJson);
         return await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);

@@ -1,43 +1,74 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Grounding.Mcp;
+using Honua.Server.Features.Mcp.Models;
 
 namespace Honua.Server.Features.Mcp.Tools;
 
 /// <summary>
-/// Contract-first stub for the <c>honua_ground_candidates</c> tool. Returns
-/// structured <c>not_implemented</c> data until the grounding service ships.
+/// MCP tool that runs a single grounding pass over a natural-language operator
+/// goal. Delegates to <see cref="IGroundingService.GroundAsync"/> so the MCP
+/// surface shares its classification, ranking, and clarification logic with
+/// any future gRPC adapters.
 /// </summary>
-internal sealed class GroundCandidatesTool : NotImplementedToolBase
+internal sealed class GroundCandidatesTool : IMcpTool
 {
     public const string ToolName = "honua_ground_candidates";
 
-    public GroundCandidatesTool(IGeoprocessingJobService jobService, ILogger<GroundCandidatesTool> logger)
-        : base(jobService, logger)
+    private static readonly JsonElement InputSchemaElement = GroundingToolSchemas.GroundCandidatesArgumentSchema;
+
+    private readonly IGroundingService _groundingService;
+    private readonly IGeoprocessingJobService _jobService;
+    private readonly ILogger<GroundCandidatesTool> _logger;
+
+    public GroundCandidatesTool(
+        IGroundingService groundingService,
+        IGeoprocessingJobService jobService,
+        ILogger<GroundCandidatesTool> logger)
     {
+        _groundingService = groundingService;
+        _jobService = jobService;
+        _logger = logger;
     }
 
-    public override string Name => ToolName;
+    public string Name => ToolName;
 
-    public override string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Planning;
 
-    protected override OperatorResourceType AuthorizedResource => OperatorResourceType.Catalog;
-
-    protected override OperatorOperation AuthorizedOperation => OperatorOperation.Discover;
-
-    protected override string Description =>
-        "Ground an intent to candidate datasets, processes, and workspaces. Contract stub pending grounding service.";
-
-    protected override string BlockedBy => "honua.grounding.service";
-
-    protected override string Contract =>
-        "Accepts { intent: string, filters?: object } and returns ranked candidates for datasets, processes, and workspaces.";
-
-    protected override IReadOnlyList<string> NextSteps { get; } = new[]
+    public McpToolDescriptor Describe() => new()
     {
-        "Await grounding service rollout (tracked by the intent-compiler epic).",
-        "Use honua://catalog/processes once the catalog resource lights up."
+        Name = ToolName,
+        Description = "Ground a natural-language goal to a workflow family, ranked catalog candidates, a draft intent, and an optional clarification envelope.",
+        InputSchema = InputSchemaElement
     };
+
+    public async Task<McpToolsCallResult> InvokeAsync(
+        HttpContext httpContext,
+        JsonElement? arguments,
+        CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity("GroundCandidates");
+        McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
+
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Catalog, OperatorOperation.Discover);
+
+        var argument = McpToolHelpers.ParseArguments(arguments, GroundingJsonContext.Default.McpGroundCandidatesArgument);
+        var request = GroundingToolMapper.ToDomain(argument);
+
+        var result = await _groundingService.GroundAsync(request, principal, cancellationToken).ConfigureAwait(false);
+        var output = GroundingToolMapper.ToWire(result);
+
+        McpTelemetry.RecordGroundingResult(
+            engine: result.Engine,
+            workflowFamily: result.WorkflowFamily.Value.ToString(),
+            clarified: result.Clarification is not null);
+
+        return McpToolHelpers.SuccessResult(output, GroundingJsonContext.Default.McpGroundingOutput);
+    }
 }

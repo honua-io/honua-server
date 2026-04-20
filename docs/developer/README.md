@@ -16,6 +16,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md) — Server/SDK version support
 - [SDK Metadata Format](SDK_COMPATIBILITY_METADATA.md) — Compatibility metadata schema
 - [MCP Server](MCP_SERVER.md) — SDK-hosted discovery/query MCP package plus the server-owned operator surface for AI agents
+- [Grounding & Intent Drafting](GROUNDING.md) — Pipeline behind `honua_ground_candidates` / `honua_clarify_intent`: workflow-family classifier, candidate ranking, material-ambiguity rule set, and deterministic engine
 
 ## Internal Architecture
 

@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Grounding.Domain;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Mcp.Models;
 
 namespace Honua.Server.Features.Mcp;
@@ -142,6 +144,8 @@ internal static class McpErrorMapper
             }
         },
 
+        GroundingException groundingEx => MapGrounding(groundingEx),
+
         InvalidOperationException opEx => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
@@ -160,6 +164,34 @@ internal static class McpErrorMapper
             {
                 Code = Codes.Internal
             }
+        }
+    };
+
+    private static McpJsonRpcError MapGrounding(GroundingException exception) => exception.Kind switch
+    {
+        GroundingErrorKind.EmptyGoal or GroundingErrorKind.UnsupportedWorkflowFamily => new McpJsonRpcError
+        {
+            Code = JsonRpcInvalidParams,
+            Message = exception.Message,
+            Data = new McpErrorData { Code = Codes.InvalidArgument }
+        },
+        GroundingErrorKind.UnknownIntent => new McpJsonRpcError
+        {
+            Code = JsonRpcResourceNotFound,
+            Message = exception.Message,
+            Data = new McpErrorData { Code = Codes.NotFound }
+        },
+        GroundingErrorKind.CatalogUnavailable => new McpJsonRpcError
+        {
+            Code = JsonRpcServerError,
+            Message = exception.Message,
+            Data = new McpErrorData { Code = Codes.Unavailable, Retryable = true }
+        },
+        _ => new McpJsonRpcError
+        {
+            Code = JsonRpcServerError,
+            Message = exception.Message,
+            Data = new McpErrorData { Code = Codes.Internal }
         }
     };
 
