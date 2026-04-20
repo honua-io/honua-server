@@ -536,7 +536,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         var backend = CreateBackend(client);
         var job = CreateJob("job-cancel-race", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running)
-            with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+            with
+        { CancellationRequestedAt = DateTimeOffset.UtcNow };
 
         var observation = await backend.CancelAsync(job);
 
@@ -556,7 +557,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         var backend = CreateBackend(client);
         var job = CreateJob("job-observe-cancel-race", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running)
-            with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+            with
+        { CancellationRequestedAt = DateTimeOffset.UtcNow };
 
         var observation = await backend.ObserveAsync(job);
 
