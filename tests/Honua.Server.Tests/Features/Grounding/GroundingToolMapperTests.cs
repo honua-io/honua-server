@@ -422,6 +422,27 @@ public sealed class GroundingToolMapperTests
     }
 
     [UnitTest]
+    public void ClarifyIntentArgumentSchema_RequiresAtLeastOneValuePerAnswer()
+    {
+        // The server mapper rejects `{ "answers": { "q1": [] } }` with
+        // invalid_argument; pin `minItems: 1` on the published schema so
+        // schema-driven clients cannot generate a payload that fails at
+        // runtime.
+        var schema = GroundingToolSchemas.ClarifyIntentArgumentSchema;
+        var answerArray = schema
+            .GetProperty("properties")
+            .GetProperty("response")
+            .GetProperty("properties")
+            .GetProperty("answers")
+            .GetProperty("additionalProperties");
+
+        answerArray.TryGetProperty("minItems", out var minItems).Should().BeTrue(
+            "schema-driven clients rely on the published schema to prevent empty answer arrays.");
+        minItems.ValueKind.Should().Be(JsonValueKind.Number);
+        minItems.GetInt32().Should().Be(1);
+    }
+
+    [UnitTest]
     public void ToWire_WithClarificationEnvelope_CopiesQuestionsAndOptions()
     {
         var result = new GroundingResult

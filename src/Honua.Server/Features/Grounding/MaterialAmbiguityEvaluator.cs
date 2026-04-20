@@ -107,8 +107,17 @@ internal static class MaterialAmbiguityEvaluator
             // no clarification to escape — a terminal dead state.
             if (!IsPublishSourceResolved(request, candidates))
             {
-                var sourceOptions = candidates.Datasets.Count > 0
-                    ? candidates.Datasets
+                // Service catalog entries cannot be published directly
+                // (PublishSourceKind has no FeatureService value), so they
+                // are filtered out of the publish.source options — offering
+                // them would stage a selection the drafter would have to
+                // reject or mislabel.
+                var publishableDatasets = candidates.Datasets
+                    .Where(c => c.DatasetSubtype != DatasetSubtype.Service)
+                    .ToArray();
+
+                var sourceOptions = publishableDatasets.Length > 0
+                    ? publishableDatasets
                         .Select(c => new ClarificationOption
                         {
                             Id = c.Id,
@@ -162,9 +171,11 @@ internal static class MaterialAmbiguityEvaluator
 
     /// <summary>
     /// Source is resolved when the caller has pinned at least one explicit
-    /// input or the top-ranked dataset is high-confidence. Mirrors the
-    /// predicate <see cref="IntentDrafter"/> uses to decide whether to emit
-    /// a <c>publishing</c> block so the evaluator and drafter stay aligned.
+    /// input or the top-ranked dataset is a high-confidence layer-backed
+    /// candidate. Mirrors the predicate <see cref="IntentDrafter"/> uses to
+    /// decide whether to emit a <c>publishing</c> block — service catalog
+    /// entries are excluded from auto-resolution so the evaluator and drafter
+    /// stay aligned.
     /// </summary>
     private static bool IsPublishSourceResolved(GroundingRequest request, CandidateRanking candidates)
     {
@@ -174,7 +185,8 @@ internal static class MaterialAmbiguityEvaluator
         }
 
         return candidates.Datasets.Count > 0
-            && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High;
+            && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High
+            && candidates.Datasets[0].DatasetSubtype != DatasetSubtype.Service;
     }
 
     private static bool IsAmbiguous(

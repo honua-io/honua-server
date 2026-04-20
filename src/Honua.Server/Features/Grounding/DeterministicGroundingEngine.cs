@@ -218,6 +218,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
             {
                 Id = layer.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Kind = CandidateKind.Dataset,
+                DatasetSubtype = DatasetSubtype.Layer,
                 DisplayName = layer.Name,
                 Score = Math.Round(score, 3),
                 ConfidenceBand = ConfidenceBand.Low,
@@ -252,6 +253,7 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
             {
                 Id = service.Name,
                 Kind = CandidateKind.Dataset,
+                DatasetSubtype = DatasetSubtype.Service,
                 DisplayName = service.Name,
                 Score = Math.Round(score, 3),
                 ConfidenceBand = ConfidenceBand.Low,

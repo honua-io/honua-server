@@ -549,6 +549,87 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_MultipleParameterAnswers_EmitsDeterministicAssumptionOrder()
+    {
+        // Regression: two semantically identical clarification payloads whose
+        // param.* answers differ only in key insertion order must produce the
+        // same `provenance.assumptions` sequence, preserving the grounding
+        // slice's documented stability guarantee.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
+        _engine.ScoreProcesses(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ProcessDefinition>>())
+            .Returns([Candidate("geometry.project", 0.9, CandidateKind.Process)]);
+        _processCatalog.GetProcess("geometry.project").Returns(new ProcessDefinition
+        {
+            ProcessId = "geometry.project",
+            Title = "Project",
+            Description = "Reprojects geometries from one spatial reference to another.",
+            Category = "geometry",
+            Parameters =
+            [
+                new ProcessParameterSpec
+                {
+                    Name = "fromSrid",
+                    DisplayName = "From SRID",
+                    Description = "Source SRID",
+                    ValueType = ProcessParameterValueType.Srid,
+                    Required = true
+                },
+                new ProcessParameterSpec
+                {
+                    Name = "toSrid",
+                    DisplayName = "To SRID",
+                    Description = "Target SRID",
+                    ValueType = ProcessParameterValueType.Srid,
+                    Required = true
+                }
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        });
+
+        var service = CreateService();
+
+        var forwardOrder = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "project the geometries",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["param.fromSrid"] = ["4326"],
+                        ["param.toSrid"] = ["3857"]
+                    }
+                }
+            },
+            Principal);
+
+        var reverseOrder = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "project the geometries",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["param.toSrid"] = ["3857"],
+                        ["param.fromSrid"] = ["4326"]
+                    }
+                }
+            },
+            Principal);
+
+        forwardOrder.DraftIntent.Provenance.Assumptions
+            .Should().Equal(reverseOrder.DraftIntent.Provenance.Assumptions,
+                "param.* assumptions must be ordered independently of caller key order");
+        forwardOrder.DraftIntent.Provenance.Assumptions.Should().ContainInOrder(
+            "param.fromSrid=4326", "param.toSrid=3857");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_WorkflowFamilyAnswer_OverridesClassifierResult()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification

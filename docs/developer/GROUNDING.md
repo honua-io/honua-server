@@ -55,7 +55,7 @@ Source: `Honua.Core.Features.Grounding.Domain.WorkflowFamily`.
 | Family | Status | Draft intent shape |
 |--------|--------|--------------------|
 | `Analyze` | Functional | `DraftAnalysisIntent` with scored process + dataset candidates |
-| `PublishData` | Functional | `DraftPublishingIntent` (source kind, target kind, draft status) when a source is pinned via `explicitInputs`, the top dataset is `High` confidence, or a prior `publish.source` answer has been supplied; otherwise the `publishing` block is omitted and the clarification envelope asks for the source via `publish.source` |
+| `PublishData` | Functional | `DraftPublishingIntent` (source kind, target kind, draft status) when a source is pinned via `explicitInputs`, the top dataset is a `High`-confidence layer-backed candidate, or a prior `publish.source` answer has been supplied; service catalog entries are excluded from auto-resolution (no matching `PublishSourceKind`), so the clarification envelope keeps asking via `publish.source` |
 | `BuildApp` | Envelope-only | `EnvelopeStub` + `PolicyBoundary` clarification |
 | `AutomateDeploy` | Envelope-only | `EnvelopeStub` + `PolicyBoundary` clarification |
 

@@ -86,6 +86,28 @@ public enum CandidateKind
 }
 
 /// <summary>
+/// Sub-category of a dataset <see cref="GroundingCandidate"/>. Lets downstream
+/// consumers (e.g. the publish-intent drafter) distinguish a concrete layer
+/// from a feature service catalog entry without having to inspect the id.
+/// </summary>
+public enum DatasetSubtype
+{
+    /// <summary>
+    /// A layer-backed dataset (feature layer, raster dataset). Eligible for
+    /// publish-source auto-resolution.
+    /// </summary>
+    Layer,
+
+    /// <summary>
+    /// A feature-service catalog entry. Not currently supported as a publish
+    /// source (no matching <c>PublishSourceKind</c>), so it is excluded from
+    /// publish-source auto-resolution and from the <c>publish.source</c>
+    /// clarification options.
+    /// </summary>
+    Service
+}
+
+/// <summary>
 /// Error categories emitted by the grounding service.
 /// </summary>
 public enum GroundingErrorKind

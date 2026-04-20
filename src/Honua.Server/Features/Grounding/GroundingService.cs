@@ -467,10 +467,23 @@ internal sealed class GroundingService : IGroundingService
 
         // Resolved parameter values from prior clarification answers flow
         // through as assumptions so downstream planning sees the caller's
-        // choices without a new contract surface.
-        foreach (var (name, value) in resolvedParameters)
+        // choices without a new contract surface. Sort by parameter name so
+        // two semantically identical clarification payloads produce the same
+        // assumption ordering regardless of the caller's key insertion order
+        // — preserving the slice's stability guarantee.
+        if (resolvedParameters.Count > 0)
         {
-            assumptions.Add($"param.{name}={value}");
+            var parameterNames = new string[resolvedParameters.Count];
+            var index = 0;
+            foreach (var name in resolvedParameters.Keys)
+            {
+                parameterNames[index++] = name;
+            }
+            Array.Sort(parameterNames, StringComparer.Ordinal);
+            foreach (var name in parameterNames)
+            {
+                assumptions.Add($"param.{name}={resolvedParameters[name]}");
+            }
         }
 
         return assumptions;

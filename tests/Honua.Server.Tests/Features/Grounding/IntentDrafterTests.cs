@@ -111,6 +111,45 @@ public sealed class IntentDrafterTests
     }
 
     [UnitTest]
+    public void Draft_PublishFamilyWithHighConfidenceServiceTopCandidate_DoesNotAutoResolveAsFeatureLayer()
+    {
+        // Regression: service catalog entries must not be collapsed into a
+        // PublishSourceKind.FeatureLayer draft — PublishSourceKind has no
+        // FeatureService value, and mislabeling a service as a layer would
+        // leak an incorrect sourceKind into downstream planning. When the
+        // only high-confidence dataset is a service, the drafter should
+        // return a null publishing block so the clarification envelope can
+        // keep asking for a publishable source.
+        var request = new GroundingRequest { Goal = "Publish parcels" };
+        var candidates = new CandidateRanking
+        {
+            Datasets =
+            [
+                new GroundingCandidate
+                {
+                    Id = "Parcels",
+                    Kind = CandidateKind.Dataset,
+                    DatasetSubtype = DatasetSubtype.Service,
+                    Score = 0.95,
+                    ConfidenceBand = ConfidenceBand.High
+                }
+            ]
+        };
+
+        var draft = IntentDrafter.Draft(
+            request,
+            intentId: "intent-pub-service",
+            classification: Classification(WorkflowFamily.PublishData, 1.0),
+            candidates: candidates,
+            clarificationQuestionIds: [],
+            clarificationsAnswered: [],
+            assumptions: []);
+
+        draft.Publishing.Should().BeNull(
+            "service catalog entries are not eligible for publish-source auto-resolution");
+    }
+
+    [UnitTest]
     public void Draft_PublishFamilyWithoutSource_OmitsPublishingBlock()
     {
         var request = new GroundingRequest { Goal = "Publish some data somewhere" };

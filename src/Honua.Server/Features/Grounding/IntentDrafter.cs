@@ -92,11 +92,12 @@ internal static class IntentDrafter
         string? resolvedPublishSourceId)
     {
         // Draft a publish intent when the caller has pinned a source via
-        // ExplicitInputs, when a high-confidence dataset leads the ranking,
-        // or when the caller answered the publish.source clarification on a
-        // prior turn. Otherwise the clarification envelope keeps asking for
-        // the source so the flow cannot terminate with a null publishing
-        // block.
+        // ExplicitInputs, when a high-confidence layer-backed dataset leads
+        // the ranking, or when the caller answered the publish.source
+        // clarification on a prior turn. Service catalog entries are excluded
+        // from auto-resolution because PublishSourceKind has no FeatureService
+        // value — labeling them FeatureLayer would be wrong. Without a
+        // resolvable source the clarification envelope keeps asking for one.
         string? sourceId = null;
         if (request.ExplicitInputs.Count > 0)
         {
@@ -107,7 +108,8 @@ internal static class IntentDrafter
             sourceId = resolvedPublishSourceId;
         }
         else if (candidates.Datasets.Count > 0
-                 && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High)
+                 && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High
+                 && candidates.Datasets[0].DatasetSubtype != DatasetSubtype.Service)
         {
             sourceId = candidates.Datasets[0].Id;
         }

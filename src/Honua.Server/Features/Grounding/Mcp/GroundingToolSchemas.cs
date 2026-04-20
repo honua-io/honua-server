@@ -129,10 +129,11 @@ internal static class GroundingToolSchemas
                       "properties": {
                         "answers": {
                           "type": "object",
-                          "description": "Answers keyed by question identifier. Each answer is a list of values to support multi-select questions. Every question must include at least one non-blank string value; whitespace-only values are rejected by the server.",
+                          "description": "Answers keyed by question identifier. Each answer is a list of values to support multi-select questions. Every question must include at least one non-blank string value; empty arrays and whitespace-only values are rejected by the server.",
                           "minProperties": 1,
                           "additionalProperties": {
                             "type": "array",
+                            "minItems": 1,
                             "items": { "type": "string", "minLength": 1 }
                           }
                         }

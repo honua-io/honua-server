@@ -43,6 +43,14 @@ public sealed record GroundingCandidate
     /// harnesses and for explaining rankings to operators.
     /// </summary>
     public IReadOnlyList<string> Evidence { get; init; } = [];
+
+    /// <summary>
+    /// Sub-category for <see cref="CandidateKind.Dataset"/> candidates. Null
+    /// for non-dataset kinds and for engines that do not classify the subtype.
+    /// Consumed by the publish-intent drafter so a feature-service candidate
+    /// is not emitted as a <c>PublishSourceKind.FeatureLayer</c> source.
+    /// </summary>
+    public DatasetSubtype? DatasetSubtype { get; init; }
 }
 
 /// <summary>
