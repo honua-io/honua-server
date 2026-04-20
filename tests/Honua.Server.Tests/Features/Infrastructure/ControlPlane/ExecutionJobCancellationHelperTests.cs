@@ -254,20 +254,20 @@ public sealed class ExecutionJobCancellationHelperTests
     private static ExecutionJobRecord CreateJobRecord(
         string operationId,
         ExecutionJobStatus status) => new()
-    {
-        OperationId = operationId,
-        Status = status,
-        CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-15),
-        UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
-        Spec = new ExecutionJobSpec
         {
-            Kind = ExecutionJobKind.Geoprocessing,
-            TargetKind = BatchComputeTargetKind.AzureBatch,
-            Backend = "azure-batch",
-            WorkloadId = "plan-cancel",
-            WorkloadName = "Geoprocessing"
-        }
-    };
+            OperationId = operationId,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-15),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AzureBatch,
+                Backend = "azure-batch",
+                WorkloadId = "plan-cancel",
+                WorkloadName = "Geoprocessing"
+            }
+        };
 
     private sealed class RecordingJobStore : IExecutionJobStore
     {
