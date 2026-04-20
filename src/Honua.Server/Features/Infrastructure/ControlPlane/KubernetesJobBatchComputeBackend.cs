@@ -88,18 +88,21 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             {
                 Log.JobAlreadyExists(logger, job.OperationId, manifest.Namespace, manifest.Name);
 
+                // Resume the existing Job through the shared observe/retry path: always
+                // return a nonterminal Queued (with the provider marker preserved) so the
+                // reconciler's next cycle routes the record through ObserveJobAsync via
+                // HasSubmittedProviderMarker. Terminalizing here would short-circuit
+                // ExecutionJobReconciler.TryRequeueFailedRemoteJobAsync and skip the
+                // configured retry policy when the pre-existing Job is already Failed.
+                // Mirrors AzureBatchComputeBackend, whose 409 path also resumes in Queued.
                 var existing = await jobClient.GetJobAsync(manifest.Namespace, manifest.Name, cancellationToken)
                     .ConfigureAwait(false);
-                var snapshot = existing.Snapshot;
-                var idempotentStatus = snapshot != null
-                    ? MapStatus(snapshot, job.Status)
-                    : ExecutionJobStatus.Provisioning;
                 ControlPlaneTelemetry.RecordExecutionRequest(job, "start", "already_exists");
                 return new BatchComputeSubmissionResult
                 {
-                    Status = idempotentStatus,
-                    ProviderOperationId = snapshot?.Uid ?? job.ProviderOperationId ?? manifest.Name,
-                    Message = "Kubernetes Job already exists; treating submission as idempotent.",
+                    Status = ExecutionJobStatus.Queued,
+                    ProviderOperationId = existing.Snapshot?.Uid ?? job.ProviderOperationId ?? manifest.Name,
+                    Message = "Kubernetes Job already exists; resuming observation on the existing Job.",
                     ResolvedParameters = resolvedParameters
                 };
             }
@@ -525,17 +528,40 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     {
         // Preserve any terminal state we already reached: if a prior observation promoted
         // the job to Succeeded/Failed/Cancelled, a later TTL-driven cleanup must not
-        // rewrite that outcome. Only jobs that never reached a terminal state are
-        // reported as Failed when the Kubernetes Job is no longer present.
-        var status = IsTerminal(job.Status) ? job.Status : ExecutionJobStatus.Failed;
+        // rewrite that outcome.
+        if (IsTerminal(job.Status))
+        {
+            return new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = job.ProviderOperationId,
+                PercentComplete = job.PercentComplete,
+                Message = job.Status == ExecutionJobStatus.Succeeded
+                    ? "Kubernetes Job completed and was cleaned up per ttlSecondsAfterFinished."
+                    : "Kubernetes Job is no longer present on the cluster."
+            };
+        }
+
+        // Honor cancellation intent: a repeated or raced cancel where another node (or an
+        // operator kubectl action) already deleted the Job must not reclassify a
+        // nonterminal record as Failed. Mirrors AzureBatchComputeBackend.MapMissingObservation.
+        if (job.CancellationRequestedAt.HasValue)
+        {
+            return new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = job.ProviderOperationId,
+                PercentComplete = job.PercentComplete,
+                Message = "Kubernetes Job is no longer present; cancellation completed."
+            };
+        }
+
         return new BatchComputeObservation
         {
-            Status = status,
+            Status = ExecutionJobStatus.Failed,
             ProviderOperationId = job.ProviderOperationId,
             PercentComplete = job.PercentComplete,
-            Message = status == ExecutionJobStatus.Succeeded
-                ? "Kubernetes Job completed and was cleaned up per ttlSecondsAfterFinished."
-                : "Kubernetes Job is no longer present on the cluster."
+            Message = "Kubernetes Job is no longer present on the cluster."
         };
     }
 

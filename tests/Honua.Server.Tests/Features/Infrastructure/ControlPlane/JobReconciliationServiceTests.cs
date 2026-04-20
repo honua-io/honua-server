@@ -1204,12 +1204,14 @@ public sealed class JobReconciliationServiceTests
 
     private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
     {
+        // Bind to the production counter instance so this listener cannot drift from the
+        // instrument name registered by ControlPlaneTelemetry.
         var listener = new MeterListener
         {
             InstrumentPublished = (instrument, l) =>
             {
                 if (instrument.Meter.Name == HonuaTelemetry.ServiceName
-                    && instrument.Name == "honua.controlplane.execution.transitions_total")
+                    && instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }

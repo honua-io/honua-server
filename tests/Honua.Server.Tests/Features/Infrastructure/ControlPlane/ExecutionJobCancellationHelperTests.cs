@@ -220,7 +220,7 @@ public sealed class ExecutionJobCancellationHelperTests
             InstrumentPublished = (instrument, l) =>
             {
                 if (instrument.Meter.Name == HonuaTelemetry.ServiceName
-                    && instrument.Name == "honua.execution.job.transitions_total")
+                    && instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }

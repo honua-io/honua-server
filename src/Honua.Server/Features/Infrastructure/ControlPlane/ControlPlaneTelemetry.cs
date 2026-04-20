@@ -42,48 +42,65 @@ internal static class ControlPlaneTelemetry
         public const string ExecutionResult = "honua.controlplane.execution.result";
     }
 
+    // Instrument names as const strings so tests can subscribe to the same identifier
+    // the Counter/Histogram fields register against, without hitting the static-cctor
+    // cycle that referencing the field itself would trigger from a MeterListener
+    // callback during this type's own initialization.
+    internal static class Metrics
+    {
+        public const string WorkflowRequests = "honua.controlplane.workflow.requests_total";
+        public const string WorkflowTransitions = "honua.controlplane.workflow.transitions_total";
+        public const string WorkflowDurations = "honua.controlplane.workflow.duration_ms";
+        public const string ReconcileDurations = "honua.controlplane.workflow.reconcile_duration_ms";
+        public const string ExecutionRequests = "honua.controlplane.execution.requests_total";
+        public const string ExecutionJobSubmitted = "honua.execution.job.submitted";
+        public const string ExecutionJobTransitions = "honua.execution.job.transitions_total";
+        public const string ExecutionJobDurations = "honua.execution.job.duration_ms";
+        public const string ExecutionReconcileCycles = "honua.execution.reconcile.cycle";
+    }
+
     public static readonly Counter<long> WorkflowRequests = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.controlplane.workflow.requests_total",
+        Metrics.WorkflowRequests,
         "requests",
         "Number of workflow requests by operation and result.");
 
     public static readonly Counter<long> WorkflowTransitions = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.controlplane.workflow.transitions_total",
+        Metrics.WorkflowTransitions,
         "transitions",
         "Number of workflow state transitions observed by the control plane.");
 
     public static readonly Histogram<double> WorkflowDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
-        "honua.controlplane.workflow.duration_ms",
+        Metrics.WorkflowDurations,
         "ms",
         "Elapsed time for workflow operations that reached terminal states.");
 
     public static readonly Histogram<double> ReconcileDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
-        "honua.controlplane.workflow.reconcile_duration_ms",
+        Metrics.ReconcileDurations,
         "ms",
         "Elapsed time spent reconciling workflow operations.");
 
     public static readonly Counter<long> ExecutionRequests = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.controlplane.execution.requests_total",
+        Metrics.ExecutionRequests,
         "requests",
         "Number of execution-job backend requests by operation and result.");
 
     public static readonly Counter<long> ExecutionJobSubmitted = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.execution.job.submitted",
+        Metrics.ExecutionJobSubmitted,
         "jobs",
         "Number of execution jobs submitted to a batch-compute backend.");
 
     public static readonly Counter<long> ExecutionJobTransitions = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.execution.job.transitions_total",
+        Metrics.ExecutionJobTransitions,
         "transitions",
         "Number of execution job state transitions observed by the control plane.");
 
     public static readonly Histogram<double> ExecutionJobDurations = HonuaTelemetry.Meter.CreateHistogram<double>(
-        "honua.execution.job.duration_ms",
+        Metrics.ExecutionJobDurations,
         "ms",
         "Elapsed time for execution jobs that reached terminal states.");
 
     public static readonly Counter<long> ExecutionReconcileCycles = HonuaTelemetry.Meter.CreateCounter<long>(
-        "honua.execution.reconcile.cycle",
+        Metrics.ExecutionReconcileCycles,
         "cycles",
         "Number of execution job reconciliation cycles completed by the background service.");
 

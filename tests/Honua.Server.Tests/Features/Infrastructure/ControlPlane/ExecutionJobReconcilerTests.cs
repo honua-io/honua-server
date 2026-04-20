@@ -55,7 +55,7 @@ public sealed class ExecutionJobReconcilerTests
 
         listener.RecordObservableInstruments();
         transitions.Should().NotBeEmpty(
-            "a Queued -> Failed transition must increment honua.controlplane.execution.transitions_total");
+            $"a Queued -> Failed transition must increment {ControlPlaneTelemetry.Metrics.ExecutionJobTransitions}");
         transitions.Should().Contain(sample =>
             GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Queued" &&
             GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Failed");
@@ -1838,8 +1838,8 @@ public sealed class ExecutionJobReconcilerTests
                     return;
                 }
 
-                if (instrument.Name == "honua.execution.reconcile.cycle"
-                    || instrument.Name == "honua.execution.job.transitions_total")
+                if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionReconcileCycles
+                    || instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }
@@ -1847,14 +1847,14 @@ public sealed class ExecutionJobReconcilerTests
         };
         listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, _) =>
         {
-            if (instrument.Name == "honua.execution.reconcile.cycle")
+            if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionReconcileCycles)
             {
                 lock (cycles)
                 {
                     cycles.Add(measurement);
                 }
             }
-            else if (instrument.Name == "honua.execution.job.transitions_total")
+            else if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
             {
                 string? status = null;
                 string? previous = null;
@@ -1931,12 +1931,14 @@ public sealed class ExecutionJobReconcilerTests
 
     private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
     {
+        // Bind to the production counter instance so this listener cannot drift from the
+        // instrument name registered by ControlPlaneTelemetry.
         var listener = new MeterListener
         {
             InstrumentPublished = (instrument, l) =>
             {
                 if (instrument.Meter.Name == HonuaTelemetry.ServiceName
-                    && instrument.Name == "honua.controlplane.execution.transitions_total")
+                    && instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
                 {
                     l.EnableMeasurementEvents(instrument);
                 }

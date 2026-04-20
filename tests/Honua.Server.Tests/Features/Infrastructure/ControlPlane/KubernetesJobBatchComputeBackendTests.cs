@@ -164,7 +164,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         var result = await backend.StartAsync(job);
 
-        result.Status.Should().Be(ExecutionJobStatus.Running);
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
         result.ResolvedParameters.Should().NotBeNull();
         result.ResolvedParameters![KubernetesJobParameterKeys.Namespace].Should().Be("geoprocessing");
     }
@@ -172,6 +172,11 @@ public sealed class KubernetesJobBatchComputeBackendTests
     [Fact]
     public async Task StartAsync_Conflict_IsIdempotent()
     {
+        // 409 on create must resume observation (nonterminal Queued) rather than
+        // terminalizing based on the existing Job's snapshot: ObserveAsync later in the
+        // reconciler cycle is the authority for provider state, and routing a Failed
+        // snapshot through StartAsync would bypass TryRequeueFailedRemoteJobAsync and
+        // skip the retry policy entirely.
         var client = Substitute.For<IKubernetesJobClient>();
         client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
             .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Conflict });
@@ -186,9 +191,42 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         var result = await backend.StartAsync(job);
 
-        result.Status.Should().Be(ExecutionJobStatus.Running);
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
         result.ProviderOperationId.Should().Be("uid-existing");
-        result.Message.Should().Contain("idempotent");
+        result.Message.Should().Contain("resuming observation");
+    }
+
+    [Fact]
+    public async Task StartAsync_Conflict_ExistingJobAlreadyFailed_StaysNonterminalForRetryPath()
+    {
+        // Regression guard for the 409/idempotent resume: even when the pre-existing
+        // Job on the cluster is already terminally failed, StartAsync must return
+        // Queued (nonterminal) so the reconciler routes the next cycle through
+        // ObserveJobAsync, where TryRequeueFailedRemoteJobAsync applies the configured
+        // retry policy. Terminalizing here would stamp CompletedAt on the submission
+        // hop and skip retry entirely.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Conflict });
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot
+                {
+                    Uid = "uid-existing-failed",
+                    Failed = 1,
+                    FailedCondition = true,
+                    TerminalReason = "BackoffLimitExceeded"
+                }
+            });
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-conflict-failed", image: "honua/worker:1.0.0");
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
+        result.ProviderOperationId.Should().Be("uid-existing-failed");
     }
 
     [Fact]
@@ -480,6 +518,50 @@ public sealed class KubernetesJobBatchComputeBackendTests
         var observation = await backend.CancelAsync(job);
 
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task CancelAsync_MissingJobWithCancellationRequest_HonorsCancellationIntent()
+    {
+        // Racing/repeated cancel: another node (or an operator kubectl delete) already
+        // removed the provider Job while the durable record is still nonterminal but
+        // CancellationRequestedAt is set. The adapter must honor the cancellation
+        // intent rather than reclassify the record as Failed — mirrors the Azure Batch
+        // MapMissingObservation pattern.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
+        client.DeleteJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobDeleteResult { StatusCode = HttpStatusCode.NotFound });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-cancel-race", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running)
+            with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+
+        var observation = await backend.CancelAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        observation.Message.Should().Contain("cancellation completed");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_MissingJobWithCancellationRequest_HonorsCancellationIntent()
+    {
+        // Sibling invariant: the observe path must also honor cancellation intent when
+        // the provider Job vanishes, so a reconciler cycle that observes the missing
+        // Job after the delete-cancel race doesn't flip the record back to Failed.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult { StatusCode = HttpStatusCode.NotFound });
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-observe-cancel-race", image: "honua/worker:1.0.0", status: ExecutionJobStatus.Running)
+            with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        observation.Message.Should().Contain("cancellation completed");
     }
 
     [Fact]
