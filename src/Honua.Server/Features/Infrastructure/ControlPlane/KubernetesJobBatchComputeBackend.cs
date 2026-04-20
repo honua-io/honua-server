@@ -87,6 +87,7 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             if (result.AlreadyExists)
             {
                 Log.JobAlreadyExists(logger, job.OperationId, manifest.Namespace, manifest.Name);
+                ControlPlaneTelemetry.RecordExecutionRequest(job, "start", "already_exists");
 
                 // Resume the existing Job through the shared observe/retry path: always
                 // return a nonterminal Queued (with the provider marker preserved) so the
@@ -95,19 +96,37 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
                 // ExecutionJobReconciler.TryRequeueFailedRemoteJobAsync and skip the
                 // configured retry policy when the pre-existing Job is already Failed.
                 // Mirrors AzureBatchComputeBackend, whose 409 path also resumes in Queued.
-                var existing = await jobClient.GetJobAsync(manifest.Namespace, manifest.Name, cancellationToken)
-                    .ConfigureAwait(false);
-                ControlPlaneTelemetry.RecordExecutionRequest(job, "start", "already_exists");
+                //
+                // 409 has already proved the Job name exists on the cluster, so a transient
+                // transport/config failure on the follow-up GET must not flip the durable
+                // record to Failed via the outer catch. Keep the lookup best-effort; if it
+                // fails, log and fall back to the manifest name (reconciliation resolves
+                // the provider Uid on the next observe cycle).
+                string? existingUid = null;
+                try
+                {
+                    var existing = await jobClient.GetJobAsync(manifest.Namespace, manifest.Name, cancellationToken)
+                        .ConfigureAwait(false);
+                    existingUid = existing.Snapshot?.Uid;
+                }
+                catch (Exception lookupEx) when (IsTransportOrConfigFailure(lookupEx))
+                {
+                    Log.ConflictLookupFailed(logger, job.OperationId, manifest.Namespace, manifest.Name, lookupEx);
+                }
+
                 return new BatchComputeSubmissionResult
                 {
                     Status = ExecutionJobStatus.Queued,
-                    ProviderOperationId = existing.Snapshot?.Uid ?? job.ProviderOperationId ?? manifest.Name,
+                    ProviderOperationId = existingUid ?? job.ProviderOperationId ?? manifest.Name,
                     Message = "Kubernetes Job already exists; resuming observation on the existing Job.",
                     ResolvedParameters = resolvedParameters
                 };
             }
 
             ControlPlaneTelemetry.RecordExecutionRequest(job, "start", "submitted");
+            // Mirror AzureBatchComputeBackend: fresh submissions bump the shared
+            // honua.execution.job.submitted counter; idempotent 409 resumes must not.
+            ControlPlaneTelemetry.RecordExecutionSubmission(job);
             return new BatchComputeSubmissionResult
             {
                 Status = ExecutionJobStatus.Provisioning,
@@ -805,6 +824,10 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
         [LoggerMessage(9064, LogLevel.Warning,
             "Kubernetes Job cancellation failed for execution job {OperationId} ({Namespace}/{Name})")]
         public static partial void CancellationFailed(ILogger logger, string operationId, string @namespace, string name, Exception exception);
+
+        [LoggerMessage(9065, LogLevel.Warning,
+            "Kubernetes Job conflict lookup failed for execution job {OperationId} ({Namespace}/{Name}); resuming observation with manifest name")]
+        public static partial void ConflictLookupFailed(ILogger logger, string operationId, string @namespace, string name, Exception exception);
     }
 }
 

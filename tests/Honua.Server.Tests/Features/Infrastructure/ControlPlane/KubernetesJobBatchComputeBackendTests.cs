@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -227,6 +228,107 @@ public sealed class KubernetesJobBatchComputeBackendTests
 
         result.Status.Should().Be(ExecutionJobStatus.Queued);
         result.ProviderOperationId.Should().Be("uid-existing-failed");
+    }
+
+    [Fact]
+    public async Task StartAsync_Conflict_FollowUpGetFailure_StillResumesObservation()
+    {
+        // Regression guard for the 409 invariant: once the cluster has proved the Job
+        // name already exists, a transient transport/config failure on the follow-up
+        // GET must not flip the durable record to Failed. Falling back to the manifest
+        // name keeps the record nonterminal so reconciliation can observe the live
+        // provider Job on the next cycle instead of treating a still-running workload
+        // as terminally failed.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Conflict });
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Throws(new HttpRequestException("cluster briefly unreachable"));
+        var backend = CreateBackend(client, new KubernetesExecutionOptions
+        {
+            DefaultNamespace = "geoprocessing"
+        });
+        var job = CreateJob("job-conflict-get-fail", image: "honua/worker:1.0.0");
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
+        result.ProviderOperationId.Should().Be("honua-job-conflict-get-fail");
+        result.Message.Should().Contain("resuming observation");
+        result.ResolvedParameters.Should().NotBeNull();
+        result.ResolvedParameters![KubernetesJobParameterKeys.Namespace].Should().Be("geoprocessing");
+    }
+
+    [Fact]
+    public async Task StartAsync_Conflict_FollowUpGetConfigFailure_PrefersExistingProviderId()
+    {
+        // When the follow-up GET raises a config-class error (e.g., the bearer token
+        // file became unreadable mid-request) after a prior attempt already persisted
+        // a provider operation id, the 409 resume path must prefer that id over the
+        // manifest name so downstream observers continue to track the same Uid.
+        var client = Substitute.For<IKubernetesJobClient>();
+        client.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Conflict });
+        client.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Throws(new IOException("bearer token file unreadable"));
+
+        var backend = CreateBackend(client);
+        var job = CreateJob("job-conflict-prior-uid", image: "honua/worker:1.0.0") with
+        {
+            ProviderOperationId = "uid-from-prior-attempt"
+        };
+
+        var result = await backend.StartAsync(job);
+
+        result.Status.Should().Be(ExecutionJobStatus.Queued);
+        result.ProviderOperationId.Should().Be("uid-from-prior-attempt");
+    }
+
+    [Fact]
+    public async Task StartAsync_RecordsSubmissionMetricOnlyForFreshSubmissions()
+    {
+        // Mirrors AzureBatchComputeBackendTests.StartAsync_RecordsSubmissionMetricOnlyForFreshSubmissions:
+        // dashboards on honua.execution.job.submitted must not undercount Kubernetes
+        // submissions, and idempotent 409 resumes must not double-count.
+        var samples = new List<long>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, currentListener) =>
+            {
+                if (instrument.Name == "honua.execution.job.submitted")
+                {
+                    currentListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.Start();
+
+        var freshClient = Substitute.For<IKubernetesJobClient>();
+        freshClient.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult
+            {
+                StatusCode = HttpStatusCode.Created,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-fresh" }
+            });
+        var freshBackend = CreateBackend(freshClient);
+
+        var resumedClient = Substitute.For<IKubernetesJobClient>();
+        resumedClient.CreateJobAsync(Arg.Any<KubernetesJobManifest>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobCreateResult { StatusCode = HttpStatusCode.Conflict });
+        resumedClient.GetJobAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new KubernetesJobFetchResult
+            {
+                StatusCode = HttpStatusCode.OK,
+                Snapshot = new KubernetesJobStatusSnapshot { Uid = "uid-existing" }
+            });
+        var resumedBackend = CreateBackend(resumedClient);
+
+        await freshBackend.StartAsync(CreateJob("job-metric-fresh", image: "honua/worker:1.0.0"));
+        await resumedBackend.StartAsync(CreateJob("job-metric-resume", image: "honua/worker:1.0.0"));
+
+        samples.Should().ContainSingle().Which.Should().Be(1,
+            "idempotent resume paths must not inflate the fresh submission counter");
     }
 
     [Fact]
