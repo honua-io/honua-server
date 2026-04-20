@@ -353,6 +353,46 @@ public sealed class MaterialAmbiguityEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_PublishWithServiceIdExplicitInput_StillAsksForSource()
+    {
+        // Regression: when ExplicitInputs names an id that the ranking knows
+        // is a service catalog entry, the source is not resolved — services
+        // cannot be drafted as a PublishSourceKind.FeatureLayer. The
+        // evaluator must keep emitting the publish.source clarification so
+        // the caller can pick a publishable layer-backed source.
+        var classification = new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        };
+
+        var ranking = new CandidateRanking
+        {
+            Datasets =
+            [
+                new GroundingCandidate
+                {
+                    Id = "Parcels",
+                    Kind = CandidateKind.Dataset,
+                    DatasetSubtype = DatasetSubtype.Service,
+                    DisplayName = "Parcels",
+                    Score = 0.95,
+                    ConfidenceBand = ConfidenceBand.High
+                }
+            ]
+        };
+
+        var findings = MaterialAmbiguityEvaluator.Evaluate(
+            new GroundingRequest { Goal = "Publish parcels", ExplicitInputs = ["Parcels"] },
+            classification,
+            ranking,
+            requiredParameterGaps: [],
+            _options);
+
+        findings.Should().Contain(f => f.QuestionId == "publish.source");
+    }
+
+    [UnitTest]
     public void Evaluate_PublishWorkflowFamily_SurfacesPublishActionWithAllTargets()
     {
         var classification = new WorkflowFamilyClassification

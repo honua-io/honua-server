@@ -175,12 +175,23 @@ internal static class MaterialAmbiguityEvaluator
     /// candidate. Mirrors the predicate <see cref="IntentDrafter"/> uses to
     /// decide whether to emit a <c>publishing</c> block — service catalog
     /// entries are excluded from auto-resolution so the evaluator and drafter
-    /// stay aligned.
+    /// stay aligned. A pinned <c>ExplicitInputs[0]</c> that matches a service
+    /// candidate in the ranking is treated as unresolved so the drafter
+    /// cannot silently mislabel a service id as <c>FeatureLayer</c>.
     /// </summary>
     private static bool IsPublishSourceResolved(GroundingRequest request, CandidateRanking candidates)
     {
         if (request.ExplicitInputs.Count > 0)
         {
+            var pinnedId = request.ExplicitInputs[0];
+            foreach (var candidate in candidates.Datasets)
+            {
+                if (string.Equals(candidate.Id, pinnedId, StringComparison.Ordinal)
+                    && candidate.DatasetSubtype == DatasetSubtype.Service)
+                {
+                    return false;
+                }
+            }
             return true;
         }
 

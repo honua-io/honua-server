@@ -99,13 +99,16 @@ internal static class IntentDrafter
         // value — labeling them FeatureLayer would be wrong. Without a
         // resolvable source the clarification envelope keeps asking for one.
         string? sourceId = null;
+        var sourceIsFromPin = false;
         if (request.ExplicitInputs.Count > 0)
         {
             sourceId = request.ExplicitInputs[0];
+            sourceIsFromPin = true;
         }
         else if (!string.IsNullOrWhiteSpace(resolvedPublishSourceId))
         {
             sourceId = resolvedPublishSourceId;
+            sourceIsFromPin = true;
         }
         else if (candidates.Datasets.Count > 0
                  && candidates.Datasets[0].ConfidenceBand == ConfidenceBand.High
@@ -119,11 +122,36 @@ internal static class IntentDrafter
             return null;
         }
 
+        // A pinned source id (ExplicitInputs or a `publish.source` answer)
+        // that resolves to a service candidate in the ranking cannot be
+        // drafted as a FeatureLayer — PublishSourceKind has no FeatureService
+        // value, so labeling it would leak an incorrect source kind. Return
+        // null here; GroundingService drops the `publish.source` answered
+        // flag in the same case so MaterialAmbiguityEvaluator re-emits the
+        // clarification instead of terminating with a silent dead state.
+        if (sourceIsFromPin && PinnedMatchesServiceCandidate(sourceId, candidates))
+        {
+            return null;
+        }
+
         return PublishIntent.CreateDraft(
             intentId: intentId,
             sourceKind: PublishSourceKind.FeatureLayer,
             sourceId: sourceId,
             targetKind: publishTargetOverride ?? PublishTargetKind.FeatureService);
+    }
+
+    private static bool PinnedMatchesServiceCandidate(string sourceId, CandidateRanking candidates)
+    {
+        foreach (var candidate in candidates.Datasets)
+        {
+            if (string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)
+                && candidate.DatasetSubtype == DatasetSubtype.Service)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static IReadOnlyList<ArtifactKind> InferRequestedOutputs(

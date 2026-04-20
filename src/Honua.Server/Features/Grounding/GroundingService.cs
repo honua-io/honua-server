@@ -145,6 +145,23 @@ internal sealed class GroundingService : IGroundingService
             Processes = processCandidates
         };
 
+        // A `publish.source` answer that points at a service catalog entry
+        // cannot be drafted — PublishSourceKind has no FeatureService value,
+        // so labeling it FeatureLayer would leak an incorrect source kind.
+        // Drop the applied-id and resolved-source override so the evaluator
+        // re-emits `publish.source` and the drafter omits the `publishing`
+        // block instead of producing a silently mislabeled draft. IntentDrafter
+        // enforces the same invariant on the drafting side; the coordinated
+        // drop here is what keeps the clarification envelope visible to the
+        // caller.
+        var resolvedPublishSourceId = applied.ResolvedPublishSourceId;
+        if (!string.IsNullOrWhiteSpace(resolvedPublishSourceId)
+            && MatchesServiceCandidate(resolvedPublishSourceId, ranking))
+        {
+            resolvedPublishSourceId = null;
+            appliedIds.Remove("publish.source");
+        }
+
         // 4. Evaluate material ambiguity against the post-filter ranking so
         // the clarification envelope only names candidates the caller can
         // actually see. Parameter-gap probing consumes resolved param.<name>
@@ -175,7 +192,7 @@ internal sealed class GroundingService : IGroundingService
             appliedIds,
             assumptions,
             applied.PublishTargetOverride,
-            applied.ResolvedPublishSourceId);
+            resolvedPublishSourceId);
 
         // 6. Build the clarification envelope (if any).
         var clarification = BuildClarification(intentId, findings);
@@ -401,6 +418,19 @@ internal sealed class GroundingService : IGroundingService
                 + $"request intentId '{request.IntentId}'. Clarification answers can only be applied to the "
                 + "intent they were requested for.");
         }
+    }
+
+    private static bool MatchesServiceCandidate(string sourceId, CandidateRanking ranking)
+    {
+        foreach (var candidate in ranking.Datasets)
+        {
+            if (string.Equals(candidate.Id, sourceId, StringComparison.Ordinal)
+                && candidate.DatasetSubtype == DatasetSubtype.Service)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static IReadOnlyList<MaterialAmbiguityFinding> FilterAnsweredFindings(

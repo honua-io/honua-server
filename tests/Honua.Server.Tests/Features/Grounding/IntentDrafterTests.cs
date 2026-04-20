@@ -150,6 +150,89 @@ public sealed class IntentDrafterTests
     }
 
     [UnitTest]
+    public void Draft_PublishFamilyWithServiceIdExplicitInput_DoesNotCreatePublishingBlock()
+    {
+        // Regression: a caller who pins a service catalog id via
+        // ExplicitInputs must not receive a publish intent labeled
+        // FeatureLayer — PublishSourceKind has no FeatureService value, so
+        // mislabeling it would leak an incorrect sourceKind downstream. When
+        // the pinned id matches a Service candidate in the ranking, the
+        // drafter returns null so the clarification envelope can keep asking
+        // for a publishable source.
+        var request = new GroundingRequest
+        {
+            Goal = "Publish parcels",
+            ExplicitInputs = ["Parcels"]
+        };
+        var candidates = new CandidateRanking
+        {
+            Datasets =
+            [
+                new GroundingCandidate
+                {
+                    Id = "Parcels",
+                    Kind = CandidateKind.Dataset,
+                    DatasetSubtype = DatasetSubtype.Service,
+                    Score = 0.95,
+                    ConfidenceBand = ConfidenceBand.High
+                }
+            ]
+        };
+
+        var draft = IntentDrafter.Draft(
+            request,
+            intentId: "intent-pub-service-pin",
+            classification: Classification(WorkflowFamily.PublishData, 1.0),
+            candidates: candidates,
+            clarificationQuestionIds: [],
+            clarificationsAnswered: [],
+            assumptions: []);
+
+        draft.Publishing.Should().BeNull(
+            "a pinned ExplicitInputs id that matches a service candidate cannot be drafted as a FeatureLayer");
+    }
+
+    [UnitTest]
+    public void Draft_PublishFamilyWithServiceIdFromPublishSourceAnswer_DoesNotCreatePublishingBlock()
+    {
+        // Regression: a free-text `publish.source` answer that names a
+        // service catalog entry must not produce a FeatureLayer-labeled
+        // publish intent. The drafter treats a resolvedPublishSourceId that
+        // resolves to a service candidate the same way it treats ExplicitInputs
+        // — omit the publishing block so the evaluator re-emits the
+        // clarification.
+        var request = new GroundingRequest { Goal = "Publish parcels" };
+        var candidates = new CandidateRanking
+        {
+            Datasets =
+            [
+                new GroundingCandidate
+                {
+                    Id = "Parcels",
+                    Kind = CandidateKind.Dataset,
+                    DatasetSubtype = DatasetSubtype.Service,
+                    Score = 0.95,
+                    ConfidenceBand = ConfidenceBand.High
+                }
+            ]
+        };
+
+        var draft = IntentDrafter.Draft(
+            request,
+            intentId: "intent-pub-source-service",
+            classification: Classification(WorkflowFamily.PublishData, 1.0),
+            candidates: candidates,
+            clarificationQuestionIds: [],
+            clarificationsAnswered: [],
+            assumptions: [],
+            publishTargetOverride: null,
+            resolvedPublishSourceId: "Parcels");
+
+        draft.Publishing.Should().BeNull(
+            "a publish.source answer that resolves to a service candidate cannot be drafted as a FeatureLayer");
+    }
+
+    [UnitTest]
     public void Draft_PublishFamilyWithoutSource_OmitsPublishingBlock()
     {
         var request = new GroundingRequest { Goal = "Publish some data somewhere" };

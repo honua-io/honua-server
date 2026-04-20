@@ -1036,6 +1036,105 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
+    public async Task GroundAsync_PublishSourceAnswer_ServiceCandidateId_StillRequestsSource()
+    {
+        // Regression: a `publish.source` answer that names a service
+        // catalog id cannot be drafted — PublishSourceKind has no
+        // FeatureService value. Instead of producing a publish intent
+        // mislabeled as FeatureLayer, the service must drop the answer,
+        // omit the `publishing` block, and re-emit `publish.source` so the
+        // caller picks a publishable layer-backed source.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns(
+            [
+                new GroundingCandidate
+                {
+                    Id = "Parcels",
+                    Kind = CandidateKind.Dataset,
+                    DatasetSubtype = DatasetSubtype.Service,
+                    DisplayName = "Parcels",
+                    Score = 0.95,
+                    ConfidenceBand = ConfidenceBand.High
+                }
+            ]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish parcels",
+                IntentId = "intent-1",
+                ClarificationResponse = new ClarificationResponse
+                {
+                    IntentId = "intent-1",
+                    Answers = new Dictionary<string, IReadOnlyList<string>>
+                    {
+                        ["publish.source"] = ["Parcels"],
+                        ["publish.target"] = ["FeatureService"]
+                    }
+                }
+            },
+            Principal);
+
+        result.DraftIntent.Publishing.Should().BeNull(
+            "a service catalog id cannot be drafted as PublishSourceKind.FeatureLayer");
+        result.Clarification.Should().NotBeNull(
+            "the publish flow cannot terminate silently when the answer was a service id");
+        result.Clarification!.Questions.Should().Contain(q => q.QuestionId == "publish.source");
+        result.DraftIntent.Provenance.ClarificationsAnswered.Should().NotContain("publish.source");
+    }
+
+    [UnitTest]
+    public async Task GroundAsync_PublishExplicitInputs_ServiceCandidateId_StillRequestsSource()
+    {
+        // Regression: an `ExplicitInputs` pin that names a service catalog
+        // id must not bypass the `publish.source` clarification — the
+        // drafter cannot label a service id as FeatureLayer. The evaluator
+        // must keep asking for a source and the drafter must omit the
+        // publishing block.
+        _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
+        {
+            Value = WorkflowFamily.PublishData,
+            Confidence = 1.0
+        });
+        _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
+            .Returns(
+            [
+                new GroundingCandidate
+                {
+                    Id = "Parcels",
+                    Kind = CandidateKind.Dataset,
+                    DatasetSubtype = DatasetSubtype.Service,
+                    DisplayName = "Parcels",
+                    Score = 0.95,
+                    ConfidenceBand = ConfidenceBand.High
+                }
+            ]);
+
+        var service = CreateService();
+
+        var result = await service.GroundAsync(
+            new GroundingRequest
+            {
+                Goal = "publish parcels",
+                IntentId = "intent-1",
+                ExplicitInputs = ["Parcels"]
+            },
+            Principal);
+
+        result.DraftIntent.Publishing.Should().BeNull(
+            "a service catalog id in ExplicitInputs cannot be drafted as PublishSourceKind.FeatureLayer");
+        result.Clarification.Should().NotBeNull();
+        result.Clarification!.Questions.Should().Contain(q => q.QuestionId == "publish.source");
+    }
+
+    [UnitTest]
     public async Task GroundAsync_PaddedPublishSourceAnswer_TrimsValueBeforeDrafting()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
