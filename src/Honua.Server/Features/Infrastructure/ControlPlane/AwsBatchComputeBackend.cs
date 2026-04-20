@@ -118,6 +118,13 @@ internal sealed partial class AwsBatchComputeBackend(
     /// </summary>
     internal const string PendingSubmissionMarkerPrefix = "aws-batch-pending:";
 
+    /// <summary>
+    /// Bounded grace window the reconciler allows for an uncertain submit before transitioning
+    /// to a terminal state. Mirrors <see cref="AzureBatchComputeBackend.MissingRegistrationGracePeriod"/>
+    /// so operators get the same "provider never acknowledged submission" semantics across backends.
+    /// </summary>
+    internal static TimeSpan PendingDiscoveryGracePeriod => TimeSpan.FromMinutes(2);
+
     private static readonly BatchComputeBackendCapabilities CapabilitiesSnapshot = new()
     {
         SupportsCancellation = true,
@@ -174,7 +181,7 @@ internal sealed partial class AwsBatchComputeBackend(
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
 
-        var jobName = BuildJobName(job.OperationId);
+        var jobName = BuildJobName(job.OperationId, job.AttemptCount);
         var submission = new AwsBatchJobSubmission
         {
             JobName = jobName,
@@ -325,6 +332,30 @@ internal sealed partial class AwsBatchComputeBackend(
                 .ConfigureAwait(false);
             if (matches.Count == 0)
             {
+                if (HasPendingDiscoveryExpired(job))
+                {
+                    // Past the bounded verification window the provider never acknowledged
+                    // the submission: transition to a terminal state so the job stops
+                    // polling indefinitely. Mirror Azure Batch's missing-registration rule
+                    // (Cancelled when the durable record already carries a cancel signal,
+                    // Failed otherwise).
+                    return job.CancellationRequestedAt.HasValue
+                        ? new BatchComputeObservation
+                        {
+                            Status = ExecutionJobStatus.Cancelled,
+                            ProviderOperationId = job.ProviderOperationId,
+                            PercentComplete = 100,
+                            Message = $"AWS Batch submission for '{pendingJobName}' never registered with the provider before cancellation completed."
+                        }
+                        : new BatchComputeObservation
+                        {
+                            Status = ExecutionJobStatus.Failed,
+                            ProviderOperationId = job.ProviderOperationId,
+                            PercentComplete = 100,
+                            Message = $"AWS Batch submission for '{pendingJobName}' did not register with the provider within the verification window."
+                        };
+                }
+
                 return new BatchComputeObservation
                 {
                     Status = job.Status,
@@ -361,6 +392,14 @@ internal sealed partial class AwsBatchComputeBackend(
                 Message = $"AWS Batch discovery failed for pending job '{pendingJobName}': {ex.Message}"
             };
         }
+    }
+
+    private static bool HasPendingDiscoveryExpired(ExecutionJobRecord job)
+    {
+        // Grace window is measured from the durable record's last observable change.
+        // The reconciler's no-op merge preserves UpdatedAt when an observation returns
+        // unchanged fields, so repeated "still verifying" ticks do not reset the window.
+        return DateTimeOffset.UtcNow - job.UpdatedAt >= PendingDiscoveryGracePeriod;
     }
 
     public async Task<BatchComputeObservation> CancelAsync(
@@ -492,11 +531,33 @@ internal sealed partial class AwsBatchComputeBackend(
                 .ConfigureAwait(false);
             if (matches.Count == 0)
             {
+                if (HasPendingDiscoveryExpired(job))
+                {
+                    // After the bounded verification window the provider never acknowledged
+                    // the submission: treat the cancel as completed. Terminalizing earlier
+                    // would risk orphaning a real AWS Batch job that surfaces after the
+                    // first empty ListJobsByName result — the uncertain-submit path keeps
+                    // the record active precisely because AWS may still accept the job.
+                    return new BatchComputeObservation
+                    {
+                        Status = ExecutionJobStatus.Cancelled,
+                        ProviderOperationId = job.ProviderOperationId,
+                        PercentComplete = 100,
+                        Message = $"AWS Batch submission for '{pendingJobName}' never registered with the provider before cancellation completed."
+                    };
+                }
+
+                // Within the grace window keep the record non-terminal. The durable
+                // CancellationRequestedAt signal is already set, so the reconciler will
+                // keep calling us; we terminalize only once we can confirm AWS never
+                // accepted the submission or a concrete provider job is discovered and
+                // cancelled via the normal path.
                 return new BatchComputeObservation
                 {
-                    Status = ExecutionJobStatus.Cancelled,
+                    Status = job.Status,
                     ProviderOperationId = job.ProviderOperationId,
-                    Message = $"AWS Batch submission for '{pendingJobName}' was not discoverable; treating as cancelled before provider ownership."
+                    PercentComplete = job.PercentComplete,
+                    Message = $"AWS Batch submission for '{pendingJobName}' is still being verified before cancellation completes."
                 };
             }
 
@@ -527,31 +588,29 @@ internal sealed partial class AwsBatchComputeBackend(
         }
     }
 
-    private static string BuildJobName(string operationId)
+    internal static string BuildJobName(string operationId, int attemptCount)
     {
-        // AWS Batch job names must be 1-128 chars, only letters, numbers, hyphens, and underscores.
+        // AWS Batch job names are 1-128 chars, [A-Za-z0-9_-]. Embed a per-attempt
+        // suffix so retry resubmissions use a distinct provider name; otherwise the
+        // pending-marker ListJobsByName discovery path could bind to an earlier
+        // attempt that still exists at AWS under the same operation id. AWS ListJobs
+        // documents JOB_NAME returns matching jobs rather than a unique id:
+        // https://docs.aws.amazon.com/batch/latest/APIReference/API_ListJobs.html.
+        var suffix = "-a" + attemptCount.ToString(CultureInfo.InvariantCulture);
+        var bodyBudget = Math.Max(1, 128 - suffix.Length);
+
         var span = operationId.AsSpan();
-        var buffer = new char[Math.Min(span.Length, 128)];
+        var bodyLen = Math.Min(span.Length, bodyBudget);
+        var body = new char[bodyLen];
         var index = 0;
-        for (var i = 0; i < span.Length && index < buffer.Length; i++)
+        for (var i = 0; i < bodyLen; i++)
         {
             var ch = span[i];
-            if (char.IsAsciiLetterOrDigit(ch) || ch == '-' || ch == '_')
-            {
-                buffer[index++] = ch;
-            }
-            else
-            {
-                buffer[index++] = '-';
-            }
+            body[index++] = char.IsAsciiLetterOrDigit(ch) || ch == '-' || ch == '_' ? ch : '-';
         }
 
-        if (index == 0)
-        {
-            return "honua-job";
-        }
-
-        return new string(buffer, 0, index);
+        var head = index == 0 ? "honua-job" : new string(body, 0, index);
+        return head + suffix;
     }
 
     private static List<AwsBatchEnvironmentOverride> BuildEnvironmentOverrides(ExecutionJobRecord job)

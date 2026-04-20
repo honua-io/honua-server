@@ -598,6 +598,53 @@ public sealed class AwsBatchComputeBackendTests
     }
 
     [Fact]
+    public async Task ObserveAsync_PendingDiscoveryPastGraceFailsSubmittedJob()
+    {
+        // After the verification grace window an unacknowledged submit must reach a
+        // terminal state so the reconciler stops polling and operators see an
+        // actionable signal. No cancel signal on the record → Failed.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult = Array.Empty<AwsBatchJobState>()
+        };
+        var backend = CreateBackend(client);
+        var pendingId = AwsBatchComputeBackend.PendingSubmissionMarkerPrefix + "honua-op-1";
+        var job = CreateJob(providerOperationId: pendingId, status: ExecutionJobStatus.Queued) with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow - AwsBatchComputeBackend.PendingDiscoveryGracePeriod - TimeSpan.FromSeconds(5)
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Failed);
+        observation.Message.Should().Contain("did not register with the provider");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_PendingDiscoveryPastGraceWithCancellationRequestedCancelsJob()
+    {
+        // Past grace plus a durable CancellationRequestedAt signal resolves to
+        // Cancelled, matching Azure Batch's missing-registration rule so the
+        // cancel intent is preserved across backends.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult = Array.Empty<AwsBatchJobState>()
+        };
+        var backend = CreateBackend(client);
+        var pendingId = AwsBatchComputeBackend.PendingSubmissionMarkerPrefix + "honua-op-1";
+        var job = CreateJob(providerOperationId: pendingId, status: ExecutionJobStatus.Queued) with
+        {
+            CancellationRequestedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow - AwsBatchComputeBackend.PendingDiscoveryGracePeriod - TimeSpan.FromSeconds(5)
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        observation.Message.Should().Contain("never registered with the provider");
+    }
+
+    [Fact]
     public async Task ObserveAsync_PreservesStatusWhenPendingDiscoveryThrowsProviderException()
     {
         var client = new StubAwsBatchJobClient
@@ -619,11 +666,12 @@ public sealed class AwsBatchComputeBackendTests
     }
 
     [Fact]
-    public async Task CancelAsync_WithPendingMarker_ReturnsCancelledWhenListJobsEmpty()
+    public async Task CancelAsync_WithPendingMarker_KeepsNonTerminalDuringGraceWindow()
     {
-        // Cancelling a pending-but-never-acknowledged submission: if AWS has no record of
-        // the job, treat as cancelled-before-submission rather than leaving the record in
-        // an indeterminate state.
+        // An empty ListJobsByName result within the verification grace window must not
+        // terminalize the record: AWS may still surface the uncertain submission, and
+        // terminalizing early would orphan that real provider job. The reconciler keeps
+        // calling CancelAsync while the record stays non-terminal.
         var client = new StubAwsBatchJobClient
         {
             NextListJobsResult = Array.Empty<AwsBatchJobState>()
@@ -634,8 +682,32 @@ public sealed class AwsBatchComputeBackendTests
 
         var observation = await backend.CancelAsync(job);
 
+        observation.Status.Should().Be(ExecutionJobStatus.Queued);
+        observation.ProviderOperationId.Should().Be(pendingId);
+        observation.Message.Should().Contain("still being verified before cancellation completes");
+    }
+
+    [Fact]
+    public async Task CancelAsync_WithPendingMarker_ReturnsCancelledWhenListJobsEmptyPastGrace()
+    {
+        // After the verification grace window the provider still has no record of the
+        // submission: safe to terminalize the cancel. This mirrors Azure Batch's
+        // missing-registration rule so operators do not see jobs hang indefinitely.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult = Array.Empty<AwsBatchJobState>()
+        };
+        var backend = CreateBackend(client);
+        var pendingId = AwsBatchComputeBackend.PendingSubmissionMarkerPrefix + "honua-op-1";
+        var job = CreateJob(providerOperationId: pendingId, status: ExecutionJobStatus.Queued) with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow - AwsBatchComputeBackend.PendingDiscoveryGracePeriod - TimeSpan.FromSeconds(5)
+        };
+
+        var observation = await backend.CancelAsync(job);
+
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
-        observation.Message.Should().Contain("not discoverable");
+        observation.Message.Should().Contain("never registered with the provider");
     }
 
     [Fact]
@@ -674,6 +746,83 @@ public sealed class AwsBatchComputeBackendTests
         observation.Status.Should().Be(ExecutionJobStatus.Cancelled);
         observation.ProviderOperationId.Should().Be("aws-job-discovered");
         client.CancelCallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task StartAsync_EmitsDistinctPendingMarkerPerAttempt()
+    {
+        // Regression for retry-aliasing: StartAsync must derive a per-attempt provider name
+        // so an uncertain retry submission cannot bind via ListJobsByName to an older
+        // attempt that still exists at AWS under the same operation id.
+        var client = new StubAwsBatchJobClient
+        {
+            SubmitException = new AmazonServiceException("service unavailable")
+            {
+                StatusCode = HttpStatusCode.ServiceUnavailable
+            }
+        };
+        var backend = CreateBackend(client);
+        var jobFirst = CreateJob() with { AttemptCount = 0 };
+        var jobRetry = jobFirst with { AttemptCount = 1 };
+
+        var first = await backend.StartAsync(jobFirst);
+        var retry = await backend.StartAsync(jobRetry);
+
+        first.ProviderOperationId.Should().StartWith(AwsBatchComputeBackend.PendingSubmissionMarkerPrefix);
+        retry.ProviderOperationId.Should().StartWith(AwsBatchComputeBackend.PendingSubmissionMarkerPrefix);
+        first.ProviderOperationId.Should().NotBe(retry.ProviderOperationId,
+            "each retry must use a unique AWS Batch job name so pending-marker discovery cannot bind to an earlier attempt");
+
+        AwsBatchComputeBackend.TryExtractPendingJobName(first.ProviderOperationId, out var firstName).Should().BeTrue();
+        AwsBatchComputeBackend.TryExtractPendingJobName(retry.ProviderOperationId, out var retryName).Should().BeTrue();
+        firstName.Should().EndWith("-a0");
+        retryName.Should().EndWith("-a1");
+    }
+
+    [Fact]
+    public async Task ObserveAsync_RetryPendingDiscoveryOnlyResolvesCurrentAttempt()
+    {
+        // When a retry submit is ambiguous and the older attempt's Batch job is still
+        // visible, ListJobsByName is called with the retry-specific name; the stub
+        // asserts the adapter never passes the older attempt's name.
+        var client = new StubAwsBatchJobClient
+        {
+            NextListJobsResult =
+            [
+                new AwsBatchJobState { JobId = "aws-job-retry", Status = "RUNNABLE" }
+            ]
+        };
+        var backend = CreateBackend(client);
+        // Retry attempt (AttemptCount=1) with its uncertain-submit pending marker.
+        var pendingId = AwsBatchComputeBackend.PendingSubmissionMarkerPrefix + "honua-op-1-a1";
+        var job = CreateJob(providerOperationId: pendingId, status: ExecutionJobStatus.Queued) with
+        {
+            AttemptCount = 1
+        };
+
+        var observation = await backend.ObserveAsync(job);
+
+        observation.ProviderOperationId.Should().Be("aws-job-retry");
+        client.LastListJobsName.Should().Be("honua-op-1-a1",
+            "discovery must query by the per-attempt name, not the unsuffixed operation id");
+    }
+
+    [Fact]
+    public void BuildJobName_AppendsPerAttemptSuffixWithinAwsLengthBudget()
+    {
+        // Names must remain within AWS Batch's 128-character limit even when the
+        // operation id already fills most of the budget. The retry suffix takes
+        // priority so a long op-id is truncated to make room.
+        var longOpId = new string('a', 200);
+
+        var first = AwsBatchComputeBackend.BuildJobName("gp-abc_123", 0);
+        var retry = AwsBatchComputeBackend.BuildJobName("gp-abc_123", 7);
+        var truncated = AwsBatchComputeBackend.BuildJobName(longOpId, 99);
+
+        first.Should().Be("gp-abc_123-a0");
+        retry.Should().Be("gp-abc_123-a7");
+        truncated.Length.Should().BeLessOrEqualTo(128);
+        truncated.Should().EndWith("-a99");
     }
 
     [Fact]
