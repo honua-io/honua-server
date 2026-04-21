@@ -22,7 +22,6 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
     private readonly ISpecComputeExecutor _executor;
     private readonly IContentHashArtifactCache _cache;
     private readonly SpecApplyTokenRegistry _tokens;
-    private readonly IEnumerable<ISpecResourceStateStore> _stateStores;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SpecApplyOrchestrator> _logger;
 
@@ -31,7 +30,6 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         ISpecComputeExecutor executor,
         IContentHashArtifactCache cache,
         SpecApplyTokenRegistry tokens,
-        IEnumerable<ISpecResourceStateStore> stateStores,
         TimeProvider? timeProvider = null,
         ILogger<SpecApplyOrchestrator>? logger = null)
     {
@@ -39,12 +37,10 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         ArgumentNullException.ThrowIfNull(executor);
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(tokens);
-        ArgumentNullException.ThrowIfNull(stateStores);
         _planner = planner;
         _executor = executor;
         _cache = cache;
         _tokens = tokens;
-        _stateStores = stateStores;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SpecApplyOrchestrator>.Instance;
     }
@@ -59,8 +55,24 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
         var plan = await _planner.PlanAsync(document, cancellationToken).ConfigureAwait(false);
 
+        // Gate the run: fatal plan diagnostics (duplicate ids, cycles,
+        // unresolved references) must be surfaced as a document-level failure
+        // so the HTTP/gRPC adapters can translate to 400/InvalidArgument.
+        // Without this gate, duplicate ids throw ArgumentException from the
+        // ToDictionary below, and cycles collapse into a zero-node apply that
+        // ends with ApplyCompleted instead of rejecting the document.
+        var fatalDiagnostics = CollectFatalDiagnostics(plan);
+        if (fatalDiagnostics.Count > 0)
+        {
+            throw new SpecDocumentInvalidException(fatalDiagnostics);
+        }
+
         var applyToken = Guid.NewGuid().ToString("n");
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Server-owned CTS: the apply run must outlive the originating
+        // request. Client disconnects on SSE or gRPC cancel the outbound
+        // stream only; the background run keeps going until TryCancel (via
+        // /v1/spec/cancel or gRPC CancelApply) trips this token.
+        var cts = new CancellationTokenSource();
         _tokens.Register(applyToken, cts);
 
         var channel = Channel.CreateUnbounded<SpecApplyEvent>(new UnboundedChannelOptions
@@ -82,13 +94,29 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             channel.Writer,
             _executor,
             _cache,
-            _stateStores,
             _timeProvider,
             _logger);
 
-        _ = Task.Run(() => RunAsync(runContext, cts), cts.Token);
+        _ = Task.Run(() => RunAsync(runContext, cts), CancellationToken.None);
 
         return new SpecApplyHandle(applyToken, ReadEventsAsync(channel.Reader, applyToken), plan);
+    }
+
+    private static IReadOnlyList<SpecWarning> CollectFatalDiagnostics(SpecPlan plan)
+    {
+        List<SpecWarning>? fatal = null;
+        foreach (var warning in plan.Warnings)
+        {
+            if (warning.Severity != SpecDiagnosticSeverity.Error)
+            {
+                continue;
+            }
+
+            fatal ??= new List<SpecWarning>();
+            fatal.Add(warning);
+        }
+
+        return (IReadOnlyList<SpecWarning>?)fatal ?? Array.Empty<SpecWarning>();
     }
 
     public bool TryCancel(string applyToken) => _tokens.TryCancel(applyToken);
@@ -324,23 +352,25 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             return;
         }
 
+        // Reserved kinds (Dataset/Service/App) always hard-fail in S1. The
+        // placeholder ReservedSpecResourceStateStore is wired by AddSpecCore
+        // purely to reserve the DI slot; using store presence as a support
+        // signal would let the DI wiring mask the error and route these nodes
+        // through the compute executor. Keep this gate kind-based until S2
+        // ships real resource-state stores.
         if (plannedNode.Kind is SpecResourceKind.Dataset or SpecResourceKind.Service or SpecResourceKind.App)
         {
-            var store = ctx.StateStores.FirstOrDefault(s => s.Kind == plannedNode.Kind);
-            if (store is null)
+            nodeState[plannedNode.NodeId] = NodeRunState.Failed;
+            Interlocked.Increment(ref counters.FailedRef);
+            await EmitFailedAsync(ctx, sequenceRef, plannedNode.NodeId, new SpecWarning
             {
-                nodeState[plannedNode.NodeId] = NodeRunState.Failed;
-                Interlocked.Increment(ref counters.FailedRef);
-                await EmitFailedAsync(ctx, sequenceRef, plannedNode.NodeId, new SpecWarning
-                {
-                    Code = SpecDiagnosticCodes.SpecKindNotInS1,
-                    Message = $"Node kind '{plannedNode.Kind}' is reserved for a future release.",
-                    Severity = SpecDiagnosticSeverity.Error,
-                    NodeId = plannedNode.NodeId,
-                    Remedy = "Restructure the spec to a compute/report node for the current release."
-                }).ConfigureAwait(false);
-                return;
-            }
+                Code = SpecDiagnosticCodes.SpecKindNotInS1,
+                Message = $"Node kind '{plannedNode.Kind}' is reserved for a future release.",
+                Severity = SpecDiagnosticSeverity.Error,
+                NodeId = plannedNode.NodeId,
+                Remedy = "Restructure the spec to a compute/report node for the current release."
+            }).ConfigureAwait(false);
+            return;
         }
 
         await gate.WaitAsync(cts.Token).ConfigureAwait(false);
@@ -610,7 +640,6 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         ChannelWriter<SpecApplyEvent> Writer,
         ISpecComputeExecutor Executor,
         IContentHashArtifactCache Cache,
-        IEnumerable<ISpecResourceStateStore> StateStores,
         TimeProvider TimeProvider,
         ILogger Logger);
 

@@ -71,9 +71,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IOptions<SpecCostEstimatorOptions>>().Value));
 
         services.TryAddSingleton<ISpecPlanner>(sp =>
-            new SpecPlanner(
-                sp.GetRequiredService<ISpecCostEstimator>(),
-                sp.GetServices<ISpecResourceStateStore>()));
+            new SpecPlanner(sp.GetRequiredService<ISpecCostEstimator>()));
 
         services.TryAddSingleton<IContentHashArtifactCache>(sp =>
             new InMemoryContentHashArtifactCache(sp.GetService<TimeProvider>()));
@@ -86,7 +84,6 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ISpecComputeExecutor>(),
                 sp.GetRequiredService<IContentHashArtifactCache>(),
                 sp.GetRequiredService<SpecApplyTokenRegistry>(),
-                sp.GetServices<ISpecResourceStateStore>(),
                 sp.GetService<TimeProvider>(),
                 sp.GetService<ILogger<SpecApplyOrchestrator>>()));
 

@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
 using Honua.Core.Features.Spec.Services;
 
@@ -18,7 +17,7 @@ public class SpecPlannerTests
     [Fact]
     public async Task PlanAsync_LinearChain_AssignsDistinctContentHashes()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var document = Document(
             ComputeNode("a"),
             ComputeNode("b", ("src", "@a")));
@@ -35,7 +34,7 @@ public class SpecPlannerTests
     [Fact]
     public async Task PlanAsync_SameDocumentTwice_ProducesSameContentHashes()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var document = Document(
             ComputeNode("a"),
             ComputeNode("b", ("src", "@a")),
@@ -55,7 +54,7 @@ public class SpecPlannerTests
     [Fact]
     public async Task PlanAsync_SingleNodeMutation_InvalidatesClosureOnly()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var docV1 = Document(
             ComputeNode("a"),
             ComputeNode("b", ("src", "@a")),
@@ -85,7 +84,7 @@ public class SpecPlannerTests
     [Fact]
     public async Task PlanAsync_WithCycle_ReturnsEmptyNodesAndCycleWarning()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var document = Document(
             ComputeNode("a", ("src", "@b")),
             ComputeNode("b", ("src", "@a")));
@@ -97,11 +96,12 @@ public class SpecPlannerTests
     }
 
     [Fact]
-    public async Task PlanAsync_ReservedKindWithoutStore_EmitsSpecKindNotInS1()
+    public async Task PlanAsync_ReservedDatasetKind_EmitsSpecKindNotInS1()
     {
-        // No resource state store registered for Dataset — the planner surfaces
-        // spec-kind-not-in-s1 so the operator sees the reason up-front.
-        var planner = BuildPlanner(reservedKinds: null);
+        // Dataset/Service/App kinds are reserved for S2. The warning is emitted
+        // purely based on kind so DI-registered placeholder stores cannot
+        // silently mask the unsupported-in-S1 signal.
+        var planner = BuildPlanner();
         var document = Document(
             new CanonicalSpecNode
             {
@@ -117,30 +117,31 @@ public class SpecPlannerTests
         Assert.Contains(d.Warnings, w => w.Code == SpecDiagnosticCodes.SpecKindNotInS1);
     }
 
-    [Fact]
-    public async Task PlanAsync_ReservedKindWithStore_SkipsSpecKindWarning()
+    [Theory]
+    [InlineData(SpecResourceKind.Dataset)]
+    [InlineData(SpecResourceKind.Service)]
+    [InlineData(SpecResourceKind.App)]
+    public async Task PlanAsync_AllReservedKinds_EmitSpecKindNotInS1(SpecResourceKind kind)
     {
-        // When a store is registered (even the reserved S1 one), planner does
-        // not emit spec-kind-not-in-s1 — apply rejects at orchestration time.
-        var planner = BuildPlanner(reservedKinds: new[] { SpecResourceKind.Dataset });
+        var planner = BuildPlanner();
         var document = Document(
             new CanonicalSpecNode
             {
-                Id = "d",
-                Kind = SpecResourceKind.Dataset,
-                Op = "dataset.create"
+                Id = "n",
+                Kind = kind,
+                Op = "reserved.op"
             });
 
         var plan = await planner.PlanAsync(document);
 
-        var d = Assert.Single(plan.Nodes);
-        Assert.DoesNotContain(d.Warnings, w => w.Code == SpecDiagnosticCodes.SpecKindNotInS1);
+        var n = Assert.Single(plan.Nodes);
+        Assert.Contains(n.Warnings, w => w.Code == SpecDiagnosticCodes.SpecKindNotInS1);
     }
 
     [Fact]
     public async Task PlanAsync_MutableSourceWithoutPin_EmitsMutableSourceNoPin()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var document = Document(
             ComputeNode("a") with
             {
@@ -159,7 +160,7 @@ public class SpecPlannerTests
     [Fact]
     public async Task PlanAsync_MutableSourceWithPin_SuppressesWarning()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var document = Document(
             ComputeNode("a") with
             {
@@ -182,7 +183,7 @@ public class SpecPlannerTests
     [Fact]
     public async Task PlanAsync_NondeterministicOp_EmitsInfoWarning()
     {
-        var planner = BuildPlanner(reservedKinds: null);
+        var planner = BuildPlanner();
         var document = Document(
             ComputeNode("a") with { Nondeterministic = true });
 
@@ -197,7 +198,6 @@ public class SpecPlannerTests
     public async Task PlanAsync_OversizeEstimate_EmitsEstimatedOversizeWarning()
     {
         var planner = BuildPlanner(
-            reservedKinds: null,
             estimatorOptions: new SpecCostEstimatorOptions
             {
                 DefaultRowsWhenUnknown = 10_000_000L, // default bytes ~5GiB, triggers oversize
@@ -215,15 +215,11 @@ public class SpecPlannerTests
     }
 
     private static SpecPlanner BuildPlanner(
-        SpecResourceKind[]? reservedKinds,
         SpecCostEstimatorOptions? estimatorOptions = null)
     {
         var catalog = new StubProcessCatalog();
         var estimator = new SpecCostEstimator(catalog, estimatorOptions);
-        var stores = (reservedKinds ?? [])
-            .Select(k => (ISpecResourceStateStore)new ReservedSpecResourceStateStore(k))
-            .ToArray();
-        return new SpecPlanner(estimator, stores);
+        return new SpecPlanner(estimator);
     }
 
     private static CanonicalSpecDocument Document(params CanonicalSpecNode[] nodes) => new()

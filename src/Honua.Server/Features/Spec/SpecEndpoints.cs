@@ -69,7 +69,7 @@ internal static class SpecEndpoints
         if (request is null)
         {
             return BuildProblem(StatusCodes.Status400BadRequest,
-                Honua.Core.Features.Spec.Domain.SpecDiagnosticCodes.DuplicateNodeId,
+                SpecDiagnosticCodes.InvalidRequestBody,
                 "Request body could not be parsed as a spec document.");
         }
 
@@ -117,7 +117,7 @@ internal static class SpecEndpoints
         if (request is null)
         {
             return BuildProblem(StatusCodes.Status400BadRequest,
-                Honua.Core.Features.Spec.Domain.SpecDiagnosticCodes.DuplicateNodeId,
+                SpecDiagnosticCodes.InvalidRequestBody,
                 "Request body could not be parsed as a spec document.");
         }
 
@@ -128,7 +128,30 @@ internal static class SpecEndpoints
             MaxConcurrency = request.MaxConcurrency is int m && m > 0 ? m : 4
         };
 
-        var handle = await engine.StartAsync(document, options, cancellationToken).ConfigureAwait(false);
+        SpecApplyHandle handle;
+        try
+        {
+            // Request cancellation only scopes the plan phase and the initial
+            // handshake. Once StartAsync returns, the apply owns its own CTS.
+            handle = await engine.StartAsync(document, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SpecDocumentInvalidException invalid)
+        {
+            var primary = invalid.PrimaryDiagnostic;
+            return Results.Json(
+                new SpecProblem
+                {
+                    Type = $"urn:honua:spec:{primary.Code}",
+                    Title = "Spec document rejected",
+                    Status = StatusCodes.Status400BadRequest,
+                    Detail = primary.Message,
+                    Code = primary.Code,
+                    NodeId = primary.NodeId,
+                    Remedy = primary.Remedy
+                },
+                SpecJsonContext.Default.SpecProblem,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
 
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = "text/event-stream";

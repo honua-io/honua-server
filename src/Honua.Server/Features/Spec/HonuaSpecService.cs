@@ -66,12 +66,27 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
             MaxConcurrency = request.MaxConcurrency > 0 ? (int)request.MaxConcurrency : 4
         };
 
-        var handle = await _applyEngine.StartAsync(document, options, context.CancellationToken).ConfigureAwait(false);
+        SpecApplyHandle handle;
+        try
+        {
+            handle = await _applyEngine.StartAsync(document, options, context.CancellationToken).ConfigureAwait(false);
+        }
+        catch (SpecDocumentInvalidException invalid)
+        {
+            var primary = invalid.PrimaryDiagnostic;
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{primary.Code}: {primary.Message}"));
+        }
 
         // Surface the apply token via trailers so clients can correlate
         // with /v1/spec/cancel (REST) or CancelApply (gRPC).
         context.ResponseTrailers.Add("x-spec-apply-token", handle.ApplyToken);
 
+        // context.CancellationToken is cancelled when the client disconnects
+        // from the stream; this only stops our outbound writes. The apply run
+        // itself is backed by an orchestrator-owned CTS and keeps going until
+        // an explicit CancelApply (gRPC) or /v1/spec/cancel (REST) trips it.
         await foreach (var evt in handle.Events.WithCancellation(context.CancellationToken).ConfigureAwait(false))
         {
             await responseStream.WriteAsync(SpecProtoMapping.ToProto(evt)).ConfigureAwait(false);

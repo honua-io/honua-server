@@ -52,6 +52,23 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/plan")]
+    public async Task Plan_MalformedJson_Returns400WithInvalidRequestBody()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsync(
+            "/v1/spec/plan",
+            new StringContent("{not:valid", Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-request-body", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()
     {
         using var factory = new TestWebApplicationFactory();
@@ -66,6 +83,102 @@ public sealed class SpecEndpointsTests
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("dag-cycle", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_MalformedJson_Returns400WithInvalidRequestBody()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = new StringContent("{not:valid", Encoding.UTF8, "application/json")
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-request-body", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_DuplicateNodeIds_Returns400WithoutOpeningStream()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(
+            ComputeNode("a"),
+            ComputeNode("a"));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("duplicate-node-id", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_Cycle_Returns400WithoutOpeningStream()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(
+            ComputeNode("a", ("src", "@b")),
+            ComputeNode("b", ("src", "@a")));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("dag-cycle", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_ReservedDatasetKind_StreamsFailedWithSpecKindNotInS1()
+    {
+        // Production DI registers a placeholder ReservedSpecResourceStateStore
+        // for Dataset/Service/App. Apply must still reject the node kind-based
+        // so the DI placeholder cannot mask the S1 gap.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var datasetNode = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = "d",
+            ["kind"] = "Dataset",
+            ["op"] = "dataset.create"
+        };
+        var document = BuildDocument(datasetNode);
+
+        var events = await CollectSseEventsAsync(client, document);
+        var failed = events.Single(e => e.Kind == "Failed");
+        Assert.Equal("d", failed.Payload.GetProperty("nodeId").GetString());
+        Assert.Equal(
+            "spec-kind-not-in-s1",
+            failed.Payload.GetProperty("diagnostic").GetProperty("code").GetString());
     }
 
     [IntegrationTest]

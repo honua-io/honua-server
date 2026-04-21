@@ -262,13 +262,99 @@ public class SpecApplyOrchestratorTests
 
         var events = await CollectAsync(await fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
 
-        // Plan stays valid (no store registered, only a warning); apply itself
-        // rejects with a Failed event carrying spec-kind-not-in-s1.
+        // Plan emits the warning unconditionally for reserved kinds; apply
+        // itself rejects with a Failed event carrying spec-kind-not-in-s1 so
+        // DI-registered placeholder stores cannot mask the S1 gap.
         var failed = Assert.Single(events, e => e.Kind == SpecApplyEventKind.Failed);
         Assert.Equal("d", failed.NodeId);
         Assert.Equal(SpecDiagnosticCodes.SpecKindNotInS1, failed.Diagnostic!.Code);
         Assert.Equal(1, events[^1].Summary!.FailedNodes);
         Assert.Equal(0, fixture.Executor.InvocationCount);
+    }
+
+    [Fact]
+    public async Task StartAsync_DuplicateNodeIds_ThrowsSpecDocumentInvalidException()
+    {
+        var fixture = new OrchestratorFixture();
+        var document = new CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0",
+            Nodes = new[]
+            {
+                new CanonicalSpecNode { Id = "a", Kind = SpecResourceKind.Compute, Op = "compute.noop" },
+                new CanonicalSpecNode { Id = "a", Kind = SpecResourceKind.Compute, Op = "compute.noop" }
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<SpecDocumentInvalidException>(
+            () => fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
+        Assert.Equal(SpecDiagnosticCodes.DuplicateNodeId, ex.PrimaryDiagnostic.Code);
+        Assert.Equal(0, fixture.Executor.InvocationCount);
+    }
+
+    [Fact]
+    public async Task StartAsync_Cycle_ThrowsSpecDocumentInvalidException()
+    {
+        var fixture = new OrchestratorFixture();
+        var document = Document(
+            ComputeNode("a", ("src", "@b")),
+            ComputeNode("b", ("src", "@a")));
+
+        var ex = await Assert.ThrowsAsync<SpecDocumentInvalidException>(
+            () => fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
+        Assert.Equal(SpecDiagnosticCodes.DagCycle, ex.PrimaryDiagnostic.Code);
+        Assert.Equal(0, fixture.Executor.InvocationCount);
+    }
+
+    [Fact]
+    public async Task StartAsync_UnresolvedReference_ThrowsSpecDocumentInvalidException()
+    {
+        var fixture = new OrchestratorFixture();
+        var document = Document(
+            ComputeNode("a", ("src", "@missing")));
+
+        var ex = await Assert.ThrowsAsync<SpecDocumentInvalidException>(
+            () => fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
+        Assert.Equal(SpecDiagnosticCodes.UnresolvedReference, ex.PrimaryDiagnostic.Code);
+        Assert.Equal(0, fixture.Executor.InvocationCount);
+    }
+
+    [Fact]
+    public async Task Apply_CallerCancellation_DoesNotStopRun()
+    {
+        // Regression test for the review finding: SSE/gRPC stream disconnects
+        // must not cancel the apply run. The caller-supplied token only scopes
+        // the initial plan phase — once StartAsync returns, the run is owned
+        // by the orchestrator CTS and only TryCancel can trip it.
+        var fixture = new OrchestratorFixture();
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        fixture.Executor.HookBeforeExecute("slow", async ct =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        });
+
+        var document = Document(ComputeNode("slow"));
+
+        using var callerCts = new CancellationTokenSource();
+        var handle = await fixture.Engine.StartAsync(document, new SpecApplyOptions(), callerCts.Token);
+
+        var collectTask = Task.Run(() => CollectAsync(handle));
+        await started.Task;
+
+        // Simulate the client disconnecting / request-aborted token firing.
+        callerCts.Cancel();
+
+        // The run keeps going; allow the hook to complete naturally.
+        release.TrySetResult();
+
+        var events = await collectTask;
+        var terminal = events[^1];
+        Assert.Equal(SpecApplyEventKind.ApplyCompleted, terminal.Kind);
+        Assert.False(terminal.Summary!.Cancelled);
+        Assert.Equal(1, terminal.Summary.RanNodes);
     }
 
     [Fact]
@@ -342,7 +428,7 @@ public class SpecApplyOrchestratorTests
         {
             var catalog = new StubProcessCatalog();
             var estimator = new SpecCostEstimator(catalog);
-            var planner = new SpecPlanner(estimator, Array.Empty<ISpecResourceStateStore>());
+            var planner = new SpecPlanner(estimator);
             Cache = new InMemoryContentHashArtifactCache();
             Executor = new FakeComputeExecutor();
             Tokens = new SpecApplyTokenRegistry();
@@ -350,8 +436,7 @@ public class SpecApplyOrchestratorTests
                 planner,
                 Executor,
                 Cache,
-                Tokens,
-                Array.Empty<ISpecResourceStateStore>());
+                Tokens);
         }
 
         public InMemoryContentHashArtifactCache Cache { get; }

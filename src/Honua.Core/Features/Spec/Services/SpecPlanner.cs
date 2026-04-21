@@ -13,16 +13,11 @@ namespace Honua.Core.Features.Spec.Services;
 internal sealed class SpecPlanner : ISpecPlanner
 {
     private readonly ISpecCostEstimator _costEstimator;
-    private readonly IEnumerable<ISpecResourceStateStore> _stateStores;
 
-    public SpecPlanner(
-        ISpecCostEstimator costEstimator,
-        IEnumerable<ISpecResourceStateStore> stateStores)
+    public SpecPlanner(ISpecCostEstimator costEstimator)
     {
         ArgumentNullException.ThrowIfNull(costEstimator);
-        ArgumentNullException.ThrowIfNull(stateStores);
         _costEstimator = costEstimator;
-        _stateStores = stateStores;
     }
 
     public async Task<SpecPlan> PlanAsync(CanonicalSpecDocument document, CancellationToken cancellationToken = default)
@@ -104,25 +99,26 @@ internal sealed class SpecPlanner : ISpecPlanner
         };
     }
 
-    private IEnumerable<SpecWarning> EvaluateKindWarnings(CanonicalSpecNode node)
+    private static IEnumerable<SpecWarning> EvaluateKindWarnings(CanonicalSpecNode node)
     {
         if (node.Kind is SpecResourceKind.Compute or SpecResourceKind.Report)
         {
             yield break;
         }
 
-        var store = _stateStores.FirstOrDefault(s => s.Kind == node.Kind);
-        if (store is null)
+        // Dataset/Service/App slots are reserved in S1. Emit the warning
+        // based on kind alone: ServiceCollectionExtensions registers a
+        // placeholder ReservedSpecResourceStateStore in production DI, so
+        // using store presence as the support signal would mask the warning
+        // and let apply silently route these nodes through the compute path.
+        yield return new SpecWarning
         {
-            yield return new SpecWarning
-            {
-                Code = SpecDiagnosticCodes.SpecKindNotInS1,
-                Message = $"Node kind '{node.Kind}' is reserved for a future release; apply will reject '{node.Id}'.",
-                Severity = SpecDiagnosticSeverity.Warning,
-                NodeId = node.Id,
-                Remedy = "Restructure the spec to a compute/report node for the current release."
-            };
-        }
+            Code = SpecDiagnosticCodes.SpecKindNotInS1,
+            Message = $"Node kind '{node.Kind}' is reserved for a future release; apply will reject '{node.Id}'.",
+            Severity = SpecDiagnosticSeverity.Warning,
+            NodeId = node.Id,
+            Remedy = "Restructure the spec to a compute/report node for the current release."
+        };
     }
 
     private static IEnumerable<SpecWarning> EvaluateSourceWarnings(CanonicalSpecNode node)

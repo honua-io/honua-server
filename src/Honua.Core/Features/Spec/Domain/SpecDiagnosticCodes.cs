@@ -45,6 +45,9 @@ public static class SpecDiagnosticCodes
     /// <summary>Unresolved node reference — dependency points to a missing id.</summary>
     public const string UnresolvedReference = "unresolved-reference";
 
+    /// <summary>Request body could not be parsed as a canonical spec document.</summary>
+    public const string InvalidRequestBody = "invalid-request-body";
+
     /// <summary>Apply token is unknown — most commonly because the server restarted.</summary>
     public const string ApplyTokenUnknown = "apply-token-unknown";
 

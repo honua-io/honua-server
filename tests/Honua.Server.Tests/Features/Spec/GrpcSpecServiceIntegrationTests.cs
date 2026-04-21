@@ -84,6 +84,49 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_FatalDocumentError_RaisesInvalidArgumentBeforeStream()
+    {
+        // Cycles / duplicate ids / unresolved refs must surface as
+        // InvalidArgument rather than opening an empty stream that ends with
+        // ApplyCompleted and zero nodes.
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop",
+            Inputs = { ["src"] = "@b" }
+        });
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "b",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop",
+            Inputs = { ["src"] = "@a" }
+        });
+
+        var request = new Proto.ApplySpecRequest { Document = document };
+
+        var act = async () =>
+        {
+            using var call = _client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("dag-cycle");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/CancelApply")]
