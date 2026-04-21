@@ -30,6 +30,13 @@ public sealed record SpecApplyOptions
 
     /// <summary>Maximum nodes running concurrently. Defaults to 4.</summary>
     public int MaxConcurrency { get; init; } = 4;
+
+    /// <summary>
+    /// TTL stamped onto cache entries whose planned node carries
+    /// <c>mutable-source-no-pin</c>. Defaults to 15 minutes per the
+    /// documented S1 contract; null disables TTL degradation entirely.
+    /// </summary>
+    public TimeSpan? MutableSourceTtl { get; init; } = TimeSpan.FromMinutes(15);
 }
 
 /// <summary>

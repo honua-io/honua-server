@@ -12,12 +12,20 @@ namespace Honua.Core.Features.Spec.Services;
 
 /// <summary>
 /// Default <see cref="ISpecApplyEngine"/> implementation. Plans the spec, then
-/// drives the DAG through an unbounded <see cref="Channel{T}"/> of
+/// drives the DAG through a bounded drop-oldest <see cref="Channel{T}"/> of
 /// <see cref="SpecApplyEvent"/>s. Events are emitted in the order they occur
-/// and are consumed exactly once by a single reader (SSE or gRPC).
+/// and are consumed exactly once by a single reader (SSE or gRPC). The buffer
+/// caps memory if a client detaches mid-apply — the run outlives the request,
+/// so unbounded writes would retain the whole backlog until completion.
 /// </summary>
 internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 {
+    // Bounded so a disconnected reader cannot inflate unbounded memory; deep
+    // enough that a connected reader keeps up without dropping. Sequence
+    // numbers are already documented as drop-detectable by clients, so the
+    // DropOldest policy satisfies the contract.
+    private const int EventBufferCapacity = 256;
+
     private readonly ISpecPlanner _planner;
     private readonly ISpecComputeExecutor _executor;
     private readonly IContentHashArtifactCache _cache;
@@ -75,11 +83,12 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         var cts = new CancellationTokenSource();
         _tokens.Register(applyToken, cts);
 
-        var channel = Channel.CreateUnbounded<SpecApplyEvent>(new UnboundedChannelOptions
+        var channel = Channel.CreateBounded<SpecApplyEvent>(new BoundedChannelOptions(EventBufferCapacity)
         {
             SingleReader = true,
             SingleWriter = false,
-            AllowSynchronousContinuations = false
+            AllowSynchronousContinuations = false,
+            FullMode = BoundedChannelFullMode.DropOldest
         });
 
         SpecTelemetry.AppliesStarted.Add(1,
@@ -247,12 +256,18 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
             if (ready.Count == 0)
             {
-                // No node is ready — either everything waiting on failed upstream, or cycle (shouldn't happen).
+                // No node is ready — either everything waiting on failed
+                // upstream, or cycle (shouldn't happen). Under cancellation
+                // the reason is the cancel itself; otherwise it's an upstream
+                // failure that stalled the frontier.
+                var reason = cts.Token.IsCancellationRequested
+                    ? SkipReason.Cancelled
+                    : SkipReason.UpstreamFailed;
                 foreach (var id in remaining.ToList())
                 {
                     nodeState[id] = NodeRunState.Skipped;
                     Interlocked.Increment(ref counters.SkippedRef);
-                    await EmitSkippedAsync(ctx, sequenceRef, id, cts).ConfigureAwait(false);
+                    await EmitSkippedAsync(ctx, sequenceRef, id, reason).ConfigureAwait(false);
                 }
 
                 break;
@@ -274,8 +289,18 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         ApplyRunContext ctx,
         Func<long> sequenceRef,
         string nodeId,
-        CancellationTokenSource cts)
+        SkipReason reason)
     {
+        var (code, message) = reason switch
+        {
+            SkipReason.Cancelled => (
+                SpecDiagnosticCodes.ApplyCancelled,
+                $"Node '{nodeId}' skipped — apply was cancelled before the node started."),
+            _ => (
+                SpecDiagnosticCodes.UpstreamFailed,
+                $"Node '{nodeId}' skipped — an upstream dependency failed.")
+        };
+
         await ctx.Writer.WriteAsync(new SpecApplyEvent
         {
             Sequence = sequenceRef(),
@@ -285,8 +310,8 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             Timestamp = ctx.TimeProvider.GetUtcNow(),
             Diagnostic = new SpecWarning
             {
-                Code = SpecDiagnosticCodes.UpstreamFailed,
-                Message = $"Node '{nodeId}' skipped — an upstream dependency failed or the apply was cancelled.",
+                Code = code,
+                Message = message,
                 Severity = SpecDiagnosticSeverity.Warning,
                 NodeId = nodeId
             }
@@ -332,24 +357,26 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         ConcurrentDictionary<string, CachedArtifactRef> cachedInputs,
         SemaphoreSlim gate)
     {
-        // Short-circuit if any upstream failed or was skipped.
+        // Short-circuit if any upstream failed or was skipped. Cancellation
+        // wins over dependency-failure here — a cancelled run should emit
+        // `apply-cancelled`, not `upstream-failed`, for every deferred node.
+        if (cts.Token.IsCancellationRequested)
+        {
+            nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
+            Interlocked.Increment(ref counters.SkippedRef);
+            await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.Cancelled).ConfigureAwait(false);
+            return;
+        }
+
         foreach (var dep in plannedNode.DependsOn)
         {
             if (nodeState[dep] is NodeRunState.Failed or NodeRunState.Skipped)
             {
                 nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
                 Interlocked.Increment(ref counters.SkippedRef);
-                await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, cts).ConfigureAwait(false);
+                await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.UpstreamFailed).ConfigureAwait(false);
                 return;
             }
-        }
-
-        if (cts.Token.IsCancellationRequested)
-        {
-            nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
-            Interlocked.Increment(ref counters.SkippedRef);
-            await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, cts).ConfigureAwait(false);
-            return;
         }
 
         // Reserved kinds (Dataset/Service/App) always hard-fail in S1. The
@@ -423,6 +450,26 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
                 SpecTelemetry.CacheLookups.Add(1,
                     new KeyValuePair<string, object?>("outcome", "miss"));
+
+                // ReadOnly is "dry-run against a warm cache" — never invoke the
+                // executor and never fabricate a retrievable hash. Emitting
+                // Succeeded with a hash that is not in the cache breaks the
+                // `GET /v1/spec/artifact/{hash}` contract because the artifact
+                // endpoint only serves entries present in the cache.
+                if (ctx.Options.CacheMode is SpecCacheMode.ReadOnly)
+                {
+                    nodeState[plannedNode.NodeId] = NodeRunState.Failed;
+                    Interlocked.Increment(ref counters.FailedRef);
+                    await EmitFailedAsync(ctx, sequenceRef, plannedNode.NodeId, new SpecWarning
+                    {
+                        Code = SpecDiagnosticCodes.ReadOnlyCacheMiss,
+                        Message = $"Node '{plannedNode.NodeId}' missed the cache under ReadOnly mode.",
+                        Severity = SpecDiagnosticSeverity.Error,
+                        NodeId = plannedNode.NodeId,
+                        Remedy = "Warm the cache with ReadWrite first, or switch to ReadWrite/Bypass for this apply."
+                    }).ConfigureAwait(false);
+                    return;
+                }
             }
             else
             {
@@ -451,22 +498,13 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                     .ConfigureAwait(false);
                 nodeStopwatch.Stop();
 
-                if (ctx.Options.CacheMode is not SpecCacheMode.ReadOnly)
-                {
-                    var reference = await ctx.Cache.PutAsync(result.Payload, cts.Token).ConfigureAwait(false);
-                    cachedInputs[plannedNode.NodeId] = reference;
-                }
-                else
-                {
-                    cachedInputs[plannedNode.NodeId] = new CachedArtifactRef
-                    {
-                        ContentHash = result.Payload.ContentHash,
-                        Uri = $"/v1/spec/artifact/{result.Payload.ContentHash}",
-                        Bytes = result.Payload.Bytes.Length,
-                        ProducedAt = ctx.TimeProvider.GetUtcNow(),
-                        ContentType = result.Payload.ContentType
-                    };
-                }
+                // ReadOnly cache-miss is now short-circuited earlier, so the
+                // only paths reaching PutAsync are ReadWrite and Bypass. Stamp
+                // TTL for nodes the planner flagged as mutable-source-no-pin
+                // so those entries degrade instead of living forever.
+                var payload = StampTtlIfMutable(result.Payload, plannedNode, ctx.Options.MutableSourceTtl);
+                var reference = await ctx.Cache.PutAsync(payload, cts.Token).ConfigureAwait(false);
+                cachedInputs[plannedNode.NodeId] = reference;
 
                 nodeState[plannedNode.NodeId] = NodeRunState.Succeeded;
                 Interlocked.Increment(ref counters.RanRef);
@@ -551,6 +589,30 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         }
     }
 
+    private static SpecArtifactPayload StampTtlIfMutable(
+        SpecArtifactPayload payload,
+        SpecPlanNode plannedNode,
+        TimeSpan? ttl)
+    {
+        if (ttl is null || payload.Ttl is not null)
+        {
+            return payload;
+        }
+
+        // The planner emits `mutable-source-no-pin` on a per-node basis; any
+        // per-node Warning with that code means the artifact is derived from a
+        // mutable source without a pin and must degrade via TTL.
+        foreach (var warning in plannedNode.Warnings)
+        {
+            if (string.Equals(warning.Code, SpecDiagnosticCodes.MutableSourceNoPin, StringComparison.Ordinal))
+            {
+                return payload with { Ttl = ttl };
+            }
+        }
+
+        return payload;
+    }
+
     private static Dictionary<string, CachedArtifactRef> BuildInputs(
         SpecPlanNode plannedNode,
         ConcurrentDictionary<string, CachedArtifactRef> cachedInputs)
@@ -614,6 +676,12 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         Failed,
         Skipped,
         Cached
+    }
+
+    private enum SkipReason
+    {
+        UpstreamFailed,
+        Cancelled
     }
 
     private sealed class ApplyCounters

@@ -127,6 +127,42 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_MissingVersionFields_RaisesInvalidArgumentBeforeStream()
+    {
+        // Blank grammar/process-family versions collide in the content-hash
+        // cache key; the planner rejects them with `version-skew`, and the
+        // gRPC adapter surfaces that as InvalidArgument before opening the
+        // server-streaming response.
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = string.Empty,
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.ApplySpecRequest { Document = document };
+
+        var act = async () =>
+        {
+            using var call = _client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("version-skew");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/CancelApply")]

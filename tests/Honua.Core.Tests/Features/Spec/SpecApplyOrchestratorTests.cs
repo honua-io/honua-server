@@ -358,6 +358,155 @@ public class SpecApplyOrchestratorTests
     }
 
     [Fact]
+    public async Task Apply_TryCancel_DeferredNodesEmitApplyCancelledNotUpstreamFailed()
+    {
+        // Regression: the earlier skip path emitted `upstream-failed` for every
+        // downstream node when the real cause was cooperative cancellation.
+        // Admin tooling keys off the diagnostic code — confusing the two codes
+        // leads operators to hunt for a phantom upstream failure.
+        var fixture = new OrchestratorFixture();
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        fixture.Executor.HookBeforeExecute("slow", async ct =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        });
+
+        var document = Document(
+            ComputeNode("slow"),
+            ComputeNode("downstream", ("src", "@slow")));
+
+        var handle = await fixture.Engine.StartAsync(document, new SpecApplyOptions { MaxConcurrency = 1 }, CancellationToken.None);
+        var collectTask = Task.Run(() => CollectAsync(handle));
+        await started.Task;
+
+        Assert.True(fixture.Engine.TryCancel(handle.ApplyToken));
+        release.TrySetResult();
+
+        var events = await collectTask;
+
+        // The cancelled executor raises OperationCanceledException, which
+        // emits Skipped+apply-cancelled for the node that was running, and the
+        // downstream frontier should carry the same diagnostic (not
+        // upstream-failed) because cancellation is the root cause.
+        var perNodeSkipped = events
+            .Where(e => e.Kind == SpecApplyEventKind.Skipped)
+            .ToList();
+        Assert.NotEmpty(perNodeSkipped);
+        Assert.All(perNodeSkipped, evt =>
+        {
+            Assert.NotNull(evt.Diagnostic);
+            Assert.Equal(SpecDiagnosticCodes.ApplyCancelled, evt.Diagnostic!.Code);
+        });
+
+        Assert.Equal(SpecApplyEventKind.ApplyCancelled, events[^1].Kind);
+        Assert.True(events[^1].Summary!.Cancelled);
+    }
+
+    [Fact]
+    public async Task Apply_MutableSourceWithoutPin_StampsTtlOnCachedPayload()
+    {
+        // Ticket #789 contract: nodes the planner flags with
+        // `mutable-source-no-pin` must degrade via TTL. The orchestrator stamps
+        // the configured TTL onto the payload before PutAsync when the executor
+        // returned no TTL of its own; without it the entry would live forever
+        // and silently diverge from the mutable upstream.
+        var fixture = new OrchestratorFixture();
+        var ttl = TimeSpan.FromMinutes(3);
+
+        var document = Document(
+            ComputeNode("m") with
+            {
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["source.mutable"] = "true"
+                }
+            });
+
+        var events = await CollectAsync(await fixture.Engine.StartAsync(
+            document,
+            new SpecApplyOptions { MutableSourceTtl = ttl },
+            CancellationToken.None));
+
+        var succeeded = Assert.Single(events, e => e.Kind == SpecApplyEventKind.Succeeded);
+        var contentHash = succeeded.ContentHash!;
+        var stamped = Assert.Single(fixture.Cache.PutPayloads, p => p.ContentHash == contentHash);
+        Assert.NotNull(stamped.Ttl);
+        Assert.Equal(ttl, stamped.Ttl);
+    }
+
+    [Fact]
+    public async Task Apply_NonMutableNode_DoesNotStampTtl()
+    {
+        // Guardrail: TTL stamping must be scoped to nodes the planner flagged
+        // as mutable-source-no-pin. Plain nodes keep their indefinite cache
+        // lifetime so idempotent reruns stay on the cached path.
+        var fixture = new OrchestratorFixture();
+
+        var events = await CollectAsync(await fixture.Engine.StartAsync(
+            Document(ComputeNode("plain")),
+            new SpecApplyOptions { MutableSourceTtl = TimeSpan.FromMinutes(3) },
+            CancellationToken.None));
+
+        var succeeded = Assert.Single(events, e => e.Kind == SpecApplyEventKind.Succeeded);
+        var contentHash = succeeded.ContentHash!;
+        var put = Assert.Single(fixture.Cache.PutPayloads, p => p.ContentHash == contentHash);
+        Assert.Null(put.Ttl);
+    }
+
+    [Fact]
+    public async Task Apply_ReadOnlyCacheMiss_EmitsFailedWithReadOnlyCacheMissAndSkipsExecutor()
+    {
+        // ReadOnly is a warm-cache dry run. A miss must NOT invoke the
+        // executor and must NOT synthesise a Succeeded event with a hash that
+        // is not in the cache — that would break the
+        // `GET /v1/spec/artifact/{hash}` contract.
+        var fixture = new OrchestratorFixture();
+
+        var events = await CollectAsync(await fixture.Engine.StartAsync(
+            Document(ComputeNode("cold")),
+            new SpecApplyOptions { CacheMode = SpecCacheMode.ReadOnly },
+            CancellationToken.None));
+
+        Assert.Equal(0, fixture.Executor.InvocationCount);
+        var failed = Assert.Single(events, e => e.Kind == SpecApplyEventKind.Failed);
+        Assert.Equal("cold", failed.NodeId);
+        Assert.Equal(SpecDiagnosticCodes.ReadOnlyCacheMiss, failed.Diagnostic!.Code);
+        Assert.Equal(SpecDiagnosticSeverity.Error, failed.Diagnostic.Severity);
+
+        // ApplyCompleted still terminates the run; Cancelled stays false since
+        // the failure was organic, not a cancel.
+        var terminal = events[^1];
+        Assert.Equal(SpecApplyEventKind.ApplyCompleted, terminal.Kind);
+        Assert.False(terminal.Summary!.Cancelled);
+        Assert.Equal(1, terminal.Summary.FailedNodes);
+    }
+
+    [Fact]
+    public async Task Apply_ReadOnlyCacheHit_ServesFromCacheWithoutInvokingExecutor()
+    {
+        // Complements the miss test: if the cache is warm, ReadOnly completes
+        // with Cached events for every node (the original contract for the
+        // "dry run against a warm cache" workflow).
+        var fixture = new OrchestratorFixture();
+        var document = Document(ComputeNode("warm"));
+
+        _ = await CollectAsync(await fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
+        Assert.Equal(1, fixture.Executor.InvocationCount);
+
+        var rerun = await CollectAsync(await fixture.Engine.StartAsync(
+            document,
+            new SpecApplyOptions { CacheMode = SpecCacheMode.ReadOnly },
+            CancellationToken.None));
+
+        Assert.Equal(1, fixture.Executor.InvocationCount); // unchanged
+        var cached = Assert.Single(rerun, e => e.Kind == SpecApplyEventKind.Cached);
+        Assert.Equal("warm", cached.NodeId);
+        Assert.DoesNotContain(rerun, e => e.Kind == SpecApplyEventKind.Failed);
+    }
+
+    [Fact]
     public async Task Apply_RunWithWarnings_SurfacesThemBeforeSucceeded()
     {
         var fixture = new OrchestratorFixture();
@@ -429,7 +578,7 @@ public class SpecApplyOrchestratorTests
             var catalog = new StubProcessCatalog();
             var estimator = new SpecCostEstimator(catalog);
             var planner = new SpecPlanner(estimator);
-            Cache = new InMemoryContentHashArtifactCache();
+            Cache = new TrackingArtifactCache(new InMemoryContentHashArtifactCache());
             Executor = new FakeComputeExecutor();
             Tokens = new SpecApplyTokenRegistry();
             Engine = new SpecApplyOrchestrator(
@@ -439,13 +588,38 @@ public class SpecApplyOrchestratorTests
                 Tokens);
         }
 
-        public InMemoryContentHashArtifactCache Cache { get; }
+        public TrackingArtifactCache Cache { get; }
 
         public FakeComputeExecutor Executor { get; }
 
         public SpecApplyTokenRegistry Tokens { get; }
 
         public SpecApplyOrchestrator Engine { get; }
+    }
+
+    private sealed class TrackingArtifactCache : IContentHashArtifactCache
+    {
+        private readonly IContentHashArtifactCache _inner;
+        private readonly ConcurrentBag<SpecArtifactPayload> _payloads = new();
+
+        public TrackingArtifactCache(IContentHashArtifactCache inner)
+        {
+            _inner = inner;
+        }
+
+        public IEnumerable<SpecArtifactPayload> PutPayloads => _payloads;
+
+        public Task<CachedArtifactRef?> TryGetAsync(string contentHash, CancellationToken cancellationToken = default)
+            => _inner.TryGetAsync(contentHash, cancellationToken);
+
+        public Task<Stream?> OpenReadAsync(string contentHash, CancellationToken cancellationToken = default)
+            => _inner.OpenReadAsync(contentHash, cancellationToken);
+
+        public Task<CachedArtifactRef> PutAsync(SpecArtifactPayload payload, CancellationToken cancellationToken = default)
+        {
+            _payloads.Add(payload);
+            return _inner.PutAsync(payload, cancellationToken);
+        }
     }
 
     private sealed class FakeComputeExecutor : ISpecComputeExecutor

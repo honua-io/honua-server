@@ -214,6 +214,72 @@ public class SpecPlannerTests
         Assert.True(n.Cost.EstimatedBytes > 1024L * 1024 * 1024);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task PlanAsync_MissingGrammarVersion_EmitsVersionSkewErrorAndDropsNodes(string grammarVersion)
+    {
+        // Blank grammar/process-family versions would otherwise collide in the
+        // content-hash cache key (empty strings hash identically across
+        // unrelated specs). Reject at the planner so both REST and gRPC adapters
+        // translate to 400 / InvalidArgument before the executor is invoked.
+        var planner = BuildPlanner();
+        var document = new CanonicalSpecDocument
+        {
+            GrammarVersion = grammarVersion,
+            ProcessFamilyVersion = "family/1.0",
+            Nodes = new[] { ComputeNode("a") }
+        };
+
+        var plan = await planner.PlanAsync(document);
+
+        Assert.Empty(plan.Nodes);
+        var skew = Assert.Single(plan.Warnings, w => w.Code == SpecDiagnosticCodes.VersionSkew);
+        Assert.Equal(SpecDiagnosticSeverity.Error, skew.Severity);
+        Assert.Contains("grammarVersion", skew.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task PlanAsync_MissingProcessFamilyVersion_EmitsVersionSkewErrorAndDropsNodes(string processFamilyVersion)
+    {
+        var planner = BuildPlanner();
+        var document = new CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = processFamilyVersion,
+            Nodes = new[] { ComputeNode("a") }
+        };
+
+        var plan = await planner.PlanAsync(document);
+
+        Assert.Empty(plan.Nodes);
+        var skew = Assert.Single(plan.Warnings, w => w.Code == SpecDiagnosticCodes.VersionSkew);
+        Assert.Equal(SpecDiagnosticSeverity.Error, skew.Severity);
+        Assert.Contains("processFamilyVersion", skew.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlanAsync_MissingBothVersions_EmitsSingleAggregateVersionSkew()
+    {
+        var planner = BuildPlanner();
+        var document = new CanonicalSpecDocument
+        {
+            GrammarVersion = string.Empty,
+            ProcessFamilyVersion = string.Empty,
+            Nodes = new[] { ComputeNode("a") }
+        };
+
+        var plan = await planner.PlanAsync(document);
+
+        Assert.Empty(plan.Nodes);
+        var skew = Assert.Single(plan.Warnings, w => w.Code == SpecDiagnosticCodes.VersionSkew);
+        Assert.Equal(SpecDiagnosticSeverity.Error, skew.Severity);
+        Assert.Contains("grammarVersion", skew.Message, StringComparison.Ordinal);
+        Assert.Contains("processFamilyVersion", skew.Message, StringComparison.Ordinal);
+    }
+
     private static SpecPlanner BuildPlanner(
         SpecCostEstimatorOptions? estimatorOptions = null)
     {

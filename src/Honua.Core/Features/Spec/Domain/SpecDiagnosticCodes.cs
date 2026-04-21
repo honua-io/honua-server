@@ -59,4 +59,7 @@ public static class SpecDiagnosticCodes
 
     /// <summary>Apply was cancelled via <c>POST /v1/spec/cancel</c>.</summary>
     public const string ApplyCancelled = "apply-cancelled";
+
+    /// <summary>Cache miss encountered while applying in <c>ReadOnly</c> mode.</summary>
+    public const string ReadOnlyCacheMiss = "read-only-cache-miss";
 }

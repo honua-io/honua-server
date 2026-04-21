@@ -24,8 +24,23 @@ internal sealed class SpecPlanner : ISpecPlanner
     {
         ArgumentNullException.ThrowIfNull(document);
 
+        var documentWarnings = new List<SpecWarning>();
+        var versionSkew = EvaluateVersionSkew(document);
+        if (versionSkew is not null)
+        {
+            documentWarnings.Add(versionSkew);
+            return new SpecPlan
+            {
+                PlanId = Guid.NewGuid().ToString("n"),
+                GrammarVersion = document.GrammarVersion,
+                ProcessFamilyVersion = document.ProcessFamilyVersion,
+                Nodes = [],
+                Warnings = documentWarnings
+            };
+        }
+
         var resolution = SpecDagResolver.Resolve(document);
-        var documentWarnings = new List<SpecWarning>(resolution.Diagnostics);
+        documentWarnings.AddRange(resolution.Diagnostics);
 
         if (resolution.HasFatalErrors)
         {
@@ -96,6 +111,46 @@ internal sealed class SpecPlanner : ISpecPlanner
             ProcessFamilyVersion = document.ProcessFamilyVersion,
             Nodes = planNodes,
             Warnings = documentWarnings
+        };
+    }
+
+    private static SpecWarning? EvaluateVersionSkew(CanonicalSpecDocument document)
+    {
+        // Missing grammar / process-family versions poison the content-hash
+        // cache key (empty strings collide across unrelated specs). Reject at
+        // the planner so both REST and gRPC translate to 400 / InvalidArgument
+        // before the executor is invoked.
+        var grammarBlank = string.IsNullOrWhiteSpace(document.GrammarVersion);
+        var processBlank = string.IsNullOrWhiteSpace(document.ProcessFamilyVersion);
+        if (!grammarBlank && !processBlank)
+        {
+            return null;
+        }
+
+        string message;
+        string remedy;
+        if (grammarBlank && processBlank)
+        {
+            message = "Spec is missing both 'grammarVersion' and 'processFamilyVersion'.";
+            remedy = "Populate 'grammarVersion' and 'processFamilyVersion' on the canonical document.";
+        }
+        else if (grammarBlank)
+        {
+            message = "Spec is missing 'grammarVersion'.";
+            remedy = "Populate 'grammarVersion' on the canonical document.";
+        }
+        else
+        {
+            message = "Spec is missing 'processFamilyVersion'.";
+            remedy = "Populate 'processFamilyVersion' on the canonical document.";
+        }
+
+        return new SpecWarning
+        {
+            Code = SpecDiagnosticCodes.VersionSkew,
+            Message = message,
+            Severity = SpecDiagnosticSeverity.Error,
+            Remedy = remedy
         };
     }
 

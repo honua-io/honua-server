@@ -139,9 +139,18 @@ closing the socket alone has no effect.
 
 | Value | Behaviour |
 |---|---|
-| `ReadWrite` (default) | Reads from cache, writes successful outputs. |
-| `ReadOnly` | Reads from cache but never writes new entries. Useful for dry runs against warm caches. |
-| `Bypass` | Ignores the cache entirely and recomputes every node. Outputs are still hashed so downstream reads remain stable. |
+| `ReadWrite` (default) | Reads from cache, writes successful outputs. Mutable-source nodes without a pin get the configured TTL stamped on write. |
+| `ReadOnly` | Reads from cache but never writes new entries. Useful for dry runs against warm caches. **A miss is a terminal `Failed` event with `read-only-cache-miss` — the executor is not invoked and no synthetic hash is emitted.** |
+| `Bypass` | Ignores the cache entirely and recomputes every node. Outputs are still hashed and written so downstream reads remain stable. |
+
+### Event buffer policy
+
+The event channel is bounded (256 frames, `DropOldest`). Apply runs outlive
+the originating HTTP/gRPC request — a disconnected reader would otherwise
+retain the full backlog until the run finishes. Clients detect drops via the
+monotonic `sequence` field on every frame: a gap in sequence numbers means an
+older frame was discarded. Readers that stay connected never see drops because
+writers produce events at compute-bound rate.
 
 ### SSE frame shape
 
@@ -164,7 +173,7 @@ Event kinds:
 | `Cached` | Output was satisfied from the content-hash cache — no compute invocation. |
 | `Succeeded` | Node wrote a fresh artifact; `actualCost` is populated. |
 | `Failed` | Node failed; `diagnostic` carries the stable `code`. Downstream nodes receive `Skipped`. |
-| `Skipped` | Upstream failure or cancellation. |
+| `Skipped` | Deferred node. The `diagnostic.code` distinguishes the cause: `upstream-failed` when a parent failed, `apply-cancelled` when the run was cooperatively cancelled. |
 | `Warning` | Non-terminal warning (structured diagnostic). |
 | `ApplyCompleted` | Terminal; `summary` aggregates cached/ran/failed/skipped counts and wall-clock duration. |
 | `ApplyCancelled` | Terminal after cooperative cancel; same summary shape with `cancelled: true`. |
@@ -230,8 +239,9 @@ Admin tooling keys off these strings:
 | `invalid-request-body` | error | Request body could not be parsed as a canonical spec document. |
 | `apply-token-unknown` | error | Cancel targets a token the in-process registry does not know (usually after a restart). |
 | `artifact-not-found` | error | Requested artifact hash is unknown or evicted. |
-| `upstream-failed` | error | A parent node failed and the current node was skipped. |
-| `apply-cancelled` | info | Emitted on the terminal frame when an apply was cancelled cooperatively. |
+| `upstream-failed` | warning | A parent node failed and the current node was skipped. |
+| `apply-cancelled` | warning | A deferred node was skipped because the apply was cancelled cooperatively. Also emitted on the terminal `ApplyCancelled` frame. |
+| `read-only-cache-miss` | error | `ReadOnly` apply encountered a cache miss. The executor is intentionally not invoked and no synthetic hash is written. |
 
 ## Telemetry
 
@@ -253,8 +263,10 @@ All signals hang off the shared `Honua` meter and activity source (see
   server restart; `/v1/spec/cancel` returns `apply-token-unknown` in that
   case. Acceptable for minutes-long applies in S1; persistent tokens are a
   follow-on.
-- **Mutable source TTL** defaults to 15 minutes and is configurable via
-  `appsettings`. When tightened, operators should watch
+- **Mutable source TTL** defaults to 15 minutes (`SpecApplyOptions.MutableSourceTtl`)
+  and is applied at cache-write time to any payload whose planning warnings
+  include `mutable-source-no-pin`. Set to `null` to disable TTL degradation
+  entirely. When tightened, operators should watch
   `honua.spec.cache_lookups{outcome="miss"}` for regressions.
 - **Artifact backing**: cached artifacts flow through the existing
   `CloudFileStorageBase` stack (local / S3 / Azure Blob) under a
