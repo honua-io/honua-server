@@ -38,4 +38,46 @@ public static class SpatialConstants
     /// Computed as <c>PixelSizeMeters * 180 / WebMercatorExtent</c>.
     /// </summary>
     public const double DegreesPerPixel = PixelSizeMeters * 180.0 / WebMercatorExtent;
+
+    // Distance conversion factors to meters
+    /// <summary>
+    /// Conversion factor from feet to meters (1 foot = 0.3048 meters).
+    /// </summary>
+    public const double FeetToMeters = 0.3048;
+
+    /// <summary>
+    /// Conversion factor from miles to meters (1 mile = 1609.344 meters).
+    /// </summary>
+    public const double MilesToMeters = 1609.344;
+
+    /// <summary>
+    /// Conversion factor from kilometers to meters (1 kilometer = 1000 meters).
+    /// </summary>
+    public const double KilometersToMeters = 1000.0;
+
+    /// <summary>
+    /// Conversion factor from yards to meters (1 yard = 0.9144 meters).
+    /// </summary>
+    public const double YardsToMeters = 0.9144;
+
+    /// <summary>
+    /// Default spatial reference identifier (WGS 84).
+    /// </summary>
+    public const int DefaultSrid = 4326;
+
+    // Well-known geographic SRIDs for distance function selection
+    /// <summary>
+    /// Geographic SRIDs that use latitude/longitude degree-based coordinate systems.
+    /// Used to determine appropriate distance calculation functions.
+    /// </summary>
+    public static readonly int[] GeographicSrids =
+    [
+        4326,   // WGS 84
+        4269,   // NAD83
+        4267,   // NAD27
+        4258,   // ETRS89
+        4283,   // GDA94
+        4617,   // NAD83(CSRS)
+        4759    // NAD83(NSRS2007)
+    ];
 }

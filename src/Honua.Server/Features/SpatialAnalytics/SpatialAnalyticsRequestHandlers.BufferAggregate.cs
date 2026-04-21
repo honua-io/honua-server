@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Server.Features.FeatureServer;
@@ -315,17 +316,9 @@ internal static partial class SpatialAnalyticsRequestHandlers
     }
 
     /// <summary>
-    /// Converts a distance value to meters using the same factors the
-    /// PostgreSQL <c>GeometryProcessor.ConvertDistanceToMeters</c> uses, so the
-    /// server-side cap check stays in sync with what the SQL builder will
-    /// actually emit. Inlined to avoid a Postgres dependency from the slice.
+    /// Converts distance to meters using the shared distance conversion utility.
+    /// Ensures buffer area cap check stays consistent with what the SQL builder uses.
     /// </summary>
-    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) => unit switch
-    {
-        DistanceUnit.Meters => distance,
-        DistanceUnit.Feet => distance * 0.3048d,
-        DistanceUnit.Kilometers => distance * 1000d,
-        DistanceUnit.Miles => distance * 1609.344d,
-        _ => distance
-    };
+    private static double ConvertDistanceToMeters(double distance, DistanceUnit unit) =>
+        DistanceConversions.ToMeters(distance, unit);
 }

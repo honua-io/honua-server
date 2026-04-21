@@ -13,6 +13,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -1305,7 +1306,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });
                 fileStream = kmzStream;
-                detectedSrid = 4326;
+                detectedSrid = SpatialConstants.DefaultSrid;
             }
             else if (format.Value == SupportedFileFormat.FileGdb)
             {
@@ -2124,8 +2125,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     continue; // directory entry
                 }
 
-                // Security: prevent path traversal. The trailing separator ensures
-                // a sibling directory that shares a prefix cannot pass the check.
+                // Security: prevent path traversal with multiple layers of protection
+                if (string.IsNullOrEmpty(entry.FullName) || entry.FullName.Contains("..") ||
+                    entry.FullName.StartsWith('/') || entry.FullName.StartsWith('\\'))
+                {
+                    throw new InvalidDataException("Archive contains invalid entry name.");
+                }
+
+                // The trailing separator ensures a sibling directory that shares a prefix cannot pass the check.
                 var normalizedRoot = scratchDir.EndsWith(Path.DirectorySeparatorChar)
                     ? scratchDir
                     : scratchDir + Path.DirectorySeparatorChar;

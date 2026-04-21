@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Shared.Models;
 using Honua.DuckDB.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
@@ -293,7 +294,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
                         Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture),
                         Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture),
                         Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture),
-                        featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? 4326);
+                        featureQuery.OutputSrid ?? featureQuery.SpatialReferenceSrid ?? SpatialConstants.DefaultSrid);
                 }
 
                 return null;

@@ -36,6 +36,19 @@ public static class HonuaTelemetry
     public static readonly Meter Meter = new(ServiceName, ServiceVersion);
 
     private const int DefaultMaxExceptionDetailLength = 256;
+
+    // Performance categorization thresholds
+    private const double FastLatencyThresholdMs = 100.0;
+    private const double MediumLatencyThresholdMs = 1000.0;
+    private const double SlowLatencyThresholdMs = 5000.0;
+
+    // Memory categorization thresholds
+    private const long SmallMemoryThresholdBytes = 1024; // 1KB
+    private const long MediumMemoryThresholdBytes = 1024 * 1024; // 1MB
+    private const long LargeMemoryThresholdBytes = 10 * 1024 * 1024; // 10MB
+
+    // Stack trace detail threshold
+    internal const int MinStackTraceDetailLength = 2048;
     private static readonly Regex EmailPattern = new(
         "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -404,7 +417,7 @@ public static class HonuaTelemetry
             _includeExceptionStackTraces &&
             !string.IsNullOrWhiteSpace(exception.StackTrace))
         {
-            tags.Add("exception.stacktrace", SanitizeTelemetryText(exception.StackTrace, Math.Max(_maxExceptionDetailLength, 2048)));
+            tags.Add("exception.stacktrace", SanitizeTelemetryText(exception.StackTrace, Math.Max(_maxExceptionDetailLength, MinStackTraceDetailLength)));
         }
 
         activity.AddEvent(new ActivityEvent("exception", tags: tags));
@@ -472,9 +485,9 @@ public static class HonuaTelemetry
 
         var category = durationMs switch
         {
-            < 100 => "fast",
-            < 1000 => "medium",
-            < 5000 => "slow",
+            < FastLatencyThresholdMs => "fast",
+            < MediumLatencyThresholdMs => "medium",
+            < SlowLatencyThresholdMs => "slow",
             _ => "timeout"
         };
 
@@ -495,10 +508,10 @@ public static class HonuaTelemetry
 
         var category = allocationBytes switch
         {
-            <= 1024 => "small",          // <= 1KB
-            < 1024 * 1024 => "medium",  // < 1MB
-            < 10 * 1024 * 1024 => "large", // < 10MB
-            _ => "xlarge"                // >= 10MB
+            <= SmallMemoryThresholdBytes => "small",
+            < MediumMemoryThresholdBytes => "medium",
+            < LargeMemoryThresholdBytes => "large",
+            _ => "xlarge"
         };
 
         activity.SetTag(Tags.MemoryCategory, category);

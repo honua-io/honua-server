@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.NlQuery.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using NetTopologySuite.IO;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
@@ -18,7 +19,7 @@ namespace Honua.Core.Features.NlQuery.Services;
 /// </summary>
 public static class FilterPlanCompiler
 {
-    private const int DefaultSrid = 4326;
+    private const int DefaultSrid = SpatialConstants.DefaultSrid;
 
     private static readonly HashSet<string> AllowedComparisonOperators = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -390,10 +391,10 @@ public static class FilterPlanCompiler
 
         return unit.ToLowerInvariant() switch
         {
-            "kilometers" or "km" => distance * 1000.0,
-            "miles" or "mi" => distance * 1609.344,
-            "feet" or "ft" => distance * 0.3048,
-            "yards" or "yd" => distance * 0.9144,
+            "kilometers" or "km" => distance * SpatialConstants.KilometersToMeters,
+            "miles" or "mi" => distance * SpatialConstants.MilesToMeters,
+            "feet" or "ft" => distance * SpatialConstants.FeetToMeters,
+            "yards" or "yd" => distance * SpatialConstants.YardsToMeters,
             _ => throw new FilterPlanCompilationException($"Unsupported distance unit: '{unit}'.")
         };
     }

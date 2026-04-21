@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.DuckDB;
 
 /// <summary>
@@ -48,7 +50,7 @@ public sealed class DuckDBLayerOptions
     public string ObjectIdColumn { get; set; } = "id";
 
     /// <summary>SRID of the geometry data.</summary>
-    public int Srid { get; set; } = 4326;
+    public int Srid { get; set; } = SpatialConstants.DefaultSrid;
 
     /// <summary>Geometry type (Point, Polygon, etc.).</summary>
     public string GeometryType { get; set; } = "Point";

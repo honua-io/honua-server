@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.DuckDB.Features.Infrastructure;
 
 /// <summary>
@@ -22,7 +24,7 @@ internal sealed class DuckDBLayerMapping
     public required string ObjectIdColumn { get; init; }
 
     /// <summary>SRID declared for the geometry column.</summary>
-    public int Srid { get; init; } = 4326;
+    public int Srid { get; init; } = SpatialConstants.DefaultSrid;
 
     /// <summary>Attribute column names (excludes geometry and object ID columns).</summary>
     public required IReadOnlyList<string> AttributeColumns { get; init; }

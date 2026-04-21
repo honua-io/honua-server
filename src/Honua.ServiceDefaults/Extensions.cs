@@ -23,6 +23,11 @@ namespace Honua.ServiceDefaults;
 /// </summary>
 public static partial class Extensions
 {
+    // Performance monitoring constants
+    private const double DefaultSlowRequestThresholdMs = 1000.0;
+    private const int DefaultMemorySamplingIntervalMs = 100;
+    private const int DefaultHttpErrorStatusCode = 400;
+{
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         // Adaptive sampling configuration
@@ -135,7 +140,7 @@ public static partial class Extensions
                     {
                         options.EnrichWithHttpResponse = (activity, response) =>
                         {
-                            if (response.StatusCode >= 400)
+                            if (response.StatusCode >= DefaultHttpErrorStatusCode)
                             {
                                 activity.SetTag(HonuaTelemetry.Tags.Error, true);
                             }
@@ -337,7 +342,7 @@ public static partial class Extensions
 
             if (_includeExceptionStackTraces)
             {
-                SanitizeExceptionTag(activity, "exception.stacktrace", Math.Max(_maxExceptionDetailLength, 2048));
+                SanitizeExceptionTag(activity, "exception.stacktrace", Math.Max(_maxExceptionDetailLength, HonuaTelemetry.MinStackTraceDetailLength));
             }
             else
             {
@@ -391,8 +396,8 @@ public static partial class Extensions
         builder.Services.Configure<PerformanceMonitoringOptions>(options =>
         {
             options.EnableMemoryTracking = true;
-            options.SlowRequestThreshold = TimeSpan.FromMilliseconds(1000);
-            options.MemorySamplingInterval = 100;
+            options.SlowRequestThreshold = TimeSpan.FromMilliseconds(DefaultSlowRequestThresholdMs);
+            options.MemorySamplingInterval = DefaultMemorySamplingIntervalMs;
             options.EnableDetailedRequestTracking = true;
         });
 
@@ -442,7 +447,7 @@ public static partial class Extensions
                             memoryUsage.AllocatedBytes / (1024.0 * 1024.0));
                     }
 
-                    await Task.Delay(_interval, stoppingToken);
+                    await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -452,7 +457,7 @@ public static partial class Extensions
                 catch (Exception ex)
                 {
                     MemoryMonitoringLog.MemoryMonitoringServiceFailed(_logger, ex);
-                    await Task.Delay(_interval, stoppingToken);
+                    await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);
                 }
             }
         }
