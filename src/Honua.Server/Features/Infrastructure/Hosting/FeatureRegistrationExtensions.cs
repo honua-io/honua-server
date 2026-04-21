@@ -5,6 +5,7 @@ using Honua.Server.Features.Admin;
 using Honua.Server.Features.Alerts;
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.Geocoding;
+using Honua.Server.Features.Grounding.Spec;
 using Honua.Server.Features.GeometryService;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Geoprocessing.GPServer;
@@ -64,6 +65,7 @@ internal static class FeatureRegistrationExtensions
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         services.AddMcpOperatorSurface(configuration);
+        services.AddSpecGrounding();
         services.AddSpatialAnalytics();
         services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
@@ -101,6 +103,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSpatialAnalyticsOgcEndpoints();
         endpoints.MapGPServerEndpoints();
         endpoints.MapMcpOperatorSurface();
+        endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();
 
         return endpoints;

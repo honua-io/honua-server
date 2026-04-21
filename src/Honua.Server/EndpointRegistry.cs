@@ -593,6 +593,8 @@ public static class EndpointRegistry
         new("GET", "/samples/stac-ops"),
 
         // MCP operator surface (#728) — JSON-RPC dispatch over a single route.
+        new("POST", "/v1/grounding/spec/mutate"),
+        new("POST", "/v1/grounding/spec/summarize"),
         new("POST", "/mcp"),
 
         // Spec plan / apply engine (#789).
