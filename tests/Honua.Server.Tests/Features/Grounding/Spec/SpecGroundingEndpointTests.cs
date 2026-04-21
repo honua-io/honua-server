@@ -26,7 +26,8 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
                 new SpecGroundingLayerCatalog(
                     SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
                     SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
-                    SpecGroundingTestSupport.CreateLayer(3, "Hospitals South")));
+                    SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
+                    SpecGroundingTestSupport.CreateLayer(4, "Zones")));
     }
 
     public async Task InitializeAsync()
@@ -92,6 +93,36 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
         clarification.GetProperty("question_kind").GetString().Should().Be("single-select");
         clarification.GetProperty("candidates").GetArrayLength().Should().Be(2);
         clarification.GetProperty("candidates")[0].GetProperty("candidate_type").GetString().Should().Be("dataset");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_InvalidMutation_ReturnsStructuredErrorWithoutErrorDiagnosticsInWarnings()
+    {
+        using var harness = new SpecGroundingHarness(SpecGroundingTestSupport.CreateLayer(4, "Zones"));
+        var currentSpec = harness.ToCanonicalJson(harness.Parse(
+            """
+            grammar "v1.0"
+            source zones { type = "layer", ref = "catalog:layer:4" }
+            """));
+
+        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement(currentSpec),
+            turn = "buffer zones by 500.m in EPSG:3857 as zones"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        root.TryGetProperty("mutation", out _).Should().BeFalse();
+        root.GetProperty("clarifications").GetArrayLength().Should().Be(0);
+        root.GetProperty("error").GetProperty("kind").GetString().Should().Be("invalid_mutation");
+        root.GetProperty("warnings").EnumerateArray()
+            .Select(warning => warning.GetProperty("severity").GetString())
+            .Should().NotContain("error");
     }
 
     [IntegrationTest]

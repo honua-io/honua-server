@@ -126,7 +126,10 @@ internal static class SpecGroundingEndpointExtensions
         {
             Mutation = result.Mutation is null ? null : ToMutationPlan(result.Mutation),
             Clarifications = result.Clarification is null ? [] : ToClarifications(result.Clarification),
-            Warnings = result.Warnings.Select(ToDiagnostic).ToList(),
+            Warnings = result.Warnings
+                .Where(diagnostic => diagnostic.Severity != SpecDiagnosticSeverity.Error)
+                .Select(ToDiagnostic)
+                .ToList(),
             Error = result.Clarification is not null || result.ErrorKind is null
                 ? null
                 : new SpecGroundingErrorDto
