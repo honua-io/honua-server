@@ -56,7 +56,8 @@ internal sealed partial class SpecGroundingService
         ArgumentNullException.ThrowIfNull(currentSpec);
         ArgumentException.ThrowIfNullOrWhiteSpace(turn);
 
-        SpecGroundingLog.MutateStarted(_logger, turn.Length, clarificationAnswer is not null);
+        var retried = clarificationAnswer is not null;
+        SpecGroundingLog.MutateStarted(_logger, turn.Length, retried);
 
         var warnings = new List<SpecDiagnostic>();
         var intentId = clarificationAnswer?.IntentId;
@@ -71,7 +72,7 @@ internal sealed partial class SpecGroundingService
         {
             var errors = inputDiagnostics.Where(diagnostic => diagnostic.Severity == SpecDiagnosticSeverity.Error).ToArray();
             SpecGroundingTelemetry.RecordValidationFailures(errors.Select(diagnostic => diagnostic.Code.ToString()));
-            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: false, errorKind: "unresolvable");
+            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "unresolvable");
             SpecGroundingLog.MutateRejected(_logger, "unresolvable", "The input spec is not valid.");
             return new SpecGroundingResult
             {
@@ -91,7 +92,7 @@ internal sealed partial class SpecGroundingService
             if (IsOutOfScope(clause))
             {
                 var message = $"Turn '{clause}' is outside the supported spec-grounding scope. {RoadmapPointer}";
-                SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: false, errorKind: "out_of_scope");
+                SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "out_of_scope");
                 SpecGroundingLog.MutateRejected(_logger, "out_of_scope", message);
                 warnings.Add(SpecDiagnostic.Warning(
                     SpecDiagnosticCode.UnknownOperator,
@@ -118,7 +119,7 @@ internal sealed partial class SpecGroundingService
 
             if (clauseResult.Clarification is not null)
             {
-                SpecGroundingTelemetry.RecordMutateTurn(clarified: true, retried: false, errorKind: "ambiguous");
+                SpecGroundingTelemetry.RecordMutateTurn(clarified: true, retried: retried, errorKind: "ambiguous");
                 SpecGroundingLog.MutateCompleted(_logger, mutations.Count, clauseResult.Clarification.Request.Questions.Count, "ambiguous");
                 return new SpecGroundingResult
                 {
@@ -133,7 +134,7 @@ internal sealed partial class SpecGroundingService
             {
                 SpecGroundingTelemetry.RecordMutateTurn(
                     clarified: false,
-                    retried: false,
+                    retried: retried,
                     errorKind: clauseResult.ErrorKind.Value.ToString().ToLowerInvariant());
                 SpecGroundingLog.MutateRejected(
                     _logger,
@@ -160,7 +161,7 @@ internal sealed partial class SpecGroundingService
         if (!handledAnyClause || mutations.Count == 0)
         {
             const string message = "The turn could not be grounded to a supported spec mutation.";
-            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: false, errorKind: "unresolvable");
+            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "unresolvable");
             SpecGroundingLog.MutateRejected(_logger, "unresolvable", message);
             return new SpecGroundingResult
             {
@@ -182,7 +183,7 @@ internal sealed partial class SpecGroundingService
                 ex.Message,
                 SourceSpan.Synthetic));
             SpecGroundingTelemetry.RecordValidationFailures([SpecDiagnosticCode.UnknownReference.ToString()]);
-            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: false, errorKind: "invalid_mutation");
+            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "invalid_mutation");
             SpecGroundingLog.MutateRejected(_logger, "invalid_mutation", ex.Message);
             return new SpecGroundingResult
             {
@@ -198,7 +199,7 @@ internal sealed partial class SpecGroundingService
         if (outputErrors.Length > 0)
         {
             SpecGroundingTelemetry.RecordValidationFailures(outputErrors.Select(diagnostic => diagnostic.Code.ToString()));
-            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: false, errorKind: "invalid_mutation");
+            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "invalid_mutation");
             SpecGroundingLog.MutateRejected(_logger, "invalid_mutation", outputErrors[0].Message);
             return new SpecGroundingResult
             {
@@ -216,7 +217,7 @@ internal sealed partial class SpecGroundingService
         var preservedSections = AllSections().Except(touchedSections, StringComparer.Ordinal).ToArray();
 
         SpecGroundingTelemetry.RecordMutationKinds(mutations, touchedSections);
-        SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: false, errorKind: null);
+        SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: null);
         SpecGroundingLog.MutateCompleted(_logger, mutations.Count, 0, null);
 
         return new SpecGroundingResult
@@ -577,41 +578,42 @@ internal sealed partial class SpecGroundingService
                 $"Layer '{layer.Name}' does not expose a string field that can be filtered.");
         }
 
-        var parts = tail.Split(" or ", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var answerValue = GetSingleAnswer(clarificationAnswer, "value.selection");
-        if (parts.Length > 1 && string.IsNullOrWhiteSpace(answerValue))
-        {
-            return ClausePlanResult.FromClarification(CreateValueClarification(intentId, parts));
-        }
-
-        var resolvedValue = !string.IsNullOrWhiteSpace(answerValue)
-            ? answerValue
-            : parts[0];
-
         var fieldCandidates = ResolveFieldCandidates(stringFields, tail);
-        var selectedField = GetSingleAnswer(clarificationAnswer, "column.selection");
+        var parts = tail.Split(" or ", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var valueCandidates = parts
+            .Select(static part => part.Trim())
+            .Where(static part => part.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
-        if (!string.IsNullOrWhiteSpace(selectedField))
+        var resolvedValue = valueCandidates.Length switch
         {
-            fieldCandidates = stringFields
-                .Where(field => string.Equals(field.Name, selectedField, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+            > 1 when TryGetSelectedValue(clarificationAnswer, valueCandidates, out var selectedValue) => selectedValue,
+            > 1 => null,
+            > 0 => valueCandidates[0],
+            _ => tail.Trim()
+        };
+
+        if (resolvedValue is null)
+        {
+            return ClausePlanResult.FromClarification(CreateValueClarification(intentId, valueCandidates));
         }
 
-        if (fieldCandidates.Length > 1)
+        var field = fieldCandidates.Length switch
         {
-            return ClausePlanResult.FromClarification(CreateColumnClarification(intentId, fieldCandidates));
-        }
-
-        var field = fieldCandidates.Length == 1
-            ? fieldCandidates[0]
-            : stringFields.Length == 1
-                ? stringFields[0]
-                : null;
+            > 1 when TryGetSelectedField(clarificationAnswer, fieldCandidates, out var selectedField) => selectedField,
+            > 1 => null,
+            1 => fieldCandidates[0],
+            _ when stringFields.Length == 1 => stringFields[0],
+            _ when TryGetSelectedField(clarificationAnswer, stringFields, out var selectedFallbackField) => selectedFallbackField,
+            _ => null
+        };
 
         if (field is null)
         {
-            return ClausePlanResult.FromClarification(CreateColumnClarification(intentId, stringFields));
+            return ClausePlanResult.FromClarification(CreateColumnClarification(
+                intentId,
+                fieldCandidates.Length > 1 ? fieldCandidates : stringFields));
         }
 
         var value = TrimKnownFieldSuffix(resolvedValue, field.Name);
@@ -659,19 +661,6 @@ internal sealed partial class SpecGroundingService
                 $"No catalog layers are available to resolve '{sourcePhrase}'.");
         }
 
-        var candidateOverride = GetSingleAnswer(clarificationAnswer, "dataset.selection");
-        if (!string.IsNullOrWhiteSpace(candidateOverride) &&
-            TryResolveLayerBySelection(layers, candidateOverride, out var selectedLayer))
-        {
-            return SourceResolution.Success(
-                ResolveSourceId(document, sourceIdHint ?? NormalizeIdentifier(selectedLayer.Name)),
-                new AddSourceMutation(
-                    ResolveSourceId(document, sourceIdHint ?? NormalizeIdentifier(selectedLayer.Name)),
-                    "layer",
-                    $"catalog:layer:{selectedLayer.Id}",
-                    selectedLayer.Name));
-        }
-
         var candidates = ResolveLayerCandidates(layers, sourcePhrase).ToArray();
         if (candidates.Length == 0)
         {
@@ -682,7 +671,19 @@ internal sealed partial class SpecGroundingService
 
         if (candidates.Length > 1)
         {
-            return SourceResolution.FromClarification(CreateDatasetClarification(intentId, candidates));
+            if (!TryGetSelectedLayer(clarificationAnswer, candidates, out var selectedLayer))
+            {
+                return SourceResolution.FromClarification(CreateDatasetClarification(intentId, candidates));
+            }
+
+            var selectedSourceId = ResolveSourceId(document, sourceIdHint ?? NormalizeIdentifier(selectedLayer.Name));
+            return SourceResolution.Success(
+                selectedSourceId,
+                new AddSourceMutation(
+                    selectedSourceId,
+                    "layer",
+                    $"catalog:layer:{selectedLayer.Id}",
+                    selectedLayer.Name));
         }
 
         var layer = candidates[0].Layer;
@@ -1010,19 +1011,79 @@ internal sealed partial class SpecGroundingService
         return layer is not null;
     }
 
-    private static string GetSingleAnswer(ClarificationResponse? clarificationAnswer, string questionId)
+    private static bool TryGetSelectedLayer(
+        ClarificationResponse? clarificationAnswer,
+        IReadOnlyList<LayerMatch> candidates,
+        out LayerDefinition layer)
     {
+        layer = null!;
+        return TryGetSingleAnswer(clarificationAnswer, "dataset.selection", out var selection) &&
+               TryResolveLayerBySelection(candidates.Select(static candidate => candidate.Layer).ToArray(), selection, out layer);
+    }
+
+    private static bool TryGetSelectedField(
+        ClarificationResponse? clarificationAnswer,
+        IReadOnlyList<FieldDefinition> candidates,
+        out FieldDefinition field)
+    {
+        field = null!;
+        if (!TryGetSingleAnswer(clarificationAnswer, "column.selection", out var selection))
+        {
+            return false;
+        }
+
+        field = candidates.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, selection, StringComparison.OrdinalIgnoreCase))!;
+        return field is not null;
+    }
+
+    private static bool TryGetSelectedValue(
+        ClarificationResponse? clarificationAnswer,
+        IReadOnlyList<string> candidates,
+        out string value)
+    {
+        value = string.Empty;
+        if (!TryGetSingleAnswer(clarificationAnswer, "value.selection", out var selection))
+        {
+            return false;
+        }
+
+        var match = candidates.FirstOrDefault(candidate =>
+            string.Equals(candidate, selection, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            return false;
+        }
+
+        value = match;
+        return true;
+    }
+
+    private static bool TryGetSingleAnswer(
+        ClarificationResponse? clarificationAnswer,
+        string questionId,
+        out string value)
+    {
+        value = string.Empty;
         if (clarificationAnswer is null)
         {
-            return string.Empty;
+            return false;
         }
 
         if (!clarificationAnswer.Answers.TryGetValue(questionId, out var values) || values.Count == 0)
         {
-            return string.Empty;
+            return false;
         }
 
-        return values[0];
+        value = values[0];
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static string GetSingleAnswer(ClarificationResponse? clarificationAnswer, string questionId)
+    {
+        return TryGetSingleAnswer(clarificationAnswer, questionId, out var value)
+            ? value
+            : string.Empty;
     }
 
     private static bool IsConfirmed(ClarificationResponse? clarificationAnswer, string questionId)

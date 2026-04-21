@@ -1,11 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Spec.Domain;
+using Honua.ServiceDefaults;
 using Honua.Server.Features.Grounding.Spec;
 
 namespace Honua.Server.Tests.Features.Grounding.Spec;
@@ -33,6 +35,60 @@ public sealed class SpecGroundingServiceTests
         result.Clarification.Request.Questions[0].QuestionId.Should().Be("dataset.selection");
         result.Clarification.CandidatesByQuestionId["dataset.selection"]
             .Should().OnlyContain(candidate => candidate.CandidateType == "dataset");
+    }
+
+    [Fact]
+    public async Task Mutate_WithMatchingDatasetClarificationAnswer_AppliesSelectedCandidate()
+    {
+        using var harness = CreateHarness(
+            SpecGroundingTestSupport.CreateLayer(1, "Hospitals North"),
+            SpecGroundingTestSupport.CreateLayer(2, "Hospitals South"));
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use hospitals as hospitals",
+            context: null,
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-dataset",
+                "dataset.selection",
+                "catalog:layer:2"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Clarification.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        var source = payload.RootElement.GetProperty("sources")[0];
+        source.GetProperty("ref").GetString().Should().Be("catalog:layer:2");
+    }
+
+    [Fact]
+    public async Task Mutate_WithStaleDatasetClarificationAnswer_IgnoresOverrideForUnambiguousTurn()
+    {
+        using var harness = CreateHarness(
+            SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
+            SpecGroundingTestSupport.CreateLayer(2, "Hospitals"));
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use rivers as rivers",
+            context: null,
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-dataset",
+                "dataset.selection",
+                "catalog:layer:2"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Clarification.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        var source = payload.RootElement.GetProperty("sources")[0];
+        source.GetProperty("ref").GetString().Should().Be("catalog:layer:1");
     }
 
     [Fact]
@@ -69,6 +125,45 @@ public sealed class SpecGroundingServiceTests
     }
 
     [Fact]
+    public async Task Mutate_WithMismatchedColumnClarificationAnswer_ReissuesCurrentClarification()
+    {
+        using var harness = CreateHarness(
+            SpecGroundingTestSupport.CreateLayer(
+                1,
+                "Parcels",
+                fields:
+                [
+                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                    new FieldDefinition("status_code", FieldType.String, Length: 32),
+                    new FieldDefinition("status_label", FieldType.String, Length: 64),
+                    new FieldDefinition("category", FieldType.String, Length: 64)
+                ]));
+
+        var result = await harness.Service.MutateAsync(
+            harness.Parse(
+                """
+                grammar "v1.0"
+                source parcels { type = "layer", ref = "catalog:layer:1" }
+                """),
+            "only status",
+            new SpecGroundingContext(TargetId: "parcels"),
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-column",
+                "column.selection",
+                "category"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().Be(SpecGroundingErrorKind.Ambiguous);
+        result.Clarification.Should().NotBeNull();
+        result.Mutation.Should().BeNull();
+        result.Clarification!.Request.Questions[0].QuestionId.Should().Be("column.selection");
+        result.Clarification.CandidatesByQuestionId["column.selection"]
+            .Select(candidate => candidate.ColumnName)
+            .Should().Equal("status_code", "status_label");
+    }
+
+    [Fact]
     public async Task Mutate_WithAmbiguousFilterValue_ReturnsPickValueClarification()
     {
         using var harness = CreateHarness(
@@ -98,6 +193,86 @@ public sealed class SpecGroundingServiceTests
         result.Clarification.Request.Questions[0].QuestionId.Should().Be("value.selection");
         result.Clarification.CandidatesByQuestionId["value.selection"]
             .Should().OnlyContain(candidate => candidate.CandidateType == "value");
+    }
+
+    [Fact]
+    public async Task Mutate_WithMatchingValueClarificationAnswer_AppliesSelectedValue()
+    {
+        using var harness = CreateHarness(
+            SpecGroundingTestSupport.CreateLayer(
+                1,
+                "Parcels",
+                fields:
+                [
+                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                    new FieldDefinition("zone", FieldType.String, Length: 16)
+                ]));
+
+        var result = await harness.Service.MutateAsync(
+            harness.Parse(
+                """
+                grammar "v1.0"
+                source parcels { type = "layer", ref = "catalog:layer:1" }
+                """),
+            "only AE or VE",
+            new SpecGroundingContext(TargetId: "parcels"),
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-value",
+                "value.selection",
+                "VE"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Clarification.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        payload.RootElement.GetProperty("scope")[0]
+            .GetProperty("where")
+            .GetProperty("cql2")
+            .GetString()
+            .Should().Be("zone = 'VE'");
+    }
+
+    [Fact]
+    public async Task Mutate_WithStaleValueClarificationAnswer_IgnoresOverrideForSingleValueTurn()
+    {
+        using var harness = CreateHarness(
+            SpecGroundingTestSupport.CreateLayer(
+                1,
+                "Parcels",
+                fields:
+                [
+                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                    new FieldDefinition("zone", FieldType.String, Length: 16)
+                ]));
+
+        var result = await harness.Service.MutateAsync(
+            harness.Parse(
+                """
+                grammar "v1.0"
+                source parcels { type = "layer", ref = "catalog:layer:1" }
+                """),
+            "only AE",
+            new SpecGroundingContext(TargetId: "parcels"),
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-value",
+                "value.selection",
+                "VE"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Clarification.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        payload.RootElement.GetProperty("scope")[0]
+            .GetProperty("where")
+            .GetProperty("cql2")
+            .GetString()
+            .Should().Be("zone = 'AE'");
     }
 
     [Fact]
@@ -185,6 +360,32 @@ public sealed class SpecGroundingServiceTests
         result.Clarification!.Request.ReasonCodes.Should().Contain(ClarificationReasonCode.HeavyOperationConfirmation);
         result.Clarification.Request.Questions[0].QuestionId.Should().Be("heavy.confirm");
         result.Clarification.Request.Questions[0].Kind.Should().Be(ClarificationQuestionKind.Confirmation);
+    }
+
+    [Fact]
+    public async Task Mutate_WithClarificationAnswer_RecordsRetriedMetricTag()
+    {
+        var samples = new List<MeasurementSample>();
+        using var listener = CreateMutateTurnListener(samples);
+        using var harness = CreateHarness();
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "publish this dashboard",
+            context: null,
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-retry",
+                "dataset.selection",
+                "catalog:layer:1"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().Be(SpecGroundingErrorKind.OutOfScope);
+        samples.Should().ContainSingle(sample =>
+            sample.Value == 1 &&
+            GetBooleanTag(sample.Tags, "clarified") == false &&
+            GetBooleanTag(sample.Tags, "retried") == true &&
+            GetStringTag(sample.Tags, "error") == "out_of_scope");
     }
 
     [Fact]
@@ -454,4 +655,50 @@ public sealed class SpecGroundingServiceTests
 
     private static SpecGroundingHarness CreateHarness(params LayerDefinition[] layers)
         => new(layers);
+
+    private static ClarificationResponse CreateClarificationResponse(
+        string intentId,
+        string questionId,
+        params string[] values)
+        => new()
+        {
+            IntentId = intentId,
+            Answers = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                [questionId] = values
+            }
+        };
+
+    private static MeterListener CreateMutateTurnListener(List<MeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, currentListener) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName &&
+                    instrument.Name == "honua.grounding.spec.mutate.turns")
+                {
+                    currentListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static bool? GetBooleanTag(KeyValuePair<string, object?>[] tags, string name)
+        => tags.FirstOrDefault(tag => tag.Key == name).Value as bool?;
+
+    private static string? GetStringTag(KeyValuePair<string, object?>[] tags, string name)
+        => tags.FirstOrDefault(tag => tag.Key == name).Value as string;
+
+    private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
 }
