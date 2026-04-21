@@ -217,3 +217,10 @@ wire up any other feature slice.
   and surface `UnsupportedGrammarVersion` for anything newer.
 - **Breaking change.** Bump the grammar major and publish a new directory
   (`v2.0/`). Keep the previous directory intact for back-compat reads.
+
+## Related surfaces
+
+- [Spec Grounding v1.0](../../spec-grounding/v1.0/README.md) — `/v1/grounding/spec/mutate`
+  and `/v1/grounding/spec/summarize` author, refine, and describe canonical
+  specs from natural-language turns while preserving unchanged sections
+  byte-for-byte.

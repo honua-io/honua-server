@@ -240,12 +240,36 @@ catalog. The fixtures are consumed by:
 the engine/catalog in lock-step; do not overspecify scenarios with exact
 process IDs that a catalog addition could reshuffle.
 
+## Spec-workspace grounding
+
+The workflow-family pipeline above grounds an operator goal into typed
+intents and catalog candidates. Editing a canonical [spec grammar](spec-grammar/v1.0/README.md)
+document from natural language is a separate surface:
+
+- `POST /v1/grounding/spec/mutate` — NL turn → validated `SpecMutationPlan`
+  over a closed set of mutation kinds, with `sections_touched` /
+  `sections_preserved` for workspace diff rendering.
+- `POST /v1/grounding/spec/summarize` — canonical spec → deterministic
+  per-section English summaries.
+
+The spec-grounding surface reuses the ADR-0027 clarification shape
+(`ClarificationRequest` / `ClarificationQuestion`) but adds spec-specific
+reason codes (`ambiguous_column`, `ambiguous_filter_value`,
+`ambiguous_unit`, `ambiguous_crs`, `heavy_operation_confirmation`) and
+typed candidate payloads. See [Spec Grounding v1.0](spec-grounding/v1.0/README.md)
+for the full contract and clause grammar.
+
 ## Related
 
 - [MCP_SERVER.md](MCP_SERVER.md) — operator MCP surface (tool definitions,
   payload shapes, authorization story)
+- [Spec Grounding v1.0](spec-grounding/v1.0/README.md) — spec-workspace
+  mutate/summarize HTTP surface
 - [ADR-0027](../contributor/adr/0027-deterministic-intent-clarification-workflow.md) — canonical workflow
   taxonomy and material-ambiguity contract
+- [ADR-0028](../contributor/adr/0028-ai-data-editing-not-allowed.md) —
+  no AI-authored data edits; structurally honoured by the closed
+  `SpecMutationKind` enum
 - `src/Honua.Server/Features/Grounding/` — service, engine, drafter,
-  evaluator, and MCP mappers
+  evaluator, MCP mappers, and spec grounding endpoints
 - `src/Honua.Core/Features/Grounding/` — domain types and abstractions

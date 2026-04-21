@@ -185,10 +185,10 @@ internal sealed partial class SpecMutationApplier
             .Select(step => (string.Equals(step.Id, mutation.FromId, StringComparison.Ordinal)
                     ? step with { Id = mutation.ToId }
                     : step) with
-                {
-                    Inputs = step.Inputs is null ? null : RewriteObject(step.Inputs, mutation),
-                    Parameters = step.Parameters is null ? null : RewriteObject(step.Parameters, mutation)
-                })
+            {
+                Inputs = step.Inputs is null ? null : RewriteObject(step.Inputs, mutation),
+                Parameters = step.Parameters is null ? null : RewriteObject(step.Parameters, mutation)
+            })
             .ToImmutableArray();
 
         MapSpec? renamedMap = null;
@@ -206,9 +206,9 @@ internal sealed partial class SpecMutationApplier
             .Select(output => (string.Equals(output.Id, mutation.FromId, StringComparison.Ordinal)
                     ? output with { Id = mutation.ToId }
                     : output) with
-                {
-                    Expression = RewriteExpression(output.Expression, mutation)
-                })
+            {
+                Expression = RewriteExpression(output.Expression, mutation)
+            })
             .ToImmutableArray();
 
         return document with
