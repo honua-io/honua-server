@@ -196,7 +196,7 @@ internal sealed partial class SpecMutationApplier
         {
             renamedMap = document.Map with
             {
-                Layers = document.Map.Layers is null ? null : RewriteArray(document.Map.Layers, mutation),
+                Layers = document.Map.Layers is null ? null : RewriteArray(document.Map.Layers, mutation, allowBareStringReference: true),
                 Viewport = document.Map.Viewport is null ? null : RewriteObject(document.Map.Viewport, mutation),
                 Legend = document.Map.Legend is null ? null : RewriteObject(document.Map.Legend, mutation)
             };
@@ -243,30 +243,43 @@ internal sealed partial class SpecMutationApplier
             ? reference with { Root = mutation.ToId }
             : reference;
 
-    private static ObjectExpression RewriteObject(ObjectExpression expression, RenameReferenceMutation mutation)
+    private static ObjectExpression RewriteObject(
+        ObjectExpression expression,
+        RenameReferenceMutation mutation,
+        bool allowBareStringReference = false)
         => expression with
         {
             Fields = expression.Fields
-                .Select(field => field with { Value = RewriteExpression(field.Value, mutation) })
+                .Select(field => field with
+                {
+                    Value = RewriteExpression(field.Value, mutation, allowBareStringReference)
+                })
                 .ToImmutableArray()
         };
 
-    private static ArrayLiteral RewriteArray(ArrayLiteral expression, RenameReferenceMutation mutation)
+    private static ArrayLiteral RewriteArray(
+        ArrayLiteral expression,
+        RenameReferenceMutation mutation,
+        bool allowBareStringReference = false)
         => expression with
         {
             Items = expression.Items
-                .Select(item => RewriteExpression(item, mutation))
+                .Select(item => RewriteExpression(item, mutation, allowBareStringReference))
                 .ToImmutableArray()
         };
 
-    private static SpecExpression RewriteExpression(SpecExpression expression, RenameReferenceMutation mutation)
+    private static SpecExpression RewriteExpression(
+        SpecExpression expression,
+        RenameReferenceMutation mutation,
+        bool allowBareStringReference = false)
     {
         return expression switch
         {
             ReferenceNode reference => RewriteReference(reference, mutation),
-            ArrayLiteral array => RewriteArray(array, mutation),
-            ObjectExpression obj => RewriteObject(obj, mutation),
-            LiteralNode literal when literal.Kind == SpecTypeKind.String &&
+            ArrayLiteral array => RewriteArray(array, mutation, allowBareStringReference),
+            ObjectExpression obj => RewriteObject(obj, mutation, allowBareStringReference),
+            LiteralNode literal when allowBareStringReference &&
+                literal.Kind == SpecTypeKind.String &&
                 string.Equals(literal.String, mutation.FromId, StringComparison.Ordinal) => literal with { String = mutation.ToId },
             _ => expression
         };

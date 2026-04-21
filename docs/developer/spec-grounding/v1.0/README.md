@@ -61,10 +61,10 @@ Response body (always 200 on a well-formed request; `400` with a Problem Details
 Exactly one of `mutation`, `clarifications[]`, or `error` is populated on any non-`400` response:
 
 - `mutation.next_spec` is the canonical JSON emitted by `SpecCanonicalizer.ToJson(nextDocument)` after `ISpecValidator.Validate` reported no error-severity diagnostics.
-- `mutation.sections_touched` / `sections_preserved` partition the canonical top-level section names (`sources`, `scope`, `compute`, `map`, `outputs`) based on which mutations ran. Sections in `sections_preserved` round-trip byte-for-byte through the canonical emitter.
+- `mutation.sections_touched` / `sections_preserved` partition the canonical top-level section names (`sources`, `scope`, `compute`, `map`, `outputs`) based on which canonical sections changed after the applied mutations. Sections in `sections_preserved` round-trip byte-for-byte through the canonical emitter.
 - `clarifications[]` is one entry per `ClarificationQuestion`. Each entry carries `intent_id`, `kind` (one of `pick-dataset`, `pick-column`, `pick-value`, `specify-unit`, `specify-crs`, `choose-op`, `confirm-heavy-op`), `reason_codes[]`, `question_id`, `question_kind`, `prompt`, and typed `candidates[]`.
 - `warnings[]` echoes non-error `SpecDiagnostic`s surfaced during validation or catalog lookup.
-- `error.kind` ∈ `unresolvable`, `ambiguous`, `invalid_mutation`, `out_of_scope`. The response never includes a partially applied spec on error.
+- `error.kind` ∈ `unresolvable`, `invalid_mutation`, `out_of_scope`. Ambiguous turns return `clarifications[]` and leave `error` null. The response never includes a partially applied spec on error.
 
 ### `POST /v1/grounding/spec/summarize`
 
@@ -149,11 +149,10 @@ All clarifications carry the same `intent_id` across turns when the caller echoe
 | `error.kind` | Trigger |
 |---|---|
 | `unresolvable` | Input spec already has error-severity diagnostics; no clause parses; a referenced source/compute/output id does not exist; no catalog layers available to resolve a dataset phrase; map/output target cannot be resolved. |
-| `ambiguous` | A clause requires clarification — the response also carries a non-empty `clarifications[]` and `clarification_answer` echoes the intent in a follow-up turn. |
 | `invalid_mutation` | The applier threw `InvalidOperationException` (e.g. `remove-source` on a missing id), or the post-apply `ISpecValidator` returned error-severity diagnostics. |
 | `out_of_scope` | Turn contains an S2/S3 keyword (`schedule`, `publish`, `deploy`, `dashboard`, `app`). The warnings list includes a pointer to `docs/developer/spec-grammar/v1.0/README.md`. |
 
-Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing `turn`, non-object `spec`, invalid `clarification_answer` shape. Validation or grounding failures always return `200` with a structured `error` envelope instead.
+Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing `turn`, non-object `spec`, invalid `clarification_answer` shape. Ambiguous turns return `200` with `clarifications[]` and no `error`; other validation or grounding failures return `200` with a structured `error` envelope.
 
 ## Round-trip invariants
 

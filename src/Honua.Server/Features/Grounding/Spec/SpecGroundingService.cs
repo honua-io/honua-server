@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -208,7 +209,10 @@ internal sealed partial class SpecGroundingService
         }
 
         var canonicalJson = _canonicalizer.ToJson(nextDocument);
-        var touchedSections = DetermineTouchedSections(mutations);
+        var renameTouchedSections = mutations.Any(static mutation => mutation.Kind == SpecMutationKind.RenameReference)
+            ? DetermineChangedSections(_canonicalizer.ToJson(currentSpec), canonicalJson)
+            : null;
+        var touchedSections = DetermineTouchedSections(mutations, renameTouchedSections);
         var preservedSections = AllSections().Except(touchedSections, StringComparer.Ordinal).ToArray();
 
         SpecGroundingTelemetry.RecordMutationKinds(mutations, touchedSections);
@@ -735,21 +739,61 @@ internal sealed partial class SpecGroundingService
            document.Compute.Any(step => string.Equals(step.Id, id, StringComparison.Ordinal)) ||
            document.Outputs.Any(output => string.Equals(output.Id, id, StringComparison.Ordinal));
 
-    private static string[] DetermineTouchedSections(IEnumerable<SpecMutation> mutations)
-        => mutations
-            .Select(mutation => mutation.Kind switch
+    private static string[] DetermineTouchedSections(
+        IEnumerable<SpecMutation> mutations,
+        IEnumerable<string>? renameTouchedSections = null)
+    {
+        var touchedSections = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var mutation in mutations)
+        {
+            if (mutation.Kind == SpecMutationKind.RenameReference)
+            {
+                if (renameTouchedSections is not null)
+                {
+                    touchedSections.UnionWith(renameTouchedSections);
+                }
+
+                continue;
+            }
+
+            touchedSections.Add(mutation.Kind switch
             {
                 SpecMutationKind.AddSource or SpecMutationKind.RemoveSource => "sources",
                 SpecMutationKind.AddScopeClause => "scope",
-                SpecMutationKind.AddCompute or SpecMutationKind.RemoveCompute or SpecMutationKind.RenameReference => "compute",
+                SpecMutationKind.AddCompute or SpecMutationKind.RemoveCompute => "compute",
                 SpecMutationKind.SetMapLayer or SpecMutationKind.SetViewport => "map",
                 SpecMutationKind.SetOutput => "outputs",
                 _ => "compute"
-            })
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+            });
+        }
+
+        return AllSections().Where(touchedSections.Contains).ToArray();
+    }
 
     private static string[] AllSections() => ["sources", "scope", "compute", "map", "outputs"];
+
+    private static string[] DetermineChangedSections(string currentCanonicalJson, string nextCanonicalJson)
+    {
+        using var current = JsonDocument.Parse(currentCanonicalJson);
+        using var next = JsonDocument.Parse(nextCanonicalJson);
+
+        return AllSections()
+            .Where(section => !SectionsMatch(current.RootElement, next.RootElement, section))
+            .ToArray();
+    }
+
+    private static bool SectionsMatch(JsonElement currentRoot, JsonElement nextRoot, string section)
+    {
+        var hasCurrent = currentRoot.TryGetProperty(section, out var currentSection);
+        var hasNext = nextRoot.TryGetProperty(section, out var nextSection);
+        if (hasCurrent != hasNext)
+        {
+            return false;
+        }
+
+        return !hasCurrent ||
+               string.Equals(currentSection.GetRawText(), nextSection.GetRawText(), StringComparison.Ordinal);
+    }
 
     private static bool TryResolveTargetReference(SpecDocument document, string token, out string id)
     {

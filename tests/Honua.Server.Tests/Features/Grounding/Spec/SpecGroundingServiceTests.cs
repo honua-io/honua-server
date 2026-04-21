@@ -230,6 +230,98 @@ public sealed class SpecGroundingServiceTests
     }
 
     [Fact]
+    public async Task Mutate_RenameReference_TracksTouchedSectionsFromActualChangedSections()
+    {
+        using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source rivers { type = "layer", ref = "catalog:layer:1" }
+            scope {
+              target = @rivers
+              where  = cql2("state = 'HI'")
+            }
+            compute river_filter {
+              op = filter
+              inputs = { input = @rivers }
+              params = { where = "category = 'mainstem'" }
+            }
+            map {
+              layers = ["rivers"]
+            }
+            output rivers_out { expr = @rivers }
+            """);
+
+        var result = await harness.Service.MutateAsync(
+            currentSpec,
+            "rename rivers to streams",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+        result.Mutation!.SectionsTouched.Should().Equal("sources", "scope", "compute", "map", "outputs");
+        result.Mutation.SectionsPreserved.Should().BeEmpty();
+
+        using var payload = JsonDocument.Parse(result.Mutation.NextSpecCanonicalJson);
+        payload.RootElement.GetProperty("sources")[0].GetProperty("id").GetString().Should().Be("streams");
+        payload.RootElement.GetProperty("scope")[0].GetProperty("target").GetString().Should().Be("@streams");
+        payload.RootElement.GetProperty("compute")[0].GetProperty("inputs").GetProperty("input").GetString().Should().Be("@streams");
+        payload.RootElement.GetProperty("map").GetProperty("layers")[0].GetString().Should().Be("streams");
+        payload.RootElement.GetProperty("outputs")[0].GetProperty("expr").GetString().Should().Be("@streams");
+    }
+
+    [Fact]
+    public async Task Mutate_RenameReference_DoesNotRewriteNonReferenceStringLiterals()
+    {
+        using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source rivers { type = "layer", ref = "catalog:layer:1" }
+            compute river_filter {
+              op = filter
+              inputs = { input = @rivers }
+              params = { where = "rivers" }
+            }
+            map {
+              layers = ["rivers"]
+              legend = { title = "rivers" }
+            }
+            output label { expr = "rivers" }
+            output renamed { expr = @rivers }
+            """);
+
+        var result = await harness.Service.MutateAsync(
+            currentSpec,
+            "rename rivers to streams",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        var compute = payload.RootElement.GetProperty("compute")[0];
+        compute.GetProperty("inputs").GetProperty("input").GetString().Should().Be("@streams");
+        compute.GetProperty("params").GetProperty("where").GetString().Should().Be("rivers");
+
+        var map = payload.RootElement.GetProperty("map");
+        map.GetProperty("layers")[0].GetString().Should().Be("streams");
+        map.GetProperty("legend").GetProperty("title").GetString().Should().Be("rivers");
+
+        var outputs = payload.RootElement.GetProperty("outputs").EnumerateArray().ToArray();
+        outputs.Single(output => output.GetProperty("id").GetString() == "label")
+            .GetProperty("expr").GetString().Should().Be("rivers");
+        outputs.Single(output => output.GetProperty("id").GetString() == "renamed")
+            .GetProperty("expr").GetString().Should().Be("@streams");
+    }
+
+    [Fact]
     public async Task Mutate_Summarize_Mutate_RoundTripsToSemanticallyEquivalentSpec()
     {
         using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
