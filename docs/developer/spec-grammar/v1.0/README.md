@@ -175,14 +175,36 @@ Service registration is opt-in per project:
 services.AddSpecGrammar();
 ```
 
-This binds the three public interfaces as singletons:
+This binds the three public interfaces as singletons, plus the default
+S1 operator catalog:
 
-- `ISpecParser` → `SpecParser`
-- `ISpecCanonicalizer` → `SpecCanonicalizer`
-- `ISpecValidator` → `SpecValidator`
+- `ISpecParser` → `SpecParser` (text → `SpecParseResult(Document, Diagnostics)`)
+- `ISpecCanonicalizer` → `SpecCanonicalizer` (AST → canonical JSON bytes/string)
+- `ISpecValidator` → `SpecValidator` (AST → `SpecValidationResult(Diagnostics)`)
+- `IOperatorCatalog` → `OperatorCatalog` (S1 signatures)
 
 `SpecJsonReader` is a static class (canonical JSON → AST) used by the
 round-trip tests and by consumers receiving specs over the wire.
+
+`ISpecValidator.Validate` takes an optional `ISpecCatalogSnapshot` used to
+resolve `@`-references against external services/layers. When omitted it
+defaults to `StaticSpecCatalogSnapshot.Empty` — validation still runs but
+downgrades unresolved external refs to a `CatalogUnavailable` warning so
+offline/CI linting can run without a live catalog.
+
+## Telemetry
+
+Two `ActivitySource` instances emit per-pass spans and diagnostic counts so
+the feature can be traced end-to-end without adding bespoke logging:
+
+| activity source          | span            | tags                                                                         |
+|--------------------------|-----------------|------------------------------------------------------------------------------|
+| `Honua.Spec.Parse`       | `spec.parse`    | `spec.parse.tokenCount`, `spec.parse.errorCount`                             |
+| `Honua.Spec.Validation`  | `spec.validate` | `spec.resolver.diagnostics`, `spec.type.diagnostics`, `spec.semantic.diagnostics`, `spec.total.diagnostics` |
+
+Both sources follow the repository's existing `ActivitySource` pattern —
+add them to your OpenTelemetry listener configuration the same way you
+wire up any other feature slice.
 
 ## Extending the grammar
 
