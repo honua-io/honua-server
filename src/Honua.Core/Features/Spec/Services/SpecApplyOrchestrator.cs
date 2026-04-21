@@ -109,7 +109,16 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
         _ = Task.Run(() => RunAsync(runContext, cts), CancellationToken.None);
 
-        return new SpecApplyHandle(applyToken, ReadEventsAsync(channel.Reader, applyToken), plan);
+        // ReadEventsAsync is an iterator with [EnumeratorCancellation]; the real
+        // token is supplied late by the transport via WithCancellation(...) on
+        // the enumerator. Passing CancellationToken.None here is intentional so
+        // the StartAsync-scoped token (plan-phase / handshake) does not bleed
+        // into the iterator and cause a cancelled caller to detach every
+        // future consumer of the same handle.
+        return new SpecApplyHandle(
+            applyToken,
+            ReadEventsAsync(channel.Reader, applyToken, CancellationToken.None),
+            plan);
     }
 
     private static IReadOnlyList<SpecWarning> CollectFatalDiagnostics(SpecPlan plan)
