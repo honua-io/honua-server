@@ -62,4 +62,7 @@ public static class SpecDiagnosticCodes
 
     /// <summary>Cache miss encountered while applying in <c>ReadOnly</c> mode.</summary>
     public const string ReadOnlyCacheMiss = "read-only-cache-miss";
+
+    /// <summary>Node declared without a resource kind (REST omitted field, gRPC <c>SPEC_RESOURCE_KIND_UNSPECIFIED</c>).</summary>
+    public const string UnknownKind = "unknown-kind";
 }

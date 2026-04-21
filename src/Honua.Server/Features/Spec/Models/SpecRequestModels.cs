@@ -39,8 +39,12 @@ internal sealed class SpecNodeRequest
     /// <summary>Stable node identifier.</summary>
     public string Id { get; init; } = string.Empty;
 
-    /// <summary>Canonical resource kind.</summary>
-    public SpecResourceKind Kind { get; init; } = SpecResourceKind.Compute;
+    /// <summary>
+    /// Canonical resource kind. Required — a missing or omitted field is
+    /// rejected at the transport boundary with the <c>unknown-kind</c>
+    /// diagnostic rather than silently defaulting to <see cref="SpecResourceKind.Compute"/>.
+    /// </summary>
+    public SpecResourceKind? Kind { get; init; }
 
     /// <summary>Operator identifier (nullable for sources).</summary>
     public string? Op { get; init; }

@@ -122,6 +122,60 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/plan")]
+    public async Task Plan_NodeWithoutKind_Returns400WithUnknownKind()
+    {
+        // Missing 'kind' must not silently coerce to Compute — operators need an
+        // explicit rejection so a typo or omission does not accidentally
+        // dispatch through the compute executor.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var nodeWithoutKind = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = "a",
+            ["op"] = "compute.noop"
+        };
+        var document = BuildDocument(nodeWithoutKind);
+
+        using var response = await client.PostAsync("/v1/spec/plan", JsonContent(document));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("unknown-kind", payload.RootElement.GetProperty("code").GetString());
+        Assert.Equal("a", payload.RootElement.GetProperty("nodeId").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_NodeWithoutKind_Returns400WithoutOpeningStream()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var nodeWithoutKind = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = "a",
+            ["op"] = "compute.noop"
+        };
+        var document = BuildDocument(nodeWithoutKind);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("unknown-kind", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()
     {
         using var factory = new TestWebApplicationFactory();

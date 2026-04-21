@@ -73,7 +73,16 @@ internal static class SpecEndpoints
                 "Request body could not be parsed as a spec document.");
         }
 
-        var document = ToDocument(request);
+        CanonicalSpecDocument document;
+        try
+        {
+            document = ToDocument(request);
+        }
+        catch (SpecDocumentInvalidException invalid)
+        {
+            return ProblemFromInvalid(invalid);
+        }
+
         var plan = await planner.PlanAsync(document, cancellationToken).ConfigureAwait(false);
 
         activity?.SetTag("honua.spec.plan_id", plan.PlanId);
@@ -121,7 +130,16 @@ internal static class SpecEndpoints
                 "Request body could not be parsed as a spec document.");
         }
 
-        var document = ToDocument(request);
+        CanonicalSpecDocument document;
+        try
+        {
+            document = ToDocument(request);
+        }
+        catch (SpecDocumentInvalidException invalid)
+        {
+            return ProblemFromInvalid(invalid);
+        }
+
         var options = new SpecApplyOptions
         {
             CacheMode = request.CacheMode ?? SpecCacheMode.ReadWrite,
@@ -137,20 +155,7 @@ internal static class SpecEndpoints
         }
         catch (SpecDocumentInvalidException invalid)
         {
-            var primary = invalid.PrimaryDiagnostic;
-            return Results.Json(
-                new SpecProblem
-                {
-                    Type = $"urn:honua:spec:{primary.Code}",
-                    Title = "Spec document rejected",
-                    Status = StatusCodes.Status400BadRequest,
-                    Detail = primary.Message,
-                    Code = primary.Code,
-                    NodeId = primary.NodeId,
-                    Remedy = primary.Remedy
-                },
-                SpecJsonContext.Default.SpecProblem,
-                statusCode: StatusCodes.Status400BadRequest);
+            return ProblemFromInvalid(invalid);
         }
 
         context.Response.StatusCode = StatusCodes.Status200OK;
@@ -304,13 +309,39 @@ internal static class SpecEndpoints
 
     private static CanonicalSpecDocument ToDocument(SpecDocumentRequest request)
     {
+        // Reject nodes with an omitted kind at the transport boundary rather
+        // than defaulting them to Compute (see finding: unknown-kind). Collect
+        // all offenders so an operator fixing a large document sees the full
+        // list in one round-trip.
+        List<SpecWarning>? fatal = null;
+        foreach (var n in request.Nodes)
+        {
+            if (n.Kind is null)
+            {
+                fatal ??= new List<SpecWarning>();
+                fatal.Add(new SpecWarning
+                {
+                    Code = SpecDiagnosticCodes.UnknownKind,
+                    Message = $"Node '{n.Id}' does not declare a resource kind.",
+                    Severity = SpecDiagnosticSeverity.Error,
+                    NodeId = n.Id,
+                    Remedy = "Set 'kind' to one of: Compute, Report, Dataset, Service, App."
+                });
+            }
+        }
+
+        if (fatal is not null)
+        {
+            throw new SpecDocumentInvalidException(fatal);
+        }
+
         var nodes = new List<CanonicalSpecNode>(request.Nodes.Count);
         foreach (var n in request.Nodes)
         {
             nodes.Add(new CanonicalSpecNode
             {
                 Id = n.Id,
-                Kind = n.Kind,
+                Kind = n.Kind!.Value,
                 Op = n.Op,
                 Inputs = n.Inputs ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 Parameters = n.Parameters ?? new Dictionary<string, string>(StringComparer.Ordinal),
@@ -369,5 +400,23 @@ internal static class SpecEndpoints
             },
             SpecJsonContext.Default.SpecProblem,
             statusCode: status);
+    }
+
+    private static IResult ProblemFromInvalid(SpecDocumentInvalidException invalid)
+    {
+        var primary = invalid.PrimaryDiagnostic;
+        return Results.Json(
+            new SpecProblem
+            {
+                Type = $"urn:honua:spec:{primary.Code}",
+                Title = "Spec document rejected",
+                Status = StatusCodes.Status400BadRequest,
+                Detail = primary.Message,
+                Code = primary.Code,
+                NodeId = primary.NodeId,
+                Remedy = primary.Remedy
+            },
+            SpecJsonContext.Default.SpecProblem,
+            statusCode: StatusCodes.Status400BadRequest);
     }
 }

@@ -17,6 +17,31 @@ internal static class SpecProtoMapping
     {
         ArgumentNullException.ThrowIfNull(proto);
 
+        // Reject unspecified kinds at the transport boundary instead of
+        // silently coercing them to Compute (see finding: unknown-kind). The
+        // REST layer mirrors this via SpecNodeRequest.Kind being nullable.
+        List<SpecWarning>? fatal = null;
+        foreach (var n in proto.Nodes)
+        {
+            if (n.Kind == Proto.SpecResourceKind.Unspecified)
+            {
+                fatal ??= new List<SpecWarning>();
+                fatal.Add(new SpecWarning
+                {
+                    Code = SpecDiagnosticCodes.UnknownKind,
+                    Message = $"Node '{n.Id}' does not declare a resource kind.",
+                    Severity = SpecDiagnosticSeverity.Error,
+                    NodeId = n.Id,
+                    Remedy = "Set kind to one of: COMPUTE, REPORT, DATASET, SERVICE, APP."
+                });
+            }
+        }
+
+        if (fatal is not null)
+        {
+            throw new SpecDocumentInvalidException(fatal);
+        }
+
         var nodes = new List<CanonicalSpecNode>(proto.Nodes.Count);
         foreach (var n in proto.Nodes)
         {

@@ -163,6 +163,162 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    public async Task PlanSpec_Cycle_RaisesInvalidArgument()
+    {
+        // gRPC PlanSpec must surface fatal plan diagnostics as InvalidArgument
+        // instead of returning a successful response with error-severity
+        // warnings. Admin tooling keys off the diagnostic code.
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop",
+            Inputs = { ["src"] = "@b" }
+        });
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "b",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop",
+            Inputs = { ["src"] = "@a" }
+        });
+
+        var request = new Proto.PlanSpecRequest { Document = document };
+
+        var act = async () => await _client.PlanSpecAsync(request);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("dag-cycle");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    public async Task PlanSpec_DuplicateNodeId_RaisesInvalidArgument()
+    {
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop"
+        });
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.PlanSpecRequest { Document = document };
+
+        var act = async () => await _client.PlanSpecAsync(request);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("duplicate-node-id");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    public async Task PlanSpec_VersionSkew_RaisesInvalidArgument()
+    {
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = string.Empty,
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.PlanSpecRequest { Document = document };
+
+        var act = async () => await _client.PlanSpecAsync(request);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("version-skew");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    public async Task PlanSpec_UnspecifiedKind_RaisesInvalidArgument()
+    {
+        // Nodes must declare a kind explicitly; the transport mapping rejects
+        // SPEC_RESOURCE_KIND_UNSPECIFIED with `unknown-kind` rather than
+        // silently coercing to COMPUTE.
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Unspecified,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.PlanSpecRequest { Document = document };
+
+        var act = async () => await _client.PlanSpecAsync(request);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("unknown-kind");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_UnspecifiedKind_RaisesInvalidArgumentBeforeStream()
+    {
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = Proto.SpecResourceKind.Unspecified,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.ApplySpecRequest { Document = document };
+
+        var act = async () =>
+        {
+            using var call = _client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("unknown-kind");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/CancelApply")]

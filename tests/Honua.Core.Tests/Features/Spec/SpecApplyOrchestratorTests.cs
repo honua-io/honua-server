@@ -507,6 +507,67 @@ public class SpecApplyOrchestratorTests
     }
 
     [Fact]
+    public async Task Apply_CancelWhileSiblingBlockedOnSemaphore_EmitsTerminalApplyCancelled()
+    {
+        // Regression for the early-cancellation invariant: a sibling waiting on
+        // the MaxConcurrency gate (pre-executor) must not escape the apply with
+        // an OperationCanceledException when the token trips. Whichever node
+        // wins the gate race is held in its hook; the loser is blocked at
+        // gate.WaitAsync. Cancelling must close the stream with ApplyCancelled
+        // and the blocked sibling must be emitted as Skipped — not rogue
+        // Succeeded, not OCE-escape that skips the terminal frame.
+        var fixture = new OrchestratorFixture();
+        var aStarted = new TaskCompletionSource();
+        var bStarted = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        fixture.Executor.HookBeforeExecute("a", async ct =>
+        {
+            aStarted.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        });
+        fixture.Executor.HookBeforeExecute("b", async ct =>
+        {
+            bStarted.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        });
+
+        var document = Document(
+            ComputeNode("a"),
+            ComputeNode("b"));
+
+        var handle = await fixture.Engine.StartAsync(
+            document,
+            new SpecApplyOptions { MaxConcurrency = 1 },
+            CancellationToken.None);
+        var collectTask = Task.Run(() => CollectAsync(handle));
+
+        // Only one node can have entered its hook under MaxConcurrency=1. The
+        // other sibling must be blocked at gate.WaitAsync by design.
+        var first = await Task.WhenAny(aStarted.Task, bStarted.Task);
+        await first;
+
+        Assert.True(fixture.Engine.TryCancel(handle.ApplyToken));
+        release.TrySetResult();
+
+        var events = await collectTask;
+        var terminal = events[^1];
+        Assert.Equal(SpecApplyEventKind.ApplyCancelled, terminal.Kind);
+        Assert.True(terminal.Summary!.Cancelled);
+
+        // No node may have reached Succeeded — the running one was cancelled
+        // inside its hook, and the gate-blocked sibling never reached the
+        // executor. Both must be accounted for by a Skipped event.
+        Assert.DoesNotContain(events, e => e.Kind == SpecApplyEventKind.Succeeded);
+        var skipped = events.Where(e => e.Kind == SpecApplyEventKind.Skipped).ToList();
+        Assert.Equal(2, skipped.Count);
+        Assert.All(skipped, evt =>
+        {
+            Assert.NotNull(evt.Diagnostic);
+            Assert.Equal(SpecDiagnosticCodes.ApplyCancelled, evt.Diagnostic!.Code);
+        });
+    }
+
+    [Fact]
     public async Task Apply_RunWithWarnings_SurfacesThemBeforeSucceeded()
     {
         var fixture = new OrchestratorFixture();

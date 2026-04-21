@@ -37,8 +37,34 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "document is required"));
         }
 
-        var document = SpecProtoMapping.FromProto(request.Document);
+        CanonicalSpecDocument document;
+        try
+        {
+            document = SpecProtoMapping.FromProto(request.Document);
+        }
+        catch (SpecDocumentInvalidException invalid)
+        {
+            var primary = invalid.PrimaryDiagnostic;
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{primary.Code}: {primary.Message}"));
+        }
+
         var plan = await _planner.PlanAsync(document, context.CancellationToken).ConfigureAwait(false);
+
+        // Mirror the REST handler: fatal plan diagnostics (cycles, duplicate
+        // ids, unresolved references, version-skew) must surface as
+        // InvalidArgument rather than a successful response with an empty plan
+        // plus error warnings. Admin tooling keys off the diagnostic `code`.
+        foreach (var warning in plan.Warnings)
+        {
+            if (warning.Severity == SpecDiagnosticSeverity.Error)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.InvalidArgument,
+                    $"{warning.Code}: {warning.Message}"));
+            }
+        }
 
         return new Proto.PlanSpecResponse
         {
@@ -59,7 +85,19 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "document is required"));
         }
 
-        var document = SpecProtoMapping.FromProto(request.Document);
+        CanonicalSpecDocument document;
+        try
+        {
+            document = SpecProtoMapping.FromProto(request.Document);
+        }
+        catch (SpecDocumentInvalidException invalid)
+        {
+            var primary = invalid.PrimaryDiagnostic;
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{primary.Code}: {primary.Message}"));
+        }
+
         var options = new SpecApplyOptions
         {
             CacheMode = SpecProtoMapping.FromProto(request.CacheMode),

@@ -140,14 +140,6 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         var stopwatch = Stopwatch.StartNew();
         long sequence = 0;
 
-        await ctx.Writer.WriteAsync(new SpecApplyEvent
-        {
-            Sequence = Interlocked.Increment(ref sequence),
-            Kind = SpecApplyEventKind.ApplyStarted,
-            ApplyToken = ctx.ApplyToken,
-            Timestamp = ctx.TimeProvider.GetUtcNow()
-        }, cts.Token).ConfigureAwait(false);
-
         var nodeState = new ConcurrentDictionary<string, NodeRunState>(StringComparer.Ordinal);
         foreach (var n in ctx.Plan.Nodes)
         {
@@ -159,6 +151,19 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
         try
         {
+            // ApplyStarted must be inside the try so a cancel that lands between
+            // StartAsync and this write still reaches the finally / terminal-event
+            // paths. The write itself uses CancellationToken.None: our channel is
+            // DropOldest and writes never block, so there is no reason to let a
+            // tripped token fail the handshake frame.
+            await ctx.Writer.WriteAsync(new SpecApplyEvent
+            {
+                Sequence = Interlocked.Increment(ref sequence),
+                Kind = SpecApplyEventKind.ApplyStarted,
+                ApplyToken = ctx.ApplyToken,
+                Timestamp = ctx.TimeProvider.GetUtcNow()
+            }, CancellationToken.None).ConfigureAwait(false);
+
             using var gate = new SemaphoreSlim(Math.Max(1, ctx.Options.MaxConcurrency));
             await ProcessLevelsAsync(ctx, cts, sequenceRef: () => Interlocked.Increment(ref sequence),
                 nodeState, counters, cachedInputs, gate).ConfigureAwait(false);
@@ -193,7 +198,43 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                 new KeyValuePair<string, object?>("outcome", terminalKind.ToString()));
             SpecTelemetry.SetSuccess(activity);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+        {
+            // Defense in depth — ProcessNodeAsync normalizes pre-executor OCEs
+            // to Skipped/apply-cancelled, but if a new call path ever escapes
+            // we still owe the stream an ApplyCancelled terminal frame.
+            try
+            {
+                await ctx.Writer.WriteAsync(new SpecApplyEvent
+                {
+                    Sequence = Interlocked.Increment(ref sequence),
+                    Kind = SpecApplyEventKind.ApplyCancelled,
+                    ApplyToken = ctx.ApplyToken,
+                    Timestamp = ctx.TimeProvider.GetUtcNow(),
+                    Summary = new SpecApplySummary
+                    {
+                        TotalNodes = ctx.Plan.Nodes.Count,
+                        CachedNodes = counters.Cached,
+                        RanNodes = counters.Ran,
+                        FailedNodes = counters.Failed,
+                        SkippedNodes = counters.Skipped,
+                        TotalDurationMs = stopwatch.Elapsed.TotalMilliseconds,
+                        Cancelled = true
+                    }
+                }, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Writer may already be completed — ignore.
+            }
+
+            SpecTelemetry.AppliesCompleted.Add(1,
+                new KeyValuePair<string, object?>("outcome", SpecApplyEventKind.ApplyCancelled.ToString()));
+            SpecTelemetry.ApplyDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("outcome", SpecApplyEventKind.ApplyCancelled.ToString()));
+            SpecTelemetry.SetSuccess(activity);
+        }
+        catch (Exception ex)
         {
             SpecTelemetry.RecordException(activity, ex);
             LogApplyTerminatedWithException(_logger, ctx.ApplyToken, ex);
@@ -400,9 +441,30 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             return;
         }
 
-        await gate.WaitAsync(cts.Token).ConfigureAwait(false);
+        // Semaphore queue is the first pre-executor wait that can see a late
+        // cancel. If the token trips while we are still queued, normalize to a
+        // Skipped/apply-cancelled emission — not an OCE escape that would rob
+        // the stream of its terminal frame. Nothing is held on this path so no
+        // release is needed.
         try
         {
+            await gate.WaitAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+        {
+            nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
+            Interlocked.Increment(ref counters.SkippedRef);
+            await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.Cancelled).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            // Per-event writes use CancellationToken.None. The event channel is
+            // bounded-drop-oldest so WriteAsync never blocks; letting a tripped
+            // token fail these writes would swallow the terminal frames the
+            // client contract requires. Cancellation is still observed via the
+            // decision checks below and the cts.Token we pass to cache/executor.
             await ctx.Writer.WriteAsync(new SpecApplyEvent
             {
                 Sequence = sequenceRef(),
@@ -410,7 +472,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                 ApplyToken = ctx.ApplyToken,
                 NodeId = plannedNode.NodeId,
                 Timestamp = ctx.TimeProvider.GetUtcNow()
-            }, cts.Token).ConfigureAwait(false);
+            }, CancellationToken.None).ConfigureAwait(false);
 
             using var nodeActivity = SpecTelemetry.ActivitySource.StartActivity(SpecTelemetry.NodeActivityName);
             nodeActivity?.SetTag("honua.spec.node_id", plannedNode.NodeId);
@@ -419,7 +481,19 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
             if (ctx.Options.CacheMode is not SpecCacheMode.Bypass)
             {
-                var hit = await ctx.Cache.TryGetAsync(plannedNode.ContentHash, cts.Token).ConfigureAwait(false);
+                CachedArtifactRef? hit;
+                try
+                {
+                    hit = await ctx.Cache.TryGetAsync(plannedNode.ContentHash, cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+                {
+                    nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
+                    Interlocked.Increment(ref counters.SkippedRef);
+                    await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.Cancelled).ConfigureAwait(false);
+                    return;
+                }
+
                 if (hit is not null)
                 {
                     cachedInputs[plannedNode.NodeId] = hit;
@@ -444,7 +518,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                             Bytes = hit.Bytes,
                             DurationMs = 0
                         }
-                    }, cts.Token).ConfigureAwait(false);
+                    }, CancellationToken.None).ConfigureAwait(false);
                     return;
                 }
 
@@ -477,6 +551,18 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                     new KeyValuePair<string, object?>("outcome", "bypass"));
             }
 
+            // Cancellation that lands between cache lookup and the executor
+            // invocation would otherwise send us through the compute path only
+            // to bail from ExecuteAsync. Check once before we mark Running so
+            // the node emits Skipped cleanly without a Running/Skipped pair.
+            if (cts.Token.IsCancellationRequested)
+            {
+                nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
+                Interlocked.Increment(ref counters.SkippedRef);
+                await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.Cancelled).ConfigureAwait(false);
+                return;
+            }
+
             nodeState[plannedNode.NodeId] = NodeRunState.Running;
             await ctx.Writer.WriteAsync(new SpecApplyEvent
             {
@@ -486,7 +572,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                 NodeId = plannedNode.NodeId,
                 ContentHash = plannedNode.ContentHash,
                 Timestamp = ctx.TimeProvider.GetUtcNow()
-            }, cts.Token).ConfigureAwait(false);
+            }, CancellationToken.None).ConfigureAwait(false);
 
             var node = ctx.NodesById[plannedNode.NodeId];
             var inputs = BuildInputs(plannedNode, cachedInputs);
@@ -524,7 +610,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                         ContentHash = plannedNode.ContentHash,
                         Timestamp = ctx.TimeProvider.GetUtcNow(),
                         Diagnostic = warning
-                    }, cts.Token).ConfigureAwait(false);
+                    }, CancellationToken.None).ConfigureAwait(false);
                 }
 
                 await ctx.Writer.WriteAsync(new SpecApplyEvent
@@ -536,7 +622,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                     ContentHash = plannedNode.ContentHash,
                     Timestamp = ctx.TimeProvider.GetUtcNow(),
                     ActualCost = result.ActualCost
-                }, cts.Token).ConfigureAwait(false);
+                }, CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
             {

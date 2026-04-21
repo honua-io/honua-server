@@ -32,7 +32,7 @@ Each `nodes[*]` entry:
 | Field | Notes |
 |---|---|
 | `id` | Stable node identifier (unique within the document). |
-| `kind` | One of `compute`, `report`, `dataset`, `service`, `app`. In S1 only `compute` / `report` are executable; `dataset` / `service` / `app` apply-calls hard-fail with `spec-kind-not-in-s1`. |
+| `kind` | Required. One of `compute`, `report`, `dataset`, `service`, `app`. Omitted values hard-fail with `unknown-kind`. In S1 only `compute` / `report` are executable; `dataset` / `service` / `app` apply-calls hard-fail with `spec-kind-not-in-s1`. |
 | `op` | Operator identifier (e.g. `compute.buffer`). Null only for pure sources. |
 | `inputs` | Parameter → canonical token (e.g. `@other-node`, layer ref, scalar literal). |
 | `parameters` | Flat parameter bag captured from the spec body. |
@@ -242,6 +242,7 @@ Admin tooling keys off these strings:
 | `upstream-failed` | warning | A parent node failed and the current node was skipped. |
 | `apply-cancelled` | warning | A deferred node was skipped because the apply was cancelled cooperatively. Also emitted on the terminal `ApplyCancelled` frame. |
 | `read-only-cache-miss` | error | `ReadOnly` apply encountered a cache miss. The executor is intentionally not invoked and no synthetic hash is written. |
+| `unknown-kind` | error | Node omits the `kind` field (REST) or sends `SPEC_RESOURCE_KIND_UNSPECIFIED` (gRPC). Rejected at the transport boundary so operator typos do not silently dispatch through the compute executor. |
 
 ## Telemetry
 
