@@ -27,7 +27,6 @@ public static partial class Extensions
     private const double DefaultSlowRequestThresholdMs = 1000.0;
     private const int DefaultMemorySamplingIntervalMs = 100;
     private const int DefaultHttpErrorStatusCode = 400;
-{
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         // Adaptive sampling configuration

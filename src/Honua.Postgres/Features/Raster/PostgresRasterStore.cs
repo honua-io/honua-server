@@ -575,7 +575,12 @@ internal sealed class PostgresRasterStore : IRasterStore
                 return Array.Empty<RasterHistogram>();
             }
 
-            var totalBands = Convert.ToInt32(bandCountResult, System.Globalization.CultureInfo.InvariantCulture);
+            var totalBands = bandCountResult switch
+            {
+                int intValue => intValue,
+                long longValue => checked((int)longValue),
+                _ => Convert.ToInt32(bandCountResult, System.Globalization.CultureInfo.InvariantCulture)
+            };
             effectiveBands = new int[totalBands];
             for (var i = 0; i < totalBands; i++)
             {
@@ -626,7 +631,13 @@ internal sealed class PostgresRasterStore : IRasterStore
                 {
                     var binMin = histogramReader.IsDBNull(0) ? double.NaN : histogramReader.GetDouble(0);
                     var binMax = histogramReader.IsDBNull(1) ? double.NaN : histogramReader.GetDouble(1);
-                    var count = histogramReader.IsDBNull(2) ? 0L : Convert.ToInt64(histogramReader.GetValue(2), System.Globalization.CultureInfo.InvariantCulture);
+                    var count = histogramReader.IsDBNull(2) ? 0L :
+                        histogramReader.GetValue(2) switch
+                        {
+                            long longValue => longValue,
+                            int intValue => (long)intValue,
+                            _ => Convert.ToInt64(histogramReader.GetValue(2), System.Globalization.CultureInfo.InvariantCulture)
+                        };
 
                     if (index < counts.Length)
                     {
@@ -727,7 +738,13 @@ internal sealed class PostgresRasterStore : IRasterStore
                 var band = batchReader.GetInt32(0);
                 var binMin = batchReader.IsDBNull(1) ? double.NaN : batchReader.GetDouble(1);
                 var binMax = batchReader.IsDBNull(2) ? double.NaN : batchReader.GetDouble(2);
-                var count = batchReader.IsDBNull(3) ? 0L : Convert.ToInt64(batchReader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture);
+                var count = batchReader.IsDBNull(3) ? 0L :
+                    batchReader.GetValue(3) switch
+                    {
+                        long longValue => longValue,
+                        int intValue => (long)intValue,
+                        _ => Convert.ToInt64(batchReader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture)
+                    };
 
                 if (!bandBuckets.TryGetValue(band, out var bucket))
                 {

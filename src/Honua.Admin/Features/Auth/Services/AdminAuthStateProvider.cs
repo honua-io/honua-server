@@ -23,7 +23,7 @@ public sealed class AdminAuthStateProvider : AuthenticationStateProvider
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
-        var session = await _sessionService.GetCurrentSessionAsync();
+        var session = await _sessionService.GetCurrentSessionAsync().ConfigureAwait(false);
         if (!session.IsAuthenticated)
         {
             return AnonymousState;

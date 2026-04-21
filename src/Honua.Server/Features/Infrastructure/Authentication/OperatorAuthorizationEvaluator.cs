@@ -17,7 +17,7 @@ internal sealed class OperatorAuthorizationEvaluator(
     IOptions<RbacOptions> rbacOptions,
     ILogger<OperatorAuthorizationEvaluator> logger) : IOperatorAuthorizationEvaluator
 {
-    public AccessDecision Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+    public async Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request, CancellationToken cancellationToken = default)
     {
         if (request is
             {
@@ -122,8 +122,8 @@ internal sealed class OperatorAuthorizationEvaluator(
         // IRoleStore is singleton (InMemoryRoleStore) and returns completed tasks.
         // When a persistent store is introduced (#498), a per-request caching layer
         // should resolve permissions once and pass them through scoped context.
-        var effective = roleStore.GetEffectivePermissionsAsync(
-            userId ?? string.Empty, roleNames).GetAwaiter().GetResult();
+        var effective = await roleStore.GetEffectivePermissionsAsync(
+            userId ?? string.Empty, roleNames, cancellationToken).ConfigureAwait(false);
 
         var permissions = effective.Permissions;
         for (var i = 0; i < permissions.Count; i++)

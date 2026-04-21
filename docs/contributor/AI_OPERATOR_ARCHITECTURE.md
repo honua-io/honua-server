@@ -167,6 +167,16 @@ Execution backends can vary:
 - AWS Batch
 - Azure Batch
 
+Current backlog split:
+
+- `honua-server#727` shared executor adapter boundary
+- `honua-server#758` Kubernetes Jobs adapter
+- `honua-server#759` AWS Batch adapter
+- `honua-server#760` Azure Batch adapter
+
+The intended model is optional heavy GDAL-capable worker images for heavyweight
+workloads while lightweight nodes stay on the baseline image/runtime path.
+
 The AI contract must not change when the runtime adapter changes.
 
 ## Layered Architecture

@@ -372,8 +372,17 @@ to land so the canonical process runtime does not ship with an empty catalog.
 - `#726`
   - approval gates and policy enforcement for destructive and publish workflows
 - `#727`
-  - pluggable cloud executor adapters over the external durable-worker substrate
-    tracked in `honua-io/honua-server#681`
+  - shared cloud-executor adapter boundary over the external durable-worker
+    substrate tracked in `honua-io/honua-server#681`
+  - defines the canonical adapter contract that concrete backends must follow
+  - keeps heavy GDAL-capable worker images optional instead of contaminating the
+    baseline lightweight runtime
+- `#758`
+  - Kubernetes Jobs executor adapter over the shared cloud-executor boundary
+- `#759`
+  - AWS Batch executor adapter over the shared cloud-executor boundary
+- `#760`
+  - Azure Batch executor adapter over the shared cloud-executor boundary
 - `#728`
   - canonical server-side operator MCP surface over the canonical GP runtime
   - the existing `honua-sdk-js` MCP package remains the focused discovery/query

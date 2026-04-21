@@ -93,12 +93,12 @@ internal sealed partial class ProductionMemoryMonitor : IMemoryMonitor, IDisposa
 
         var memoryBefore = GC.GetTotalMemory(false);
 
-        // Force collection of all generations
+        // Use optimized collection instead of forced collection to reduce pauses
         await Task.Run(() =>
         {
-            GC.Collect(2, GCCollectionMode.Forced, true, true);
+            GC.Collect(2, GCCollectionMode.Optimized, false, false);
             GC.WaitForPendingFinalizers();
-            GC.Collect(2, GCCollectionMode.Forced, true, true);
+            GC.Collect(2, GCCollectionMode.Optimized, false, false);
         });
 
         var memoryAfter = GC.GetTotalMemory(false);
@@ -151,7 +151,17 @@ internal sealed partial class ProductionMemoryMonitor : IMemoryMonitor, IDisposa
             if (isCriticalPressure)
             {
                 MemoryMonitorLog.CriticalMemoryPressureDetected(_logger, totalMemory, workingSet);
-                _ = Task.Run(async () => await TryRelieveMemoryPressureAsync());
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await TryRelieveMemoryPressureAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        MemoryMonitorLog.MemoryReliefFailed(_logger, ex);
+                    }
+                });
             }
         }
         catch (Exception ex)
@@ -207,5 +217,11 @@ internal sealed partial class ProductionMemoryMonitor : IMemoryMonitor, IDisposa
             Level = LogLevel.Warning,
             Message = "Memory check failed")]
         public static partial void MemoryCheckFailed(ILogger logger, Exception exception);
+
+        [Microsoft.Extensions.Logging.LoggerMessage(
+            EventId = 8006,
+            Level = LogLevel.Warning,
+            Message = "Memory relief operation failed")]
+        public static partial void MemoryReliefFailed(ILogger logger, Exception exception);
     }
 }

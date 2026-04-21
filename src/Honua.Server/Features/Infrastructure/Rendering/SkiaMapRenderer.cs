@@ -764,6 +764,12 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        _disposed = true;
+        if (!_disposed)
+        {
+            _disposed = true;
+            // No unmanaged resources to dispose in this class
+            // All SkiaSharp objects are created and disposed via using statements
+            GC.SuppressFinalize(this);
+        }
     }
 }

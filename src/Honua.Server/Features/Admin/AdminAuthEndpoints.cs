@@ -11,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.RateLimiting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -56,11 +57,13 @@ internal static class AdminAuthEndpoints
 
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for auth initiation
 
         _ = group.MapPost("/providers/{providerKey}/token", HandleRequestToken)
             .WithDisplayName("Request Admin Auth Token")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for token exchange
 
         _ = group.MapPost("/logout", HandleLogout)
             .WithDisplayName("Logout Admin Auth Session")

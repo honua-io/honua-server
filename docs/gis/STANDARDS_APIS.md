@@ -173,11 +173,12 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /conformance
 |-- /map
 |-- /collections/{id}/map
-|-- /collections/{id}/styles/{styleId}/map
 |-- /collections/{id}/map/tiles
 ```
 
 **Output formats:** PNG, JPEG, TIFF
+
+**Current scope:** Core map rendering, collection maps, and map tiles. The optional styled-map conformance class is not claimed in MVP.
 
 **Typical use cases:**
 - Server-rendered maps via open standards
@@ -301,7 +302,7 @@ Backward compatibility for standards APIs is defined by the external standard, n
 
 Compatibility is validated through:
 - **Coverage matrices** tracking supported operations per standard (see [Coverage and Compliance](#coverage-and-compliance) below).
-- **CITE conformance results** for OGC standards (automated in CI, 100% pass rate required).
+- **CITE conformance results** for OGC standards (scheduled nightly/manual workflows, 100% pass rate required).
 - **Client template validation** via the [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
 - **Release notes** documenting any changes to standards API behavior.
 

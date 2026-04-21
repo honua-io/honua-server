@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
 
@@ -23,7 +24,8 @@ public static partial class HttpClientResilienceExtensions
     /// <param name="configureClient">Optional HTTP client configuration.</param>
     /// <param name="configureHandler">Optional message handler configuration.</param>
     /// <returns>The HTTP client builder for further configuration.</returns>
-    public static IHttpClientBuilder AddResilientHttpClient<TClient>(
+    public static IHttpClientBuilder AddResilientHttpClient<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClient>(
         this IServiceCollection services,
         string serviceType,
         ResiliencePolicyOptions? options = null,

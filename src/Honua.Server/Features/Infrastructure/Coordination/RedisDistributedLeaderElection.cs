@@ -266,25 +266,29 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
     }
 
-    private async void RenewLeaseAsync(object? state)
+    private void RenewLeaseAsync(object? state)
     {
         if (_disposed || !_isLeader)
         {
             return;
         }
 
-        try
+        // Fire-and-forget task with proper exception handling
+        _ = Task.Run(async () =>
         {
-            var renewed = await HeartbeatAsync();
-            if (!renewed)
+            try
             {
-                Log.LeaseRenewalFailed(_logger, _leaderKey, _instanceId);
+                var renewed = await HeartbeatAsync();
+                if (!renewed)
+                {
+                    Log.LeaseRenewalFailed(_logger, _leaderKey, _instanceId);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
-        }
+            catch (Exception ex)
+            {
+                Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
+            }
+        });
     }
 
     private bool ShouldUseRedis()

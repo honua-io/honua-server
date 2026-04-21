@@ -131,19 +131,23 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
         }
     }
 
-    private async void PerformHealthCheck(object? state)
+    private void PerformHealthCheck(object? state)
     {
         if (_disposed)
             return;
 
-        try
+        // Fire-and-forget task with proper exception handling
+        _ = Task.Run(async () =>
         {
-            await TestConnectivityAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            Log.HealthCheckFailed(_logger, ex);
-        }
+            try
+            {
+                await TestConnectivityAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.HealthCheckFailed(_logger, ex);
+            }
+        });
     }
 
     public void Dispose()

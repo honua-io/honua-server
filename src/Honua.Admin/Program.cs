@@ -34,4 +34,4 @@ builder.Services.AddScoped<GitOpsAdminClient>();
 
 builder.Services.AddAuthorizationCore();
 
-await builder.Build().RunAsync();
+await builder.Build().RunAsync().ConfigureAwait(false);

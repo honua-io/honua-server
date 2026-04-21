@@ -112,51 +112,59 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
     /// <summary>
     /// WEEK 5 FIX: Thermal optimization callback - maintains optimal thermal zones
     /// </summary>
-    private async void OptimizeThermalZones(object? state)
+    private void OptimizeThermalZones(object? state)
     {
-        try
+        // Fire-and-forget task with proper exception handling
+        _ = Task.Run(async () =>
         {
-            var currentLoad = _patternAnalyzer.GetCurrentLoadMetrics();
-            var prediction = _predictivePrewarmer.PredictUpcomingLoad();
-
-            await _thermalManager.OptimizeZonesAsync(currentLoad, prediction);
-
-            if (_logger.IsEnabled(LogLevel.Debug))
+            try
             {
-                var zoneStatus = _thermalManager.GetZoneStatus();
-                _logger.LogDebug("Thermal zones optimized: Hot={HotConnections}, Warm={WarmConnections}, Cold={ColdConnections}",
-                    zoneStatus.HotConnections, zoneStatus.WarmConnections, zoneStatus.ColdConnections);
+                var currentLoad = _patternAnalyzer.GetCurrentLoadMetrics();
+                var prediction = _predictivePrewarmer.PredictUpcomingLoad();
+
+                await _thermalManager.OptimizeZonesAsync(currentLoad, prediction);
+
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    var zoneStatus = _thermalManager.GetZoneStatus();
+                    _logger.LogDebug("Thermal zones optimized: Hot={HotConnections}, Warm={WarmConnections}, Cold={ColdConnections}",
+                        zoneStatus.HotConnections, zoneStatus.WarmConnections, zoneStatus.ColdConnections);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error during thermal zone optimization");
-        }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error during thermal zone optimization");
+            }
+        });
     }
 
     /// <summary>
     /// WEEK 5 FIX: Pattern analysis callback - analyzes usage patterns for prediction
     /// </summary>
-    private async void AnalyzeUsagePatterns(object? state)
+    private void AnalyzeUsagePatterns(object? state)
     {
-        try
+        // Fire-and-forget task with proper exception handling
+        _ = Task.Run(async () =>
         {
-            await _patternAnalyzer.AnalyzeHistoricalPatternsAsync();
-
-            var insights = _patternAnalyzer.GetPatternInsights();
-            if (insights.HasPredictablePatterns)
+            try
             {
-                _logger.LogInformation("Usage pattern analysis: Peak times detected at {PeakHours}, predictability={Predictability:F2}",
-                    string.Join(", ", insights.PeakHours), insights.PredictabilityScore);
+                await _patternAnalyzer.AnalyzeHistoricalPatternsAsync();
 
-                // Update predictive prewarmer with new insights
-                _predictivePrewarmer.UpdatePatternInsights(insights);
+                var insights = _patternAnalyzer.GetPatternInsights();
+                if (insights.HasPredictablePatterns)
+                {
+                    _logger.LogInformation("Usage pattern analysis: Peak times detected at {PeakHours}, predictability={Predictability:F2}",
+                        string.Join(", ", insights.PeakHours), insights.PredictabilityScore);
+
+                    // Update predictive prewarmer with new insights
+                    _predictivePrewarmer.UpdatePatternInsights(insights);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error during usage pattern analysis");
-        }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error during usage pattern analysis");
+            }
+        });
     }
 
     private async Task WarmupSingleConnectionAsync(int connectionNumber, CancellationToken cancellationToken)

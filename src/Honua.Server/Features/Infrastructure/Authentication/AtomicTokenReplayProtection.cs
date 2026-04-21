@@ -79,8 +79,17 @@ internal static class AtomicTokenReplayProtection
                 AbsoluteExpiration = expiresOn
             };
 
-            // Try to set the value only if the key doesn't exist
-            // This is atomic in most distributed cache implementations (Redis, SQL Server, etc.)
+            // Use Redis for true atomicity if available
+            if (cache is Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache redisCache)
+            {
+                return await TryMarkTokenAsUsedRedisAsync(redisCache, cacheKey, expiresOn, cancellationToken);
+            }
+
+            // For non-Redis caches, implement a more robust fallback with unique identifier verification
+            var uniqueMarker = Guid.NewGuid().ToString();
+            var timestampedValue = $"{DateTimeOffset.UtcNow:O}|{uniqueMarker}";
+
+            // First attempt to get existing value
             var existing = await cache.GetStringAsync(cacheKey, cancellationToken);
             if (existing != null)
             {
@@ -88,18 +97,15 @@ internal static class AtomicTokenReplayProtection
                 return false;
             }
 
-            // Use a more sophisticated approach for true atomicity with Redis extensions if available
-            if (cache is Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache redisCache)
-            {
-                return await TryMarkTokenAsUsedRedisAsync(redisCache, cacheKey, expiresOn, cancellationToken);
-            }
+            // Set our unique marker
+            await cache.SetStringAsync(cacheKey, timestampedValue, options, cancellationToken);
 
-            // Fallback: attempt to set and then immediately check (race condition still possible)
-            await cache.SetStringAsync(cacheKey, DateTimeOffset.UtcNow.ToString("O"), options, cancellationToken);
+            // Brief delay to allow any concurrent operations to complete
+            await Task.Delay(1, cancellationToken);
 
-            // Double-check by reading back - if timestamp doesn't match ours, someone else won
+            // Verify our unique marker is still there - if not, another request won the race
             var verification = await cache.GetStringAsync(cacheKey, cancellationToken);
-            return verification != null; // Allow if we successfully set it
+            return verification == timestampedValue; // Only allow if our exact value is present
         }
         catch (Exception)
         {

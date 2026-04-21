@@ -10,6 +10,7 @@ internal static class ProblemDetailsHelpers
     internal const string ContentType = "application/problem+json";
     private const string OgcType = "about:blank";
     private const string AdminType = "https://honua.io/problems/admin";
+    private const string SecurityType = "https://honua.io/problems/security";
 
     public static IResult CreateOgcProblem(HttpContext context, int statusCode, string detail)
         => CreateProblem(context, OgcType, statusCode, GetTitle(statusCode), detail);
@@ -34,6 +35,9 @@ internal static class ProblemDetailsHelpers
 
     public static IResult CreateAdminProblem(int statusCode, string title, string detail, string? instance = null)
         => CreateProblem(AdminType, statusCode, title, detail, instance);
+
+    public static IResult CreateSecurityProblem(HttpContext context, int statusCode, string title, string detail)
+        => CreateProblem(context, SecurityType, statusCode, title, detail);
 
     public static IResult CreateProblem(HttpContext context, string type, int statusCode, string title, string detail)
     {

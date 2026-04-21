@@ -20,24 +20,24 @@ public sealed class AuthStateStore
     }
 
     public async Task StoreSelectedProviderKeyAsync(string providerKey) =>
-        await SetItemAsync(ProviderKey, providerKey);
+        await SetItemAsync(ProviderKey, providerKey).ConfigureAwait(false);
 
-    public async Task<string?> GetProviderKeyAsync() => await GetItemAsync(ProviderKey);
+    public async Task<string?> GetProviderKeyAsync() => await GetItemAsync(ProviderKey).ConfigureAwait(false);
 
     /// <summary>
     /// Clears all client-side auth state.
     /// </summary>
     public async Task ClearAsync()
     {
-        await RemoveItemAsync(ProviderKey);
+        await RemoveItemAsync(ProviderKey).ConfigureAwait(false);
     }
 
     private async Task SetItemAsync(string key, string value) =>
-        await _js.InvokeVoidAsync("sessionStorage.setItem", key, value);
+        await _js.InvokeVoidAsync("sessionStorage.setItem", key, value).ConfigureAwait(false);
 
     private async Task<string?> GetItemAsync(string key) =>
-        await _js.InvokeAsync<string?>("sessionStorage.getItem", key);
+        await _js.InvokeAsync<string?>("sessionStorage.getItem", key).ConfigureAwait(false);
 
     private async Task RemoveItemAsync(string key) =>
-        await _js.InvokeVoidAsync("sessionStorage.removeItem", key);
+        await _js.InvokeVoidAsync("sessionStorage.removeItem", key).ConfigureAwait(false);
 }

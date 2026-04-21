@@ -82,10 +82,8 @@ public static class ValidationErrorHelpers
     /// <returns>MethodNotAllowed result with Allow header</returns>
     public static IResult CreateMethodNotAllowed(ISet<string> allowedMethods)
     {
-        return Results.Problem(
-            title: "Method Not Allowed",
-            detail: $"Allowed methods: {string.Join(", ", allowedMethods)}",
-            statusCode: StatusCodes.Status405MethodNotAllowed);
+        ArgumentNullException.ThrowIfNull(allowedMethods);
+        return new MethodNotAllowedWithAllowHeaderResult(allowedMethods);
     }
 
     /// <summary>
@@ -112,6 +110,23 @@ public static class ValidationErrorHelpers
                     ["Allow"] = allowHeader
                 }
             });
+    }
+
+    private sealed class MethodNotAllowedWithAllowHeaderResult(ISet<string> allowedMethods) : IResult
+    {
+        private readonly string _allowHeader = string.Join(", ", allowedMethods);
+
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            ArgumentNullException.ThrowIfNull(httpContext);
+
+            httpContext.Response.Headers.Allow = _allowHeader;
+            return Results.Problem(
+                title: "Method Not Allowed",
+                detail: $"Allowed methods: {_allowHeader}",
+                statusCode: StatusCodes.Status405MethodNotAllowed)
+                .ExecuteAsync(httpContext);
+        }
     }
 
     /// <summary>

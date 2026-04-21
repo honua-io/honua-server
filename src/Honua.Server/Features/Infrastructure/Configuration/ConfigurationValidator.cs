@@ -6,7 +6,9 @@
 #pragma warning disable IL2067, IL2071, IL2072, IL2090
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Honua.Core.Configuration;
 using Honua.Core.Configuration.Validation;
@@ -47,13 +49,20 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     public IEnumerable<string> ValidateConfiguration(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        return ValidateAllAsync().GetAwaiter().GetResult().AllErrors;
+        // Use Task.Run with ConfigureAwait(false) to safely validate in sync context
+        // This is necessary because IConfigurationValidator is inherently synchronous
+        return Task.Run(async () =>
+            (await ValidateAllAsync().ConfigureAwait(false)).AllErrors).ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     /// <summary>
     /// Validates a configuration options instance using data annotations.
     /// </summary>
-    public ConfigurationValidationResult ValidateOptions<TOptions>(TOptions options, string sectionName, bool isDevelopment = false)
+    public ConfigurationValidationResult ValidateOptions<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        TOptions options,
+        string sectionName,
+        bool isDevelopment = false)
         where TOptions : class
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -83,9 +92,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         var results = new List<OptionsValidationResult>();
         var validationTasks = new List<Task<OptionsValidationResult>>();
 
-        foreach (var (optionsType, metadata) in _registeredOptions)
+        foreach (var metadata in _registeredOptions.Values)
         {
-            validationTasks.Add(ValidateOptionsTypeAsync(optionsType, metadata, isDevelopment, isTest));
+            validationTasks.Add(ValidateOptionsTypeAsync(metadata.OptionsType, metadata, isDevelopment, isTest));
         }
 
         if (validationTasks.Count > 0)
@@ -128,7 +137,11 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// <summary>
     /// Registers a configuration options type for validation.
     /// </summary>
-    public void RegisterOptionsType<TOptions>(string sectionName, bool isRequired = true) where TOptions : class
+    public void RegisterOptionsType<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        string sectionName,
+        bool isRequired = true)
+        where TOptions : class
     {
         var metadata = CreateOptionsMetadata<TOptions>(sectionName, isRequired);
         _registeredOptions[typeof(TOptions)] = metadata;
@@ -146,7 +159,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// <summary>
     /// Gets configuration metadata for a specific options type.
     /// </summary>
-    public ConfigurationOptionsMetadata GetOptionsMetadata<TOptions>() where TOptions : class
+    public ConfigurationOptionsMetadata GetOptionsMetadata<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>()
+        where TOptions : class
     {
         if (_registeredOptions.TryGetValue(typeof(TOptions), out var metadata))
         {
@@ -160,7 +175,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// Validates a specific options type asynchronously.
     /// </summary>
     private async Task<OptionsValidationResult> ValidateOptionsTypeAsync(
-        Type optionsType,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type optionsType,
         ConfigurationOptionsMetadata metadata,
         bool isDevelopment,
         bool isTest)
@@ -199,7 +214,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// <summary>
     /// Gets a configured options instance from the service provider or configuration.
     /// </summary>
-    private object? GetConfiguredOptionsInstance(Type optionsType, string sectionName)
+    private object? GetConfiguredOptionsInstance(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type optionsType,
+        string sectionName)
     {
         try
         {
@@ -274,7 +291,10 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// <summary>
     /// Creates metadata for a configuration options type.
     /// </summary>
-    private static ConfigurationOptionsMetadata CreateOptionsMetadata<TOptions>(string sectionName, bool isRequired)
+    private static ConfigurationOptionsMetadata CreateOptionsMetadata<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        string sectionName,
+        bool isRequired)
         where TOptions : class
     {
         var type = typeof(TOptions);
@@ -313,15 +333,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// </summary>
     private static object? GetDefaultValue(PropertyInfo property)
     {
-        try
-        {
-            var instance = Activator.CreateInstance(property.DeclaringType!);
-            return property.GetValue(instance);
-        }
-        catch
-        {
-            return property.PropertyType.IsValueType ? Activator.CreateInstance(property.PropertyType) : null;
-        }
+        return property.GetCustomAttribute<DefaultValueAttribute>()?.Value;
     }
 
     /// <summary>

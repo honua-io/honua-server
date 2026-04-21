@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Core.Configuration;
@@ -166,7 +167,8 @@ public sealed class ConfigurationValidationSummary
 /// <param name="Description">The human-readable description.</param>
 public sealed record ConfigurationOptionsMetadata(
     string SectionName,
-    Type OptionsType,
+    [param: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+    [property: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type OptionsType,
     IReadOnlyList<ConfigurationPropertyMetadata> Properties,
     bool IsRequired,
     string? Description);

@@ -169,19 +169,23 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         Log.LeaderElectionStopped(Logger, _nodeId);
     }
 
-    private async void OnRenewalTimer(object? state)
+    private void OnRenewalTimer(object? state)
     {
         if (_disposed || !_isStarted || _stopTokenSource?.IsCancellationRequested == true)
             return;
 
-        try
+        // Fire-and-forget task with proper exception handling
+        _ = Task.Run(async () =>
         {
-            await TryAcquireOrExtendLeadershipAsync(_stopTokenSource?.Token ?? CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            Log.LeadershipRenewalFailed(Logger, _nodeId, ex);
-        }
+            try
+            {
+                await TryAcquireOrExtendLeadershipAsync(_stopTokenSource?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.LeadershipRenewalFailed(Logger, _nodeId, ex);
+            }
+        });
     }
 
     private void UpdateLeadershipStatus(bool isLeader)
@@ -255,7 +259,18 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         {
             try
             {
-                ReleaseLeadershipAsync(CancellationToken.None).GetAwaiter().GetResult();
+                // Fire-and-forget async cleanup to avoid deadlock in Dispose
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await ReleaseLeadershipAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.DisposeCleanupFailed(Logger, _nodeId, ex);
+                    }
+                });
             }
             catch (Exception ex)
             {

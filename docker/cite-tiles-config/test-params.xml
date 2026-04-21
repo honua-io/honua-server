@@ -5,7 +5,7 @@
     <parsers:profile>full</parsers:profile>
   </parsers:session>
   <value key="tilematrixsetdefinitionuri">http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad</value>
-  <value key="urltemplatefortiles">http://honua-server:8080/ogc/tiles/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}</value>
+  <value key="urltemplatefortiles">http://honua-server:8080/ogc/tiles/collections/1/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}</value>
   <value key="tilematrix">0</value>
   <value key="mintilerow">0</value>
   <value key="maxtilerow">0</value>

@@ -218,13 +218,10 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
 
         // Register CRS warmup service with leader election for distributed deployments
-        services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
-        {
-            // Use no-op implementation for single-instance deployments
-            // TODO: Replace with Redis implementation when Server project is available
-            return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
-                "honua:leader:crs-warmup");
-        });
+        // Note: Redis implementation is registered in the Server project to avoid circular dependencies
+        services.AddSingleton<IDistributedLeaderElection>(_ =>
+            new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
+                "honua:leader:crs-warmup"));
 
         services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
             new PostgresCrsWarmupService(

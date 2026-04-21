@@ -14,5 +14,5 @@ public interface IOperatorAuthorizationEvaluator
     /// <summary>
     /// Evaluates whether the given principal is authorized to perform the requested operation.
     /// </summary>
-    AccessDecision Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request);
+    Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request, CancellationToken cancellationToken = default);
 }

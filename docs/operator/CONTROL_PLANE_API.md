@@ -54,7 +54,6 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- performance/database/     # Query cache statistics
 |-- observability/            # Recent errors and telemetry status
 |-- alerts/                   # Alert zones and rules
-|-- rate-limits/              # Rate limit policies and status
 |-- license/                  # License status, upload, entitlements
 |-- roles/                    # Role CRUD and permissions
 |-- users/                    # User management and effective permissions
@@ -437,17 +436,6 @@ mitigate TOCTOU races with worker-owned state transitions.
 | `/api/v1/admin/alerts/rules` | POST | Create alert rule |
 | `/api/v1/admin/alerts/rules/{ruleId}` | PUT | Update alert rule |
 | `/api/v1/admin/alerts/rules/{ruleId}` | DELETE | Delete alert rule |
-
-### **Rate Limiting Endpoints**
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/v1/admin/rate-limits` | GET | List rate limit policies |
-| `/api/v1/admin/rate-limits` | POST | Create rate limit policy |
-| `/api/v1/admin/rate-limits/{id}` | GET | Get rate limit policy |
-| `/api/v1/admin/rate-limits/{id}` | PUT | Update rate limit policy |
-| `/api/v1/admin/rate-limits/{id}` | DELETE | Delete rate limit policy |
-| `/api/v1/admin/rate-limits/status` | GET | Get rate limit status |
 
 ### **License Endpoints**
 

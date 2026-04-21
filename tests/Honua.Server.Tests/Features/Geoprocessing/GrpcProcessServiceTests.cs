@@ -35,7 +35,7 @@ public sealed class GrpcProcessServiceTests
     public GrpcProcessServiceTests()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(AccessDecision.Allowed());
 
         _approvalEvaluator
@@ -43,8 +43,10 @@ public sealed class GrpcProcessServiceTests
             .Returns(ApprovalRequirement.NotRequired());
 
         _sut = new HonuaProcessService(
-            _jobStore, _progressStore, _cancellationNotifier,
-            _authEvaluator, _approvalEvaluator);
+            _progressStore, _cancellationNotifier,
+            _authEvaluator, _approvalEvaluator,
+            Substitute.For<ILogger<HonuaProcessService>>(),
+            _jobStore);
     }
 
     // -----------------------------------------------------------------------

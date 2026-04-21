@@ -75,6 +75,22 @@ public class ImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/formats")]
+    [Endpoint("PUT /api/v1/admin/import/formats")]
+    [Endpoint("DELETE /api/v1/admin/import/formats")]
+    [Endpoint("PATCH /api/v1/admin/import/formats")]
+    public async Task GetSupportedFormats_WithWrongHttpMethods_Returns405()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/formats"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/preview")]
     public async Task PreviewFile_V1_WithValidGeoJson_ReturnsPreview()
     {
@@ -117,6 +133,22 @@ public class ImportEndpointTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("GeoJson");
         responseContent.Should().Contain("San Francisco");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/import/preview")]
+    [Endpoint("PUT /api/v1/admin/import/preview")]
+    [Endpoint("DELETE /api/v1/admin/import/preview")]
+    [Endpoint("PATCH /api/v1/admin/import/preview")]
+    public async Task PreviewFile_WithWrongHttpMethods_Returns405()
+    {
+        foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        }
     }
 
     [IntegrationTest]

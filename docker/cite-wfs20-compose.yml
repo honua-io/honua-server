@@ -11,7 +11,7 @@ services:
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
       - HONUA_SKIP_MIGRATIONS=true
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=honua_cite;Username=postgres;Password=postgres;Include Error Detail=true
-      - HONUA_ADMIN_PASSWORD=cite_testing_admin_password_123!
+      - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
       - Security__ConnectionEncryption__MasterKey=cite_testing_master_key_for_testing_only_not_secure
       - HostValidation__Enabled=false
     depends_on:
@@ -35,7 +35,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --locale=C
     ports:
-      - "5433:5432"
+      - "${HONUA_CITE_WFS20_POSTGRES_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite"]
       interval: 10s

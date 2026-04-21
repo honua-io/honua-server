@@ -99,6 +99,34 @@
           }
         }
       }
+    },
+    "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}": {
+      "get": {
+        "summary": "Get collection map tileset",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tileset metadata"
+          }
+        }
+      }
     }
   },
   "components": {

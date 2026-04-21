@@ -60,12 +60,12 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
     {
     }
 
-    public override Task<Proto.ValidatePlanResponse> ValidatePlan(
+    public override async Task<Proto.ValidatePlanResponse> ValidatePlan(
         Proto.ValidatePlanRequest request,
         ServerCallContext context)
     {
         EnrichActivity("ValidatePlan");
-        EnsureAuthorized(context, OperatorResourceType.Process, OperatorOperation.Read);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Read).ConfigureAwait(false);
 
         var plan = request.Plan;
         ValidatePlanStructure(plan);
@@ -113,15 +113,15 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         GeoprocessingServiceLog.PlanValidated(_logger, domainPlan.PlanId ?? "", result.IsExecutable, violations.Count);
 
-        return Task.FromResult(GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result));
+        return GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result);
     }
 
-    public override Task<Proto.DryRunPlanResponse> DryRunPlan(
+    public override async Task<Proto.DryRunPlanResponse> DryRunPlan(
         Proto.DryRunPlanRequest request,
         ServerCallContext context)
     {
         EnrichActivity("DryRunPlan");
-        EnsureAuthorized(context, OperatorResourceType.Process, OperatorOperation.Read);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Read).ConfigureAwait(false);
 
         var plan = request.Plan;
         ValidatePlanStructure(plan);
@@ -137,15 +137,15 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         GeoprocessingServiceLog.DryRunCompleted(_logger, domainPlan.PlanId, result.EstimatedDurationSeconds);
 
-        return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result));
+        return GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result);
     }
 
-    public override Task<Proto.ExecutePlanResponse> ExecutePlan(
+    public override async Task<Proto.ExecutePlanResponse> ExecutePlan(
         Proto.ExecutePlanRequest request,
         ServerCallContext context)
     {
         EnrichActivity("ExecutePlan");
-        EnsureAuthorized(context, OperatorResourceType.Process, OperatorOperation.Execute);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Execute).ConfigureAwait(false);
 
         throw new RpcException(new Status(
             StatusCode.Unimplemented,
@@ -157,7 +157,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("SubmitPlanJob");
-        EnsureAuthorized(context, OperatorResourceType.Process, OperatorOperation.Execute);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Execute).ConfigureAwait(false);
 
         var plan = request.Plan;
         ValidatePlanStructure(plan);
@@ -225,7 +225,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("GetJob");
-        EnsureAuthorized(context, OperatorResourceType.Job, OperatorOperation.Read);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Job, OperatorOperation.Read).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(request.JobId))
         {
@@ -250,7 +250,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("GetJobResults");
-        EnsureAuthorized(context, OperatorResourceType.Job, OperatorOperation.Read);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Job, OperatorOperation.Read).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(request.JobId))
         {
@@ -285,7 +285,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("CancelJob");
-        EnsureAuthorized(context, OperatorResourceType.Job, OperatorOperation.Execute);
+        await EnsureAuthorizedAsync(context, OperatorResourceType.Job, OperatorOperation.Execute).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(request.JobId))
         {
@@ -356,17 +356,17 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
     // Helpers
     // -----------------------------------------------------------------------
 
-    private void EnsureAuthorized(
+    private async Task EnsureAuthorizedAsync(
         ServerCallContext context,
         OperatorResourceType resourceType,
         OperatorOperation operation)
     {
         var httpContext = context.GetHttpContext();
-        var decision = _authEvaluator.Evaluate(httpContext.User, new OperatorAuthorizationRequest
+        var decision = await _authEvaluator.EvaluateAsync(httpContext.User, new OperatorAuthorizationRequest
         {
             ResourceType = resourceType,
             Operation = operation
-        });
+        }, context.CancellationToken).ConfigureAwait(false);
 
         if (decision.IsAllowed)
         {

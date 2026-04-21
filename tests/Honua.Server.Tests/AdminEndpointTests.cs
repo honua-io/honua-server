@@ -86,13 +86,18 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.TableDiscovery)]
     [Endpoint("POST /api/v1/admin/connections/{id}/tables")]
-    public async Task GetConnectionTables_WithWrongHttpMethod_Returns405()
+    [Endpoint("PUT /api/v1/admin/connections/{id}/tables")]
+    [Endpoint("DELETE /api/v1/admin/connections/{id}/tables")]
+    [Endpoint("PATCH /api/v1/admin/connections/{id}/tables")]
+    public async Task GetConnectionTables_WithWrongHttpMethods_Returns405()
     {
-        // Act
-        var response = await _fixture.Client.PostAsync("/api/v1/admin/connections/test/tables", null);
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _fixture.Client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/connections/test/tables"));
 
-        // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+            response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        }
     }
 
     [IntegrationTest]
@@ -293,12 +298,17 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/admin/config")]
-    public async Task GetConfiguration_WithWrongHttpMethod_Returns405()
+    [Endpoint("PUT /api/v1/admin/config")]
+    [Endpoint("DELETE /api/v1/admin/config")]
+    [Endpoint("PATCH /api/v1/admin/config")]
+    public async Task GetConfiguration_WithWrongHttpMethods_Returns405()
     {
-        // Act
-        var response = await _fixture.Client.PostAsync("/api/v1/admin/config", null);
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _fixture.Client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/config"));
 
-        // Assert
-        response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+            response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        }
     }
 }

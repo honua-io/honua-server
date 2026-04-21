@@ -54,7 +54,15 @@ internal sealed class GdbTableReader : IDisposable
         _nullableFieldIndices = new List<int>();
 
         var stream = new FileStream(tablePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        _reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
+        try
+        {
+            _reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
 
         // Parse file header (40 bytes).
         Version = _reader.ReadInt32(); // bytes 0-3: signature/version
