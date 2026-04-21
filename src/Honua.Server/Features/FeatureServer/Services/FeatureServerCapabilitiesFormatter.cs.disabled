@@ -1,0 +1,548 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Diagnostics;
+using System.Text.Json;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Styling;
+using Honua.ServiceDefaults;
+
+namespace Honua.Server.Features.FeatureServer.Services;
+
+/// <summary>
+/// GeoServices REST API FeatureServer capabilities formatter that converts unified metadata to FeatureServer JSON responses.
+/// Implements Esri-compatible FeatureServer metadata format.
+/// </summary>
+internal sealed class FeatureServerCapabilitiesFormatter : ICapabilitiesFormatter<FeatureServerResponse>
+{
+    private readonly ILogger<FeatureServerCapabilitiesFormatter> _logger;
+    private readonly ILayerStyleService? _layerStyleService;
+
+    public FeatureServerCapabilitiesFormatter(
+        ILogger<FeatureServerCapabilitiesFormatter> logger,
+        ILayerStyleService? layerStyleService = null)
+    {
+        _logger = logger;
+        _layerStyleService = layerStyleService;
+    }
+
+    public string Protocol => "FeatureServer";
+
+    public IReadOnlyList<string> SupportedMediaTypes => ["application/json"];
+
+    public async Task<FeatureServerResponse> FormatServiceCapabilitiesAsync(
+        ServiceMetadata serviceMetadata,
+        GlobalCapabilities globalCapabilities,
+        HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "featureserver.format_service_capabilities", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "FeatureServer");
+        activity?.SetTag("service.name", serviceMetadata.Identity.Name);
+
+        FeatureServerLog.FormatCapabilitiesRequested(_logger, serviceMetadata.Identity.Name);
+
+        try
+        {
+            var supportsGeobuf = context.RequestServices.GetRequiredService<IFeatureReader>() is IGeobufFeatureStore;
+
+            var response = new FeatureServerResponse
+            {
+                ServiceDescription = serviceMetadata.Identity.Description,
+                HasVersionedData = false,
+                MaxRecordCount = serviceMetadata.Capabilities.Limits.MaxRecordCount,
+                SupportedQueryFormats = FormatSupportedQueryFormats(serviceMetadata.Capabilities.Formats, supportsGeobuf),
+                Capabilities = FormatCapabilities(serviceMetadata.Capabilities),
+                Description = serviceMetadata.Identity.Description,
+                CopyrightText = ExtractCopyrightText(serviceMetadata),
+                SpatialReference = FormatSpatialReference(serviceMetadata.Capabilities.Spatial.DefaultSrs),
+                InitialExtent = FormatExtent(serviceMetadata.SpatialInfo.Extent),
+                FullExtent = FormatExtent(serviceMetadata.SpatialInfo.Extent),
+                AllowGeometryUpdates = serviceMetadata.Capabilities.Edit?.SupportsUpdate == true,
+                Units = DetermineUnits(serviceMetadata.Capabilities.Spatial.DefaultSrs),
+                SupportsDisconnectedEditing = false,
+                SyncEnabled = false,
+                SupportedSpatialRelations = serviceMetadata.Capabilities.Query.SupportedSpatialRelations,
+                SupportsTrueCurve = false,
+                OnlyAllowTrueCurveUpdatesByTrueCurveClients = false,
+                SupportsApplyEditsWithGlobalIds = serviceMetadata.Capabilities.Edit?.SupportsBatchOperations == true,
+                SupportsReturnDeleteResults = serviceMetadata.Capabilities.Edit?.SupportsDelete == true,
+                Layers = await FormatLayersAsync(serviceMetadata.Layers, cancellationToken),
+                Tables = FormatTables(serviceMetadata.Layers)
+            };
+
+            FeatureServerLog.FormatCapabilitiesCompleted(_logger, serviceMetadata.Identity.Name, response.Layers.Length);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetTag(HonuaTelemetry.Tags.Error, "true");
+            activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, ex.Message);
+
+            FeatureServerLog.FormatCapabilitiesFailed(_logger, serviceMetadata.Identity.Name, ex.Message, ex);
+            throw;
+        }
+    }
+
+    public async Task<FeatureServerResponse> FormatLayerCapabilitiesAsync(
+        LayerMetadata layerMetadata,
+        ServiceMetadata serviceMetadata,
+        GlobalCapabilities globalCapabilities,
+        HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "featureserver.format_layer_capabilities", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "FeatureServer");
+        activity?.SetTag("service.name", serviceMetadata.Identity.Name);
+        activity?.SetTag("layer.id", layerMetadata.Identity.Id);
+
+        FeatureServerLog.FormatLayerCapabilitiesRequested(_logger, serviceMetadata.Identity.Name, layerMetadata.Identity.Id);
+
+        try
+        {
+            var layerResponse = await FormatSingleLayerAsync(layerMetadata, serviceMetadata.Capabilities, cancellationToken);
+
+            // Create a service response containing just this layer
+            var serviceResponse = await FormatServiceCapabilitiesAsync(serviceMetadata, globalCapabilities, context, cancellationToken);
+            serviceResponse.Layers = new[] { layerResponse };
+            serviceResponse.Tables = Array.Empty<TableInfo>();
+
+            FeatureServerLog.FormatLayerCapabilitiesCompleted(_logger, serviceMetadata.Identity.Name, layerMetadata.Identity.Id);
+            return serviceResponse;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetTag(HonuaTelemetry.Tags.Error, "true");
+            activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, ex.Message);
+
+            FeatureServerLog.FormatLayerCapabilitiesFailed(_logger, serviceMetadata.Identity.Name, layerMetadata.Identity.Id, ex.Message, ex);
+            throw;
+        }
+    }
+
+    private async Task<LayerInfo[]> FormatLayersAsync(LayerMetadata[] layers, CancellationToken cancellationToken)
+    {
+        var layerInfos = new List<LayerInfo>();
+
+        foreach (var layer in layers.Where(l => l.SpatialInfo.HasGeometry))
+        {
+            var layerInfo = await FormatSingleLayerAsync(layer, null, cancellationToken);
+            layerInfos.Add(layerInfo);
+        }
+
+        return layerInfos.ToArray();
+    }
+
+    private async Task<LayerInfo> FormatSingleLayerAsync(LayerMetadata layerMetadata, ServiceCapabilities? serviceCapabilities, CancellationToken cancellationToken)
+    {
+        // Get drawing info for the layer
+        JsonElement? drawingInfo = null;
+        if (_layerStyleService != null && layerMetadata.StyleInfo?.DefaultRenderer != null)
+        {
+            drawingInfo = layerMetadata.StyleInfo.DefaultRenderer;
+        }
+
+        return new LayerInfo
+        {
+            Id = layerMetadata.Identity.Id,
+            Name = layerMetadata.Identity.Name,
+            Type = layerMetadata.Identity.LayerType,
+            GeometryType = FormatGeometryType(layerMetadata.SpatialInfo.GeometryType),
+            Description = layerMetadata.Identity.Description,
+            CopyrightText = layerMetadata.Identity.Copyright,
+            DefaultVisibility = layerMetadata.Identity.DefaultVisibility,
+            MinScale = layerMetadata.Identity.MinScale ?? 0,
+            MaxScale = layerMetadata.Identity.MaxScale ?? 0,
+            Fields = FormatFields(layerMetadata.Fields),
+            Indexes = FormatIndexes(layerMetadata.Fields),
+            Relationships = FormatRelationships(layerMetadata.Relationships),
+            CanModifyLayer = false,
+            CanScaleSymbols = true,
+            HasLabels = false,
+            Capabilities = FormatLayerCapabilities(layerMetadata.Capabilities),
+            MaxRecordCount = layerMetadata.Capabilities.Query.MaxRecordCount,
+            SupportedQueryFormats = FormatLayerQueryFormats(layerMetadata.Capabilities),
+            SupportedSpatialRelations = FormatSpatialRelations(layerMetadata.SpatialInfo.SupportedOperations),
+            IsDataVersioned = false,
+            OwnershipBasedAccessControlForFeatures = null,
+            UseStandardizedQueries = true,
+            AdvancedQueryCapabilities = FormatAdvancedQueryCapabilities(layerMetadata.Capabilities.Query),
+            SupportsTrueCurve = false,
+            SupportsCoordinatesQuantization = true,
+            SupportsReturningQueryGeometry = true,
+            HasZ = layerMetadata.SpatialInfo.Complexity?.HasZ == true,
+            HasM = layerMetadata.SpatialInfo.Complexity?.HasM == true,
+            AllowTrueCurvesUpdates = false,
+            OnlyAllowTrueCurveUpdatesByTrueCurveClients = false,
+            HasAttachments = layerMetadata.Definition.SupportsAttachments,
+            ObjectIdField = ExtractObjectIdField(layerMetadata.Fields),
+            GlobalIdField = ExtractGlobalIdField(layerMetadata.Fields),
+            DisplayField = ExtractDisplayField(layerMetadata.Fields),
+            TypeIdField = null,
+            Extent = FormatExtent(layerMetadata.SpatialInfo.Extent),
+            DrawingInfo = drawingInfo,
+            TimeInfo = FormatTimeInfo(layerMetadata.TemporalInfo),
+            EditFieldsInfo = FormatEditFieldsInfo(layerMetadata.Fields),
+            Templates = Array.Empty<FeatureTemplate>(),
+            Types = Array.Empty<FeatureType>()
+        };
+    }
+
+    private TableInfo[] FormatTables(LayerMetadata[] layers)
+    {
+        return layers
+            .Where(l => !l.SpatialInfo.HasGeometry)
+            .Select(layer => new TableInfo
+            {
+                Id = layer.Identity.Id,
+                Name = layer.Identity.Name,
+                Type = "Table"
+            })
+            .ToArray();
+    }
+
+    private string FormatSupportedQueryFormats(FormatCapabilities formats, bool supportsGeobuf)
+    {
+        var supportedFormats = new List<string> { "JSON" };
+
+        if (formats.QueryFormats.Contains("GeoJSON", StringComparer.OrdinalIgnoreCase))
+        {
+            supportedFormats.Add("geoJSON");
+        }
+
+        if (supportsGeobuf)
+        {
+            supportedFormats.Add("PBF");
+        }
+
+        return string.Join(", ", supportedFormats);
+    }
+
+    private string FormatCapabilities(ServiceCapabilities capabilities)
+    {
+        var capabilityList = new List<string> { "Query", "Extract" };
+
+        if (capabilities.Edit != null)
+        {
+            if (capabilities.Edit.SupportsCreate) capabilityList.Add("Create");
+            if (capabilities.Edit.SupportsUpdate) capabilityList.Add("Update");
+            if (capabilities.Edit.SupportsDelete) capabilityList.Add("Delete");
+            if (capabilities.Edit.SupportsBatchOperations) capabilityList.Add("Editing");
+        }
+
+        if (capabilities.Query.SupportsStatistics) capabilityList.Add("ChangeTracking");
+
+        return string.Join(", ", capabilityList);
+    }
+
+    private string FormatLayerCapabilities(LayerCapabilities capabilities)
+    {
+        var capabilityList = new List<string> { "Query" };
+
+        if (capabilities.Edit != null)
+        {
+            if (capabilities.Edit.SupportsCreate) capabilityList.Add("Create");
+            if (capabilities.Edit.SupportsUpdate) capabilityList.Add("Update");
+            if (capabilities.Edit.SupportsDelete) capabilityList.Add("Delete");
+        }
+
+        if (capabilities.Query.SupportsStatistics) capabilityList.Add("ChangeTracking");
+
+        return string.Join(", ", capabilityList);
+    }
+
+    private string FormatLayerQueryFormats(LayerCapabilities capabilities)
+    {
+        return "JSON, geoJSON"; // Standard formats for layers
+    }
+
+    private string[] FormatSpatialRelations(SpatialOperations spatialOps)
+    {
+        return spatialOps.SpatialRelations.Length > 0
+            ? spatialOps.SpatialRelations
+            : new[] { "esriSpatialRelIntersects", "esriSpatialRelContains", "esriSpatialRelCrosses" };
+    }
+
+    private GeoServicesAdvancedQueryCapabilities FormatAdvancedQueryCapabilities(LayerQueryCapabilities queryCapabilities)
+    {
+        return new GeoServicesAdvancedQueryCapabilities
+        {
+            UseStandardizedQueries = true,
+            SupportsStatistics = queryCapabilities.SupportsStatistics,
+            SupportsPercentileStatistics = false,
+            SupportsHavingClause = false,
+            SupportsOrderBy = true,
+            SupportsDistinct = true,
+            SupportsCountDistinct = queryCapabilities.SupportsStatistics,
+            SupportsPagination = queryCapabilities.SupportsPagination,
+            SupportsTrueCurve = false,
+            SupportsReturningQueryExtent = true,
+            SupportsQueryWithDistance = true,
+            SupportsSqlExpression = queryCapabilities.SupportsSql,
+            SupportsTimeRelation = queryCapabilities.SupportsTemporalQuery,
+            SupportsAdvancedQueryRelated = false,
+            SupportsQueryRelatedPagination = false
+        };
+    }
+
+    private FeatureServerTimeInfo? FormatTimeInfo(LayerTemporalInfo? temporalInfo)
+    {
+        if (temporalInfo == null)
+            return null;
+
+        return new FeatureServerTimeInfo
+        {
+            StartTimeField = temporalInfo.StartTimeField,
+            EndTimeField = temporalInfo.EndTimeField,
+            TrackIdField = temporalInfo.TrackIdField,
+            TimeExtent = temporalInfo.TimeExtent != null
+                ? new double[] {
+                    ((DateTimeOffset)temporalInfo.TimeExtent.Start).ToUnixTimeMilliseconds(),
+                    ((DateTimeOffset)temporalInfo.TimeExtent.End).ToUnixTimeMilliseconds()
+                }
+                : null,
+            TimeReference = null, // Default time zone
+            TimeInterval = 0,
+            TimeIntervalUnits = null,
+            HasLiveData = false,
+            ExportTimeOptions = new FeatureServerTimeExportOptions
+            {
+                UseTime = true,
+                TimeDataCumulative = false,
+                TimeOffset = 0,
+                TimeOffsetUnits = null
+            }
+        };
+    }
+
+    private GeoServicesFieldInfo[] FormatFields(LayerFieldInfo[] fieldInfos)
+    {
+        return fieldInfos.Select(field => new GeoServicesFieldInfo
+        {
+            Name = field.Definition.Name,
+            Type = FormatFieldType(field.Definition.Type),
+            Alias = field.Definition.Description ?? field.Definition.Name,
+            Domain = FormatFieldDomain(field.Domain),
+            Editable = field.Definition.Type != FieldType.ObjectId,
+            Nullable = field.Definition.Nullable,
+            DefaultValue = null, // TODO: Extract from field definition
+            Length = ExtractFieldLength(field.Definition),
+            SqlType = FormatSqlType(field.Definition.Type)
+        }).ToArray();
+    }
+
+    private GeoServicesIndex[] FormatIndexes(LayerFieldInfo[] fieldInfos)
+    {
+        return fieldInfos
+            .Where(field => field.IsIndexed)
+            .Select(field => new GeoServicesIndex
+            {
+                Name = $"IDX_{field.Definition.Name}",
+                Fields = field.Definition.Name,
+                IsAscending = true,
+                IsUnique = field.Definition.Name.Contains("id", StringComparison.OrdinalIgnoreCase),
+                Description = $"Index on {field.Definition.Name}"
+            })
+            .ToArray();
+    }
+
+    private GeoServicesRelationship[] FormatRelationships(LayerRelationshipInfo[] relationships)
+    {
+        return relationships.Select(rel => new GeoServicesRelationship
+        {
+            Id = rel.Definition.Id,
+            Name = rel.Definition.Name ?? $"Relationship_{rel.Definition.Id}",
+            RelatedTableId = rel.Definition.RelatedLayerId,
+            Cardinality = FormatCardinality(rel.Definition.Cardinality),
+            Role = rel.Definition.Role.ToString(),
+            KeyField = rel.Definition.OriginPrimaryKey,
+            Composite = rel.Definition.IsComposite
+        }).ToArray();
+    }
+
+    private FeatureServerEditFieldsInfo? FormatEditFieldsInfo(LayerFieldInfo[] fieldInfos)
+    {
+        var creationDateField = fieldInfos.FirstOrDefault(f =>
+            f.Definition.Name.Contains("created", StringComparison.OrdinalIgnoreCase) ||
+            f.Definition.Name.Contains("creation", StringComparison.OrdinalIgnoreCase));
+
+        var creatorField = fieldInfos.FirstOrDefault(f =>
+            f.Definition.Name.Contains("creator", StringComparison.OrdinalIgnoreCase) ||
+            f.Definition.Name.Contains("created_by", StringComparison.OrdinalIgnoreCase));
+
+        var editDateField = fieldInfos.FirstOrDefault(f =>
+            f.Definition.Name.Contains("modified", StringComparison.OrdinalIgnoreCase) ||
+            f.Definition.Name.Contains("updated", StringComparison.OrdinalIgnoreCase));
+
+        var editorField = fieldInfos.FirstOrDefault(f =>
+            f.Definition.Name.Contains("editor", StringComparison.OrdinalIgnoreCase) ||
+            f.Definition.Name.Contains("modified_by", StringComparison.OrdinalIgnoreCase));
+
+        if (creationDateField == null && creatorField == null && editDateField == null && editorField == null)
+            return null;
+
+        return new FeatureServerEditFieldsInfo
+        {
+            CreationDateField = creationDateField?.Definition.Name,
+            CreatorField = creatorField?.Definition.Name,
+            EditDateField = editDateField?.Definition.Name,
+            EditorField = editorField?.Definition.Name,
+            DateFieldsTimeReference = null
+        };
+    }
+
+    // Helper methods for formatting specific data types
+    private static string? ExtractCopyrightText(ServiceMetadata serviceMetadata)
+    {
+        return serviceMetadata.Layers.FirstOrDefault(l => !string.IsNullOrEmpty(l.Identity.Copyright))?.Identity.Copyright;
+    }
+
+    private static GeoServicesSpatialReference FormatSpatialReference(SpatialReference spatialReference)
+    {
+        return new GeoServicesSpatialReference
+        {
+            Wkid = spatialReference.Wkid,
+            LatestWkid = spatialReference.Wkid
+        };
+    }
+
+    private static GeoServicesExtent? FormatExtent(FeatureExtent? extent)
+    {
+        if (extent == null)
+            return null;
+
+        return new GeoServicesExtent
+        {
+            XMin = extent.MinX,
+            YMin = extent.MinY,
+            XMax = extent.MaxX,
+            YMax = extent.MaxY,
+            SpatialReference = FormatSpatialReference(extent.SpatialReference)
+        };
+    }
+
+    private static string DetermineUnits(SpatialReference spatialReference)
+    {
+        // Simplified unit determination based on spatial reference
+        return spatialReference.Wkid == 4326 || spatialReference.Wkid == 4269 ? "esriDecimalDegrees" : "esriMeters";
+    }
+
+    private static string FormatGeometryType(GeometryType geometryType)
+    {
+        return geometryType switch
+        {
+            GeometryType.Point => "esriGeometryPoint",
+            GeometryType.Multipoint => "esriGeometryMultipoint",
+            GeometryType.Polyline => "esriGeometryPolyline",
+            GeometryType.Polygon => "esriGeometryPolygon",
+            GeometryType.Envelope => "esriGeometryEnvelope",
+            _ => "esriGeometryNull"
+        };
+    }
+
+    private static string FormatFieldType(FieldType fieldType)
+    {
+        return fieldType switch
+        {
+            FieldType.ObjectId => "esriFieldTypeOID",
+            FieldType.String => "esriFieldTypeString",
+            FieldType.Integer => "esriFieldTypeInteger",
+            FieldType.BigInteger => "esriFieldTypeInteger",
+            FieldType.Double => "esriFieldTypeDouble",
+            FieldType.Date => "esriFieldTypeDate",
+            FieldType.Geometry => "esriFieldTypeGeometry",
+            FieldType.Blob => "esriFieldTypeBlob",
+            FieldType.Raster => "esriFieldTypeRaster",
+            FieldType.Guid => "esriFieldTypeGUID",
+            FieldType.GlobalId => "esriFieldTypeGlobalID",
+            FieldType.Xml => "esriFieldTypeXML",
+            _ => "esriFieldTypeString"
+        };
+    }
+
+    private static string FormatSqlType(FieldType fieldType)
+    {
+        return fieldType switch
+        {
+            FieldType.ObjectId => "sqlTypeInteger",
+            FieldType.String => "sqlTypeVarchar",
+            FieldType.Integer => "sqlTypeInteger",
+            FieldType.BigInteger => "sqlTypeBigInt",
+            FieldType.Double => "sqlTypeDouble",
+            FieldType.Date => "sqlTypeTimestamp",
+            FieldType.Geometry => "sqlTypeGeometry",
+            FieldType.Blob => "sqlTypeBlob",
+            FieldType.Guid => "sqlTypeVarchar",
+            FieldType.GlobalId => "sqlTypeVarchar",
+            FieldType.Xml => "sqlTypeVarchar",
+            _ => "sqlTypeVarchar"
+        };
+    }
+
+    private static int? ExtractFieldLength(FieldDefinition fieldDefinition)
+    {
+        return fieldDefinition.Type == FieldType.String ? 255 : null; // Default string length
+    }
+
+    private static GeoServicesDomain? FormatFieldDomain(FieldDomain? domain)
+    {
+        if (domain == null)
+            return null;
+
+        return domain.Type switch
+        {
+            "coded" when domain.CodedValues != null => new GeoServicesCodedValueDomain
+            {
+                Type = "codedValue",
+                Name = domain.Name,
+                CodedValues = domain.CodedValues.Select(cv => new GeoServicesCodedValue
+                {
+                    Name = cv.Name,
+                    Code = cv.Code
+                }).ToArray()
+            },
+            "range" when domain.Range != null => new GeoServicesRangeDomain
+            {
+                Type = "range",
+                Name = domain.Name,
+                Range = new[] { domain.Range.MinValue, domain.Range.MaxValue }
+            },
+            _ => null
+        };
+    }
+
+    private static string FormatCardinality(RelationshipCardinality cardinality)
+    {
+        return cardinality switch
+        {
+            RelationshipCardinality.OneToOne => "esriRelCardinalityOneToOne",
+            RelationshipCardinality.OneToMany => "esriRelCardinalityOneToMany",
+            RelationshipCardinality.ManyToMany => "esriRelCardinalityManyToMany",
+            _ => "esriRelCardinalityOneToMany"
+        };
+    }
+
+    private static string? ExtractObjectIdField(LayerFieldInfo[] fieldInfos)
+    {
+        return fieldInfos.FirstOrDefault(f => f.Definition.Type == FieldType.ObjectId)?.Definition.Name;
+    }
+
+    private static string? ExtractGlobalIdField(LayerFieldInfo[] fieldInfos)
+    {
+        return fieldInfos.FirstOrDefault(f => f.Definition.Type == FieldType.GlobalId)?.Definition.Name;
+    }
+
+    private static string? ExtractDisplayField(LayerFieldInfo[] fieldInfos)
+    {
+        // Choose the first string field that's not an ID field as the display field
+        return fieldInfos.FirstOrDefault(f =>
+            f.Definition.Type == FieldType.String &&
+            !f.Definition.Name.Contains("id", StringComparison.OrdinalIgnoreCase)
+        )?.Definition.Name;
+    }
+}

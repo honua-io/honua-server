@@ -1,0 +1,489 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.IO.Pipelines;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Response;
+using Honua.Core.Features.Shared.Models;
+using Microsoft.AspNetCore.Http.Extensions;
+
+namespace Honua.Server.Features.Infrastructure.Response;
+
+/// <summary>
+/// Unified response service that provides a single interface for building and serializing
+/// responses across all protocols. This is the main entry point for response formatting.
+/// </summary>
+internal sealed class UnifiedResponseService : IUnifiedResponseService
+{
+    private readonly IResponseBuilder _responseBuilder;
+    private readonly IProtocolSerializerRegistry _serializerRegistry;
+    private readonly ILogger<UnifiedResponseService> _logger;
+
+    public UnifiedResponseService(
+        IResponseBuilder responseBuilder,
+        IProtocolSerializerRegistry serializerRegistry,
+        ILogger<UnifiedResponseService> logger)
+    {
+        _responseBuilder = responseBuilder;
+        _serializerRegistry = serializerRegistry;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IResult> CreateFeatureCollectionResponseAsync<TOptions>(
+        string protocol,
+        QueryResult<Feature> queryResult,
+        LayerDefinition layer,
+        ResponseBuildOptions buildOptions,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class
+    {
+        try
+        {
+            var responseData = await _responseBuilder.BuildFeatureCollectionAsync(
+                queryResult, layer, buildOptions, cancellationToken);
+
+            var serializedResponse = await _serializerRegistry.SerializeAsync(
+                protocol, responseData, serializationOptions, cancellationToken);
+
+            return CreateResult(serializedResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating feature collection response for protocol {Protocol}", protocol);
+            return await CreateErrorResponseAsync(protocol, ex, serializationOptions, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IResult> CreateSingleFeatureResponseAsync<TOptions>(
+        string protocol,
+        Feature feature,
+        LayerDefinition layer,
+        ResponseBuildOptions buildOptions,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class
+    {
+        try
+        {
+            var responseData = await _responseBuilder.BuildSingleFeatureAsync(
+                feature, layer, buildOptions, cancellationToken);
+
+            var serializedResponse = await _serializerRegistry.SerializeAsync(
+                protocol, responseData, serializationOptions, cancellationToken);
+
+            return CreateResult(serializedResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating single feature response for protocol {Protocol}", protocol);
+            return await CreateErrorResponseAsync(protocol, ex, serializationOptions, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IResult> CreateStreamingFeatureCollectionResponseAsync<TOptions>(
+        string protocol,
+        IAsyncEnumerable<Feature> features,
+        LayerDefinition layer,
+        ResponseMetadata metadata,
+        ResponseBuildOptions buildOptions,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class
+    {
+        try
+        {
+            var streamingResponse = _responseBuilder.BuildStreamingResponseAsync(
+                features, layer, metadata, buildOptions, cancellationToken);
+
+            return Results.Stream(async (outputStream, ct) =>
+            {
+                var contentType = await _serializerRegistry.SerializeStreamingAsync(
+                    protocol, streamingResponse, outputStream, serializationOptions, ct);
+
+                return contentType;
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating streaming response for protocol {Protocol}", protocol);
+            return await CreateErrorResponseAsync(protocol, ex, serializationOptions, cancellationToken);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IResult> CreateErrorResponseAsync<TOptions>(
+        string protocol,
+        ResponseError error,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class
+    {
+        try
+        {
+            var responseData = _responseBuilder.BuildErrorResponse(error);
+
+            var serializedResponse = await _serializerRegistry.SerializeAsync(
+                protocol, responseData, serializationOptions, cancellationToken);
+
+            return CreateResult(serializedResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating error response for protocol {Protocol}", protocol);
+
+            // Fallback to basic JSON error response
+            return Results.Json(new
+            {
+                error = new
+                {
+                    code = 500,
+                    message = "Internal server error occurred while formatting response"
+                }
+            }, statusCode: 500);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IResult> CreateErrorResponseAsync<TOptions>(
+        string protocol,
+        Exception exception,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class
+    {
+        var error = MapExceptionToResponseError(exception);
+        return await CreateErrorResponseAsync(protocol, error, serializationOptions, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ResponseBuildOptions CreateBuildOptions(
+        HttpRequest request,
+        string protocol,
+        bool includeGeometry = true,
+        string[]? outFields = null,
+        int? outputSrid = null)
+    {
+        var baseUrl = $"{request.Scheme}://{request.Host}{request.PathBase}";
+        var requestPath = request.Path.ToString();
+        var queryParams = ExtractQueryParameters(request);
+
+        return protocol.ToLowerInvariant() switch
+        {
+            "geoservices" => ResponseBuildOptions.ForGeoServices(
+                includeGeometry, outputSrid, outFields, baseUrl),
+
+            "ogc api features" => ResponseBuildOptions.ForOgcApiFeatures(
+                includeGeometry, baseUrl, queryParams),
+
+            "wfs 2.0" => ResponseBuildOptions.ForWfs20(
+                includeGeometry, baseUrl),
+
+            "odata" => ResponseBuildOptions.ForOData(
+                includeGeometry, baseUrl, outFields),
+
+            _ => new ResponseBuildOptions
+            {
+                IncludeGeometry = includeGeometry,
+                BaseUrl = baseUrl,
+                RequestPath = requestPath,
+                QueryParameters = queryParams,
+                OutFields = outFields,
+                OutputSrid = outputSrid
+            }
+        };
+    }
+
+    /// <inheritdoc />
+    public TOptions CreateSerializationOptions<TOptions>(HttpRequest request, string? format = null)
+        where TOptions : class, new()
+    {
+        var options = new TOptions();
+
+        // Set common properties via reflection if they exist
+        var type = typeof(TOptions);
+
+        SetPropertyIfExists(options, type, "Format", format);
+        SetPropertyIfExists(options, type, "Request", request);
+
+        // Protocol-specific initialization
+        if (options is GeoServicesSerializationOptions geoServicesOptions)
+        {
+            return InitializeGeoServicesOptions(geoServicesOptions, request, format) as TOptions ?? options;
+        }
+
+        if (options is OgcApiFeaturesSerializationOptions ogcOptions)
+        {
+            return InitializeOgcApiFeaturesOptions(ogcOptions, request, format) as TOptions ?? options;
+        }
+
+        if (options is Wfs20SerializationOptions wfsOptions)
+        {
+            return InitializeWfs20Options(wfsOptions, request) as TOptions ?? options;
+        }
+
+        if (options is ODataSerializationOptions odataOptions)
+        {
+            return InitializeODataOptions(odataOptions, request, format) as TOptions ?? options;
+        }
+
+        return options;
+    }
+
+    /// <inheritdoc />
+    public bool IsProtocolSupported(string protocol)
+    {
+        return _serializerRegistry.IsProtocolSupported(protocol);
+    }
+
+    private static void SetPropertyIfExists(object target, Type type, string propertyName, object? value)
+    {
+        if (value == null) return;
+
+        var property = type.GetProperty(propertyName);
+        if (property != null && property.CanWrite)
+        {
+            try
+            {
+                property.SetValue(target, value);
+            }
+            catch (Exception)
+            {
+                // Ignore property setting errors
+            }
+        }
+    }
+
+    private static GeoServicesSerializationOptions InitializeGeoServicesOptions(
+        GeoServicesSerializationOptions options,
+        HttpRequest request,
+        string? format)
+    {
+        var callback = request.Query["callback"].FirstOrDefault();
+        var prettyPrint = request.Query.ContainsKey("pretty") ||
+                         format?.Contains("pretty", StringComparison.OrdinalIgnoreCase) == true;
+
+        return options with
+        {
+            Format = format,
+            Request = request,
+            Callback = callback,
+            PrettyPrint = prettyPrint
+        };
+    }
+
+    private static OgcApiFeaturesSerializationOptions InitializeOgcApiFeaturesOptions(
+        OgcApiFeaturesSerializationOptions options,
+        HttpRequest request,
+        string? format)
+    {
+        // Extract collection ID from path if present
+        var pathSegments = request.Path.ToString().Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var collectionsIndex = Array.FindIndex(pathSegments, s => s.Equals("collections", StringComparison.OrdinalIgnoreCase));
+        var collectionId = collectionsIndex >= 0 && collectionsIndex + 1 < pathSegments.Length
+            ? pathSegments[collectionsIndex + 1]
+            : null;
+
+        var includeBbox = request.Query.ContainsKey("bbox") ||
+                         request.Query.ContainsKey("bbox-crs");
+
+        return options with
+        {
+            Format = format,
+            Request = request,
+            CollectionId = collectionId,
+            IncludeBbox = includeBbox
+        };
+    }
+
+    private static Wfs20SerializationOptions InitializeWfs20Options(
+        Wfs20SerializationOptions options,
+        HttpRequest request)
+    {
+        var typeName = request.Query["typeName"].FirstOrDefault() ??
+                      request.Query["typeNames"].FirstOrDefault();
+
+        return options with
+        {
+            Request = request,
+            FeatureTypeName = typeName,
+            NamespaceUri = "http://honua.io/features"
+        };
+    }
+
+    private static ODataSerializationOptions InitializeODataOptions(
+        ODataSerializationOptions options,
+        HttpRequest request,
+        string? format)
+    {
+        var includeCount = request.Query.ContainsKey("$count") ||
+                          request.Query["$count"].FirstOrDefault() == "true";
+
+        var metadataLevel = DetermineODataMetadataLevel(request, format);
+
+        return options with
+        {
+            Format = format,
+            Request = request,
+            IncludeCount = includeCount,
+            MetadataLevel = metadataLevel,
+            EntitySet = "Features"
+        };
+    }
+
+    private static string DetermineODataMetadataLevel(HttpRequest request, string? format)
+    {
+        // Check $format parameter for metadata level
+        if (format?.Contains("odata.metadata=", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var metadataPart = format.Split(';')
+                .FirstOrDefault(p => p.Contains("odata.metadata=", StringComparison.OrdinalIgnoreCase));
+
+            if (metadataPart != null)
+            {
+                var level = metadataPart.Split('=')[1].Trim();
+                return level;
+            }
+        }
+
+        // Check Accept header
+        var acceptHeader = request.Headers.Accept.ToString();
+        if (acceptHeader.Contains("odata.metadata=", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = acceptHeader.Split(',', ';', StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault(p => p.Contains("odata.metadata=", StringComparison.OrdinalIgnoreCase));
+
+            if (parts != null && parts.Contains('='))
+            {
+                var level = parts.Split('=')[1].Trim();
+                return level;
+            }
+        }
+
+        return "minimal"; // Default
+    }
+
+    private static IReadOnlyDictionary<string, string> ExtractQueryParameters(HttpRequest request)
+    {
+        return request.Query.ToDictionary(
+            kvp => kvp.Key,
+            kvp => string.Join(",", kvp.Value),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static ResponseError MapExceptionToResponseError(Exception exception)
+    {
+        return exception switch
+        {
+            ArgumentException => ResponseError.BadRequest(exception.Message),
+            UnauthorizedAccessException => ResponseError.NotFound("Resource not found"), // Don't expose auth details
+            FileNotFoundException => ResponseError.NotFound(exception.Message),
+            TimeoutException => new ResponseError(408, "RequestTimeout", "Request timed out", exception.Message),
+            _ => ResponseError.InternalError("An internal error occurred", exception.Message)
+        };
+    }
+
+    private static IResult CreateResult(SerializedResponse serializedResponse)
+    {
+        if (serializedResponse.Data is string stringData)
+        {
+            return Results.Text(
+                stringData,
+                serializedResponse.ContentType,
+                statusCode: serializedResponse.StatusCode);
+        }
+
+        return Results.Json(
+            serializedResponse.Data,
+            contentType: serializedResponse.ContentType,
+            statusCode: serializedResponse.StatusCode);
+    }
+}
+
+/// <summary>
+/// Interface for the unified response service.
+/// </summary>
+public interface IUnifiedResponseService
+{
+    /// <summary>
+    /// Creates a feature collection response using the specified protocol.
+    /// </summary>
+    ValueTask<IResult> CreateFeatureCollectionResponseAsync<TOptions>(
+        string protocol,
+        QueryResult<Feature> queryResult,
+        LayerDefinition layer,
+        ResponseBuildOptions buildOptions,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class;
+
+    /// <summary>
+    /// Creates a single feature response using the specified protocol.
+    /// </summary>
+    ValueTask<IResult> CreateSingleFeatureResponseAsync<TOptions>(
+        string protocol,
+        Feature feature,
+        LayerDefinition layer,
+        ResponseBuildOptions buildOptions,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class;
+
+    /// <summary>
+    /// Creates a streaming feature collection response using the specified protocol.
+    /// </summary>
+    ValueTask<IResult> CreateStreamingFeatureCollectionResponseAsync<TOptions>(
+        string protocol,
+        IAsyncEnumerable<Feature> features,
+        LayerDefinition layer,
+        ResponseMetadata metadata,
+        ResponseBuildOptions buildOptions,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class;
+
+    /// <summary>
+    /// Creates an error response using the specified protocol.
+    /// </summary>
+    ValueTask<IResult> CreateErrorResponseAsync<TOptions>(
+        string protocol,
+        ResponseError error,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class;
+
+    /// <summary>
+    /// Creates an error response from an exception using the specified protocol.
+    /// </summary>
+    ValueTask<IResult> CreateErrorResponseAsync<TOptions>(
+        string protocol,
+        Exception exception,
+        TOptions serializationOptions,
+        CancellationToken cancellationToken = default)
+        where TOptions : class;
+
+    /// <summary>
+    /// Creates response build options based on the HTTP request and protocol.
+    /// </summary>
+    ResponseBuildOptions CreateBuildOptions(
+        HttpRequest request,
+        string protocol,
+        bool includeGeometry = true,
+        string[]? outFields = null,
+        int? outputSrid = null);
+
+    /// <summary>
+    /// Creates protocol-specific serialization options from the HTTP request.
+    /// </summary>
+    TOptions CreateSerializationOptions<TOptions>(HttpRequest request, string? format = null)
+        where TOptions : class, new();
+
+    /// <summary>
+    /// Checks if a protocol is supported.
+    /// </summary>
+    bool IsProtocolSupported(string protocol);
+}

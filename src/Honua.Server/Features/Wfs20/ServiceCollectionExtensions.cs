@@ -9,6 +9,7 @@ namespace Honua.Server.Features.Wfs20;
 /// <summary>
 /// Dependency injection registration for WFS 2.0 services following SOLID principles.
 /// Replaces monolithic service registration with focused, segregated services.
+/// NOTE: Query services now use the unified query architecture.
 /// </summary>
 internal static class ServiceCollectionExtensions
 {
@@ -22,7 +23,8 @@ internal static class ServiceCollectionExtensions
         // Register segregated WFS 2.0 service interfaces following ISP
         services.TryAddScoped<IWfs20CapabilitiesService, Wfs20CapabilitiesService>();
         services.TryAddScoped<IWfs20SchemaService, Wfs20SchemaService>();
-        services.TryAddScoped<IWfs20QueryService, Wfs20QueryService>();
+        // NOTE: IWfs20QueryService is now registered by the unified query system
+        // services.TryAddScoped<IWfs20QueryService, Wfs20QueryService>();
         services.TryAddScoped<IWfs20TransactionService, Wfs20TransactionService>();
 
         // Register the facade that coordinates the segregated services

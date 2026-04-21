@@ -1,0 +1,663 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Globalization;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Query;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
+using Microsoft.Extensions.Logging;
+
+namespace Honua.Server.Features.OData.Services;
+
+/// <summary>
+/// Parameters for OData query operations.
+/// </summary>
+public readonly record struct ODataQueryParameters
+{
+    public string? Filter { get; init; }
+    public string? OrderBy { get; init; }
+    public int? Top { get; init; }
+    public int? Skip { get; init; }
+    public string? Select { get; init; }
+    public string? Expand { get; init; }
+    public string? Count { get; init; }
+    public string? Search { get; init; }
+    public string? Format { get; init; }
+
+    // OData aggregation extensions
+    public string? Apply { get; init; }
+    public string? Compute { get; init; }
+}
+
+/// <summary>
+/// Adapter that converts OData parameters to UnifiedQuery.
+/// </summary>
+public sealed class ODataQueryParameterAdapter : IQueryParameterAdapter<ODataQueryParameters>
+{
+    private readonly IFilterExpressionService _filterExpressionService;
+    private readonly ILogger<ODataQueryParameterAdapter> _logger;
+
+    public string ProtocolName => "OData";
+
+    public ProtocolLimits DefaultLimits => ProtocolLimits.OData;
+
+    public ODataQueryParameterAdapter(
+        IFilterExpressionService filterExpressionService,
+        ILogger<ODataQueryParameterAdapter> logger)
+    {
+        _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task<QueryAdapterResult> ConvertAsync(
+        ODataQueryParameters parameters,
+        LayerDefinition layer,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Convert filter expression
+            var filterResult = await ConvertFilterAsync(parameters, layer);
+            if (filterResult.ErrorMessage != null)
+            {
+                return QueryAdapterResult.Failure(filterResult.ErrorMessage);
+            }
+
+            // Convert field selection
+            var selectResult = ConvertSelect(parameters.Select, layer);
+            if (selectResult.ErrorMessage != null)
+            {
+                return QueryAdapterResult.Failure(selectResult.ErrorMessage);
+            }
+
+            // Convert pagination
+            var paginationResult = ConvertPagination(parameters);
+            if (paginationResult.ErrorMessage != null)
+            {
+                return QueryAdapterResult.Failure(paginationResult.ErrorMessage);
+            }
+
+            // Convert ordering
+            var orderByResult = ConvertOrderBy(parameters.OrderBy, layer);
+            if (orderByResult.ErrorMessage != null)
+            {
+                return QueryAdapterResult.Failure(orderByResult.ErrorMessage);
+            }
+
+            // Convert aggregation (Apply clause)
+            var aggregationResult = await ConvertAggregationAsync(parameters, layer);
+            if (aggregationResult.ErrorMessage != null)
+            {
+                return QueryAdapterResult.Failure(aggregationResult.ErrorMessage);
+            }
+
+            // Convert search
+            var searchFilterResult = ConvertSearch(parameters.Search, layer);
+            if (searchFilterResult.ErrorMessage != null)
+            {
+                return QueryAdapterResult.Failure(searchFilterResult.ErrorMessage);
+            }
+
+            // Combine filters if both filter and search are present
+            var combinedFilter = CombineFilters(filterResult.Filter, searchFilterResult.Filter);
+
+            // Build query hints
+            var hints = QueryHints.Create(
+                preferStreaming: ShouldPreferStreaming(paginationResult.Limit),
+                enableCaching: ShouldEnableCache(parameters),
+                requireExactCount: ShouldRequireCount(parameters.Count)
+            );
+
+            // Create unified query
+            var unifiedQuery = new UnifiedQuery
+            {
+                Filter = combinedFilter,
+                OutFields = selectResult.Fields,
+                Offset = paginationResult.Offset,
+                Limit = paginationResult.Limit,
+                OrderBy = orderByResult.OrderBy,
+                Aggregation = aggregationResult.Aggregation,
+                Hints = hints
+            };
+
+            // Collect metadata for response formatting
+            var metadata = new Dictionary<string, object>
+            {
+                ["format"] = parameters.Format ?? "json",
+                ["includeCount"] = ShouldIncludeCount(parameters.Count),
+                ["isODataV4"] = true
+            };
+
+            if (!string.IsNullOrWhiteSpace(parameters.Expand))
+            {
+                metadata["expand"] = parameters.Expand;
+            }
+
+            if (!string.IsNullOrWhiteSpace(parameters.Compute))
+            {
+                metadata["compute"] = parameters.Compute;
+            }
+
+            return QueryAdapterResult.Success(unifiedQuery, metadata);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to convert OData query parameters");
+            return QueryAdapterResult.Failure("Invalid OData query parameters.");
+        }
+    }
+
+    private async Task<(QueryFilter? Filter, string? ErrorMessage)> ConvertFilterAsync(
+        ODataQueryParameters parameters,
+        LayerDefinition layer)
+    {
+        if (string.IsNullOrWhiteSpace(parameters.Filter))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, parameters.Filter);
+            if (!parseResult.IsSuccess)
+            {
+                return (null, parseResult.ErrorMessage ?? "Invalid OData filter expression.");
+            }
+
+            if (parseResult.Expression != null)
+            {
+                var source = new FilterSource(parameters.Filter, FilterLanguage.OData, ProtocolName);
+                var filter = QueryFilter.FromExpression(parseResult.Expression, source);
+                return (filter, null);
+            }
+
+            return (null, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OData filter: {Filter}", parameters.Filter);
+            return (null, "Invalid filter expression.");
+        }
+    }
+
+    private (ImmutableArray<string>? Fields, string? ErrorMessage) ConvertSelect(
+        string? select,
+        LayerDefinition layer)
+    {
+        if (string.IsNullOrWhiteSpace(select))
+        {
+            return (null, null); // Return all fields
+        }
+
+        if (string.Equals(select.Trim(), "*", StringComparison.Ordinal))
+        {
+            return (null, null); // Return all fields
+        }
+
+        try
+        {
+            var availableFields = layer.AttributeFields.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+            var selectedFields = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var field in select.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var trimmed = field.Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                {
+                    continue;
+                }
+
+                // Handle computed fields or expressions (simplified)
+                if (trimmed.Contains('(') && trimmed.Contains(')'))
+                {
+                    // Skip complex expressions for now
+                    _logger.LogWarning("Computed field expressions not fully supported: {Field}", trimmed);
+                    continue;
+                }
+
+                if (!availableFields.ContainsKey(trimmed))
+                {
+                    return (null, $"Unknown field in $select: {trimmed}");
+                }
+
+                if (seen.Add(trimmed))
+                {
+                    selectedFields.Add(availableFields[trimmed].Name); // Use canonical name
+                }
+            }
+
+            return (selectedFields.Count > 0 ? selectedFields.ToImmutableArray() : null, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OData $select: {Select}", select);
+            return (null, "Invalid $select format.");
+        }
+    }
+
+    private (int? Offset, int? Limit, string? ErrorMessage) ConvertPagination(ODataQueryParameters parameters)
+    {
+        try
+        {
+            int? offset = null;
+            int? limit = null;
+
+            // Parse $skip
+            if (parameters.Skip.HasValue)
+            {
+                if (parameters.Skip.Value < 0)
+                {
+                    return (null, null, "Invalid $skip value. Must be non-negative.");
+                }
+                offset = parameters.Skip.Value;
+            }
+
+            // Parse $top
+            if (parameters.Top.HasValue)
+            {
+                if (parameters.Top.Value <= 0)
+                {
+                    return (null, null, "Invalid $top value. Must be positive.");
+                }
+                limit = parameters.Top.Value;
+            }
+
+            return (offset, limit, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OData pagination parameters");
+            return (null, null, "Invalid pagination parameters.");
+        }
+    }
+
+    private (ImmutableArray<OrderByClause>? OrderBy, string? ErrorMessage) ConvertOrderBy(
+        string? orderBy,
+        LayerDefinition layer)
+    {
+        if (string.IsNullOrWhiteSpace(orderBy))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var clauses = new List<OrderByClause>();
+            var availableFields = layer.AttributeFields.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var trimmed = item.Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                {
+                    continue;
+                }
+
+                var ascending = true;
+                var fieldName = trimmed;
+
+                // Check for explicit desc
+                if (trimmed.EndsWith(" desc", StringComparison.OrdinalIgnoreCase))
+                {
+                    ascending = false;
+                    fieldName = trimmed[..^5].Trim();
+                }
+                else if (trimmed.EndsWith(" asc", StringComparison.OrdinalIgnoreCase))
+                {
+                    ascending = true;
+                    fieldName = trimmed[..^4].Trim();
+                }
+
+                if (string.IsNullOrEmpty(fieldName))
+                {
+                    return (null, "Empty field name in $orderby.");
+                }
+
+                // Handle computed fields or expressions (simplified)
+                if (fieldName.Contains('(') && fieldName.Contains(')'))
+                {
+                    _logger.LogWarning("Computed field expressions in $orderby not fully supported: {Field}", fieldName);
+                    continue;
+                }
+
+                // Find field type
+                FieldType? fieldType = null;
+                if (availableFields.TryGetValue(fieldName, out var field))
+                {
+                    fieldType = field.Type;
+                    fieldName = field.Name; // Use canonical name
+                }
+                else if (!IsSystemField(fieldName))
+                {
+                    return (null, $"Unknown field in $orderby: {fieldName}");
+                }
+
+                clauses.Add(new OrderByClause(fieldName, ascending, fieldType));
+            }
+
+            return (clauses.Count > 0 ? clauses.ToImmutableArray() : null, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OData $orderby: {OrderBy}", orderBy);
+            return (null, "Invalid $orderby format.");
+        }
+    }
+
+    private async Task<(QueryAggregation? Aggregation, string? ErrorMessage)> ConvertAggregationAsync(
+        ODataQueryParameters parameters,
+        LayerDefinition layer)
+    {
+        if (string.IsNullOrWhiteSpace(parameters.Apply))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            // Parse OData $apply clause
+            // This is a simplified parser for basic aggregation operations
+            // Real implementation would need a full OData $apply parser
+
+            var apply = parameters.Apply.Trim();
+
+            // Handle basic groupby and aggregate operations
+            // Example: "groupby((Category),aggregate(Price with sum as TotalPrice))"
+
+            if (apply.StartsWith("groupby(", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParseGroupByApply(apply, layer);
+            }
+            else if (apply.StartsWith("aggregate(", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParseAggregateApply(apply, layer);
+            }
+
+            _logger.LogWarning("Unsupported $apply operation: {Apply}", apply);
+            return (null, $"Unsupported $apply operation: {apply}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OData $apply: {Apply}", parameters.Apply);
+            return (null, "Invalid $apply format.");
+        }
+    }
+
+    private (QueryFilter? Filter, string? ErrorMessage) ConvertSearch(string? search, LayerDefinition layer)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            // OData $search is a simple text search across searchable fields
+            // Convert to a filter expression that searches text fields
+
+            var textFields = layer.AttributeFields
+                .Where(f => f.Type == FieldType.String || f.Type == FieldType.Text)
+                .Select(f => f.Name)
+                .ToList();
+
+            if (textFields.Count == 0)
+            {
+                return (null, "No searchable fields available for $search.");
+            }
+
+            // Create a filter expression that searches across text fields
+            // This is simplified - real implementation would need proper search parsing
+            var searchTerms = search.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (searchTerms.Length == 0)
+            {
+                return (null, null);
+            }
+
+            // For simplicity, create a basic contains filter
+            // Real implementation would support quoted strings, boolean operators, etc.
+            var searchTerm = string.Join(" ", searchTerms);
+            var containsFilter = $"contains(tolower(concat({string.Join(",", textFields)})), '{searchTerm.ToLowerInvariant()}')";
+
+            var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, containsFilter);
+            if (!parseResult.IsSuccess)
+            {
+                _logger.LogWarning("Failed to create search filter: {Error}", parseResult.ErrorMessage);
+                return (null, null); // Ignore search if we can't parse it
+            }
+
+            if (parseResult.Expression != null)
+            {
+                var source = new FilterSource(containsFilter, FilterLanguage.OData, $"{ProtocolName}-Search");
+                var filter = QueryFilter.FromExpression(parseResult.Expression, source);
+                return (filter, null);
+            }
+
+            return (null, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse OData $search: {Search}", search);
+            return (null, null); // Ignore search errors
+        }
+    }
+
+    private static QueryFilter? CombineFilters(QueryFilter? filter1, QueryFilter? filter2)
+    {
+        if (filter1 == null && filter2 == null)
+        {
+            return null;
+        }
+
+        if (filter1 == null)
+        {
+            return filter2;
+        }
+
+        if (filter2 == null)
+        {
+            return filter1;
+        }
+
+        // Combine filters with AND logic
+        var expr1 = filter1.Value.GetFilterExpression();
+        var expr2 = filter2.Value.GetFilterExpression();
+
+        if (expr1 != null && expr2 != null)
+        {
+            var combinedExpr = BinaryExpression.Create(expr1, BinaryOperator.And, expr2);
+            var combinedSource = new FilterSource(
+                $"({filter1.Value.Source?.Text}) AND ({filter2.Value.Source?.Text})",
+                FilterLanguage.OData,
+                "Combined");
+            return QueryFilter.FromExpression(combinedExpr, combinedSource);
+        }
+
+        // Fallback to first filter if we can't combine them
+        return filter1;
+    }
+
+    private static bool ShouldPreferStreaming(int? limit)
+    {
+        return limit.HasValue && limit.Value > 200;
+    }
+
+    private static bool ShouldEnableCache(ODataQueryParameters parameters)
+    {
+        // Disable caching for operations with side effects or dynamic content
+        return string.IsNullOrWhiteSpace(parameters.Apply) && string.IsNullOrWhiteSpace(parameters.Search);
+    }
+
+    private static bool ShouldRequireCount(string? count)
+    {
+        return string.Equals(count, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldIncludeCount(string? count)
+    {
+        return string.Equals(count, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSystemField(string fieldName)
+    {
+        var systemFields = new[]
+        {
+            FieldNames.ObjectId,
+            "object_id",
+            "id",
+            "created_at",
+            "updated_at"
+        };
+
+        return systemFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private (QueryAggregation? Aggregation, string? ErrorMessage) ParseGroupByApply(string apply, LayerDefinition layer)
+    {
+        // Simplified parser for groupby operations
+        // Example: "groupby((Category),aggregate(Price with sum as TotalPrice))"
+
+        try
+        {
+            // Extract groupby fields and aggregate expressions
+            // This is a very basic parser - real implementation would be more robust
+
+            var groupByFields = new List<string>();
+            var statistics = new List<StatisticDefinition>();
+
+            // Extract group by fields (between first parentheses)
+            var groupByStart = apply.IndexOf("((", StringComparison.Ordinal);
+            var groupByEnd = apply.IndexOf("))", StringComparison.Ordinal);
+
+            if (groupByStart >= 0 && groupByEnd > groupByStart)
+            {
+                var groupBySection = apply.Substring(groupByStart + 2, groupByEnd - groupByStart - 2);
+                foreach (var field in groupBySection.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    groupByFields.Add(field.Trim());
+                }
+            }
+
+            // Extract aggregate expressions
+            var aggregateStart = apply.IndexOf("aggregate(", StringComparison.OrdinalIgnoreCase);
+            if (aggregateStart >= 0)
+            {
+                var aggregateEnd = apply.LastIndexOf(')', StringComparison.Ordinal);
+                if (aggregateEnd > aggregateStart)
+                {
+                    var aggregateSection = apply.Substring(aggregateStart + 10, aggregateEnd - aggregateStart - 10);
+                    // Parse aggregate expressions like "Price with sum as TotalPrice"
+                    // This is simplified - real parser would handle complex expressions
+
+                    if (aggregateSection.Contains(" with ") && aggregateSection.Contains(" as "))
+                    {
+                        var parts = aggregateSection.Split(new[] { " with ", " as " }, StringSplitOptions.None);
+                        if (parts.Length == 3)
+                        {
+                            var fieldName = parts[0].Trim();
+                            var operation = parts[1].Trim();
+                            var alias = parts[2].Trim();
+
+                            var statType = operation.ToLowerInvariant() switch
+                            {
+                                "sum" => StatisticType.Sum,
+                                "count" => StatisticType.Count,
+                                "min" => StatisticType.Min,
+                                "max" => StatisticType.Max,
+                                "average" or "avg" => StatisticType.Mean,
+                                _ => StatisticType.Count
+                            };
+
+                            statistics.Add(new StatisticDefinition
+                            {
+                                FieldName = fieldName,
+                                StatisticType = statType,
+                                OutStatisticFieldName = alias
+                            });
+                        }
+                    }
+                }
+            }
+
+            var aggregation = QueryAggregation.Create(
+                statistics.Count > 0 ? statistics.ToImmutableArray() : null,
+                groupByFields.Count > 0 ? groupByFields.ToImmutableArray() : null);
+
+            return (aggregation, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse groupby apply: {Apply}", apply);
+            return (null, "Invalid groupby expression.");
+        }
+    }
+
+    private (QueryAggregation? Aggregation, string? ErrorMessage) ParseAggregateApply(string apply, LayerDefinition layer)
+    {
+        // Simplified parser for pure aggregate operations
+        // Example: "aggregate(Price with sum as TotalPrice, Quantity with count as TotalCount)"
+
+        try
+        {
+            var statistics = new List<StatisticDefinition>();
+
+            // Extract content between aggregate( and )
+            var start = apply.IndexOf("aggregate(", StringComparison.OrdinalIgnoreCase) + 10;
+            var end = apply.LastIndexOf(')', StringComparison.Ordinal);
+
+            if (end > start)
+            {
+                var content = apply.Substring(start, end - start);
+
+                // Split by commas and parse each aggregate expression
+                foreach (var expr in content.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var trimmed = expr.Trim();
+                    if (trimmed.Contains(" with ") && trimmed.Contains(" as "))
+                    {
+                        var parts = trimmed.Split(new[] { " with ", " as " }, StringSplitOptions.None);
+                        if (parts.Length == 3)
+                        {
+                            var fieldName = parts[0].Trim();
+                            var operation = parts[1].Trim();
+                            var alias = parts[2].Trim();
+
+                            var statType = operation.ToLowerInvariant() switch
+                            {
+                                "sum" => StatisticType.Sum,
+                                "count" => StatisticType.Count,
+                                "min" => StatisticType.Min,
+                                "max" => StatisticType.Max,
+                                "average" or "avg" => StatisticType.Mean,
+                                _ => StatisticType.Count
+                            };
+
+                            statistics.Add(new StatisticDefinition
+                            {
+                                FieldName = fieldName,
+                                StatisticType = statType,
+                                OutStatisticFieldName = alias
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (statistics.Count == 0)
+            {
+                return (null, "No valid aggregate expressions found.");
+            }
+
+            var aggregation = QueryAggregation.Create(statistics: statistics.ToImmutableArray());
+            return (aggregation, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse aggregate apply: {Apply}", apply);
+            return (null, "Invalid aggregate expression.");
+        }
+    }
+}

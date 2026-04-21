@@ -1,0 +1,782 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Diagnostics;
+using Honua.Core.Features.Infrastructure.Http;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Wfs20.Models;
+using Honua.ServiceDefaults;
+
+namespace Honua.Server.Features.Wfs20.Services;
+
+/// <summary>
+/// WFS 2.0 capabilities formatter that converts unified metadata to WFS GetCapabilities documents.
+/// Implements protocol-specific formatting logic for WFS 2.0 compliance.
+/// </summary>
+internal sealed class Wfs20CapabilitiesFormatter : IGlobalCapabilitiesFormatter<WfsCapabilities>
+{
+    private readonly ILogger<Wfs20CapabilitiesFormatter> _logger;
+
+    public Wfs20CapabilitiesFormatter(ILogger<Wfs20CapabilitiesFormatter> logger)
+    {
+        _logger = logger;
+    }
+
+    public string Protocol => "WFS20";
+
+    public IReadOnlyList<string> SupportedMediaTypes => ["application/xml", "text/xml"];
+
+    public async Task<WfsCapabilities> FormatServiceCapabilitiesAsync(
+        ServiceMetadata serviceMetadata,
+        GlobalCapabilities globalCapabilities,
+        IRequestContext context,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "wfs20.format_service_capabilities", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
+        activity?.SetTag("service.name", serviceMetadata.Identity.Name);
+
+        Wfs20Log.FormatCapabilitiesRequested(_logger, serviceMetadata.Identity.Name);
+
+        try
+        {
+            var baseUrl = serviceMetadata.Links.BaseUrl;
+            var wfsUrl = $"{baseUrl}/wfs";
+
+            var capabilities = new WfsCapabilities
+            {
+                UpdateSequence = serviceMetadata.Version,
+                ServiceIdentification = FormatServiceIdentification(serviceMetadata, globalCapabilities),
+                ServiceProvider = FormatServiceProvider(serviceMetadata, globalCapabilities),
+                OperationsMetadata = FormatOperationsMetadata(wfsUrl, serviceMetadata.Capabilities),
+                FeatureTypeList = await FormatFeatureTypeListAsync(serviceMetadata, cancellationToken),
+                FilterCapabilities = FormatFilterCapabilities(serviceMetadata.Capabilities, globalCapabilities)
+            };
+
+            Wfs20Log.FormatCapabilitiesCompleted(_logger, serviceMetadata.Identity.Name);
+            return capabilities;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetTag(HonuaTelemetry.Tags.Error, "true");
+            activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, ex.Message);
+
+            Wfs20Log.FormatCapabilitiesFailed(_logger, serviceMetadata.Identity.Name, ex.Message, ex);
+            throw;
+        }
+    }
+
+    public async Task<WfsCapabilities> FormatLayerCapabilitiesAsync(
+        LayerMetadata layerMetadata,
+        ServiceMetadata serviceMetadata,
+        GlobalCapabilities globalCapabilities,
+        HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        // For WFS 2.0, layer capabilities are part of service capabilities
+        // This method would typically be used for layer-specific metadata requests
+        return await FormatServiceCapabilitiesAsync(serviceMetadata, globalCapabilities, context, cancellationToken);
+    }
+
+    public async Task<WfsCapabilities> FormatGlobalCapabilitiesAsync(
+        GlobalCapabilities globalCapabilities,
+        IReadOnlyList<ServiceMetadata> availableServices,
+        HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "wfs20.format_global_capabilities", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
+
+        Wfs20Log.FormatGlobalCapabilitiesRequested(_logger);
+
+        try
+        {
+            var baseUrl = context.Request.Scheme + "://" + context.Request.Host;
+            var wfsUrl = $"{baseUrl}/wfs";
+
+            // Build aggregated feature types from all services
+            var allFeatureTypes = new List<FeatureType>();
+            foreach (var service in availableServices)
+            {
+                if (IsWfsEnabled(service))
+                {
+                    var serviceFeatureTypes = await FormatFeatureTypeListAsync(service, cancellationToken);
+                    allFeatureTypes.AddRange(serviceFeatureTypes.FeatureTypes);
+                }
+            }
+
+            var capabilities = new WfsCapabilities
+            {
+                UpdateSequence = globalCapabilities.Version,
+                ServiceIdentification = FormatGlobalServiceIdentification(globalCapabilities),
+                ServiceProvider = FormatGlobalServiceProvider(globalCapabilities),
+                OperationsMetadata = FormatGlobalOperationsMetadata(wfsUrl, globalCapabilities),
+                FeatureTypeList = new FeatureTypeList
+                {
+                    FeatureTypes = allFeatureTypes.ToArray()
+                },
+                FilterCapabilities = FormatGlobalFilterCapabilities(globalCapabilities)
+            };
+
+            Wfs20Log.FormatGlobalCapabilitiesCompleted(_logger, allFeatureTypes.Count);
+            return capabilities;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetTag(HonuaTelemetry.Tags.Error, "true");
+            activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, ex.Message);
+
+            Wfs20Log.FormatGlobalCapabilitiesFailed(_logger, ex.Message, ex);
+            throw;
+        }
+    }
+
+    private ServiceIdentification FormatServiceIdentification(ServiceMetadata serviceMetadata, GlobalCapabilities globalCapabilities)
+    {
+        return new ServiceIdentification
+        {
+            Title = serviceMetadata.Identity.Title,
+            Abstract = serviceMetadata.Identity.Description,
+            Keywords = serviceMetadata.Identity.Keywords,
+            ServiceType = "WFS",
+            ServiceTypeVersion = "2.0.0",
+            Profile = Array.Empty<string>(),
+            Fees = "NONE",
+            AccessConstraints = FormatAccessConstraints(serviceMetadata.AccessControl)
+        };
+    }
+
+    private ServiceIdentification FormatGlobalServiceIdentification(GlobalCapabilities globalCapabilities)
+    {
+        return new ServiceIdentification
+        {
+            Title = globalCapabilities.Server.Title,
+            Abstract = globalCapabilities.Server.Description,
+            Keywords = globalCapabilities.Server.Keywords,
+            ServiceType = "WFS",
+            ServiceTypeVersion = "2.0.0",
+            Profile = Array.Empty<string>(),
+            Fees = "NONE",
+            AccessConstraints = globalCapabilities.Security.AllowsAnonymousAccess ? "NONE" : "RESTRICTED"
+        };
+    }
+
+    private Models.ServiceProvider FormatServiceProvider(ServiceMetadata serviceMetadata, GlobalCapabilities globalCapabilities)
+    {
+        var provider = serviceMetadata.Identity.Provider ?? globalCapabilities.Server.Provider;
+        var contact = serviceMetadata.Identity.Contact ?? globalCapabilities.Server.Contact;
+
+        return new Models.ServiceProvider
+        {
+            ProviderName = provider?.Name ?? globalCapabilities.Server.Name,
+            ProviderSite = provider?.Website ?? globalCapabilities.Server.ServerUrl,
+            ServiceContact = contact != null ? new ServiceContact
+            {
+                IndividualName = contact.Name,
+                OrganisationName = contact.Organization,
+                ContactInfo = new ContactInfo
+                {
+                    Phone = contact.Phone != null ? new Phone { Voice = contact.Phone } : null,
+                    Address = new Address
+                    {
+                        ElectronicMailAddress = contact.Email
+                    },
+                    OnlineResource = contact.Website != null ? new OnlineResource { Href = contact.Website } : null
+                }
+            } : null
+        };
+    }
+
+    private Models.ServiceProvider FormatGlobalServiceProvider(GlobalCapabilities globalCapabilities)
+    {
+        var provider = globalCapabilities.Server.Provider;
+        var contact = globalCapabilities.Server.Contact;
+
+        return new Models.ServiceProvider
+        {
+            ProviderName = provider?.Name ?? globalCapabilities.Server.Name,
+            ProviderSite = provider?.Website ?? globalCapabilities.Server.ServerUrl,
+            ServiceContact = contact != null ? new ServiceContact
+            {
+                IndividualName = contact.Name,
+                OrganisationName = contact.Organization,
+                ContactInfo = new ContactInfo
+                {
+                    Phone = contact.Phone != null ? new Phone { Voice = contact.Phone } : null,
+                    Address = new Address
+                    {
+                        ElectronicMailAddress = contact.Email
+                    },
+                    OnlineResource = contact.Website != null ? new OnlineResource { Href = contact.Website } : null
+                }
+            } : null
+        };
+    }
+
+    private OperationsMetadata FormatOperationsMetadata(string wfsUrl, ServiceCapabilities capabilities)
+    {
+        return new OperationsMetadata
+        {
+            Operations = new[]
+            {
+                BuildGetCapabilitiesOperation(wfsUrl),
+                BuildDescribeFeatureTypeOperation(wfsUrl),
+                BuildGetFeatureOperation(wfsUrl, capabilities),
+                BuildGetPropertyValueOperation(wfsUrl),
+                BuildListStoredQueriesOperation(wfsUrl),
+                BuildDescribeStoredQueriesOperation(wfsUrl)
+            }.Concat(capabilities.Edit != null ? new[] { BuildTransactionOperation(wfsUrl, capabilities.Edit) } : Array.Empty<Operation>()).ToArray(),
+            Parameters = BuildGlobalParameters(capabilities),
+            Constraints = BuildConstraints(capabilities.Limits)
+        };
+    }
+
+    private OperationsMetadata FormatGlobalOperationsMetadata(string wfsUrl, GlobalCapabilities globalCapabilities)
+    {
+        var wfsCapabilities = globalCapabilities.Protocols.Wfs20;
+        if (wfsCapabilities == null)
+        {
+            throw new InvalidOperationException("WFS 2.0 capabilities not available in global capabilities");
+        }
+
+        var operations = new List<Operation>
+        {
+            BuildGetCapabilitiesOperation(wfsUrl),
+            BuildDescribeFeatureTypeOperation(wfsUrl),
+            BuildGetFeatureOperation(wfsUrl, null),
+            BuildGetPropertyValueOperation(wfsUrl),
+            BuildListStoredQueriesOperation(wfsUrl),
+            BuildDescribeStoredQueriesOperation(wfsUrl)
+        };
+
+        if (wfsCapabilities.SupportsTransactions)
+        {
+            operations.Add(BuildTransactionOperation(wfsUrl, null));
+        }
+
+        return new OperationsMetadata
+        {
+            Operations = operations.ToArray(),
+            Parameters = BuildGlobalParameters(globalCapabilities),
+            Constraints = BuildGlobalConstraints(globalCapabilities.Limits)
+        };
+    }
+
+    private async Task<FeatureTypeList> FormatFeatureTypeListAsync(ServiceMetadata serviceMetadata, CancellationToken cancellationToken)
+    {
+        var featureTypes = new List<FeatureType>();
+
+        foreach (var layerMetadata in serviceMetadata.Layers.Where(l => l.SpatialInfo.HasGeometry))
+        {
+            var featureType = await BuildFeatureTypeAsync(layerMetadata, serviceMetadata, cancellationToken);
+            featureTypes.Add(featureType);
+        }
+
+        return new FeatureTypeList
+        {
+            FeatureTypes = featureTypes.ToArray()
+        };
+    }
+
+    private async Task<FeatureType> BuildFeatureTypeAsync(LayerMetadata layerMetadata, ServiceMetadata serviceMetadata, CancellationToken cancellationToken)
+    {
+        return new FeatureType
+        {
+            Name = new QualifiedName
+            {
+                LocalPart = layerMetadata.Identity.Name,
+                NamespaceURI = "http://honua.io/features"
+            },
+            Title = layerMetadata.Identity.Title,
+            Abstract = layerMetadata.Identity.Description,
+            Keywords = layerMetadata.Identity.Keywords,
+            DefaultCRS = FormatCrsUri(layerMetadata.SpatialInfo.SpatialReference),
+            OtherCRS = FormatOtherCrs(serviceMetadata.Capabilities.Spatial.SupportedSrs),
+            WGS84BoundingBox = FormatWgs84BoundingBox(layerMetadata.SpatialInfo.Extent),
+            MetadataURL = null // TODO: Implement layer metadata URLs
+        };
+    }
+
+    private FilterCapabilities FormatFilterCapabilities(ServiceCapabilities capabilities, GlobalCapabilities globalCapabilities)
+    {
+        var wfsFilter = globalCapabilities.Protocols.Wfs20?.Filter;
+
+        return new FilterCapabilities
+        {
+            Conformance = new Conformance
+            {
+                ImplementsQuery = true,
+                ImplementsAdHocQuery = true,
+                ImplementsFunctions = wfsFilter?.Functions?.Length > 0,
+                ImplementsResourceId = true,
+                ImplementsMinStandardFilter = true,
+                ImplementsStandardFilter = true,
+                ImplementsMinSpatialFilter = capabilities.Query.Filter.SupportsGeometry,
+                ImplementsSpatialFilter = capabilities.Query.Filter.SupportsGeometry,
+                ImplementsMinTemporalFilter = capabilities.Query.Filter.SupportsTemporal,
+                ImplementsTemporalFilter = capabilities.Query.Filter.SupportsTemporal,
+                ImplementsVersionNav = false,
+                ImplementsSorting = capabilities.Query.SupportsSorting,
+                ImplementsExtendedOperators = true
+            },
+            IdCapabilities = new IdCapabilities
+            {
+                ResourceIdentifier = new ResourceIdentifier
+                {
+                    Name = "ResourceId"
+                }
+            },
+            ScalarCapabilities = BuildScalarCapabilities(capabilities.Query.Filter),
+            SpatialCapabilities = BuildSpatialCapabilities(capabilities.Spatial),
+            TemporalCapabilities = BuildTemporalCapabilities(capabilities.Query.Filter),
+            FunctionList = BuildFunctionList(wfsFilter?.Functions ?? Array.Empty<string>())
+        };
+    }
+
+    private FilterCapabilities FormatGlobalFilterCapabilities(GlobalCapabilities globalCapabilities)
+    {
+        var wfsCapabilities = globalCapabilities.Protocols.Wfs20;
+        if (wfsCapabilities == null)
+        {
+            throw new InvalidOperationException("WFS 2.0 capabilities not available in global capabilities");
+        }
+
+        return new FilterCapabilities
+        {
+            Conformance = new Conformance
+            {
+                ImplementsQuery = true,
+                ImplementsAdHocQuery = true,
+                ImplementsFunctions = wfsCapabilities.Filter.Functions.Length > 0,
+                ImplementsResourceId = true,
+                ImplementsMinStandardFilter = true,
+                ImplementsStandardFilter = true,
+                ImplementsMinSpatialFilter = globalCapabilities.Query.SupportsSpatial,
+                ImplementsSpatialFilter = globalCapabilities.Query.SupportsSpatial,
+                ImplementsMinTemporalFilter = globalCapabilities.Query.SupportsTemporal,
+                ImplementsTemporalFilter = globalCapabilities.Query.SupportsTemporal,
+                ImplementsVersionNav = false,
+                ImplementsSorting = globalCapabilities.Query.SupportsSorting,
+                ImplementsExtendedOperators = true
+            },
+            IdCapabilities = new IdCapabilities
+            {
+                ResourceIdentifier = new ResourceIdentifier
+                {
+                    Name = "ResourceId"
+                }
+            },
+            ScalarCapabilities = BuildGlobalScalarCapabilities(globalCapabilities),
+            SpatialCapabilities = BuildGlobalSpatialCapabilities(globalCapabilities),
+            TemporalCapabilities = BuildGlobalTemporalCapabilities(globalCapabilities),
+            FunctionList = BuildFunctionList(wfsCapabilities.Filter.Functions)
+        };
+    }
+
+    // Helper methods for building specific WFS components
+    private static Operation BuildGetCapabilitiesOperation(string wfsUrl)
+    {
+        return new Operation
+        {
+            Name = "GetCapabilities",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Get = new[] { new Models.HttpMethod { Href = $"{wfsUrl}?" } },
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            },
+            Parameters = new[]
+            {
+                new Parameter
+                {
+                    Name = "AcceptVersions",
+                    AllowedValues = new AllowedValues { Values = new[] { "2.0.0" } }
+                },
+                new Parameter
+                {
+                    Name = "Sections",
+                    AllowedValues = new AllowedValues
+                    {
+                        Values = new[]
+                        {
+                            "ServiceIdentification", "ServiceProvider", "OperationsMetadata",
+                            "FeatureTypeList", "Filter_Capabilities"
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    private static Operation BuildDescribeFeatureTypeOperation(string wfsUrl)
+    {
+        return new Operation
+        {
+            Name = "DescribeFeatureType",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Get = new[] { new Models.HttpMethod { Href = $"{wfsUrl}?" } },
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            },
+            Parameters = new[]
+            {
+                new Parameter
+                {
+                    Name = "outputFormat",
+                    AllowedValues = new AllowedValues { Values = new[] { "application/gml+xml; version=3.2" } }
+                }
+            }
+        };
+    }
+
+    private static Operation BuildGetFeatureOperation(string wfsUrl, ServiceCapabilities? capabilities)
+    {
+        return new Operation
+        {
+            Name = "GetFeature",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Get = new[] { new Models.HttpMethod { Href = $"{wfsUrl}?" } },
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            },
+            Parameters = new[]
+            {
+                new Parameter
+                {
+                    Name = "outputFormat",
+                    AllowedValues = new AllowedValues {
+                        Values = capabilities?.Formats.QueryFormats ?? new[] { "application/gml+xml; version=3.2", "application/json" }
+                    }
+                }
+            }
+        };
+    }
+
+    private static Operation BuildGetPropertyValueOperation(string wfsUrl)
+    {
+        return new Operation
+        {
+            Name = "GetPropertyValue",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Get = new[] { new Models.HttpMethod { Href = $"{wfsUrl}?" } },
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            }
+        };
+    }
+
+    private static Operation BuildListStoredQueriesOperation(string wfsUrl)
+    {
+        return new Operation
+        {
+            Name = "ListStoredQueries",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Get = new[] { new Models.HttpMethod { Href = $"{wfsUrl}?" } },
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            }
+        };
+    }
+
+    private static Operation BuildDescribeStoredQueriesOperation(string wfsUrl)
+    {
+        return new Operation
+        {
+            Name = "DescribeStoredQueries",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Get = new[] { new Models.HttpMethod { Href = $"{wfsUrl}?" } },
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            }
+        };
+    }
+
+    private static Operation BuildTransactionOperation(string wfsUrl, EditCapabilities? editCapabilities)
+    {
+        return new Operation
+        {
+            Name = "Transaction",
+            DCP = new[]
+            {
+                new DCP
+                {
+                    Http = new Http
+                    {
+                        Post = new[] { new Models.HttpMethod { Href = wfsUrl } }
+                    }
+                }
+            },
+            Parameters = Array.Empty<Parameter>()
+        };
+    }
+
+    // Additional helper methods for building parameters, constraints, and capabilities
+    private Parameter[] BuildGlobalParameters(ServiceCapabilities capabilities)
+    {
+        return new[]
+        {
+            new Parameter
+            {
+                Name = "version",
+                AllowedValues = new AllowedValues { Values = new[] { "2.0.0" } }
+            },
+            new Parameter
+            {
+                Name = "AcceptVersions",
+                AllowedValues = new AllowedValues { Values = new[] { "2.0.0" } }
+            }
+        };
+    }
+
+    private Parameter[] BuildGlobalParameters(GlobalCapabilities globalCapabilities)
+    {
+        return new[]
+        {
+            new Parameter
+            {
+                Name = "version",
+                AllowedValues = new AllowedValues { Values = new[] { "2.0.0" } }
+            },
+            new Parameter
+            {
+                Name = "AcceptVersions",
+                AllowedValues = new AllowedValues { Values = new[] { "2.0.0" } }
+            }
+        };
+    }
+
+    private Constraint[] BuildConstraints(ServiceLimits limits)
+    {
+        return new[]
+        {
+            new Constraint
+            {
+                Name = "CountDefault",
+                DefaultValue = limits.DefaultRecordCount.ToString()
+            }
+        };
+    }
+
+    private Constraint[] BuildGlobalConstraints(GlobalLimits limits)
+    {
+        return new[]
+        {
+            new Constraint
+            {
+                Name = "CountDefault",
+                DefaultValue = limits.DefaultFeatureCount.ToString()
+            }
+        };
+    }
+
+    private ScalarCapabilities BuildScalarCapabilities(FilterCapabilities filter)
+    {
+        return new ScalarCapabilities
+        {
+            LogicalOperators = new LogicalOperators
+            {
+                LogicalOperator = new[] { "And", "Or", "Not" }
+            },
+            ComparisonOperators = new ComparisonOperators
+            {
+                ComparisonOperator = filter.SupportedOperators
+            }
+        };
+    }
+
+    private ScalarCapabilities BuildGlobalScalarCapabilities(GlobalCapabilities globalCapabilities)
+    {
+        var wfsCapabilities = globalCapabilities.Protocols.Wfs20!;
+        return new ScalarCapabilities
+        {
+            LogicalOperators = new LogicalOperators
+            {
+                LogicalOperator = new[] { "And", "Or", "Not" }
+            },
+            ComparisonOperators = new ComparisonOperators
+            {
+                ComparisonOperator = wfsCapabilities.Filter.ComparisonOperators
+            }
+        };
+    }
+
+    private SpatialCapabilities BuildSpatialCapabilities(SpatialCapabilities spatial)
+    {
+        return new SpatialCapabilities
+        {
+            GeometryOperands = new GeometryOperands
+            {
+                GeometryOperand = spatial.SupportedGeometryTypes
+                    .Select(gt => new GeometryOperand { Name = gt.ToString() })
+                    .ToArray()
+            },
+            SpatialOperators = new SpatialOperators
+            {
+                SpatialOperator = new[]
+                {
+                    new SpatialOperator { Name = "BBOX" },
+                    new SpatialOperator { Name = "Intersects" },
+                    new SpatialOperator { Name = "Contains" },
+                    new SpatialOperator { Name = "Within" }
+                }
+            }
+        };
+    }
+
+    private SpatialCapabilities BuildGlobalSpatialCapabilities(GlobalCapabilities globalCapabilities)
+    {
+        return new SpatialCapabilities
+        {
+            GeometryOperands = new GeometryOperands
+            {
+                GeometryOperand = globalCapabilities.Spatial.SupportedGeometryTypes
+                    .Select(gt => new GeometryOperand { Name = gt.ToString() })
+                    .ToArray()
+            },
+            SpatialOperators = new SpatialOperators
+            {
+                SpatialOperator = globalCapabilities.Spatial.SpatialOperations
+                    .Select(op => new SpatialOperator { Name = op })
+                    .ToArray()
+            }
+        };
+    }
+
+    private TemporalCapabilities? BuildTemporalCapabilities(FilterCapabilities filter)
+    {
+        if (!filter.SupportsTemporal)
+            return null;
+
+        return new TemporalCapabilities
+        {
+            TemporalOperands = new TemporalOperands
+            {
+                TemporalOperand = new[]
+                {
+                    new TemporalOperand { Name = "gml:TimePeriod" },
+                    new TemporalOperand { Name = "gml:TimeInstant" }
+                }
+            },
+            TemporalOperators = new TemporalOperators
+            {
+                TemporalOperator = new[]
+                {
+                    new TemporalOperator { Name = "During" },
+                    new TemporalOperator { Name = "After" },
+                    new TemporalOperator { Name = "Before" }
+                }
+            }
+        };
+    }
+
+    private TemporalCapabilities? BuildGlobalTemporalCapabilities(GlobalCapabilities globalCapabilities)
+    {
+        if (!globalCapabilities.Query.SupportsTemporal)
+            return null;
+
+        var wfsCapabilities = globalCapabilities.Protocols.Wfs20!;
+        return new TemporalCapabilities
+        {
+            TemporalOperands = new TemporalOperands
+            {
+                TemporalOperand = new[]
+                {
+                    new TemporalOperand { Name = "gml:TimePeriod" },
+                    new TemporalOperand { Name = "gml:TimeInstant" }
+                }
+            },
+            TemporalOperators = new TemporalOperators
+            {
+                TemporalOperator = wfsCapabilities.Filter.TemporalOperators
+                    .Select(op => new TemporalOperator { Name = op })
+                    .ToArray()
+            }
+        };
+    }
+
+    private FunctionList? BuildFunctionList(string[] functions)
+    {
+        if (functions.Length == 0)
+            return null;
+
+        return new FunctionList
+        {
+            Functions = functions.Select(f => new FunctionDefinition { Name = f }).ToArray()
+        };
+    }
+
+    // Helper methods for formatting specific data types
+    private static string FormatAccessConstraints(AccessControlInfo accessControl)
+    {
+        return accessControl.RequiresAuthentication ? "RESTRICTED" : "NONE";
+    }
+
+    private static bool IsWfsEnabled(ServiceMetadata serviceMetadata)
+    {
+        // Check if WFS is enabled for this service
+        var enabledProtocols = serviceMetadata.Definition.Metadata?.EnabledProtocols;
+        return enabledProtocols == null || enabledProtocols.Contains("Wfs20", StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string FormatCrsUri(SpatialReference spatialReference)
+    {
+        return $"http://www.opengis.net/def/crs/EPSG/0/{spatialReference.Wkid}";
+    }
+
+    private static string[] FormatOtherCrs(SpatialReference[] supportedSrs)
+    {
+        return supportedSrs.Select(srs => $"http://www.opengis.net/def/crs/EPSG/0/{srs.Wkid}").ToArray();
+    }
+
+    private static WGS84BoundingBox? FormatWgs84BoundingBox(FeatureExtent? extent)
+    {
+        if (extent == null)
+            return null;
+
+        // TODO: Transform extent to WGS84 if not already
+        return new WGS84BoundingBox
+        {
+            LowerCorner = $"{extent.MinX} {extent.MinY}",
+            UpperCorner = $"{extent.MaxX} {extent.MaxY}"
+        };
+    }
+}

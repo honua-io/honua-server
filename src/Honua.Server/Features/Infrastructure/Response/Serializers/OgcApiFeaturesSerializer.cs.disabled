@@ -1,0 +1,561 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.IO.Pipelines;
+using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Response;
+using Honua.Server.Features.Infrastructure.GeoJson;
+using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.OgcFeatures.Services;
+
+namespace Honua.Server.Features.Infrastructure.Response.Serializers;
+
+/// <summary>
+/// Serializes unified response data to OGC API Features format (GeoJSON with metadata).
+/// </summary>
+internal sealed class OgcApiFeaturesSerializer : IProtocolSerializer<OgcApiFeaturesSerializationOptions>
+{
+    private readonly ILogger<OgcApiFeaturesSerializer> _logger;
+
+    public OgcApiFeaturesSerializer(ILogger<OgcApiFeaturesSerializer> logger)
+    {
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Protocol => "OGC API Features";
+
+    /// <inheritdoc />
+    public ValueTask<SerializedResponse> SerializeAsync(
+        ResponseData responseData,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(responseData);
+        ArgumentNullException.ThrowIfNull(options);
+
+        try
+        {
+            var result = responseData.Type switch
+            {
+                ResponseType.FeatureCollection => SerializeFeatureCollection(responseData, options),
+                ResponseType.SingleFeature => SerializeSingleFeature(responseData, options),
+                ResponseType.Error => SerializeError(responseData, options),
+                _ => throw new NotSupportedException($"Response type {responseData.Type} is not supported")
+            };
+
+            var contentType = GetContentType(responseData, options);
+            var headers = GetHeaders(responseData, options);
+            var statusCode = GetStatusCode(responseData);
+
+            // Handle HTML format for browser-friendly responses
+            if (options.AllowHtml && IsHtmlRequested(options))
+            {
+                var htmlResult = ConvertToHtml(result, responseData, options);
+                return ValueTask.FromResult(new SerializedResponse(
+                    htmlResult,
+                    "text/html",
+                    headers,
+                    statusCode));
+            }
+
+            return ValueTask.FromResult(new SerializedResponse(
+                result,
+                contentType,
+                headers,
+                statusCode));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error serializing OGC API Features response");
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<string> SerializeToStreamAsync(
+        ResponseData responseData,
+        PipeWriter outputStream,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(responseData);
+        ArgumentNullException.ThrowIfNull(outputStream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var contentType = GetContentType(responseData, options);
+
+        using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
+        {
+            Indented = false,
+            SkipValidation = false
+        });
+
+        switch (responseData.Type)
+        {
+            case ResponseType.FeatureCollection:
+                await WriteFeatureCollectionAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            case ResponseType.SingleFeature:
+                await WriteSingleFeatureAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            case ResponseType.Error:
+                await WriteErrorAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            default:
+                throw new NotSupportedException($"Response type {responseData.Type} is not supported for streaming");
+        }
+
+        await writer.FlushAsync(cancellationToken);
+        return contentType;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<string> SerializeStreamingAsync(
+        IAsyncEnumerable<StreamingResponseChunk> streamingResponse,
+        PipeWriter outputStream,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamingResponse);
+        ArgumentNullException.ThrowIfNull(outputStream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
+        {
+            Indented = false,
+            SkipValidation = false
+        });
+
+        var headerWritten = false;
+        var featureCount = 0;
+        const int flushInterval = 32;
+
+        await foreach (var chunk in streamingResponse.WithCancellation(cancellationToken))
+        {
+            switch (chunk.Type)
+            {
+                case StreamingChunkType.Header:
+                    await WriteStreamingHeaderAsync(writer, chunk, options, cancellationToken);
+                    headerWritten = true;
+                    break;
+
+                case StreamingChunkType.Feature when headerWritten:
+                    await WriteStreamingFeatureAsync(writer, chunk, options, cancellationToken);
+                    if (++featureCount % flushInterval == 0)
+                    {
+                        await writer.FlushAsync(cancellationToken);
+                    }
+                    break;
+
+                case StreamingChunkType.Footer when headerWritten:
+                    await WriteStreamingFooterAsync(writer, chunk, options, cancellationToken);
+                    break;
+
+                case StreamingChunkType.Error:
+                    await WriteStreamingErrorAsync(writer, chunk, options, cancellationToken);
+                    break;
+            }
+        }
+
+        await writer.FlushAsync(cancellationToken);
+        return "application/geo+json";
+    }
+
+    /// <inheritdoc />
+    public string GetContentType(ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        if (options.AllowHtml && IsHtmlRequested(options))
+        {
+            return "text/html";
+        }
+
+        return responseData.Type == ResponseType.Error ? "application/json" : "application/geo+json";
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string> GetHeaders(ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        var headers = new Dictionary<string, string>();
+
+        // Add CORS headers for OGC API
+        headers["Access-Control-Allow-Origin"] = "*";
+        headers["Access-Control-Allow-Methods"] = "GET, OPTIONS";
+        headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+
+        if (options.AdditionalHeaders != null)
+        {
+            foreach (var kvp in options.AdditionalHeaders)
+            {
+                headers[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return headers;
+    }
+
+    private object SerializeFeatureCollection(ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        var features = responseData.Features.Select(ConvertToGeoJsonFeature).ToArray();
+
+        var featureCollection = new OgcFeatureCollection
+        {
+            Type = "FeatureCollection",
+            Features = features,
+            NumberMatched = responseData.Metadata.TotalCount,
+            NumberReturned = responseData.Metadata.ReturnedCount,
+            TimeStamp = responseData.Metadata.Timestamp ?? DateTimeOffset.UtcNow,
+            Links = BuildOgcLinks(responseData, options)
+        };
+
+        // Add bbox if requested and computable
+        if (options.IncludeBbox)
+        {
+            featureCollection.Bbox = ComputeBoundingBox(responseData.Features);
+        }
+
+        return featureCollection;
+    }
+
+    private object SerializeSingleFeature(ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        var feature = ConvertToGeoJsonFeature(responseData.Features.First());
+
+        // Add OGC-specific metadata to single feature responses
+        var ogcFeature = new OgcFeature
+        {
+            Type = "Feature",
+            Id = feature.Id,
+            Geometry = feature.Geometry,
+            Properties = feature.Properties,
+            Links = BuildOgcLinks(responseData, options)
+        };
+
+        return ogcFeature;
+    }
+
+    private object SerializeError(ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        var error = responseData.Error!;
+
+        return new OgcErrorResponse
+        {
+            Code = error.Code,
+            Description = error.Message,
+            Detail = error.Detail,
+            Instance = options.Request?.Path.ToString()
+        };
+    }
+
+    private GeoJsonFeature ConvertToGeoJsonFeature(ResponseFeature responseFeature)
+    {
+        var geometry = responseFeature.Geometry != null
+            ? ConvertResponseGeometryToGeoJson(responseFeature.Geometry)
+            : null;
+
+        var properties = new Dictionary<string, object?>();
+
+        // Add feature attributes
+        foreach (var kvp in responseFeature.Attributes)
+        {
+            properties[kvp.Key] = kvp.Value;
+        }
+
+        // Add computed fields
+        foreach (var kvp in responseFeature.ComputedFields)
+        {
+            properties[kvp.Key] = kvp.Value;
+        }
+
+        return new GeoJsonFeature
+        {
+            Id = responseFeature.Id,
+            Geometry = geometry,
+            Properties = properties
+        };
+    }
+
+    private SimpleGeoJsonGeometry? ConvertResponseGeometryToGeoJson(ResponseGeometry responseGeometry)
+    {
+        if (responseGeometry.RawData == null)
+            return null;
+
+        // Check format cache first
+        if (responseGeometry.FormatCache.TryGetValue("GeoJSON", out var cached) &&
+            cached is SimpleGeoJsonGeometry cachedGeometry)
+        {
+            return cachedGeometry;
+        }
+
+        // Convert from WKB using NetTopologySuite
+        try
+        {
+            var reader = new NetTopologySuite.IO.WKBReader();
+            var geometry = reader.Read(responseGeometry.RawData);
+
+            if (geometry == null || geometry.IsEmpty)
+                return null;
+
+            var writer = new NetTopologySuite.IO.GeoJsonWriter();
+            var geoJsonString = writer.Write(geometry);
+
+            // Parse back to get coordinates
+            using var document = JsonDocument.Parse(geoJsonString);
+            var root = document.RootElement;
+
+            string? coordinatesJson = null;
+            if (root.TryGetProperty("coordinates", out var coordsElement))
+            {
+                coordinatesJson = JsonSerializer.Serialize(coordsElement);
+            }
+
+            return new SimpleGeoJsonGeometry
+            {
+                Type = root.GetProperty("type").GetString(),
+                CoordinatesJson = coordinatesJson
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert geometry to GeoJSON");
+            return null;
+        }
+    }
+
+    private OgcLink[] BuildOgcLinks(ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        var links = new List<OgcLink>();
+
+        // Convert response links to OGC format
+        foreach (var link in responseData.Links)
+        {
+            links.Add(new OgcLink
+            {
+                Href = link.Href,
+                Rel = link.Rel,
+                Type = link.Type,
+                Title = link.Title,
+                HrefLang = "en"
+            });
+        }
+
+        // Add format-specific links if base URL is available
+        if (options.Request != null)
+        {
+            var baseUrl = $"{options.Request.Scheme}://{options.Request.Host}{options.Request.PathBase}";
+            var path = options.Request.Path.ToString();
+
+            // Self links for different formats
+            links.Add(new OgcLink
+            {
+                Href = $"{baseUrl}{path}?f=json",
+                Rel = "self",
+                Type = "application/geo+json",
+                Title = "This document as GeoJSON"
+            });
+
+            links.Add(new OgcLink
+            {
+                Href = $"{baseUrl}{path}?f=html",
+                Rel = "alternate",
+                Type = "text/html",
+                Title = "This document as HTML"
+            });
+
+            // Collection link for single features
+            if (responseData.Type == ResponseType.SingleFeature && options.CollectionId != null)
+            {
+                links.Add(new OgcLink
+                {
+                    Href = $"{baseUrl}/collections/{options.CollectionId}/items",
+                    Rel = "collection",
+                    Type = "application/geo+json",
+                    Title = "Feature collection"
+                });
+            }
+        }
+
+        return links.ToArray();
+    }
+
+    private double[]? ComputeBoundingBox(ImmutableArray<ResponseFeature> features)
+    {
+        var validGeometries = features
+            .Where(f => f.Geometry?.Envelope != null)
+            .Select(f => f.Geometry!.Envelope!)
+            .ToArray();
+
+        if (validGeometries.Length == 0)
+            return null;
+
+        var minX = validGeometries.Min(env => env.MinX);
+        var minY = validGeometries.Min(env => env.MinY);
+        var maxX = validGeometries.Max(env => env.MaxX);
+        var maxY = validGeometries.Max(env => env.MaxY);
+
+        return new[] { minX, minY, maxX, maxY };
+    }
+
+    private bool IsHtmlRequested(OgcApiFeaturesSerializationOptions options)
+    {
+        return string.Equals(options.Format, "html", StringComparison.OrdinalIgnoreCase) ||
+               (options.Request?.Headers.Accept.ToString().Contains("text/html") == true);
+    }
+
+    private string ConvertToHtml(object result, ResponseData responseData, OgcApiFeaturesSerializationOptions options)
+    {
+        var jsonString = JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+
+        var title = responseData.Type switch
+        {
+            ResponseType.FeatureCollection => $"Features from {responseData.Layer?.Name ?? "Collection"}",
+            ResponseType.SingleFeature => $"Feature {responseData.Features.First().Id}",
+            ResponseType.Error => "Error Response",
+            _ => "OGC API Features"
+        };
+
+        return OgcResponseFormatter.BuildHtmlDocument(title, jsonString);
+    }
+
+    private async Task WriteFeatureCollectionAsync(
+        Utf8JsonWriter writer,
+        ResponseData responseData,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeFeatureCollection(responseData, options);
+        JsonSerializer.Serialize(writer, serialized, OgcFeaturesJsonContext.Default.Object);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteSingleFeatureAsync(
+        Utf8JsonWriter writer,
+        ResponseData responseData,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeSingleFeature(responseData, options);
+        JsonSerializer.Serialize(writer, serialized, OgcFeaturesJsonContext.Default.Object);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteErrorAsync(
+        Utf8JsonWriter writer,
+        ResponseData responseData,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeError(responseData, options);
+        JsonSerializer.Serialize(writer, serialized, OgcFeaturesJsonContext.Default.Object);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingHeaderAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var metadata = chunk.Data as ResponseMetadata;
+
+        writer.WriteStartObject();
+        writer.WriteString("type", "FeatureCollection");
+
+        if (metadata != null)
+        {
+            if (metadata.TotalCount.HasValue)
+            {
+                writer.WriteNumber("numberMatched", metadata.TotalCount.Value);
+            }
+
+            if (metadata.ReturnedCount.HasValue)
+            {
+                writer.WriteNumber("numberReturned", metadata.ReturnedCount.Value);
+            }
+
+            if (metadata.Timestamp.HasValue)
+            {
+                writer.WriteString("timeStamp", metadata.Timestamp.Value);
+            }
+        }
+
+        writer.WriteStartArray("features");
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingFeatureAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (chunk.Data is not ResponseFeature responseFeature)
+        {
+            throw new InvalidOperationException("Feature data is required for streaming features");
+        }
+
+        var geoJsonFeature = ConvertToGeoJsonFeature(responseFeature);
+        JsonSerializer.Serialize(writer, geoJsonFeature, OgcFeaturesJsonContext.Default.GeoJsonFeature);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingFooterAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        // End features array
+        writer.WriteEndArray();
+
+        // Add links if available
+        if (chunk.Metadata?.TryGetValue("Links", out var linksObj) == true &&
+            linksObj is OgcLink[] links)
+        {
+            writer.WriteStartArray("links");
+            foreach (var link in links)
+            {
+                JsonSerializer.Serialize(writer, link, OgcFeaturesJsonContext.Default.OgcLink);
+            }
+            writer.WriteEndArray();
+        }
+
+        // End main object
+        writer.WriteEndObject();
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingErrorAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        OgcApiFeaturesSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var error = chunk.Data as ResponseError ??
+            ResponseError.InternalError("Unknown error occurred");
+
+        var ogcError = new OgcErrorResponse
+        {
+            Code = error.Code,
+            Description = error.Message,
+            Detail = error.Detail,
+            Instance = options.Request?.Path.ToString()
+        };
+
+        JsonSerializer.Serialize(writer, ogcError, OgcFeaturesJsonContext.Default.OgcErrorResponse);
+        await Task.CompletedTask;
+    }
+
+    private static int GetStatusCode(ResponseData responseData)
+    {
+        return responseData.Type switch
+        {
+            ResponseType.Error => responseData.Error?.StatusCode ?? 500,
+            _ => 200
+        };
+    }
+}

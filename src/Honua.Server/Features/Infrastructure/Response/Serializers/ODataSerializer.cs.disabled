@@ -1,0 +1,521 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.IO.Pipelines;
+using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Response;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.OData.Services;
+
+namespace Honua.Server.Features.Infrastructure.Response.Serializers;
+
+/// <summary>
+/// Serializes unified response data to OData v4 JSON format.
+/// </summary>
+internal sealed class ODataSerializer : IProtocolSerializer<ODataSerializationOptions>
+{
+    private readonly ILogger<ODataSerializer> _logger;
+
+    public ODataSerializer(ILogger<ODataSerializer> logger)
+    {
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Protocol => "OData";
+
+    /// <inheritdoc />
+    public ValueTask<SerializedResponse> SerializeAsync(
+        ResponseData responseData,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(responseData);
+        ArgumentNullException.ThrowIfNull(options);
+
+        try
+        {
+            var result = responseData.Type switch
+            {
+                ResponseType.FeatureCollection => SerializeFeatureCollection(responseData, options),
+                ResponseType.SingleFeature => SerializeSingleFeature(responseData, options),
+                ResponseType.Error => SerializeError(responseData, options),
+                _ => throw new NotSupportedException($"Response type {responseData.Type} is not supported")
+            };
+
+            var headers = GetHeaders(responseData, options);
+            var statusCode = GetStatusCode(responseData);
+
+            return ValueTask.FromResult(new SerializedResponse(
+                result,
+                GetContentType(responseData, options),
+                headers,
+                statusCode));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error serializing OData response");
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<string> SerializeToStreamAsync(
+        ResponseData responseData,
+        PipeWriter outputStream,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(responseData);
+        ArgumentNullException.ThrowIfNull(outputStream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
+        {
+            Indented = false,
+            SkipValidation = false
+        });
+
+        switch (responseData.Type)
+        {
+            case ResponseType.FeatureCollection:
+                await WriteFeatureCollectionAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            case ResponseType.SingleFeature:
+                await WriteSingleFeatureAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            case ResponseType.Error:
+                await WriteErrorAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            default:
+                throw new NotSupportedException($"Response type {responseData.Type} is not supported for streaming");
+        }
+
+        await writer.FlushAsync(cancellationToken);
+        return GetContentType(responseData, options);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<string> SerializeStreamingAsync(
+        IAsyncEnumerable<StreamingResponseChunk> streamingResponse,
+        PipeWriter outputStream,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamingResponse);
+        ArgumentNullException.ThrowIfNull(outputStream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
+        {
+            Indented = false,
+            SkipValidation = false
+        });
+
+        var headerWritten = false;
+        var featureCount = 0;
+        const int flushInterval = 32;
+
+        await foreach (var chunk in streamingResponse.WithCancellation(cancellationToken))
+        {
+            switch (chunk.Type)
+            {
+                case StreamingChunkType.Header:
+                    await WriteStreamingHeaderAsync(writer, chunk, options, cancellationToken);
+                    headerWritten = true;
+                    break;
+
+                case StreamingChunkType.Feature when headerWritten:
+                    await WriteStreamingFeatureAsync(writer, chunk, options, cancellationToken);
+                    if (++featureCount % flushInterval == 0)
+                    {
+                        await writer.FlushAsync(cancellationToken);
+                    }
+                    break;
+
+                case StreamingChunkType.Footer when headerWritten:
+                    await WriteStreamingFooterAsync(writer, chunk, options, cancellationToken);
+                    break;
+
+                case StreamingChunkType.Error:
+                    await WriteStreamingErrorAsync(writer, chunk, options, cancellationToken);
+                    break;
+            }
+        }
+
+        await writer.FlushAsync(cancellationToken);
+        return GetContentType(responseData, options);
+    }
+
+    /// <inheritdoc />
+    public string GetContentType(ResponseData responseData, ODataSerializationOptions options)
+    {
+        var metadataLevel = options.MetadataLevel;
+        return $"application/json;odata.metadata={metadataLevel}";
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string> GetHeaders(ResponseData responseData, ODataSerializationOptions options)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["OData-Version"] = "4.0"
+        };
+
+        if (options.AdditionalHeaders != null)
+        {
+            foreach (var kvp in options.AdditionalHeaders)
+            {
+                headers[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return headers;
+    }
+
+    private object SerializeFeatureCollection(ResponseData responseData, ODataSerializationOptions options)
+    {
+        var baseUrl = GetBaseUrl(options);
+        var entitySet = options.EntitySet ?? "Features";
+
+        var odataFeatures = responseData.Features.Select(ConvertToODataFeature).ToArray();
+
+        var response = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        // Add context if requested
+        if (options.IncludeContext)
+        {
+            response["@odata.context"] = $"{baseUrl}/odata/$metadata#{entitySet}";
+        }
+
+        // Add count if requested
+        if (options.IncludeCount && responseData.Metadata.TotalCount.HasValue)
+        {
+            response["@odata.count"] = responseData.Metadata.TotalCount.Value;
+        }
+
+        // Add next link for pagination
+        if (responseData.Metadata.HasMoreResults && responseData.Metadata.NextLink != null)
+        {
+            response["@odata.nextLink"] = responseData.Metadata.NextLink;
+        }
+
+        response["value"] = odataFeatures;
+
+        return response;
+    }
+
+    private object SerializeSingleFeature(ResponseData responseData, ODataSerializationOptions options)
+    {
+        var baseUrl = GetBaseUrl(options);
+        var entitySet = options.EntitySet ?? "Features";
+        var feature = responseData.Features.First();
+
+        var odataFeature = ConvertToODataFeature(feature);
+
+        // Add context if requested
+        if (options.IncludeContext && odataFeature is Dictionary<string, object?> featureDict)
+        {
+            featureDict["@odata.context"] = $"{baseUrl}/odata/$metadata#{entitySet}/$entity";
+
+            // Add entity ID
+            featureDict["@odata.id"] = BuildEntityId(baseUrl, entitySet, feature, responseData.Layer);
+        }
+
+        return odataFeature;
+    }
+
+    private object SerializeError(ResponseData responseData, ODataSerializationOptions options)
+    {
+        var error = responseData.Error!;
+
+        return new
+        {
+            error = new
+            {
+                code = error.Code,
+                message = error.Message,
+                target = error.Target,
+                details = error.AdditionalDetails?.Select(detail => new { message = detail }).ToArray()
+            }
+        };
+    }
+
+    private Dictionary<string, object?> ConvertToODataFeature(ResponseFeature responseFeature)
+    {
+        var odataFeature = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        // Add ObjectId and LayerId as required OData key fields
+        odataFeature["ObjectId"] = responseFeature.Id;
+
+        // Add geometry if present
+        if (responseFeature.Geometry != null)
+        {
+            odataFeature["Geometry"] = ConvertResponseGeometryToODataSpatial(responseFeature.Geometry);
+        }
+
+        // Add feature attributes
+        foreach (var kvp in responseFeature.Attributes)
+        {
+            if (!ODataUtilityService.IsReservedFeatureProperty(kvp.Key))
+            {
+                odataFeature[kvp.Key] = NormalizeODataValue(kvp.Value);
+            }
+        }
+
+        // Add computed fields
+        foreach (var kvp in responseFeature.ComputedFields)
+        {
+            if (!ODataUtilityService.IsReservedFeatureProperty(kvp.Key))
+            {
+                odataFeature[kvp.Key] = NormalizeODataValue(kvp.Value);
+            }
+        }
+
+        return odataFeature;
+    }
+
+    private ODataSpatialGeometry? ConvertResponseGeometryToODataSpatial(ResponseGeometry responseGeometry)
+    {
+        if (responseGeometry.RawData == null)
+            return null;
+
+        // Check format cache first
+        if (responseGeometry.FormatCache.TryGetValue("ODataSpatial", out var cached) &&
+            cached is ODataSpatialGeometry cachedSpatial)
+        {
+            return cachedSpatial;
+        }
+
+        try
+        {
+            // Convert WKB to OData spatial format
+            var reader = new NetTopologySuite.IO.WKBReader();
+            var geometry = reader.Read(responseGeometry.RawData);
+
+            if (geometry == null || geometry.IsEmpty)
+                return null;
+
+            // Create OData spatial representation
+            return new ODataSpatialGeometry
+            {
+                Type = MapToODataGeometryType(responseGeometry.Type),
+                Coordinates = ExtractCoordinatesFromGeometry(geometry),
+                Crs = responseGeometry.Srid.HasValue
+                    ? new ODataCrs { Type = "name", Properties = new Dictionary<string, object> { ["name"] = $"EPSG:{responseGeometry.Srid}" } }
+                    : null
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert geometry to OData spatial format");
+            return null;
+        }
+    }
+
+    private static string MapToODataGeometryType(string geometryType)
+    {
+        return geometryType switch
+        {
+            "Point" => "Point",
+            "LineString" => "LineString",
+            "Polygon" => "Polygon",
+            "MultiPoint" => "MultiPoint",
+            "MultiLineString" => "MultiLineString",
+            "MultiPolygon" => "MultiPolygon",
+            "GeometryCollection" => "GeometryCollection",
+            _ => "Geometry"
+        };
+    }
+
+    private static object? ExtractCoordinatesFromGeometry(NetTopologySuite.Geometries.Geometry geometry)
+    {
+        var writer = new NetTopologySuite.IO.GeoJsonWriter();
+        var geoJsonString = writer.Write(geometry);
+
+        using var document = JsonDocument.Parse(geoJsonString);
+        var root = document.RootElement;
+
+        if (root.TryGetProperty("coordinates", out var coordsElement))
+        {
+            return JsonSerializer.Deserialize<object>(coordsElement.GetRawText());
+        }
+
+        return null;
+    }
+
+    private static object? NormalizeODataValue(object? value)
+    {
+        return value switch
+        {
+            DateTime dt => dt.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+                : dt,
+            DateTimeOffset _ => value,
+            DateOnly dateOnly => dateOnly.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            TimeOnly timeOnly => timeOnly.ToTimeSpan(),
+            _ => value
+        };
+    }
+
+    private string GetBaseUrl(ODataSerializationOptions options)
+    {
+        if (options.Request != null)
+        {
+            return BaseUrlResolver.GetBaseUrl(options.Request);
+        }
+
+        return "https://api.honua.io"; // Fallback
+    }
+
+    private string BuildEntityId(string baseUrl, string entitySet, ResponseFeature feature, Core.Features.Catalog.Domain.LayerDefinition? layer)
+    {
+        if (layer != null)
+        {
+            return $"{baseUrl}/odata/{entitySet}(LayerId={layer.Id},ObjectId={feature.Id})";
+        }
+
+        return $"{baseUrl}/odata/{entitySet}({feature.Id})";
+    }
+
+    private async Task WriteFeatureCollectionAsync(
+        Utf8JsonWriter writer,
+        ResponseData responseData,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeFeatureCollection(responseData, options);
+        JsonSerializer.Serialize(writer, serialized, ODataJsonContext.Default.Object);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteSingleFeatureAsync(
+        Utf8JsonWriter writer,
+        ResponseData responseData,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeSingleFeature(responseData, options);
+        JsonSerializer.Serialize(writer, serialized, ODataJsonContext.Default.Object);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteErrorAsync(
+        Utf8JsonWriter writer,
+        ResponseData responseData,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeError(responseData, options);
+        JsonSerializer.Serialize(writer, serialized, ODataJsonContext.Default.Object);
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingHeaderAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var baseUrl = GetBaseUrl(options);
+        var entitySet = options.EntitySet ?? "Features";
+
+        writer.WriteStartObject();
+
+        // Add context if requested
+        if (options.IncludeContext)
+        {
+            writer.WriteString("@odata.context", $"{baseUrl}/odata/$metadata#{entitySet}");
+        }
+
+        // Add count if available
+        if (chunk.Data is ResponseMetadata metadata)
+        {
+            if (options.IncludeCount && metadata.TotalCount.HasValue)
+            {
+                writer.WriteNumber("@odata.count", metadata.TotalCount.Value);
+            }
+
+            if (metadata.HasMoreResults && !string.IsNullOrEmpty(metadata.NextLink))
+            {
+                writer.WriteString("@odata.nextLink", metadata.NextLink);
+            }
+        }
+
+        // Start value array
+        writer.WriteStartArray("value");
+
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingFeatureAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (chunk.Data is not ResponseFeature responseFeature)
+        {
+            throw new InvalidOperationException("Feature data is required for streaming features");
+        }
+
+        var odataFeature = ConvertToODataFeature(responseFeature);
+        JsonSerializer.Serialize(writer, odataFeature, ODataJsonContext.Default.DictionaryStringObject);
+
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingFooterAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        // End value array
+        writer.WriteEndArray();
+
+        // End main object
+        writer.WriteEndObject();
+
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteStreamingErrorAsync(
+        Utf8JsonWriter writer,
+        StreamingResponseChunk chunk,
+        ODataSerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var error = chunk.Data as ResponseError ??
+            ResponseError.InternalError("Unknown error occurred");
+
+        var odataError = new
+        {
+            error = new
+            {
+                code = error.Code,
+                message = error.Message,
+                target = error.Target,
+                details = error.AdditionalDetails?.Select(detail => new { message = detail }).ToArray()
+            }
+        };
+
+        JsonSerializer.Serialize(writer, odataError, ODataJsonContext.Default.Object);
+
+        await Task.CompletedTask;
+    }
+
+    private static int GetStatusCode(ResponseData responseData)
+    {
+        return responseData.Type switch
+        {
+            ResponseType.Error => responseData.Error?.StatusCode ?? 500,
+            _ => 200
+        };
+    }
+}

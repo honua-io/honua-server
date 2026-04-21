@@ -1,0 +1,388 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
+using Microsoft.Extensions.Logging;
+
+namespace Honua.Server.Features.FeatureServer.Services;
+
+/// <summary>
+/// GeoServices adapter for converting ApplyEdits requests to unified edit requests.
+/// Handles ESRI-specific edit semantics with optional rollback behavior.
+/// </summary>
+internal sealed class GeoServicesEditParameterAdapter : IEditParameterAdapter<ApplyEditsRequest>
+{
+    private readonly ILogger<GeoServicesEditParameterAdapter> _logger;
+    private readonly IFeatureServerGeometryServices _geometryServices;
+
+    public GeoServicesEditParameterAdapter(
+        ILogger<GeoServicesEditParameterAdapter> logger,
+        IFeatureServerGeometryServices geometryServices)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _geometryServices = geometryServices ?? throw new ArgumentNullException(nameof(geometryServices));
+    }
+
+    public string ProtocolName => "GeoServices";
+
+    public ProtocolEditLimits DefaultLimits => ProtocolEditLimits.GeoServices;
+
+    public TransactionSemantics TransactionSemantics => Core.Features.Edit.TransactionSemantics.GeoServices;
+
+    public async Task<EditAdapterResult> ConvertAsync(
+        ApplyEditsRequest protocolRequest,
+        LayerDefinition layer,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogDebug("Converting GeoServices ApplyEdits to unified edit for layer {LayerId}", layer.Id);
+
+            var operations = new List<UnifiedEditOperation>();
+            var metadata = new Dictionary<string, object>
+            {
+                ["useGlobalIds"] = protocolRequest.UseGlobalIds,
+                ["rollbackOnFailure"] = protocolRequest.RollbackOnFailure
+            };
+
+            // Process add operations
+            if (protocolRequest.Adds?.Length > 0)
+            {
+                var addOperations = await ProcessAddOperations(protocolRequest.Adds, layer, cancellationToken);
+                operations.AddRange(addOperations);
+            }
+
+            // Process update operations
+            if (protocolRequest.Updates?.Length > 0)
+            {
+                var updateOperations = await ProcessUpdateOperations(protocolRequest.Updates, layer, cancellationToken);
+                operations.AddRange(updateOperations);
+            }
+
+            // Process delete operations
+            if (protocolRequest.Deletes?.Length > 0)
+            {
+                var deleteOperations = ProcessDeleteOperations(protocolRequest.Deletes);
+                operations.AddRange(deleteOperations);
+            }
+
+            // Create unified edit request
+            var editRequest = UnifiedEditRequest.WithOperations(operations.ToImmutableArray()) with
+            {
+                TransactionOptions = new EditTransactionOptions
+                {
+                    RollbackOnFailure = protocolRequest.RollbackOnFailure,
+                    UseExplicitTransaction = protocolRequest.RollbackOnFailure,
+                    IsolationLevel = TransactionIsolationLevel.ReadCommitted,
+                    TimeoutMs = 600_000 // 10 minutes for large GeoServices edits
+                },
+                ValidationOptions = EditValidationOptions.Strict(),
+                Extensions = CreateGeoServicesExtensions(protocolRequest)
+            };
+
+            // Create transaction
+            var transactionId = Guid.NewGuid().ToString();
+            var transaction = EditTransaction.Create(
+                transactionId,
+                ProtocolName,
+                ImmutableArray.Create(editRequest),
+                TransactionConfiguration.ForGeoServices with
+                {
+                    RollbackOnFailure = protocolRequest.RollbackOnFailure
+                },
+                metadata.ToImmutableDictionary());
+
+            _logger.LogDebug("Converted GeoServices ApplyEdits with {OperationCount} operations", operations.Count);
+
+            return EditAdapterResult.Success(editRequest, transaction, metadata);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to convert GeoServices ApplyEdits to unified edit for layer {LayerId}",
+                layer.Id);
+            return EditAdapterResult.Failure($"Failed to parse GeoServices edit request: {ex.Message}");
+        }
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessAddOperations(
+        GeoServicesFeature[] adds,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        foreach (var feature in adds)
+        {
+            try
+            {
+                var editFeature = await ConvertGeoServicesFeatureToEditFeature(
+                    feature, layer, isCreate: true, cancellationToken);
+
+                operations.Add(UnifiedEditOperation.Create(editFeature));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process add feature in GeoServices request");
+                throw new InvalidOperationException($"Failed to process add operation: {ex.Message}", ex);
+            }
+        }
+
+        return operations;
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessUpdateOperations(
+        GeoServicesFeature[] updates,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        foreach (var feature in updates)
+        {
+            try
+            {
+                // Extract Object ID from attributes
+                if (!TryGetObjectId(feature.Attributes, out var objectId))
+                {
+                    throw new InvalidOperationException("Object ID required for update operation");
+                }
+
+                var editFeature = await ConvertGeoServicesFeatureToEditFeature(
+                    feature, layer, isCreate: false, objectId, cancellationToken);
+
+                operations.Add(UnifiedEditOperation.Update(editFeature));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process update feature in GeoServices request");
+                throw new InvalidOperationException($"Failed to process update operation: {ex.Message}", ex);
+            }
+        }
+
+        return operations;
+    }
+
+    private IEnumerable<UnifiedEditOperation> ProcessDeleteOperations(object[] deletes)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        foreach (var delete in deletes)
+        {
+            try
+            {
+                if (!FeatureServerValueParser.TryConvertToLong(delete, out var objectId))
+                {
+                    throw new InvalidOperationException("Invalid Object ID for delete operation");
+                }
+
+                operations.Add(UnifiedEditOperation.Delete(objectId));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process delete operation in GeoServices request");
+                throw new InvalidOperationException($"Failed to process delete operation: {ex.Message}", ex);
+            }
+        }
+
+        return operations;
+    }
+
+    private async Task<EditFeature> ConvertGeoServicesFeatureToEditFeature(
+        GeoServicesFeature feature,
+        LayerDefinition layer,
+        bool isCreate,
+        long? explicitObjectId = null,
+        CancellationToken cancellationToken = default)
+    {
+        byte[]? geometry = null;
+        var objectId = explicitObjectId;
+
+        // Convert geometry if present
+        if (feature.Geometry != null)
+        {
+            try
+            {
+                // Validate ESRI JSON geometry
+                var esriValidation = _geometryServices.ValidateEsriJson(feature.Geometry);
+                if (!esriValidation.IsValid)
+                {
+                    var errorMessages = string.Join("; ", esriValidation.Errors.Select(e => e.Message));
+                    throw new InvalidOperationException($"Invalid ESRI geometry: {errorMessages}");
+                }
+
+                // Check spatial reference compatibility
+                var layerSrid = layer.SpatialReference.Wkid;
+                var geometrySrid = feature.Geometry.SpatialReference?.Wkid
+                    ?? feature.Geometry.SpatialReference?.LatestWkid
+                    ?? layerSrid;
+
+                if (geometrySrid != layerSrid)
+                {
+                    throw new InvalidOperationException(
+                        $"Geometry SRID {geometrySrid} does not match layer SRID {layerSrid}");
+                }
+
+                // Convert to WKB
+                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+                    feature.Geometry, geometrySrid);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to convert geometry: {ex.Message}", ex);
+            }
+        }
+
+        // Extract Object ID from attributes if not explicitly provided
+        if (!isCreate && !objectId.HasValue)
+        {
+            if (!TryGetObjectId(feature.Attributes, out objectId))
+            {
+                throw new InvalidOperationException("Object ID required for update operation");
+            }
+        }
+
+        // Convert attributes
+        var attributes = ConvertAttributes(feature.Attributes, layer);
+
+        // Extract global ID if present
+        var globalId = TryGetGlobalId(feature.Attributes);
+
+        if (isCreate)
+        {
+            return EditFeature.ForCreate(geometry, attributes, globalId);
+        }
+        else
+        {
+            return EditFeature.ForUpdate(
+                objectId!.Value,
+                geometry,
+                attributes,
+                EditUpdateMode.Replace); // GeoServices uses replace semantics
+        }
+    }
+
+    private bool TryGetObjectId(Dictionary<string, object?>? attributes, out long objectId)
+    {
+        objectId = 0;
+
+        if (attributes == null || attributes.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var entry in attributes)
+        {
+            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            {
+                return FeatureServerValueParser.TryConvertToLong(entry.Value, out objectId);
+            }
+        }
+
+        return false;
+    }
+
+    private string? TryGetGlobalId(Dictionary<string, object?>? attributes)
+    {
+        if (attributes == null || attributes.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var entry in attributes)
+        {
+            if (string.Equals(entry.Key, FieldNames.GlobalId, StringComparison.OrdinalIgnoreCase))
+            {
+                return entry.Value?.ToString();
+            }
+        }
+
+        return null;
+    }
+
+    private ImmutableDictionary<string, object?> ConvertAttributes(
+        Dictionary<string, object?>? attributes,
+        LayerDefinition layer)
+    {
+        if (attributes == null || attributes.Count == 0)
+        {
+            return ImmutableDictionary<string, object?>.Empty;
+        }
+
+        var converted = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in attributes)
+        {
+            // Skip object ID and global ID as they're handled separately
+            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(entry.Key, FieldNames.GlobalId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Convert value based on layer schema if available
+            var convertedValue = ConvertAttributeValue(entry.Value, entry.Key, layer);
+            converted[entry.Key] = convertedValue;
+        }
+
+        return converted.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private object? ConvertAttributeValue(object? value, string attributeName, LayerDefinition layer)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        // Find attribute in layer schema for type information
+        var attributeDef = layer.Schema.Attributes.FirstOrDefault(
+            a => string.Equals(a.Name, attributeName, StringComparison.OrdinalIgnoreCase));
+
+        if (attributeDef != null)
+        {
+            // Convert based on schema type
+            try
+            {
+                return attributeDef.Type switch
+                {
+                    AttributeType.Integer => FeatureServerValueParser.ConvertToInt(value),
+                    AttributeType.Long => FeatureServerValueParser.ConvertToLong(value),
+                    AttributeType.Double => FeatureServerValueParser.ConvertToDouble(value),
+                    AttributeType.Boolean => FeatureServerValueParser.ConvertToBoolean(value),
+                    AttributeType.DateTime => FeatureServerValueParser.ConvertToDateTime(value),
+                    AttributeType.String => value.ToString(),
+                    _ => value
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to convert attribute {AttributeName} value {Value} to type {Type}",
+                    attributeName, value, attributeDef.Type);
+                return value; // Return original value if conversion fails
+            }
+        }
+
+        return value;
+    }
+
+    private ImmutableDictionary<string, object> CreateGeoServicesExtensions(ApplyEditsRequest request)
+    {
+        var extensions = new Dictionary<string, object>
+        {
+            ["geoServices.useGlobalIds"] = request.UseGlobalIds,
+            ["geoServices.rollbackOnFailure"] = request.RollbackOnFailure
+        };
+
+        // Add count information
+        extensions["geoServices.addCount"] = request.Adds?.Length ?? 0;
+        extensions["geoServices.updateCount"] = request.Updates?.Length ?? 0;
+        extensions["geoServices.deleteCount"] = request.Deletes?.Length ?? 0;
+
+        return extensions.ToImmutableDictionary();
+    }
+}

@@ -1,0 +1,392 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Diagnostics;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Query;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.ServiceDefaults;
+
+namespace Honua.Server.Features.Wfs20.Services;
+
+/// <summary>
+/// Unified WFS 2.0 query service that uses the new unified query architecture.
+/// Replaces the original Wfs20QueryService with shared query processing logic.
+/// </summary>
+internal sealed class UnifiedWfs20QueryService : IWfs20QueryService
+{
+    private readonly ILogger<UnifiedWfs20QueryService> _logger;
+    private readonly ILayerCatalog _layerCatalog;
+    private readonly UnifiedQueryService _unifiedQueryService;
+    private readonly IWfs20FeatureFormatConverter _formatConverter;
+
+    public UnifiedWfs20QueryService(
+        ILogger<UnifiedWfs20QueryService> logger,
+        ILayerCatalog layerCatalog,
+        UnifiedQueryService unifiedQueryService,
+        IWfs20FeatureFormatConverter formatConverter)
+    {
+        _logger = logger;
+        _layerCatalog = layerCatalog;
+        _unifiedQueryService = unifiedQueryService;
+        _formatConverter = formatConverter;
+    }
+
+    public async Task<IResult> HandleGetFeatureAsync(
+        HttpContext context,
+        Dictionary<string, object> queryParameters,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "wfs20.get_feature", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "GetFeature");
+
+        try
+        {
+            // Convert query parameters to WFS 2.0 parameter structure
+            var wfsParameters = ConvertToWfs20Parameters(queryParameters);
+
+            var typeNames = wfsParameters.TypeNames ?? "unknown";
+            var outputFormat = wfsParameters.OutputFormat ?? "application/gml+xml; version=3.2";
+
+            Wfs20Log.GetFeatureRequested(_logger, typeNames, outputFormat);
+
+            // Get authorized layers
+            var authorizedLayers = await GetAuthorizedLayersAsync(context, typeNames, cancellationToken);
+            if (authorizedLayers.Length == 0)
+            {
+                return Results.Ok(GenerateEmptyFeatureCollection(outputFormat));
+            }
+
+            // Execute unified query for each layer and combine results
+            var allResults = new List<object>();
+            foreach (var layer in authorizedLayers)
+            {
+                var queryResult = await _unifiedQueryService.ExecuteQueryAsync(wfsParameters, layer, cancellationToken);
+                if (queryResult.IsSuccess && queryResult.Result != null)
+                {
+                    // Convert features to WFS format using the format converter
+                    var formattedFeatures = await _formatConverter.ConvertFeaturesAsync(
+                        queryResult.Result.Items,
+                        layer,
+                        outputFormat,
+                        cancellationToken);
+
+                    allResults.AddRange(formattedFeatures);
+                }
+                else if (!queryResult.IsSuccess)
+                {
+                    _logger.LogWarning("Query failed for layer {LayerId}: {Error}",
+                        layer.Id, queryResult.ErrorMessage);
+                }
+            }
+
+            Wfs20Log.GetFeatureReturned(_logger, allResults.Count, allResults.Count.ToString());
+
+            // Build WFS response
+            var response = await BuildWfsResponseAsync(allResults, outputFormat, cancellationToken);
+            return Results.Ok(response);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetTag(HonuaTelemetry.Tags.Error, "true");
+            activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, ex.Message);
+            throw;
+        }
+    }
+
+    public async Task<IResult> HandleStoredQueryGetFeatureAsync(
+        HttpContext context,
+        string storedQueryId,
+        string? featureId,
+        string? outputFormat,
+        string? count,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "wfs20.stored_query_get_feature", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "StoredQueryGetFeature");
+
+        if (storedQueryId == "urn:ogc:def:query:OGC-WFS::GetFeatureById" && !string.IsNullOrEmpty(featureId))
+        {
+            return await HandleGetFeatureByIdAsync(context, featureId, outputFormat, cancellationToken);
+        }
+
+        return Results.BadRequest($"Unsupported stored query: {storedQueryId}");
+    }
+
+    public async Task<IResult> ListStoredQueriesAsync(
+        HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var xml = """
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:ListStoredQueriesResponse
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.opengis.net/wfs/2.0 http://schemas.opengis.net/wfs/2.0/wfs.xsd">
+    <wfs:StoredQuery id="urn:ogc:def:query:OGC-WFS::GetFeatureById">
+        <wfs:Title>Get feature by identifier</wfs:Title>
+        <wfs:Abstract>Returns the feature whose identifier matches the specified value.</wfs:Abstract>
+    </wfs:StoredQuery>
+</wfs:ListStoredQueriesResponse>
+""";
+
+        return Results.Text(xml, "application/xml");
+    }
+
+    public async Task<IResult> DescribeStoredQueriesAsync(
+        HttpContext context,
+        string? storedQueryIds,
+        CancellationToken cancellationToken = default)
+    {
+        var xml = """
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:DescribeStoredQueriesResponse
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.opengis.net/wfs/2.0 http://schemas.opengis.net/wfs/2.0/wfs.xsd">
+    <wfs:StoredQueryDescription id="urn:ogc:def:query:OGC-WFS::GetFeatureById">
+        <wfs:Title>Get feature by identifier</wfs:Title>
+        <wfs:Abstract>Returns the feature whose identifier matches the specified value.</wfs:Abstract>
+        <wfs:Parameter name="id" type="xsd:string">
+            <wfs:Title>Identifier</wfs:Title>
+            <wfs:Abstract>Feature identifier</wfs:Abstract>
+        </wfs:Parameter>
+        <wfs:QueryExpressionText
+            returnFeatureTypes="*"
+            language="urn:ogc:def:queryLanguage:OGC-WFS::WFS_QueryExpression"
+            isPrivate="false">
+            <wfs:Query typeNames="*">
+                <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+                    <fes:PropertyIsEqualTo>
+                        <fes:PropertyName>@gml:id</fes:PropertyName>
+                        <fes:Literal>${id}</fes:Literal>
+                    </fes:PropertyIsEqualTo>
+                </fes:Filter>
+            </wfs:Query>
+        </wfs:QueryExpressionText>
+    </wfs:StoredQueryDescription>
+</wfs:DescribeStoredQueriesResponse>
+""";
+
+        return Results.Text(xml, "application/xml");
+    }
+
+    public async Task<IResult> HandleGetPropertyValueAsync(
+        HttpContext context,
+        Dictionary<string, object> queryParameters,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            "wfs20.get_property_value", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "GetPropertyValue");
+
+        // Convert to WFS parameters and use unified query service
+        var wfsParameters = ConvertToWfs20Parameters(queryParameters);
+
+        // Get authorized layers
+        var typeNames = wfsParameters.TypeNames ?? "unknown";
+        var authorizedLayers = await GetAuthorizedLayersAsync(context, typeNames, cancellationToken);
+
+        if (authorizedLayers.Length == 0)
+        {
+            return Results.Ok(GenerateEmptyValueCollection());
+        }
+
+        // Execute unified query to get property values
+        var allValues = new List<object>();
+        foreach (var layer in authorizedLayers)
+        {
+            var queryResult = await _unifiedQueryService.ExecuteQueryAsync(wfsParameters, layer, cancellationToken);
+            if (queryResult.IsSuccess && queryResult.Result != null)
+            {
+                // Extract property values from features
+                var propertyValues = ExtractPropertyValues(queryResult.Result.Items, wfsParameters);
+                allValues.AddRange(propertyValues);
+            }
+        }
+
+        var response = GenerateValueCollectionResponse(allValues);
+        return Results.Text(response, "application/xml");
+    }
+
+    private async Task<IResult> HandleGetFeatureByIdAsync(
+        HttpContext context,
+        string featureId,
+        string? outputFormat,
+        CancellationToken cancellationToken)
+    {
+        // Create WFS parameters for GetFeatureById
+        var wfsParameters = new Wfs20QueryParameters
+        {
+            FeatureId = featureId,
+            OutputFormat = outputFormat ?? "application/gml+xml; version=3.2"
+        };
+
+        // Get all available layers (feature ID should be unique across layers)
+        var allLayers = await _layerCatalog.ListLayersAsync(cancellationToken);
+        var vectorLayers = allLayers.Where(IsVectorLayer).ToArray();
+
+        foreach (var layer in vectorLayers)
+        {
+            var queryResult = await _unifiedQueryService.ExecuteQueryAsync(wfsParameters, layer, cancellationToken);
+            if (queryResult.IsSuccess && queryResult.Result?.Items.Count > 0)
+            {
+                // Found the feature, convert and return
+                var formattedFeatures = await _formatConverter.ConvertFeaturesAsync(
+                    queryResult.Result.Items,
+                    layer,
+                    outputFormat ?? "application/gml+xml; version=3.2",
+                    cancellationToken);
+
+                var response = await BuildWfsResponseAsync(formattedFeatures, outputFormat, cancellationToken);
+                return Results.Ok(response);
+            }
+        }
+
+        // Feature not found
+        return Results.NotFound($"Feature with ID '{featureId}' not found.");
+    }
+
+    private static Wfs20QueryParameters ConvertToWfs20Parameters(Dictionary<string, object> queryParameters)
+    {
+        return new Wfs20QueryParameters
+        {
+            TypeNames = queryParameters.GetValueOrDefault("typenames")?.ToString(),
+            Filter = queryParameters.GetValueOrDefault("filter")?.ToString(),
+            BBox = queryParameters.GetValueOrDefault("bbox")?.ToString(),
+            PropertyName = queryParameters.GetValueOrDefault("propertyname")?.ToString(),
+            SortBy = queryParameters.GetValueOrDefault("sortby")?.ToString(),
+            Count = queryParameters.GetValueOrDefault("count")?.ToString(),
+            StartIndex = queryParameters.GetValueOrDefault("startindex")?.ToString(),
+            SrsName = queryParameters.GetValueOrDefault("srsname")?.ToString(),
+            OutputFormat = queryParameters.GetValueOrDefault("outputformat")?.ToString(),
+            ResultType = queryParameters.GetValueOrDefault("resulttype")?.ToString(),
+            FeatureVersion = queryParameters.GetValueOrDefault("featureversion")?.ToString(),
+            MaxFeatures = queryParameters.GetValueOrDefault("maxfeatures")?.ToString(),
+            Namespace = queryParameters.GetValueOrDefault("namespace")?.ToString()
+        };
+    }
+
+    private async Task<LayerDefinition[]> GetAuthorizedLayersAsync(
+        HttpContext context,
+        string? typeNames,
+        CancellationToken cancellationToken)
+    {
+        var allLayers = await _layerCatalog.ListLayersAsync(cancellationToken);
+
+        if (!string.IsNullOrEmpty(typeNames))
+        {
+            var requestedTypeNames = typeNames.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(name => name.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            allLayers = allLayers.Where(layer => requestedTypeNames.Contains(layer.Name)).ToArray();
+        }
+
+        return allLayers
+            .Where(IsVectorLayer)
+            .ToArray();
+    }
+
+    private static bool IsVectorLayer(LayerDefinition layer)
+    {
+        return layer.GeometryType != GeometryType.None;
+    }
+
+    private async Task<string> BuildWfsResponseAsync(
+        IEnumerable<object> features,
+        string? outputFormat,
+        CancellationToken cancellationToken)
+    {
+        var format = outputFormat ?? "application/gml+xml; version=3.2";
+
+        if (format.Contains("json", StringComparison.OrdinalIgnoreCase))
+        {
+            return await _formatConverter.BuildJsonResponseAsync(features, cancellationToken);
+        }
+        else
+        {
+            return await _formatConverter.BuildGmlResponseAsync(features, cancellationToken);
+        }
+    }
+
+    private static string GenerateEmptyFeatureCollection(string outputFormat)
+    {
+        if (outputFormat.Contains("json", StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+{
+  "type": "FeatureCollection",
+  "numberMatched": 0,
+  "numberReturned": 0,
+  "features": []
+}
+""";
+        }
+
+        return """
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:FeatureCollection
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    xmlns:gml="http://www.opengis.net/gml/3.2"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.opengis.net/wfs/2.0 http://schemas.opengis.net/wfs/2.0/wfs.xsd"
+    numberMatched="0"
+    numberReturned="0"/>
+""";
+    }
+
+    private static string GenerateEmptyValueCollection()
+    {
+        return """
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:ValueCollection
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.opengis.net/wfs/2.0 http://schemas.opengis.net/wfs/2.0/wfs.xsd">
+</wfs:ValueCollection>
+""";
+    }
+
+    private static IEnumerable<object> ExtractPropertyValues(
+        IEnumerable<Core.Features.FeatureStore.Domain.Feature> features,
+        Wfs20QueryParameters parameters)
+    {
+        // Extract specific property values based on PropertyName parameter
+        var propertyName = parameters.PropertyName;
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            return new List<object>();
+        }
+
+        return features
+            .Select(feature => feature.Attributes?.GetValueOrDefault(propertyName))
+            .Where(value => value != null)
+            .ToList()!;
+    }
+
+    private static string GenerateValueCollectionResponse(IEnumerable<object> values)
+    {
+        var valueElements = values
+            .Select(value => $"    <wfs:member><wfs:Value>{value}</wfs:Value></wfs:member>")
+            .ToArray();
+
+        var valuesXml = valueElements.Length > 0
+            ? "\n" + string.Join("\n", valueElements) + "\n"
+            : "";
+
+        return $"""
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:ValueCollection
+    xmlns:wfs="http://www.opengis.net/wfs/2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.opengis.net/wfs/2.0 http://schemas.opengis.net/wfs/2.0/wfs.xsd">{valuesXml}</wfs:ValueCollection>
+""";
+    }
+}

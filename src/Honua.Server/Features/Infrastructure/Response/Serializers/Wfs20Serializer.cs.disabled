@@ -1,0 +1,447 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.IO.Pipelines;
+using System.Text;
+using System.Xml.Linq;
+using Honua.Core.Features.Infrastructure.Response;
+using Honua.Server.Features.Wfs20.Services;
+
+namespace Honua.Server.Features.Infrastructure.Response.Serializers;
+
+/// <summary>
+/// Serializes unified response data to WFS 2.0 GML format.
+/// </summary>
+internal sealed class Wfs20Serializer : IProtocolSerializer<Wfs20SerializationOptions>
+{
+    private readonly IGmlSerializer _gmlSerializer;
+    private readonly ILogger<Wfs20Serializer> _logger;
+
+    public Wfs20Serializer(IGmlSerializer gmlSerializer, ILogger<Wfs20Serializer> logger)
+    {
+        _gmlSerializer = gmlSerializer;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public string Protocol => "WFS 2.0";
+
+    /// <inheritdoc />
+    public ValueTask<SerializedResponse> SerializeAsync(
+        ResponseData responseData,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(responseData);
+        ArgumentNullException.ThrowIfNull(options);
+
+        try
+        {
+            var result = responseData.Type switch
+            {
+                ResponseType.FeatureCollection => SerializeFeatureCollection(responseData, options),
+                ResponseType.SingleFeature => SerializeSingleFeature(responseData, options),
+                ResponseType.Error => SerializeError(responseData, options),
+                _ => throw new NotSupportedException($"Response type {responseData.Type} is not supported")
+            };
+
+            var headers = GetHeaders(responseData, options);
+            var statusCode = GetStatusCode(responseData);
+
+            return ValueTask.FromResult(new SerializedResponse(
+                result,
+                GetContentType(responseData, options),
+                headers,
+                statusCode));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error serializing WFS 2.0 response");
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<string> SerializeToStreamAsync(
+        ResponseData responseData,
+        PipeWriter outputStream,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(responseData);
+        ArgumentNullException.ThrowIfNull(outputStream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        using var writer = new StreamWriter(
+            outputStream.AsStream(),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            bufferSize: 8192,
+            leaveOpen: true);
+
+        switch (responseData.Type)
+        {
+            case ResponseType.FeatureCollection:
+                await WriteFeatureCollectionAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            case ResponseType.SingleFeature:
+                await WriteSingleFeatureAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            case ResponseType.Error:
+                await WriteErrorAsync(writer, responseData, options, cancellationToken);
+                break;
+
+            default:
+                throw new NotSupportedException($"Response type {responseData.Type} is not supported for streaming");
+        }
+
+        await writer.FlushAsync(cancellationToken);
+        return GetContentType(responseData, options);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<string> SerializeStreamingAsync(
+        IAsyncEnumerable<StreamingResponseChunk> streamingResponse,
+        PipeWriter outputStream,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamingResponse);
+        ArgumentNullException.ThrowIfNull(outputStream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        using var writer = new StreamWriter(
+            outputStream.AsStream(),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            bufferSize: 8192,
+            leaveOpen: true);
+
+        var headerWritten = false;
+        var featureCount = 0;
+        const int flushInterval = 16; // Lower flush interval for XML
+
+        await foreach (var chunk in streamingResponse.WithCancellation(cancellationToken))
+        {
+            switch (chunk.Type)
+            {
+                case StreamingChunkType.Header:
+                    await WriteStreamingHeaderAsync(writer, chunk, options, cancellationToken);
+                    headerWritten = true;
+                    break;
+
+                case StreamingChunkType.Feature when headerWritten:
+                    await WriteStreamingFeatureAsync(writer, chunk, options, cancellationToken);
+                    if (++featureCount % flushInterval == 0)
+                    {
+                        await writer.FlushAsync(cancellationToken);
+                    }
+                    break;
+
+                case StreamingChunkType.Footer when headerWritten:
+                    await WriteStreamingFooterAsync(writer, chunk, options, cancellationToken);
+                    break;
+
+                case StreamingChunkType.Error:
+                    await WriteStreamingErrorAsync(writer, chunk, options, cancellationToken);
+                    break;
+            }
+        }
+
+        await writer.FlushAsync(cancellationToken);
+        return "application/gml+xml";
+    }
+
+    /// <inheritdoc />
+    public string GetContentType(ResponseData responseData, Wfs20SerializationOptions options)
+    {
+        return responseData.Type == ResponseType.Error
+            ? "application/xml"
+            : "application/gml+xml";
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string> GetHeaders(ResponseData responseData, Wfs20SerializationOptions options)
+    {
+        var headers = new Dictionary<string, string>();
+
+        if (options.AdditionalHeaders != null)
+        {
+            foreach (var kvp in options.AdditionalHeaders)
+            {
+                headers[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return headers;
+    }
+
+    private string SerializeFeatureCollection(ResponseData responseData, Wfs20SerializationOptions options)
+    {
+        var featureTypeName = options.FeatureTypeName ?? responseData.Layer?.Name ?? "Feature";
+        var namespaceUri = options.NamespaceUri ?? "http://honua.io/features";
+
+        var gmlFeatures = responseData.Features.Select(ConvertToGmlFeature).ToArray();
+
+        var collection = _gmlSerializer.SerializeFeatureCollection(
+            gmlFeatures,
+            featureTypeName,
+            namespaceUri,
+            responseData.Metadata.TotalCount.HasValue ? (int)responseData.Metadata.TotalCount.Value : null,
+            responseData.Metadata.ReturnedCount);
+
+        // Add schema location if requested
+        if (options.IncludeSchemaLocation && options.Request != null)
+        {
+            var schemaLocation = BuildSchemaLocation(options, featureTypeName);
+            collection.Add(new XAttribute(XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance") + "schemaLocation",
+                schemaLocation));
+        }
+
+        return $"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{collection}";
+    }
+
+    private string SerializeSingleFeature(ResponseData responseData, Wfs20SerializationOptions options)
+    {
+        var featureTypeName = options.FeatureTypeName ?? responseData.Layer?.Name ?? "Feature";
+        var namespaceUri = options.NamespaceUri ?? "http://honua.io/features";
+
+        var gmlFeature = ConvertToGmlFeature(responseData.Features.First());
+
+        var collection = _gmlSerializer.SerializeFeatureCollection(
+            [gmlFeature],
+            featureTypeName,
+            namespaceUri,
+            1,
+            1);
+
+        // Add schema location if requested
+        if (options.IncludeSchemaLocation && options.Request != null)
+        {
+            var schemaLocation = BuildSchemaLocation(options, featureTypeName);
+            collection.Add(new XAttribute(XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance") + "schemaLocation",
+                schemaLocation));
+        }
+
+        return $"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{collection}";
+    }
+
+    private string SerializeError(ResponseData responseData, Wfs20SerializationOptions options)
+    {
+        var error = responseData.Error!;
+
+        var exceptionCode = MapToWfsExceptionCode(error.Code);
+        var locator = error.Target ?? "Unknown";
+
+        var exceptionReport = new XElement(
+            XNamespace.Get("http://www.opengis.net/ows/1.1") + "ExceptionReport",
+            new XAttribute(XNamespace.Xmlns + "ows", "http://www.opengis.net/ows/1.1"),
+            new XAttribute("version", "2.0.0"),
+            new XElement(
+                XNamespace.Get("http://www.opengis.net/ows/1.1") + "Exception",
+                new XAttribute("exceptionCode", exceptionCode),
+                new XAttribute("locator", locator),
+                new XElement(
+                    XNamespace.Get("http://www.opengis.net/ows/1.1") + "ExceptionText",
+                    error.Message)));
+
+        return $"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{exceptionReport}";
+    }
+
+    private Core.Features.FeatureStore.Domain.GmlFeature ConvertToGmlFeature(ResponseFeature responseFeature)
+    {
+        var geometryGml = responseFeature.Geometry != null
+            ? ConvertResponseGeometryToGml(responseFeature.Geometry)
+            : null;
+
+        var attributes = responseFeature.Attributes.ToImmutableDictionary();
+
+        // Add computed fields to attributes
+        if (!responseFeature.ComputedFields.IsEmpty)
+        {
+            var builder = attributes.ToBuilder();
+            foreach (var kvp in responseFeature.ComputedFields)
+            {
+                builder[kvp.Key] = kvp.Value;
+            }
+            attributes = builder.ToImmutable();
+        }
+
+        return new Core.Features.FeatureStore.Domain.GmlFeature
+        {
+            Id = responseFeature.Id.ToString() ?? string.Empty,
+            GeometryGml = geometryGml,
+            Attributes = attributes
+        };
+    }
+
+    private string? ConvertResponseGeometryToGml(ResponseGeometry responseGeometry)
+    {
+        if (responseGeometry.RawData == null)
+            return null;
+
+        // Check format cache first
+        if (responseGeometry.FormatCache.TryGetValue("GML", out var cached) &&
+            cached is string cachedGml)
+        {
+            return cachedGml;
+        }
+
+        try
+        {
+            // Convert WKB to GML using NetTopologySuite
+            var reader = new NetTopologySuite.IO.WKBReader();
+            var geometry = reader.Read(responseGeometry.RawData);
+
+            if (geometry == null || geometry.IsEmpty)
+                return null;
+
+            var writer = new NetTopologySuite.IO.GMLWriter();
+            return writer.Write(geometry);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert geometry to GML");
+            return null;
+        }
+    }
+
+    private string BuildSchemaLocation(Wfs20SerializationOptions options, string featureTypeName)
+    {
+        var baseUrl = $"{options.Request!.Scheme}://{options.Request.Host}{options.Request.PathBase}";
+        return $"http://www.opengis.net/wfs/2.0 {baseUrl}/wfs?service=WFS&version=2.0.0&request=DescribeFeatureType&typeName={featureTypeName}";
+    }
+
+    private static string MapToWfsExceptionCode(string errorCode)
+    {
+        return errorCode switch
+        {
+            "BadRequest" => "InvalidParameterValue",
+            "NotFound" => "InvalidParameterValue",
+            "Forbidden" => "NoApplicableCode",
+            "Unauthorized" => "NoApplicableCode",
+            "InternalError" => "NoApplicableCode",
+            _ => "NoApplicableCode"
+        };
+    }
+
+    private async Task WriteFeatureCollectionAsync(
+        StreamWriter writer,
+        ResponseData responseData,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeFeatureCollection(responseData, options);
+        await writer.WriteAsync(serialized);
+    }
+
+    private async Task WriteSingleFeatureAsync(
+        StreamWriter writer,
+        ResponseData responseData,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeSingleFeature(responseData, options);
+        await writer.WriteAsync(serialized);
+    }
+
+    private async Task WriteErrorAsync(
+        StreamWriter writer,
+        ResponseData responseData,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var serialized = SerializeError(responseData, options);
+        await writer.WriteAsync(serialized);
+    }
+
+    private async Task WriteStreamingHeaderAsync(
+        StreamWriter writer,
+        StreamingResponseChunk chunk,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var metadata = chunk.Data as ResponseMetadata;
+        var featureTypeName = options.FeatureTypeName ?? "Feature";
+        var namespaceUri = options.NamespaceUri ?? "http://honua.io/features";
+
+        await writer.WriteLineAsync("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+
+        // Start FeatureCollection
+        var wfsNamespace = "http://www.opengis.net/wfs/2.0";
+        var gmlNamespace = "http://www.opengis.net/gml/3.2";
+
+        await writer.WriteAsync($"<wfs:FeatureCollection xmlns:wfs=\"{wfsNamespace}\" xmlns:gml=\"{gmlNamespace}\" xmlns:honua=\"{namespaceUri}\"");
+
+        if (metadata?.TotalCount.HasValue == true)
+        {
+            await writer.WriteAsync($" numberMatched=\"{metadata.TotalCount.Value}\"");
+        }
+
+        if (metadata?.ReturnedCount.HasValue == true)
+        {
+            await writer.WriteAsync($" numberReturned=\"{metadata.ReturnedCount.Value}\"");
+        }
+
+        if (metadata?.Timestamp.HasValue == true)
+        {
+            await writer.WriteAsync($" timeStamp=\"{metadata.Timestamp.Value:yyyy-MM-ddTHH:mm:ss.fffZ}\"");
+        }
+
+        await writer.WriteLineAsync(">");
+    }
+
+    private async Task WriteStreamingFeatureAsync(
+        StreamWriter writer,
+        StreamingResponseChunk chunk,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (chunk.Data is not ResponseFeature responseFeature)
+        {
+            throw new InvalidOperationException("Feature data is required for streaming features");
+        }
+
+        var featureTypeName = options.FeatureTypeName ?? "Feature";
+        var namespaceUri = options.NamespaceUri ?? "http://honua.io/features";
+
+        var gmlFeature = ConvertToGmlFeature(responseFeature);
+        var serializedFeature = _gmlSerializer.SerializeFeature(gmlFeature, featureTypeName, namespaceUri);
+
+        await writer.WriteLineAsync("  <wfs:member>");
+        await writer.WriteLineAsync($"    {serializedFeature}");
+        await writer.WriteLineAsync("  </wfs:member>");
+    }
+
+    private async Task WriteStreamingFooterAsync(
+        StreamWriter writer,
+        StreamingResponseChunk chunk,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        await writer.WriteLineAsync("</wfs:FeatureCollection>");
+    }
+
+    private async Task WriteStreamingErrorAsync(
+        StreamWriter writer,
+        StreamingResponseChunk chunk,
+        Wfs20SerializationOptions options,
+        CancellationToken cancellationToken)
+    {
+        var error = chunk.Data as ResponseError ??
+            ResponseError.InternalError("Unknown error occurred");
+
+        var errorXml = SerializeError(new ResponseData { Error = error, Type = ResponseType.Error }, options);
+        await writer.WriteAsync(errorXml);
+    }
+
+    private static int GetStatusCode(ResponseData responseData)
+    {
+        return responseData.Type switch
+        {
+            ResponseType.Error => responseData.Error?.StatusCode ?? 500,
+            _ => 200
+        };
+    }
+}

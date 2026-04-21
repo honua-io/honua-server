@@ -1,0 +1,407 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Xml.Linq;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Wfs20.Models;
+using Microsoft.Extensions.Logging;
+
+namespace Honua.Server.Features.Wfs20.Services;
+
+/// <summary>
+/// WFS 2.0 adapter for converting transaction XML to unified edit requests.
+/// Handles WFS transaction semantics with strict rollback behavior.
+/// </summary>
+internal sealed class Wfs20EditParameterAdapter : IEditParameterAdapter<Wfs20TransactionRequest>
+{
+    private readonly ILogger<Wfs20EditParameterAdapter> _logger;
+
+    public Wfs20EditParameterAdapter(ILogger<Wfs20EditParameterAdapter> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public string ProtocolName => "WFS20";
+
+    public ProtocolEditLimits DefaultLimits => ProtocolEditLimits.Wfs20;
+
+    public TransactionSemantics TransactionSemantics => Core.Features.Edit.TransactionSemantics.Wfs20;
+
+    public async Task<EditAdapterResult> ConvertAsync(
+        Wfs20TransactionRequest protocolRequest,
+        LayerDefinition layer,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogDebug("Converting WFS 2.0 transaction to unified edit for layer {LayerId}", layer.Id);
+
+            // Parse transaction XML
+            var transactionDoc = XDocument.Parse(protocolRequest.TransactionXml);
+            var wfsNamespace = XNamespace.Get("http://www.opengis.net/wfs/2.0");
+
+            var transactionElement = transactionDoc.Root;
+            if (transactionElement == null || transactionElement.Name != wfsNamespace + "Transaction")
+            {
+                return EditAdapterResult.Failure("Invalid WFS transaction XML: missing Transaction element");
+            }
+
+            // Extract transaction properties
+            var releaseAction = transactionElement.Attribute("releaseAction")?.Value ?? "ALL";
+            var transactionHandle = transactionElement.Attribute("handle")?.Value;
+
+            var operations = new List<UnifiedEditOperation>();
+            var metadata = new Dictionary<string, object>
+            {
+                ["releaseAction"] = releaseAction,
+                ["originalXml"] = protocolRequest.TransactionXml
+            };
+
+            if (!string.IsNullOrEmpty(transactionHandle))
+            {
+                metadata["transactionHandle"] = transactionHandle;
+            }
+
+            // Process Insert operations
+            var insertElements = transactionElement.Elements(wfsNamespace + "Insert");
+            foreach (var insertElement in insertElements)
+            {
+                var insertOperations = await ProcessInsertOperation(insertElement, layer, cancellationToken);
+                operations.AddRange(insertOperations);
+            }
+
+            // Process Update operations
+            var updateElements = transactionElement.Elements(wfsNamespace + "Update");
+            foreach (var updateElement in updateElements)
+            {
+                var updateOperations = await ProcessUpdateOperation(updateElement, layer, cancellationToken);
+                operations.AddRange(updateOperations);
+            }
+
+            // Process Delete operations
+            var deleteElements = transactionElement.Elements(wfsNamespace + "Delete");
+            foreach (var deleteElement in deleteElements)
+            {
+                var deleteOperations = await ProcessDeleteOperation(deleteElement, layer, cancellationToken);
+                operations.AddRange(deleteOperations);
+            }
+
+            // Create unified edit request with ordered operations (WFS requires this)
+            var editRequest = UnifiedEditRequest.WithOperations(operations.ToImmutableArray()) with
+            {
+                TransactionOptions = EditTransactionOptions.WithRollback(
+                    TransactionIsolationLevel.Serializable,
+                    protocolRequest.TimeoutMs),
+                ValidationOptions = EditValidationOptions.Strict()
+            };
+
+            // Create transaction
+            var transactionId = transactionHandle ?? Guid.NewGuid().ToString();
+            var transaction = EditTransaction.Create(
+                transactionId,
+                ProtocolName,
+                ImmutableArray.Create(editRequest),
+                TransactionConfiguration.ForWfs20 with
+                {
+                    TimeoutMs = protocolRequest.TimeoutMs ?? 300_000
+                },
+                metadata.ToImmutableDictionary(),
+                protocolRequest.Principal);
+
+            _logger.LogDebug("Converted WFS 2.0 transaction with {OperationCount} operations", operations.Count);
+
+            return EditAdapterResult.Success(editRequest, transaction, metadata);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to convert WFS 2.0 transaction to unified edit for layer {LayerId}",
+                layer.Id);
+            return EditAdapterResult.Failure($"Failed to parse WFS transaction: {ex.Message}");
+        }
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessInsertOperation(
+        XElement insertElement,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        // Get feature elements within Insert
+        var featureElements = insertElement.Elements()
+            .Where(e => !e.Name.NamespaceName.Equals("http://www.opengis.net/wfs/2.0"));
+
+        foreach (var featureElement in featureElements)
+        {
+            try
+            {
+                var editFeature = await ConvertGmlFeatureToEditFeature(
+                    featureElement, layer, isCreate: true, cancellationToken);
+
+                operations.Add(UnifiedEditOperation.Create(editFeature));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process insert feature in WFS transaction");
+                throw new InvalidOperationException($"Failed to process insert operation: {ex.Message}", ex);
+            }
+        }
+
+        return operations;
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessUpdateOperation(
+        XElement updateElement,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+        var wfsNamespace = XNamespace.Get("http://www.opengis.net/wfs/2.0");
+
+        // Extract type name and filter
+        var typeName = updateElement.Attribute("typeName")?.Value;
+        if (string.IsNullOrEmpty(typeName))
+        {
+            throw new InvalidOperationException("Update operation missing typeName");
+        }
+
+        // Process property updates
+        var propertyElements = updateElement.Elements(wfsNamespace + "Property");
+        var propertyUpdates = new Dictionary<string, object?>();
+
+        foreach (var propertyElement in propertyElements)
+        {
+            var name = propertyElement.Element(wfsNamespace + "Name")?.Value;
+            var value = propertyElement.Element(wfsNamespace + "Value")?.Value;
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                propertyUpdates[name] = ConvertAttributeValue(value, layer);
+            }
+        }
+
+        // Extract filter to identify features to update
+        var filterElement = updateElement.Element(XNamespace.Get("http://www.opengis.net/fes/2.0") + "Filter");
+        if (filterElement != null)
+        {
+            // For now, we'll extract object IDs from simple ResourceId filters
+            // In a full implementation, this would parse the complete filter
+            var resourceIds = ExtractResourceIdsFromFilter(filterElement);
+
+            foreach (var objectId in resourceIds)
+            {
+                var editFeature = EditFeature.ForUpdate(
+                    objectId,
+                    geometry: null, // Geometry updates would need special handling
+                    attributes: propertyUpdates.ToImmutableDictionary(),
+                    updateMode: EditUpdateMode.Partial);
+
+                operations.Add(UnifiedEditOperation.Update(editFeature));
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException("Update operation missing filter");
+        }
+
+        return operations;
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessDeleteOperation(
+        XElement deleteElement,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        // Extract type name
+        var typeName = deleteElement.Attribute("typeName")?.Value;
+        if (string.IsNullOrEmpty(typeName))
+        {
+            throw new InvalidOperationException("Delete operation missing typeName");
+        }
+
+        // Extract filter to identify features to delete
+        var filterElement = deleteElement.Element(XNamespace.Get("http://www.opengis.net/fes/2.0") + "Filter");
+        if (filterElement != null)
+        {
+            var resourceIds = ExtractResourceIdsFromFilter(filterElement);
+
+            foreach (var objectId in resourceIds)
+            {
+                operations.Add(UnifiedEditOperation.Delete(objectId));
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException("Delete operation missing filter");
+        }
+
+        return operations;
+    }
+
+    private async Task<EditFeature> ConvertGmlFeatureToEditFeature(
+        XElement featureElement,
+        LayerDefinition layer,
+        bool isCreate,
+        CancellationToken cancellationToken)
+    {
+        var attributes = new Dictionary<string, object?>();
+        byte[]? geometry = null;
+        long? objectId = null;
+
+        // Extract object ID if present (for updates)
+        if (!isCreate)
+        {
+            var fidAttribute = featureElement.Attribute("fid")?.Value;
+            if (!string.IsNullOrEmpty(fidAttribute) && long.TryParse(fidAttribute, out var id))
+            {
+                objectId = id;
+            }
+        }
+
+        // Process all child elements
+        foreach (var child in featureElement.Elements())
+        {
+            var localName = child.Name.LocalName;
+
+            // Check if this is a geometry element
+            if (IsGeometryElement(child))
+            {
+                geometry = await ConvertGmlGeometryToWkb(child, layer, cancellationToken);
+            }
+            else
+            {
+                // Treat as attribute
+                var value = ConvertAttributeValue(child.Value, layer);
+                attributes[localName] = value;
+            }
+        }
+
+        if (isCreate)
+        {
+            return EditFeature.ForCreate(geometry, attributes.ToImmutableDictionary());
+        }
+        else
+        {
+            return EditFeature.ForUpdate(
+                objectId ?? throw new InvalidOperationException("Object ID required for update"),
+                geometry,
+                attributes.ToImmutableDictionary());
+        }
+    }
+
+    private IEnumerable<long> ExtractResourceIdsFromFilter(XElement filterElement)
+    {
+        var fesNamespace = XNamespace.Get("http://www.opengis.net/fes/2.0");
+        var resourceIds = new List<long>();
+
+        // Extract ResourceId elements
+        var resourceIdElements = filterElement.Descendants(fesNamespace + "ResourceId");
+        foreach (var resourceIdElement in resourceIdElements)
+        {
+            var rid = resourceIdElement.Attribute("rid")?.Value;
+            if (!string.IsNullOrEmpty(rid) && long.TryParse(rid, out var objectId))
+            {
+                resourceIds.Add(objectId);
+            }
+        }
+
+        return resourceIds;
+    }
+
+    private bool IsGeometryElement(XElement element)
+    {
+        // Check for GML geometry namespaces
+        var ns = element.Name.NamespaceName;
+        return ns.Contains("gml") ||
+               element.Name.LocalName.EndsWith("Geometry", StringComparison.OrdinalIgnoreCase) ||
+               element.Name.LocalName.EndsWith("Point", StringComparison.OrdinalIgnoreCase) ||
+               element.Name.LocalName.EndsWith("LineString", StringComparison.OrdinalIgnoreCase) ||
+               element.Name.LocalName.EndsWith("Polygon", StringComparison.OrdinalIgnoreCase) ||
+               element.Name.LocalName.EndsWith("MultiPoint", StringComparison.OrdinalIgnoreCase) ||
+               element.Name.LocalName.EndsWith("MultiLineString", StringComparison.OrdinalIgnoreCase) ||
+               element.Name.LocalName.EndsWith("MultiPolygon", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<byte[]?> ConvertGmlGeometryToWkb(
+        XElement geometryElement,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        // This is a simplified implementation
+        // In reality, you would use a proper GML parser like NetTopologySuite or similar
+
+        try
+        {
+            // For demonstration, return null - implement proper GML to WKB conversion
+            _logger.LogDebug("Converting GML geometry to WKB for layer {LayerId}", layer.Id);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert GML geometry to WKB");
+            throw new InvalidOperationException($"Failed to convert geometry: {ex.Message}", ex);
+        }
+    }
+
+    private object? ConvertAttributeValue(string? value, LayerDefinition layer)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+
+        // Basic type conversion - in reality, would use layer schema information
+        if (int.TryParse(value, out var intValue))
+        {
+            return intValue;
+        }
+
+        if (double.TryParse(value, out var doubleValue))
+        {
+            return doubleValue;
+        }
+
+        if (DateTime.TryParse(value, out var dateValue))
+        {
+            return dateValue;
+        }
+
+        if (bool.TryParse(value, out var boolValue))
+        {
+            return boolValue;
+        }
+
+        return value;
+    }
+}
+
+/// <summary>
+/// WFS 2.0 transaction request model.
+/// </summary>
+public sealed record Wfs20TransactionRequest
+{
+    /// <summary>
+    /// Transaction XML content.
+    /// </summary>
+    public required string TransactionXml { get; init; }
+
+    /// <summary>
+    /// Optional transaction timeout in milliseconds.
+    /// </summary>
+    public int? TimeoutMs { get; init; }
+
+    /// <summary>
+    /// Optional principal for the transaction.
+    /// </summary>
+    public string? Principal { get; init; }
+
+    /// <summary>
+    /// Additional request context.
+    /// </summary>
+    public IDictionary<string, object>? Context { get; init; }
+}

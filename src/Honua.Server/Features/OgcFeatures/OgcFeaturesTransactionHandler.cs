@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures.Models;
 using Honua.Server.Features.OgcFeatures.Services;
+using BatchOperationModel = Honua.Server.Features.OgcFeatures.Models.BatchOperation;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.OgcFeatures;
@@ -536,7 +537,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private async Task<PreparedBatchValidationResult> PrepareBatchOperationAsync(
         int layerId,
         LayerDefinition layer,
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchPreparationState state,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
@@ -571,7 +572,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private async Task<PreparedBatchValidationResult> PrepareCreateOperationAsync(
         int layerId,
         LayerDefinition layer,
-        BatchOperation operation,
+        BatchOperationModel operation,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
@@ -612,7 +613,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private async Task<PreparedBatchValidationResult> PrepareUpdateOperationAsync(
         int layerId,
         LayerDefinition layer,
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchPreparationState state,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
@@ -677,7 +678,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private async Task<PreparedBatchValidationResult> PrepareDeleteOperationAsync(
         int layerId,
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchPreparationState state,
         CancellationToken cancellationToken)
     {
@@ -853,7 +854,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             ? results[index]
             : EditOperationResult.Failure("Operation result was missing.", errorCode: 500);
 
-    private static BatchOperationResult MapCreateEditResult(BatchOperation operation, EditOperationResult editResult)
+    private static BatchOperationResult MapCreateEditResult(BatchOperationModel operation, EditOperationResult editResult)
     {
         if (editResult.IsSuccess && editResult.ObjectId.HasValue)
         {
@@ -870,7 +871,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static BatchOperationResult MapUpdateEditResult(
-        BatchOperation operation,
+        BatchOperationModel operation,
         long? objectId,
         EditOperationResult editResult)
     {
@@ -889,7 +890,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static BatchOperationResult MapDeleteEditResult(
-        BatchOperation operation,
+        BatchOperationModel operation,
         long? objectId,
         EditOperationResult editResult)
     {
@@ -1096,7 +1097,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static bool TryGetBatchEventOperation(
-        BatchOperation operation,
+        BatchOperationModel operation,
         BatchOperationResult result,
         out string eventOperation,
         out long objectId)
@@ -1150,7 +1151,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private sealed record PreparedBatchOperation(
         BatchOperationKind OperationKind,
-        BatchOperation Operation,
+        BatchOperationModel Operation,
         Feature? Feature,
         long? ObjectId)
     {

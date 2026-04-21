@@ -1,0 +1,536 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Text.Json;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.OgcFeatures.Models;
+using Microsoft.Extensions.Logging;
+
+namespace Honua.Server.Features.OgcFeatures.Services;
+
+/// <summary>
+/// OGC API Features adapter for converting REST CRUD operations to unified edit requests.
+/// Handles individual operations with optional conditional updates (ETags).
+/// </summary>
+internal sealed class OgcFeaturesEditParameterAdapter : IEditParameterAdapter<OgcFeaturesEditRequest>
+{
+    private readonly ILogger<OgcFeaturesEditParameterAdapter> _logger;
+
+    public OgcFeaturesEditParameterAdapter(ILogger<OgcFeaturesEditParameterAdapter> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public string ProtocolName => "OgcFeatures";
+
+    public ProtocolEditLimits DefaultLimits => ProtocolEditLimits.OgcFeatures;
+
+    public TransactionSemantics TransactionSemantics => Core.Features.Edit.TransactionSemantics.OgcFeatures;
+
+    public async Task<EditAdapterResult> ConvertAsync(
+        OgcFeaturesEditRequest protocolRequest,
+        LayerDefinition layer,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogDebug("Converting OGC API Features {Operation} to unified edit for layer {LayerId}",
+                protocolRequest.Operation, layer.Id);
+
+            var operations = new List<UnifiedEditOperation>();
+            var metadata = new Dictionary<string, object>
+            {
+                ["operation"] = protocolRequest.Operation.ToString(),
+                ["collectionId"] = protocolRequest.CollectionId
+            };
+
+            // Add conditional headers if present
+            if (!string.IsNullOrEmpty(protocolRequest.IfMatch))
+            {
+                metadata["ifMatch"] = protocolRequest.IfMatch;
+            }
+            if (!string.IsNullOrEmpty(protocolRequest.IfNoneMatch))
+            {
+                metadata["ifNoneMatch"] = protocolRequest.IfNoneMatch;
+            }
+
+            // Convert operation based on type
+            var operation = protocolRequest.Operation switch
+            {
+                OgcFeaturesOperation.Create => await ProcessCreateOperation(protocolRequest, layer, cancellationToken),
+                OgcFeaturesOperation.Update => await ProcessUpdateOperation(protocolRequest, layer, cancellationToken),
+                OgcFeaturesOperation.Patch => await ProcessPatchOperation(protocolRequest, layer, cancellationToken),
+                OgcFeaturesOperation.Delete => ProcessDeleteOperation(protocolRequest),
+                OgcFeaturesOperation.Batch => await ProcessBatchOperation(protocolRequest, layer, cancellationToken),
+                _ => throw new InvalidOperationException($"Unsupported operation: {protocolRequest.Operation}")
+            };
+
+            if (operation != null)
+            {
+                operations.Add(operation);
+            }
+            else if (protocolRequest.BatchOperations?.Count > 0)
+            {
+                operations.AddRange(await ProcessBatchOperations(protocolRequest.BatchOperations, layer, cancellationToken));
+            }
+
+            // Create unified edit request
+            var editRequest = UnifiedEditRequest.WithOperations(operations.ToImmutableArray()) with
+            {
+                TransactionOptions = new EditTransactionOptions
+                {
+                    RollbackOnFailure = false, // OGC API Features uses individual operations
+                    UseExplicitTransaction = false,
+                    IsolationLevel = TransactionIsolationLevel.ReadCommitted,
+                    TimeoutMs = 180_000 // 3 minutes
+                },
+                ValidationOptions = EditValidationOptions.Strict(),
+                Extensions = CreateOgcFeaturesExtensions(protocolRequest)
+            };
+
+            // Create transaction
+            var transactionId = Guid.NewGuid().ToString();
+            var transaction = EditTransaction.Create(
+                transactionId,
+                ProtocolName,
+                ImmutableArray.Create(editRequest),
+                TransactionConfiguration.ForOgcFeatures,
+                metadata.ToImmutableDictionary(),
+                protocolRequest.Principal);
+
+            _logger.LogDebug("Converted OGC API Features edit with {OperationCount} operations", operations.Count);
+
+            return EditAdapterResult.Success(editRequest, transaction, metadata);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to convert OGC API Features edit to unified edit for layer {LayerId}",
+                layer.Id);
+            return EditAdapterResult.Failure($"Failed to parse OGC API Features edit request: {ex.Message}");
+        }
+    }
+
+    private async Task<UnifiedEditOperation> ProcessCreateOperation(
+        OgcFeaturesEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (request.Feature == null)
+        {
+            throw new InvalidOperationException("Feature data required for create operation");
+        }
+
+        var editFeature = await ConvertGeoJsonFeatureToEditFeature(
+            request.Feature, layer, isCreate: true, cancellationToken);
+
+        return UnifiedEditOperation.Create(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessUpdateOperation(
+        OgcFeaturesEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (request.Feature == null)
+        {
+            throw new InvalidOperationException("Feature data required for update operation");
+        }
+
+        if (string.IsNullOrEmpty(request.FeatureId))
+        {
+            throw new InvalidOperationException("Feature ID required for update operation");
+        }
+
+        if (!long.TryParse(request.FeatureId, out var objectId))
+        {
+            throw new InvalidOperationException("Invalid feature ID for update operation");
+        }
+
+        var editFeature = await ConvertGeoJsonFeatureToEditFeature(
+            request.Feature, layer, isCreate: false, objectId, EditUpdateMode.Replace, request.IfMatch, cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessPatchOperation(
+        OgcFeaturesEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (request.Feature == null)
+        {
+            throw new InvalidOperationException("Feature data required for patch operation");
+        }
+
+        if (string.IsNullOrEmpty(request.FeatureId))
+        {
+            throw new InvalidOperationException("Feature ID required for patch operation");
+        }
+
+        if (!long.TryParse(request.FeatureId, out var objectId))
+        {
+            throw new InvalidOperationException("Invalid feature ID for patch operation");
+        }
+
+        var editFeature = await ConvertGeoJsonFeatureToEditFeature(
+            request.Feature, layer, isCreate: false, objectId, EditUpdateMode.Merge, request.IfMatch, cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private UnifiedEditOperation ProcessDeleteOperation(OgcFeaturesEditRequest request)
+    {
+        if (string.IsNullOrEmpty(request.FeatureId))
+        {
+            throw new InvalidOperationException("Feature ID required for delete operation");
+        }
+
+        if (!long.TryParse(request.FeatureId, out var objectId))
+        {
+            throw new InvalidOperationException("Invalid feature ID for delete operation");
+        }
+
+        return UnifiedEditOperation.Delete(objectId);
+    }
+
+    private async Task<UnifiedEditOperation?> ProcessBatchOperation(
+        OgcFeaturesEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        // Batch operations are handled separately in ProcessBatchOperations
+        return null;
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessBatchOperations(
+        IList<BatchOperation> batchOperations,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        foreach (var batchOp in batchOperations)
+        {
+            try
+            {
+                var operation = batchOp.Operation switch
+                {
+                    "create" => await ProcessBatchCreateOperation(batchOp, layer, cancellationToken),
+                    "update" => await ProcessBatchUpdateOperation(batchOp, layer, cancellationToken),
+                    "patch" => await ProcessBatchPatchOperation(batchOp, layer, cancellationToken),
+                    "delete" => ProcessBatchDeleteOperation(batchOp),
+                    _ => throw new InvalidOperationException($"Unsupported batch operation: {batchOp.Operation}")
+                };
+
+                operations.Add(operation);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process batch operation {Operation}", batchOp.Operation);
+                throw new InvalidOperationException($"Failed to process batch operation: {ex.Message}", ex);
+            }
+        }
+
+        return operations;
+    }
+
+    private async Task<UnifiedEditOperation> ProcessBatchCreateOperation(
+        BatchOperation batchOp,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (batchOp.Feature == null)
+        {
+            throw new InvalidOperationException("Feature data required for batch create operation");
+        }
+
+        var editFeature = await ConvertGeoJsonFeatureToEditFeature(
+            batchOp.Feature, layer, isCreate: true, cancellationToken);
+
+        return UnifiedEditOperation.Create(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessBatchUpdateOperation(
+        BatchOperation batchOp,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (batchOp.Feature == null)
+        {
+            throw new InvalidOperationException("Feature data required for batch update operation");
+        }
+
+        if (string.IsNullOrEmpty(batchOp.FeatureId))
+        {
+            throw new InvalidOperationException("Feature ID required for batch update operation");
+        }
+
+        if (!long.TryParse(batchOp.FeatureId, out var objectId))
+        {
+            throw new InvalidOperationException("Invalid feature ID for batch update operation");
+        }
+
+        var editFeature = await ConvertGeoJsonFeatureToEditFeature(
+            batchOp.Feature, layer, isCreate: false, objectId, EditUpdateMode.Replace, cancellationToken: cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessBatchPatchOperation(
+        BatchOperation batchOp,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (batchOp.Feature == null)
+        {
+            throw new InvalidOperationException("Feature data required for batch patch operation");
+        }
+
+        if (string.IsNullOrEmpty(batchOp.FeatureId))
+        {
+            throw new InvalidOperationException("Feature ID required for batch patch operation");
+        }
+
+        if (!long.TryParse(batchOp.FeatureId, out var objectId))
+        {
+            throw new InvalidOperationException("Invalid feature ID for batch patch operation");
+        }
+
+        var editFeature = await ConvertGeoJsonFeatureToEditFeature(
+            batchOp.Feature, layer, isCreate: false, objectId, EditUpdateMode.Merge, cancellationToken: cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private UnifiedEditOperation ProcessBatchDeleteOperation(BatchOperation batchOp)
+    {
+        if (string.IsNullOrEmpty(batchOp.FeatureId))
+        {
+            throw new InvalidOperationException("Feature ID required for batch delete operation");
+        }
+
+        if (!long.TryParse(batchOp.FeatureId, out var objectId))
+        {
+            throw new InvalidOperationException("Invalid feature ID for batch delete operation");
+        }
+
+        return UnifiedEditOperation.Delete(objectId);
+    }
+
+    private async Task<EditFeature> ConvertGeoJsonFeatureToEditFeature(
+        GeoJsonFeature feature,
+        LayerDefinition layer,
+        bool isCreate,
+        long? objectId = null,
+        EditUpdateMode updateMode = EditUpdateMode.Replace,
+        string? ifMatch = null,
+        CancellationToken cancellationToken = default)
+    {
+        byte[]? geometry = null;
+
+        // Convert geometry if present
+        if (feature.Geometry != null)
+        {
+            geometry = await ConvertGeoJsonGeometryToWkb(feature.Geometry, layer, cancellationToken);
+        }
+
+        // Convert properties to attributes
+        var attributes = ConvertProperties(feature.Properties, layer);
+
+        // Create edit constraints if conditional headers present
+        EditConstraints? constraints = null;
+        if (!string.IsNullOrEmpty(ifMatch))
+        {
+            constraints = EditConstraints.WithETag(ifMatch);
+        }
+
+        if (isCreate)
+        {
+            return EditFeature.ForCreate(geometry, attributes);
+        }
+        else
+        {
+            return EditFeature.ForUpdate(
+                objectId!.Value,
+                geometry,
+                attributes,
+                updateMode,
+                constraints);
+        }
+    }
+
+    private async Task<byte[]?> ConvertGeoJsonGeometryToWkb(
+        JsonElement geometry,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // This is a simplified implementation
+            // In reality, you would use a proper GeoJSON parser like NetTopologySuite
+
+            _logger.LogDebug("Converting GeoJSON geometry to WKB for layer {LayerId}", layer.Id);
+
+            // For demonstration, return null - implement proper GeoJSON to WKB conversion
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert GeoJSON geometry to WKB");
+            throw new InvalidOperationException($"Failed to convert geometry: {ex.Message}", ex);
+        }
+    }
+
+    private ImmutableDictionary<string, object?> ConvertProperties(
+        Dictionary<string, JsonElement>? properties,
+        LayerDefinition layer)
+    {
+        if (properties == null || properties.Count == 0)
+        {
+            return ImmutableDictionary<string, object?>.Empty;
+        }
+
+        var converted = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var property in properties)
+        {
+            var convertedValue = ConvertJsonElement(property.Value, property.Key, layer);
+            converted[property.Key] = convertedValue;
+        }
+
+        return converted.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private object? ConvertJsonElement(JsonElement element, string propertyName, LayerDefinition layer)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal : element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Array => element.EnumerateArray().Select(e => ConvertJsonElement(e, propertyName, layer)).ToArray(),
+            JsonValueKind.Object => element.GetRawText(), // Store as JSON string
+            _ => element.GetRawText()
+        };
+    }
+
+    private ImmutableDictionary<string, object> CreateOgcFeaturesExtensions(OgcFeaturesEditRequest request)
+    {
+        var extensions = new Dictionary<string, object>
+        {
+            ["ogcFeatures.operation"] = request.Operation.ToString(),
+            ["ogcFeatures.collectionId"] = request.CollectionId
+        };
+
+        if (!string.IsNullOrEmpty(request.FeatureId))
+        {
+            extensions["ogcFeatures.featureId"] = request.FeatureId;
+        }
+
+        if (!string.IsNullOrEmpty(request.IfMatch))
+        {
+            extensions["ogcFeatures.ifMatch"] = request.IfMatch;
+        }
+
+        if (!string.IsNullOrEmpty(request.IfNoneMatch))
+        {
+            extensions["ogcFeatures.ifNoneMatch"] = request.IfNoneMatch;
+        }
+
+        if (request.BatchOperations?.Count > 0)
+        {
+            extensions["ogcFeatures.batchSize"] = request.BatchOperations.Count;
+        }
+
+        return extensions.ToImmutableDictionary();
+    }
+}
+
+/// <summary>
+/// OGC API Features edit request model.
+/// </summary>
+public sealed record OgcFeaturesEditRequest
+{
+    /// <summary>
+    /// Operation type.
+    /// </summary>
+    public required OgcFeaturesOperation Operation { get; init; }
+
+    /// <summary>
+    /// Collection ID.
+    /// </summary>
+    public required string CollectionId { get; init; }
+
+    /// <summary>
+    /// Feature ID for update/patch/delete operations.
+    /// </summary>
+    public string? FeatureId { get; init; }
+
+    /// <summary>
+    /// Feature data for create/update/patch operations.
+    /// </summary>
+    public GeoJsonFeature? Feature { get; init; }
+
+    /// <summary>
+    /// If-Match header for conditional operations.
+    /// </summary>
+    public string? IfMatch { get; init; }
+
+    /// <summary>
+    /// If-None-Match header for conditional operations.
+    /// </summary>
+    public string? IfNoneMatch { get; init; }
+
+    /// <summary>
+    /// Batch operations for batch requests.
+    /// </summary>
+    public IList<BatchOperation>? BatchOperations { get; init; }
+
+    /// <summary>
+    /// Optional principal for the request.
+    /// </summary>
+    public string? Principal { get; init; }
+
+    /// <summary>
+    /// Additional request context.
+    /// </summary>
+    public IDictionary<string, object>? Context { get; init; }
+}
+
+/// <summary>
+/// OGC API Features operations.
+/// </summary>
+public enum OgcFeaturesOperation
+{
+    Create,
+    Update,
+    Patch,
+    Delete,
+    Batch
+}
+
+/// <summary>
+/// Batch operation model.
+/// </summary>
+public sealed record BatchOperation
+{
+    /// <summary>
+    /// Operation type.
+    /// </summary>
+    public required string Operation { get; init; }
+
+    /// <summary>
+    /// Feature ID for update/patch/delete operations.
+    /// </summary>
+    public string? FeatureId { get; init; }
+
+    /// <summary>
+    /// Feature data for create/update/patch operations.
+    /// </summary>
+    public GeoJsonFeature? Feature { get; init; }
+}

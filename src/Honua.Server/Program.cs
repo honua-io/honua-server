@@ -43,6 +43,11 @@ using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Streaming;
+// Disabled unified services due to compilation issues
+// using Honua.Server.Features.Query;
+// using Honua.Server.Features.Metadata;
+// using Honua.Server.Features.Infrastructure.Response;
+// using Honua.Server.Features.Edit;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
@@ -117,10 +122,16 @@ if (useAspire)
     // Add Npgsql with connection from Aspire
     builder.AddNpgsqlDataSource("DefaultConnection");
 
-    // Add Redis if configured
+    // Add Redis if configured, otherwise fallback to in-memory cache
     if (!string.IsNullOrWhiteSpace(redisConnectionString))
     {
         builder.AddRedisDistributedCache("redis");
+    }
+    else
+    {
+        builder.Services.AddDistributedMemoryCache();
+        // Register null IConnectionMultiplexer for services that expect it (like rate limiting middleware)
+        builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider => null!);
     }
 }
 else
@@ -132,6 +143,7 @@ else
         builder.AddTelemetryDefaults();
     }
 
+    // Add Redis if configured, otherwise fallback to in-memory cache
     if (!string.IsNullOrWhiteSpace(redisConnectionString))
     {
         var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
@@ -140,6 +152,12 @@ else
             options.Configuration = redisConnectionString;
             options.InstanceName = cacheKeyPrefix;
         });
+    }
+    else
+    {
+        builder.Services.AddDistributedMemoryCache();
+        // Register null IConnectionMultiplexer for services that expect it (like rate limiting middleware)
+        builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider => null!);
     }
 }
 
@@ -182,6 +200,11 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
         startupLogger.LogWarning(ex, "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.");
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
     }
+}
+else
+{
+    // Register null IConnectionMultiplexer when Redis is not configured
+    builder.Services.TryAddSingleton<IConnectionMultiplexer>(serviceProvider => null!);
 }
 
 // Configure Serilog for structured logging with AOT compatibility
@@ -422,6 +445,13 @@ builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.
 
 // Register shared validation services
 builder.Services.AddValidationServices();
+
+// UNIFIED ARCHITECTURE: Commented out due to incomplete implementation
+// TODO: Activate once compilation issues are resolved
+// builder.Services.AddCompleteUnifiedQuerySystem();
+// builder.Services.AddUnifiedMetadataWithFormatters();
+// builder.Services.AddUnifiedResponseServices();
+// builder.Services.AddUnifiedEditArchitecture();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);

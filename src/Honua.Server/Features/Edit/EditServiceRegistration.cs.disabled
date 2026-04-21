@@ -1,0 +1,126 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Edit;
+using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.OData.Services;
+using Honua.Server.Features.OgcFeatures.Services;
+using Honua.Server.Features.Wfs20.Services;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Honua.Server.Features.Edit;
+
+/// <summary>
+/// Service registration for the unified edit architecture.
+/// Registers all edit adapters and configures the unified edit service.
+/// </summary>
+public static class EditServiceRegistration
+{
+    /// <summary>
+    /// Registers unified edit services and all protocol adapters.
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddUnifiedEditArchitecture(this IServiceCollection services)
+    {
+        // Register core unified edit services
+        services.AddUnifiedEditServices(options =>
+        {
+            options.EnablePerformanceEstimation = true;
+            options.EnableEditOptimization = true;
+            options.EnableParallelProcessing = true;
+            options.DefaultTransactionTimeoutMs = 300_000; // 5 minutes
+            options.MaxOperationsPerRequest = 10_000;
+            options.MaxRequestsPerBatch = 100;
+        });
+
+        // Register protocol-specific edit parameter adapters
+        services.AddEditParameterAdapter<Wfs20TransactionRequest, Wfs20EditParameterAdapter>();
+        services.AddEditParameterAdapter<ApplyEditsRequest, GeoServicesEditParameterAdapter>();
+        services.AddEditParameterAdapter<OgcFeaturesEditRequest, OgcFeaturesEditParameterAdapter>();
+        services.AddEditParameterAdapter<ODataEditRequest, ODataEditParameterAdapter>();
+
+        // Configure unified edit service with adapters
+        services.ConfigureUnifiedEditService();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Configures the unified edit service with registered adapters.
+    /// This should be called after all other services are registered.
+    /// </summary>
+    /// <param name="serviceProvider">Service provider</param>
+    public static void ConfigureUnifiedEditService(IServiceProvider serviceProvider)
+    {
+        var configurator = serviceProvider.GetRequiredService<IEditServiceConfigurator>();
+        configurator.Configure(serviceProvider);
+    }
+
+    /// <summary>
+    /// Registers edit services for a specific protocol only.
+    /// Useful for microservice architectures where each service handles one protocol.
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <param name="protocol">Protocol to register</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddProtocolEditServices(
+        this IServiceCollection services,
+        EditProtocol protocol)
+    {
+        // Register core services
+        services.AddUnifiedEditServices();
+
+        // Register specific adapter based on protocol
+        switch (protocol)
+        {
+            case EditProtocol.Wfs20:
+                services.AddEditParameterAdapter<Wfs20TransactionRequest, Wfs20EditParameterAdapter>();
+                break;
+
+            case EditProtocol.GeoServices:
+                services.AddEditParameterAdapter<ApplyEditsRequest, GeoServicesEditParameterAdapter>();
+                break;
+
+            case EditProtocol.OgcFeatures:
+                services.AddEditParameterAdapter<OgcFeaturesEditRequest, OgcFeaturesEditParameterAdapter>();
+                break;
+
+            case EditProtocol.OData:
+                services.AddEditParameterAdapter<ODataEditRequest, ODataEditParameterAdapter>();
+                break;
+
+            default:
+                throw new ArgumentException($"Unsupported edit protocol: {protocol}");
+        }
+
+        services.ConfigureUnifiedEditService();
+        return services;
+    }
+}
+
+/// <summary>
+/// Supported edit protocols for selective registration.
+/// </summary>
+public enum EditProtocol
+{
+    /// <summary>
+    /// WFS 2.0 Transaction protocol.
+    /// </summary>
+    Wfs20,
+
+    /// <summary>
+    /// ESRI GeoServices ApplyEdits protocol.
+    /// </summary>
+    GeoServices,
+
+    /// <summary>
+    /// OGC API Features CRUD operations.
+    /// </summary>
+    OgcFeatures,
+
+    /// <summary>
+    /// OData entity mutations.
+    /// </summary>
+    OData
+}

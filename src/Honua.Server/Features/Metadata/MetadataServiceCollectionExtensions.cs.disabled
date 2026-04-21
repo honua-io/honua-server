@@ -1,0 +1,107 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Metadata;
+// using Honua.Server.Features.FeatureServer.Models;
+// using Honua.Server.Features.FeatureServer.Services;
+// using Honua.Server.Features.OData.Models;
+// using Honua.Server.Features.OData.Services;
+// using Honua.Server.Features.OgcFeatures.Services;
+using Honua.Server.Features.Ogc.Common;
+// using Honua.Server.Features.Wfs20.Models;
+// using Honua.Server.Features.Wfs20.Services;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Honua.Server.Features.Metadata;
+
+/// <summary>
+/// Service collection extensions for registering unified metadata services in the server project.
+/// Wires up protocol-specific formatters with the unified metadata provider.
+/// </summary>
+public static class MetadataServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds unified metadata services with all protocol formatters to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection to add services to</param>
+    /// <returns>The service collection for method chaining</returns>
+    public static IServiceCollection AddUnifiedMetadataWithFormatters(this IServiceCollection services)
+    {
+        // Add core unified metadata services
+        services.AddUnifiedMetadata();
+
+        // Add protocol-specific formatters
+        // Note: Capabilities formatters are currently disabled for refactoring
+        // services.AddSingleton<Wfs20CapabilitiesFormatter>();
+        // services.AddSingleton<FeatureServerCapabilitiesFormatter>();
+        // services.AddSingleton<OgcFeaturesCapabilitiesFormatter>();
+        // services.AddSingleton<ODataCapabilitiesFormatter>();
+
+        // Register formatters with their interfaces for dependency injection
+        // services.AddCapabilitiesFormatter<WfsCapabilities, Wfs20CapabilitiesFormatter>();
+        // services.AddGlobalCapabilitiesFormatter<WfsCapabilities, Wfs20CapabilitiesFormatter>();
+
+        // services.AddCapabilitiesFormatter<FeatureServerResponse, FeatureServerCapabilitiesFormatter>();
+
+        // services.AddCapabilitiesFormatter<LandingPage, OgcFeaturesCapabilitiesFormatter>();
+        // services.AddGlobalCapabilitiesFormatter<LandingPage, OgcFeaturesCapabilitiesFormatter>();
+        // services.AddMultiFormatCapabilitiesFormatter<object, OgcFeaturesCapabilitiesFormatter>();
+
+        // services.AddCapabilitiesFormatter<ServiceDocument, ODataCapabilitiesFormatter>();
+        // services.AddGlobalCapabilitiesFormatter<ServiceDocument, ODataCapabilitiesFormatter>();
+        // services.AddMultiFormatCapabilitiesFormatter<object, ODataCapabilitiesFormatter>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Maps unified metadata endpoints for demonstration and testing.
+    /// </summary>
+    /// <param name="app">The web application builder</param>
+    /// <returns>The web application for method chaining</returns>
+    public static IEndpointRouteBuilder MapUnifiedMetadata(this IEndpointRouteBuilder app)
+    {
+        return app.MapUnifiedMetadataEndpoints();
+    }
+}
+
+/// <summary>
+/// Extension methods for configuring unified metadata in the application pipeline.
+/// </summary>
+public static class UnifiedMetadataApplicationExtensions
+{
+    /// <summary>
+    /// Configures unified metadata middleware and services.
+    /// Call this in Program.cs to enable unified metadata capabilities.
+    /// </summary>
+    /// <param name="builder">The web application builder</param>
+    /// <returns>The web application builder for method chaining</returns>
+    public static WebApplicationBuilder ConfigureUnifiedMetadata(this WebApplicationBuilder builder)
+    {
+        // Add unified metadata services
+        builder.Services.AddUnifiedMetadataWithFormatters();
+
+        // Configure memory cache for metadata caching
+        builder.Services.AddMemoryCache(options =>
+        {
+            options.SizeLimit = 1000; // Limit cache size to prevent memory issues
+            options.CompactionPercentage = 0.25; // Compact when 25% over limit
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures unified metadata endpoints in the application.
+    /// Call this after app creation to map metadata endpoints.
+    /// </summary>
+    /// <param name="app">The web application</param>
+    /// <returns>The web application for method chaining</returns>
+    public static WebApplication UseUnifiedMetadata(this WebApplication app)
+    {
+        // Map unified metadata endpoints for demonstration
+        app.MapUnifiedMetadata();
+
+        return app;
+    }
+}

@@ -1,0 +1,560 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.OData.Models;
+using Microsoft.Extensions.Logging;
+
+namespace Honua.Server.Features.OData.Services;
+
+/// <summary>
+/// OData adapter for converting entity CRUD operations to unified edit requests.
+/// Handles OData entity mutations with conditional updates (ETags).
+/// </summary>
+internal sealed class ODataEditParameterAdapter : IEditParameterAdapter<ODataEditRequest>
+{
+    private readonly ILogger<ODataEditParameterAdapter> _logger;
+
+    public ODataEditParameterAdapter(ILogger<ODataEditParameterAdapter> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public string ProtocolName => "OData";
+
+    public ProtocolEditLimits DefaultLimits => ProtocolEditLimits.OData;
+
+    public TransactionSemantics TransactionSemantics => Core.Features.Edit.TransactionSemantics.OData;
+
+    public async Task<EditAdapterResult> ConvertAsync(
+        ODataEditRequest protocolRequest,
+        LayerDefinition layer,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogDebug("Converting OData {Operation} to unified edit for layer {LayerId}",
+                protocolRequest.Operation, layer.Id);
+
+            var operations = new List<UnifiedEditOperation>();
+            var metadata = new Dictionary<string, object>
+            {
+                ["operation"] = protocolRequest.Operation.ToString(),
+                ["entitySetName"] = protocolRequest.EntitySetName
+            };
+
+            // Add conditional headers if present
+            if (!string.IsNullOrEmpty(protocolRequest.IfMatch))
+            {
+                metadata["ifMatch"] = protocolRequest.IfMatch;
+            }
+            if (!string.IsNullOrEmpty(protocolRequest.IfNoneMatch))
+            {
+                metadata["ifNoneMatch"] = protocolRequest.IfNoneMatch;
+            }
+
+            // Convert operation based on type
+            var operation = protocolRequest.Operation switch
+            {
+                ODataOperation.Create => await ProcessCreateOperation(protocolRequest, layer, cancellationToken),
+                ODataOperation.Update => await ProcessUpdateOperation(protocolRequest, layer, cancellationToken),
+                ODataOperation.Patch => await ProcessPatchOperation(protocolRequest, layer, cancellationToken),
+                ODataOperation.Delete => ProcessDeleteOperation(protocolRequest),
+                ODataOperation.Batch => await ProcessBatchOperation(protocolRequest, layer, cancellationToken),
+                _ => throw new InvalidOperationException($"Unsupported operation: {protocolRequest.Operation}")
+            };
+
+            if (operation != null)
+            {
+                operations.Add(operation);
+            }
+            else if (protocolRequest.BatchOperations?.Count > 0)
+            {
+                operations.AddRange(await ProcessBatchOperations(protocolRequest.BatchOperations, layer, cancellationToken));
+            }
+
+            // Create unified edit request
+            var editRequest = UnifiedEditRequest.WithOperations(operations.ToImmutableArray()) with
+            {
+                TransactionOptions = new EditTransactionOptions
+                {
+                    RollbackOnFailure = true, // OData typically uses atomic semantics
+                    UseExplicitTransaction = operations.Count > 1,
+                    IsolationLevel = TransactionIsolationLevel.ReadCommitted,
+                    TimeoutMs = 120_000 // 2 minutes
+                },
+                ValidationOptions = EditValidationOptions.Strict(),
+                Extensions = CreateODataExtensions(protocolRequest)
+            };
+
+            // Create transaction
+            var transactionId = Guid.NewGuid().ToString();
+            var transaction = EditTransaction.Create(
+                transactionId,
+                ProtocolName,
+                ImmutableArray.Create(editRequest),
+                TransactionConfiguration.ForOData,
+                metadata.ToImmutableDictionary(),
+                protocolRequest.Principal);
+
+            _logger.LogDebug("Converted OData edit with {OperationCount} operations", operations.Count);
+
+            return EditAdapterResult.Success(editRequest, transaction, metadata);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to convert OData edit to unified edit for layer {LayerId}",
+                layer.Id);
+            return EditAdapterResult.Failure($"Failed to parse OData edit request: {ex.Message}");
+        }
+    }
+
+    private async Task<UnifiedEditOperation> ProcessCreateOperation(
+        ODataEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (request.EntityData == null)
+        {
+            throw new InvalidOperationException("Entity data required for create operation");
+        }
+
+        var editFeature = await ConvertODataEntityToEditFeature(
+            request.EntityData, layer, isCreate: true, cancellationToken);
+
+        return UnifiedEditOperation.Create(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessUpdateOperation(
+        ODataEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (request.EntityData == null)
+        {
+            throw new InvalidOperationException("Entity data required for update operation");
+        }
+
+        if (!request.ObjectId.HasValue)
+        {
+            throw new InvalidOperationException("Object ID required for update operation");
+        }
+
+        var editFeature = await ConvertODataEntityToEditFeature(
+            request.EntityData, layer, isCreate: false, request.ObjectId.Value,
+            EditUpdateMode.Replace, request.IfMatch, cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessPatchOperation(
+        ODataEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (request.EntityData == null)
+        {
+            throw new InvalidOperationException("Entity data required for patch operation");
+        }
+
+        if (!request.ObjectId.HasValue)
+        {
+            throw new InvalidOperationException("Object ID required for patch operation");
+        }
+
+        var editFeature = await ConvertODataEntityToEditFeature(
+            request.EntityData, layer, isCreate: false, request.ObjectId.Value,
+            EditUpdateMode.Merge, request.IfMatch, cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private UnifiedEditOperation ProcessDeleteOperation(ODataEditRequest request)
+    {
+        if (!request.ObjectId.HasValue)
+        {
+            throw new InvalidOperationException("Object ID required for delete operation");
+        }
+
+        return UnifiedEditOperation.Delete(request.ObjectId.Value);
+    }
+
+    private async Task<UnifiedEditOperation?> ProcessBatchOperation(
+        ODataEditRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        // Batch operations are handled separately in ProcessBatchOperations
+        return null;
+    }
+
+    private async Task<IEnumerable<UnifiedEditOperation>> ProcessBatchOperations(
+        IList<ODataBatchOperation> batchOperations,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        var operations = new List<UnifiedEditOperation>();
+
+        foreach (var batchOp in batchOperations)
+        {
+            try
+            {
+                var operation = batchOp.Operation switch
+                {
+                    ODataOperation.Create => await ProcessBatchCreateOperation(batchOp, layer, cancellationToken),
+                    ODataOperation.Update => await ProcessBatchUpdateOperation(batchOp, layer, cancellationToken),
+                    ODataOperation.Patch => await ProcessBatchPatchOperation(batchOp, layer, cancellationToken),
+                    ODataOperation.Delete => ProcessBatchDeleteOperation(batchOp),
+                    _ => throw new InvalidOperationException($"Unsupported batch operation: {batchOp.Operation}")
+                };
+
+                operations.Add(operation);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to process batch operation {Operation}", batchOp.Operation);
+                throw new InvalidOperationException($"Failed to process batch operation: {ex.Message}", ex);
+            }
+        }
+
+        return operations;
+    }
+
+    private async Task<UnifiedEditOperation> ProcessBatchCreateOperation(
+        ODataBatchOperation batchOp,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (batchOp.EntityData == null)
+        {
+            throw new InvalidOperationException("Entity data required for batch create operation");
+        }
+
+        var editFeature = await ConvertODataEntityToEditFeature(
+            batchOp.EntityData, layer, isCreate: true, cancellationToken);
+
+        return UnifiedEditOperation.Create(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessBatchUpdateOperation(
+        ODataBatchOperation batchOp,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (batchOp.EntityData == null)
+        {
+            throw new InvalidOperationException("Entity data required for batch update operation");
+        }
+
+        if (!batchOp.ObjectId.HasValue)
+        {
+            throw new InvalidOperationException("Object ID required for batch update operation");
+        }
+
+        var editFeature = await ConvertODataEntityToEditFeature(
+            batchOp.EntityData, layer, isCreate: false, batchOp.ObjectId.Value,
+            EditUpdateMode.Replace, batchOp.IfMatch, cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private async Task<UnifiedEditOperation> ProcessBatchPatchOperation(
+        ODataBatchOperation batchOp,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (batchOp.EntityData == null)
+        {
+            throw new InvalidOperationException("Entity data required for batch patch operation");
+        }
+
+        if (!batchOp.ObjectId.HasValue)
+        {
+            throw new InvalidOperationException("Object ID required for batch patch operation");
+        }
+
+        var editFeature = await ConvertODataEntityToEditFeature(
+            batchOp.EntityData, layer, isCreate: false, batchOp.ObjectId.Value,
+            EditUpdateMode.Merge, batchOp.IfMatch, cancellationToken);
+
+        return UnifiedEditOperation.Update(editFeature);
+    }
+
+    private UnifiedEditOperation ProcessBatchDeleteOperation(ODataBatchOperation batchOp)
+    {
+        if (!batchOp.ObjectId.HasValue)
+        {
+            throw new InvalidOperationException("Object ID required for batch delete operation");
+        }
+
+        return UnifiedEditOperation.Delete(batchOp.ObjectId.Value);
+    }
+
+    private async Task<EditFeature> ConvertODataEntityToEditFeature(
+        Dictionary<string, object?> entityData,
+        LayerDefinition layer,
+        bool isCreate,
+        long? objectId = null,
+        EditUpdateMode updateMode = EditUpdateMode.Replace,
+        string? ifMatch = null,
+        CancellationToken cancellationToken = default)
+    {
+        byte[]? geometry = null;
+        var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        // Process entity properties
+        foreach (var property in entityData)
+        {
+            if (IsGeometryProperty(property.Key, property.Value, layer))
+            {
+                // Convert OData spatial geometry to WKB
+                geometry = await ConvertODataGeometryToWkb(property.Value, layer, cancellationToken);
+            }
+            else if (!IsSystemProperty(property.Key))
+            {
+                // Convert attribute value
+                var convertedValue = ConvertAttributeValue(property.Value, property.Key, layer);
+                attributes[property.Key] = convertedValue;
+            }
+        }
+
+        // Create edit constraints if conditional headers present
+        EditConstraints? constraints = null;
+        if (!string.IsNullOrEmpty(ifMatch))
+        {
+            constraints = EditConstraints.WithETag(ifMatch);
+        }
+
+        if (isCreate)
+        {
+            return EditFeature.ForCreate(geometry, attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
+        }
+        else
+        {
+            return EditFeature.ForUpdate(
+                objectId!.Value,
+                geometry,
+                attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase),
+                updateMode,
+                constraints);
+        }
+    }
+
+    private bool IsGeometryProperty(string propertyName, object? value, LayerDefinition layer)
+    {
+        // Check if property is a geometry field based on layer schema
+        var attribute = layer.Schema.Attributes.FirstOrDefault(
+            a => string.Equals(a.Name, propertyName, StringComparison.OrdinalIgnoreCase));
+
+        return attribute?.Type == AttributeType.Geometry ||
+               propertyName.EndsWith("Geometry", StringComparison.OrdinalIgnoreCase) ||
+               propertyName.EndsWith("Shape", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsSystemProperty(string propertyName)
+    {
+        // OData system properties (metadata)
+        return propertyName.StartsWith("@", StringComparison.Ordinal) ||
+               propertyName.StartsWith("__", StringComparison.Ordinal);
+    }
+
+    private async Task<byte[]?> ConvertODataGeometryToWkb(
+        object? geometryValue,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (geometryValue == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            // This is a simplified implementation
+            // In reality, you would convert from OData spatial geometry to WKB
+
+            _logger.LogDebug("Converting OData spatial geometry to WKB for layer {LayerId}", layer.Id);
+
+            // For demonstration, return null - implement proper OData spatial to WKB conversion
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert OData spatial geometry to WKB");
+            throw new InvalidOperationException($"Failed to convert geometry: {ex.Message}", ex);
+        }
+    }
+
+    private object? ConvertAttributeValue(object? value, string attributeName, LayerDefinition layer)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        // Find attribute in layer schema for type information
+        var attributeDef = layer.Schema.Attributes.FirstOrDefault(
+            a => string.Equals(a.Name, attributeName, StringComparison.OrdinalIgnoreCase));
+
+        if (attributeDef != null)
+        {
+            // Convert based on schema type
+            try
+            {
+                return attributeDef.Type switch
+                {
+                    AttributeType.Integer => Convert.ToInt32(value),
+                    AttributeType.Long => Convert.ToInt64(value),
+                    AttributeType.Double => Convert.ToDouble(value),
+                    AttributeType.Boolean => Convert.ToBoolean(value),
+                    AttributeType.DateTime => ConvertToDateTime(value),
+                    AttributeType.String => value.ToString(),
+                    _ => value
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to convert attribute {AttributeName} value {Value} to type {Type}",
+                    attributeName, value, attributeDef.Type);
+                return value; // Return original value if conversion fails
+            }
+        }
+
+        return value;
+    }
+
+    private DateTime? ConvertToDateTime(object value)
+    {
+        return value switch
+        {
+            DateTime dt => dt,
+            DateTimeOffset dto => dto.DateTime,
+            string str when DateTime.TryParse(str, out var dt) => dt,
+            long ticks when ticks > 0 => new DateTime(ticks),
+            _ => null
+        };
+    }
+
+    private ImmutableDictionary<string, object> CreateODataExtensions(ODataEditRequest request)
+    {
+        var extensions = new Dictionary<string, object>
+        {
+            ["odata.operation"] = request.Operation.ToString(),
+            ["odata.entitySetName"] = request.EntitySetName
+        };
+
+        if (request.ObjectId.HasValue)
+        {
+            extensions["odata.objectId"] = request.ObjectId.Value;
+        }
+
+        if (!string.IsNullOrEmpty(request.IfMatch))
+        {
+            extensions["odata.ifMatch"] = request.IfMatch;
+        }
+
+        if (!string.IsNullOrEmpty(request.IfNoneMatch))
+        {
+            extensions["odata.ifNoneMatch"] = request.IfNoneMatch;
+        }
+
+        if (request.BatchOperations?.Count > 0)
+        {
+            extensions["odata.batchSize"] = request.BatchOperations.Count;
+        }
+
+        return extensions.ToImmutableDictionary();
+    }
+}
+
+/// <summary>
+/// OData edit request model.
+/// </summary>
+public sealed record ODataEditRequest
+{
+    /// <summary>
+    /// Operation type.
+    /// </summary>
+    public required ODataOperation Operation { get; init; }
+
+    /// <summary>
+    /// Entity set name.
+    /// </summary>
+    public required string EntitySetName { get; init; }
+
+    /// <summary>
+    /// Object ID for update/patch/delete operations.
+    /// </summary>
+    public long? ObjectId { get; init; }
+
+    /// <summary>
+    /// Entity data for create/update/patch operations.
+    /// </summary>
+    public Dictionary<string, object?>? EntityData { get; init; }
+
+    /// <summary>
+    /// If-Match header for conditional operations.
+    /// </summary>
+    public string? IfMatch { get; init; }
+
+    /// <summary>
+    /// If-None-Match header for conditional operations.
+    /// </summary>
+    public string? IfNoneMatch { get; init; }
+
+    /// <summary>
+    /// Batch operations for batch requests.
+    /// </summary>
+    public IList<ODataBatchOperation>? BatchOperations { get; init; }
+
+    /// <summary>
+    /// Optional principal for the request.
+    /// </summary>
+    public string? Principal { get; init; }
+
+    /// <summary>
+    /// Additional request context.
+    /// </summary>
+    public IDictionary<string, object>? Context { get; init; }
+}
+
+/// <summary>
+/// OData operations.
+/// </summary>
+public enum ODataOperation
+{
+    Create,
+    Update,
+    Patch,
+    Delete,
+    Batch
+}
+
+/// <summary>
+/// OData batch operation model.
+/// </summary>
+public sealed record ODataBatchOperation
+{
+    /// <summary>
+    /// Operation type.
+    /// </summary>
+    public required ODataOperation Operation { get; init; }
+
+    /// <summary>
+    /// Object ID for update/patch/delete operations.
+    /// </summary>
+    public long? ObjectId { get; init; }
+
+    /// <summary>
+    /// Entity data for create/update/patch operations.
+    /// </summary>
+    public Dictionary<string, object?>? EntityData { get; init; }
+
+    /// <summary>
+    /// If-Match header for conditional operations.
+    /// </summary>
+    public string? IfMatch { get; init; }
+}
