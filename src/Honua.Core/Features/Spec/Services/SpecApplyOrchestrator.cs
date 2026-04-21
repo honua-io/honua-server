@@ -268,6 +268,15 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             {
                 // Ignore — writer may already be completed.
             }
+
+            // Mirror the success/cancellation paths so terminal failures remain
+            // observable on the `applies_completed` counter and the
+            // `apply_duration_ms` histogram. Without this, dashboards keying
+            // off these instruments silently lose unhandled runs.
+            SpecTelemetry.AppliesCompleted.Add(1,
+                new KeyValuePair<string, object?>("outcome", "error"));
+            SpecTelemetry.ApplyDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("outcome", "error"));
         }
         finally
         {
@@ -597,7 +606,8 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
                 SpecTelemetry.NodesProcessed.Add(1,
                     new KeyValuePair<string, object?>("outcome", "succeeded"));
-                SpecTelemetry.NodeDurationMs.Record(nodeStopwatch.Elapsed.TotalMilliseconds);
+                SpecTelemetry.NodeDurationMs.Record(nodeStopwatch.Elapsed.TotalMilliseconds,
+                    new KeyValuePair<string, object?>("outcome", "succeeded"));
 
                 foreach (var warning in result.Warnings)
                 {
@@ -627,6 +637,12 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
             {
                 nodeStopwatch.Stop();
+                // Record node duration for cancelled-in-executor runs so the
+                // histogram reflects all non-cached outcomes, not just
+                // successes. Tag by outcome so dashboards can separate the
+                // tails.
+                SpecTelemetry.NodeDurationMs.Record(nodeStopwatch.Elapsed.TotalMilliseconds,
+                    new KeyValuePair<string, object?>("outcome", "cancelled"));
                 nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
                 Interlocked.Increment(ref counters.SkippedRef);
                 await ctx.Writer.WriteAsync(new SpecApplyEvent
@@ -648,6 +664,8 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             catch (SpecExecutionException specEx)
             {
                 nodeStopwatch.Stop();
+                SpecTelemetry.NodeDurationMs.Record(nodeStopwatch.Elapsed.TotalMilliseconds,
+                    new KeyValuePair<string, object?>("outcome", "failed"));
                 nodeState[plannedNode.NodeId] = NodeRunState.Failed;
                 Interlocked.Increment(ref counters.FailedRef);
                 SpecTelemetry.RecordException(nodeActivity, specEx);
@@ -656,6 +674,8 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             catch (Exception ex)
             {
                 nodeStopwatch.Stop();
+                SpecTelemetry.NodeDurationMs.Record(nodeStopwatch.Elapsed.TotalMilliseconds,
+                    new KeyValuePair<string, object?>("outcome", "failed"));
                 nodeState[plannedNode.NodeId] = NodeRunState.Failed;
                 Interlocked.Increment(ref counters.FailedRef);
                 SpecTelemetry.RecordException(nodeActivity, ex);

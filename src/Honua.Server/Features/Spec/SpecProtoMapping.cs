@@ -17,13 +17,17 @@ internal static class SpecProtoMapping
     {
         ArgumentNullException.ThrowIfNull(proto);
 
-        // Reject unspecified kinds at the transport boundary instead of
-        // silently coercing them to Compute (see finding: unknown-kind). The
-        // REST layer mirrors this via SpecNodeRequest.Kind being nullable.
+        // Reject unspecified kinds AND undefined numeric enum values at the
+        // transport boundary instead of silently coercing them to Compute (see
+        // finding: unknown-kind). Proto enums are wire-compatible with any int,
+        // so a forward-incompatible client that sends (SpecResourceKind)999
+        // would otherwise slip past the Unspecified guard and dispatch as
+        // Compute. The REST layer mirrors this via SpecNodeRequest.Kind being
+        // nullable.
         List<SpecWarning>? fatal = null;
         foreach (var n in proto.Nodes)
         {
-            if (n.Kind == Proto.SpecResourceKind.Unspecified)
+            if (!IsDefinedResourceKind(n.Kind))
             {
                 fatal ??= new List<SpecWarning>();
                 fatal.Add(new SpecWarning
@@ -173,7 +177,21 @@ internal static class SpecProtoMapping
         Proto.SpecResourceKind.Dataset => SpecResourceKind.Dataset,
         Proto.SpecResourceKind.Service => SpecResourceKind.Service,
         Proto.SpecResourceKind.App => SpecResourceKind.App,
-        _ => SpecResourceKind.Compute
+        // Invariant: FromProto(CanonicalSpecDocument) rejects Unspecified and
+        // undefined numeric values with unknown-kind before this mapping runs,
+        // so reaching the default arm means the caller bypassed the boundary
+        // check. Throw rather than silently coerce to Compute.
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "SpecResourceKind must be validated before mapping.")
+    };
+
+    private static bool IsDefinedResourceKind(Proto.SpecResourceKind kind) => kind switch
+    {
+        Proto.SpecResourceKind.Compute => true,
+        Proto.SpecResourceKind.Report => true,
+        Proto.SpecResourceKind.Dataset => true,
+        Proto.SpecResourceKind.Service => true,
+        Proto.SpecResourceKind.App => true,
+        _ => false
     };
 
     public static Proto.SpecApplyEventKind ToProto(SpecApplyEventKind kind) => kind switch

@@ -24,7 +24,7 @@ the grammar / validator pipeline. Top-level fields:
 |---|---|---|
 | `grammarVersion` | yes | Participates in the content-hash cache key. Missing values hard-fail with `version-skew`. |
 | `processFamilyVersion` | yes | Participates in the cache key. |
-| `specId` | no | Surfaced in telemetry and apply-event correlation only; never part of the cache key. |
+| `specId` | no | Captured on the canonical document for downstream use; S1 does not surface it in telemetry. Apply-event correlation flows through the apply token (`X-Spec-Apply-Token` / `x-spec-apply-token` trailer). Never part of the cache key. |
 | `nodes` | yes | Author-order node list. Cycles and duplicate ids hard-fail. |
 
 Each `nodes[*]` entry:
@@ -240,7 +240,7 @@ Admin tooling keys off these strings:
 | `apply-token-unknown` | error | Cancel targets a token the in-process registry does not know (usually after a restart). |
 | `artifact-not-found` | error | Requested artifact hash is unknown or evicted. |
 | `upstream-failed` | warning | A parent node failed and the current node was skipped. |
-| `apply-cancelled` | warning | A deferred node was skipped because the apply was cancelled cooperatively. Also emitted on the terminal `ApplyCancelled` frame. |
+| `apply-cancelled` | warning | A deferred node was skipped because the apply was cancelled cooperatively. The terminal `ApplyCancelled` frame itself carries only the aggregate `summary` (with `cancelled: true`); clients key off the summary rather than a repeated diagnostic. |
 | `read-only-cache-miss` | error | `ReadOnly` apply encountered a cache miss. The executor is intentionally not invoked and no synthetic hash is written. |
 | `unknown-kind` | error | Node omits the `kind` field (REST) or sends `SPEC_RESOURCE_KIND_UNSPECIFIED` (gRPC). Rejected at the transport boundary so operator typos do not silently dispatch through the compute executor. |
 
@@ -269,9 +269,12 @@ All signals hang off the shared `Honua` meter and activity source (see
   include `mutable-source-no-pin`. Set to `null` to disable TTL degradation
   entirely. When tightened, operators should watch
   `honua.spec.cache_lookups{outcome="miss"}` for regressions.
-- **Artifact backing**: cached artifacts flow through the existing
-  `CloudFileStorageBase` stack (local / S3 / Azure Blob) under a
-  `spec-cache/{hash}` prefix. No dedicated bucket per environment.
+- **Artifact backing**: S1 ships a process-local, in-memory artifact store
+  (`InMemoryContentHashArtifactCache`) wired as a DI singleton. Cache state
+  does not survive a server restart and is not shared across replicas.
+  Durable backing over the existing `CloudFileStorageBase` stack
+  (local / S3 / Azure Blob) is a follow-on that will land alongside
+  multi-instance coordination.
 - **S1 compute ops** reuse existing geoprocessing implementations (`filter`,
   `spatial_join`, `buffer`, `reproject`, `zonal_stats`, `slope`). Additional
   ops ship with the grammar / validator ticket.

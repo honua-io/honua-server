@@ -52,7 +52,11 @@ public static class SpecTelemetry
             unit: "ms",
             description: "End-to-end apply duration including cache lookups.");
 
-    /// <summary>Observed per-node duration in milliseconds.</summary>
+    /// <summary>
+    /// Observed per-node duration in milliseconds. Recorded for every node
+    /// that invoked the compute executor (succeeded/failed/cancelled), tagged
+    /// by outcome. Excludes cache hits and nodes skipped before the executor.
+    /// </summary>
     public static readonly Histogram<double> NodeDurationMs =
         Meter.CreateHistogram<double>(
             "honua.spec.node_duration_ms",

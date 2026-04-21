@@ -176,6 +176,64 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/plan")]
+    public async Task Plan_NumericKindOutOfRange_Returns400WithUnknownKind()
+    {
+        // JsonStringEnumConverter still honours numeric enum values by default,
+        // so a client sending "kind": 999 would otherwise produce
+        // (SpecResourceKind)999 that passes the null check and flows through to
+        // the orchestrator. The transport-boundary whitelist must reject it
+        // with the same `unknown-kind` code operators already handle.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var numericKindNode = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = "a",
+            ["kind"] = 999,
+            ["op"] = "compute.noop"
+        };
+        var document = BuildDocument(numericKindNode);
+
+        using var response = await client.PostAsync("/v1/spec/plan", JsonContent(document));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("unknown-kind", payload.RootElement.GetProperty("code").GetString());
+        Assert.Equal("a", payload.RootElement.GetProperty("nodeId").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_NumericKindOutOfRange_Returns400WithoutOpeningStream()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var numericKindNode = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = "a",
+            ["kind"] = 999,
+            ["op"] = "compute.noop"
+        };
+        var document = BuildDocument(numericKindNode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("unknown-kind", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()
     {
         using var factory = new TestWebApplicationFactory();

@@ -30,7 +30,11 @@ public interface IContentHashArtifactCache
     Task<Stream?> OpenReadAsync(string contentHash, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Writes an artifact into the cache. Returns the durable reference.
+    /// Writes an artifact into the cache and returns the reference clients
+    /// use to read it back. Lifetime depends on the implementation — the S1
+    /// default (<c>InMemoryContentHashArtifactCache</c>) is process-local and
+    /// does not survive a restart; durable CloudFileStorage-backed variants
+    /// are a follow-on.
     /// </summary>
     Task<CachedArtifactRef> PutAsync(SpecArtifactPayload payload, CancellationToken cancellationToken = default);
 }

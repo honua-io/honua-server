@@ -319,6 +319,68 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    public async Task PlanSpec_UnknownNumericKind_RaisesInvalidArgument()
+    {
+        // Protobuf does not constrain enum values on the wire — a future
+        // client (or a forward-rolled one) can send any int32. The transport
+        // mapping must whitelist defined values rather than silently coerce
+        // an undefined one into the default arm, which used to leak Compute.
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = (Proto.SpecResourceKind)999,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.PlanSpecRequest { Document = document };
+
+        var act = async () => await _client.PlanSpecAsync(request);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("unknown-kind");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_UnknownNumericKind_RaisesInvalidArgumentBeforeStream()
+    {
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "a",
+            Kind = (Proto.SpecResourceKind)999,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.ApplySpecRequest { Document = document };
+
+        var act = async () =>
+        {
+            using var call = _client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("unknown-kind");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/CancelApply")]

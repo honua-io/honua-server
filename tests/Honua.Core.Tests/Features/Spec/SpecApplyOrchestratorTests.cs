@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Spec.Abstractions;
@@ -595,6 +596,81 @@ public class SpecApplyOrchestratorTests
         Assert.Equal(SpecDiagnosticSeverity.Info, warning.Severity);
     }
 
+    [Fact]
+    public async Task Apply_ExecutorFailure_RecordsNodeDurationWithFailedOutcome()
+    {
+        // Regression: failed nodes used to bypass NodeDurationMs entirely, so
+        // the histogram only carried successful tails. Dashboards keying off
+        // per-node duration silently under-counted the failure path, which
+        // also made slow-failing executors invisible on alerting.
+        var fixture = new OrchestratorFixture();
+        fixture.Executor.FailFor("a", new InvalidOperationException("boom"));
+
+        var samples = new List<MeasurementSample>();
+        using var listener = CreateHistogramListener("honua.spec.node_duration_ms", samples);
+
+        var document = Document(ComputeNode("a"));
+        _ = await CollectAsync(await fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
+
+        var failed = samples.Where(s => HasTag(s.Tags, "outcome", "failed")).ToList();
+        Assert.Single(failed);
+        Assert.True(failed[0].Value >= 0, "Failed node duration must be recorded.");
+    }
+
+    [Fact]
+    public async Task Apply_ExecutorFailure_EmitsAppliesCompletedWithSuccessOutcome()
+    {
+        // The run itself completed cleanly — per-node failure does not turn
+        // the apply-level counter into an `error` outcome. We still need the
+        // ApplyDurationMs histogram to observe the run so dashboards don't
+        // silently miss "one apply, zero duration samples" on the
+        // fast-failure path.
+        var fixture = new OrchestratorFixture();
+        fixture.Executor.FailFor("a", new InvalidOperationException("boom"));
+
+        var counterSamples = new List<MeasurementSample>();
+        var histogramSamples = new List<MeasurementSample>();
+        using var counterListener = CreateCounterListener("honua.spec.applies_completed", counterSamples);
+        using var histogramListener = CreateHistogramListener("honua.spec.apply_duration_ms", histogramSamples);
+
+        var document = Document(ComputeNode("a"));
+        _ = await CollectAsync(await fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None));
+
+        Assert.Single(counterSamples);
+        Assert.True(HasTag(counterSamples[0].Tags, "outcome", "ApplyCompleted"));
+        Assert.Single(histogramSamples);
+        Assert.True(HasTag(histogramSamples[0].Tags, "outcome", "ApplyCompleted"));
+    }
+
+    [Fact]
+    public async Task Apply_Cancellation_RecordsApplyDurationWithCancelledOutcome()
+    {
+        // Terminal cancellation must emit the apply-level histogram so the
+        // cancelled tail stays observable alongside the succeeded/error tails.
+        var fixture = new OrchestratorFixture();
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        fixture.Executor.HookBeforeExecute("slow", async ct =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        });
+
+        var samples = new List<MeasurementSample>();
+        using var listener = CreateHistogramListener("honua.spec.apply_duration_ms", samples);
+
+        var document = Document(ComputeNode("slow"));
+        var handle = await fixture.Engine.StartAsync(document, new SpecApplyOptions(), CancellationToken.None);
+        var collectTask = Task.Run(() => CollectAsync(handle));
+        await started.Task;
+        Assert.True(fixture.Engine.TryCancel(handle.ApplyToken));
+        release.TrySetResult();
+        _ = await collectTask;
+
+        Assert.Single(samples);
+        Assert.True(HasTag(samples[0].Tags, "outcome", "ApplyCancelled"));
+    }
+
     // ---- helpers --------------------------------------------------------
 
     private static async Task<List<SpecApplyEvent>> CollectAsync(SpecApplyHandle handle)
@@ -631,6 +707,67 @@ public class SpecApplyOrchestratorTests
             Inputs = map
         };
     }
+
+    private static MeterListener CreateHistogramListener(string instrumentName, List<MeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter == SpecTelemetry.Meter && instrument.Name == instrumentName)
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static MeterListener CreateCounterListener(string instrumentName, List<MeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter == SpecTelemetry.Meter && instrument.Name == instrumentName)
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new MeasurementSample((double)measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
+    private static bool HasTag(KeyValuePair<string, object?>[] tags, string name, string value)
+    {
+        foreach (var tag in tags)
+        {
+            if (tag.Key == name && tag.Value is string s && s == value)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private readonly record struct MeasurementSample(double Value, KeyValuePair<string, object?>[] Tags);
 
     private sealed class OrchestratorFixture
     {

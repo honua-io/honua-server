@@ -164,10 +164,15 @@ internal static class SpecEndpoints
         context.Response.Headers["X-Accel-Buffering"] = "no";
         context.Response.Headers["X-Spec-Apply-Token"] = handle.ApplyToken;
 
-        await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
-
         try
         {
+            // Handshake flush sits inside the disconnect guard: if the client
+            // drops after headers are sent but before the first event frame,
+            // the RequestAborted token trips here and we must treat it the
+            // same as a mid-stream disconnect — swallow the OCE and let the
+            // background apply continue until cancelled explicitly.
+            await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
+
             await foreach (var evt in handle.Events.WithCancellation(context.RequestAborted).ConfigureAwait(false))
             {
                 var data = JsonSerializer.SerializeToUtf8Bytes(evt, SpecJsonContext.Default.SpecApplyEvent);
@@ -309,20 +314,25 @@ internal static class SpecEndpoints
 
     private static CanonicalSpecDocument ToDocument(SpecDocumentRequest request)
     {
-        // Reject nodes with an omitted kind at the transport boundary rather
-        // than defaulting them to Compute (see finding: unknown-kind). Collect
-        // all offenders so an operator fixing a large document sees the full
-        // list in one round-trip.
+        // Reject nodes with an omitted or unrecognised kind at the transport
+        // boundary rather than defaulting them to Compute (see finding:
+        // unknown-kind). JsonStringEnumConverter still accepts numeric values,
+        // so a client sending "kind": 999 would otherwise slip past the null
+        // check and reach the orchestrator as an undefined enum. Collect all
+        // offenders so an operator fixing a large document sees the full list
+        // in one round-trip.
         List<SpecWarning>? fatal = null;
         foreach (var n in request.Nodes)
         {
-            if (n.Kind is null)
+            if (n.Kind is null || !IsDefinedResourceKind(n.Kind.Value))
             {
                 fatal ??= new List<SpecWarning>();
                 fatal.Add(new SpecWarning
                 {
                     Code = SpecDiagnosticCodes.UnknownKind,
-                    Message = $"Node '{n.Id}' does not declare a resource kind.",
+                    Message = n.Kind is null
+                        ? $"Node '{n.Id}' does not declare a resource kind."
+                        : $"Node '{n.Id}' declares unrecognised resource kind.",
                     Severity = SpecDiagnosticSeverity.Error,
                     NodeId = n.Id,
                     Remedy = "Set 'kind' to one of: Compute, Report, Dataset, Service, App."
@@ -401,6 +411,19 @@ internal static class SpecEndpoints
             SpecJsonContext.Default.SpecProblem,
             statusCode: status);
     }
+
+    // AOT-safe whitelist for inbound resource kinds. Kept in sync with the
+    // gRPC-side mapping in SpecProtoMapping.IsDefinedResourceKind and the
+    // CanonicalSpecNode.Kind surface — add a case when a new kind is landed.
+    private static bool IsDefinedResourceKind(SpecResourceKind kind) => kind switch
+    {
+        SpecResourceKind.Compute => true,
+        SpecResourceKind.Report => true,
+        SpecResourceKind.Dataset => true,
+        SpecResourceKind.Service => true,
+        SpecResourceKind.App => true,
+        _ => false
+    };
 
     private static IResult ProblemFromInvalid(SpecDocumentInvalidException invalid)
     {
