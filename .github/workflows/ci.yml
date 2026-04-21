@@ -134,7 +134,7 @@ jobs:
         run: bash scripts/check-instructions-sync.sh
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -201,7 +201,7 @@ jobs:
           docker system df || true
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -224,14 +224,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: tests/js/package-lock.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Restore
         run: dotnet restore Honua.sln
@@ -261,10 +253,12 @@ jobs:
       - name: Build .NET test binaries
         timeout-minutes: 20
         run: |
+          # Use MSBuild default parallelism (-m with no value = runner CPU count).
+          # The prior `-m:1` serialized project compiles for no documented reason
+          # and cost ~2 min of PR wall-clock on the 2-core runner.
           dotnet build Honua.sln \
             --no-restore \
-            --configuration Release \
-            -m:1
+            --configuration Release
 
       - name: Run .NET Tests (Core/Postgres)
         timeout-minutes: 20
@@ -275,8 +269,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=core-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
           dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
             --no-build \
@@ -284,8 +277,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=load-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
           dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --no-build \
@@ -293,8 +285,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=postgres-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
       - name: Run .NET Tests (Server - Core)
         timeout-minutes: 20
@@ -309,7 +300,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-core.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-core.log 2>&1 &
           test_pid=$!
 
@@ -338,7 +328,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-feature-apis.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-feature-apis.log 2>&1 &
           test_pid=$!
 
@@ -367,7 +356,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-map-imagery.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-map-imagery.log 2>&1 &
           test_pid=$!
 
@@ -396,7 +384,6 @@ jobs:
             --logger "trx;LogFileName=server-tests-infra-security.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1 \
             > ./tests/TestResults/server-tests-infra-security.log 2>&1 &
           test_pid=$!
 
@@ -412,6 +399,43 @@ jobs:
           cat ./tests/TestResults/server-tests-infra-security.log
           exit "$test_exit_code"
 
+      - name: Run .NET Tests (Server - Operator Eval Harness)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.OgcProcesses|FullyQualifiedName~Honua.Server.Tests.Features.Grpc" \
+            --logger "trx;LogFileName=server-tests-operator-eval.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-operator-eval.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-operator-eval-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-operator-eval.log
+          exit "$test_exit_code"
+
+      - name: Upload Operator Eval Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: operator-eval-report
+          path: tests/TestResults/eval-report.json
+          if-no-files-found: error
+
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |
@@ -421,8 +445,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=architecture-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            --results-directory ./tests/TestResults
 
       - name: Install GDAL tools
         run: |
@@ -865,143 +888,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  llm-architecture-review:
-    name: LLM Architecture Review
-    runs-on: ubuntu-latest
-    needs: [build, test-all]  # Run after core tests complete
-    if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && github.event.pull_request.user.login != 'dependabot[bot]' }}
-    outputs:
-      assessment: ${{ steps.llm-analysis.outputs.assessment }}
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Checkout PR
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Get Changed Files
-        id: changed-files
-        run: |
-          # Get ALL changed files for comprehensive review (acceptance criteria, issue linking)
-          ALL_CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }})
-
-          # Get C# files separately for architecture-specific analysis
-          CS_CHANGED_FILES=$(echo "$ALL_CHANGED_FILES" | grep -E '\.(cs|csproj)$' || echo "")
-
-          if [ -z "$ALL_CHANGED_FILES" ]; then
-            echo "No files changed, skipping review"
-            echo "skip_review=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
-          echo "$ALL_CHANGED_FILES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "cs_files<<EOF" >> $GITHUB_OUTPUT
-          echo "$CS_CHANGED_FILES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "skip_review=false" >> $GITHUB_OUTPUT
-
-          # Show what we found
-          echo "All changed files:"
-          echo "$ALL_CHANGED_FILES"
-          echo ""
-          echo "C# files (for architecture analysis):"
-          echo "$CS_CHANGED_FILES"
-
-      - name: Setup Python
-        if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Dependencies
-        if: steps.changed-files.outputs.skip_review == 'false'
-        run: |
-          python -m pip install --upgrade pip
-          # Only install OpenAI if API key is available
-          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
-            pip install openai
-          fi
-
-      - name: LLM Architecture Analysis
-        if: steps.changed-files.outputs.skip_review == 'false'
-        id: llm-analysis
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_BASE_REF: ${{ github.base_ref }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_PR_NUMBER: ${{ github.event.number }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          REVIEW_CHUNK_LINES: 300
-          REVIEW_MAX_FILES: 50
-        run: |
-          python scripts/architecture-review.py
-
-      - name: Post Review Comment
-        if: steps.changed-files.outputs.skip_review == 'false'
-        uses: actions/github-script@v9
-        env:
-          ANALYSIS_OUTPUT: ${{ steps.llm-analysis.outputs.analysis }}
-          ASSESSMENT_OUTPUT: ${{ steps.llm-analysis.outputs.assessment }}
-        with:
-          script: |
-            const analysis = process.env.ANALYSIS_OUTPUT;
-            const assessment = process.env.ASSESSMENT_OUTPUT;
-
-            let assessmentIcon = '✅';
-            let assessmentColor = 'green';
-            if (assessment === 'NEEDS_ATTENTION') {
-              assessmentIcon = '⚠️';
-              assessmentColor = 'orange';
-            } else if (assessment === 'BLOCKING_ISSUES') {
-              assessmentIcon = '🚫';
-              assessmentColor = 'red';
-            }
-
-            const body = `## 🤖 LLM Architecture Review
-
-            ${assessmentIcon} **Assessment: ${assessment}**
-
-            ${analysis}
-
-            ---
-            *Automated architectural analysis powered by OpenAI GPT-4*
-            *This review focuses on architectural patterns and design decisions*
-            *Human review still recommended for complex changes*`;
-
-            // Check if we already have a review comment
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-
-            const existingComment = comments.data.find(comment =>
-              comment.body.includes('🤖 LLM Architecture Review')
-            );
-
-            if (existingComment) {
-              // Update existing comment
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body: body
-              });
-            } else {
-              // Create new comment
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-            }
-
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
@@ -1009,7 +895,10 @@ jobs:
     needs: [build, test-all]
     timeout-minutes: 30
     strategy:
-      fail-fast: true
+      # Report every PG version's status independently so a PG 16 regression does
+      # not hide PG 17/18 results. Each version is worth ~6 min; fail-fast saves
+      # little and costs triage signal.
+      fail-fast: false
       matrix:
         pg_image:
           - "postgis/postgis:16-3.4-alpine"   # Aurora PG 16.x baseline
@@ -1033,7 +922,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -1063,7 +952,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -1107,7 +996,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -1227,13 +1116,14 @@ jobs:
           docker stop honua-test || true
           docker rm honua-test || true
 
-
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
     name: CI Gate
-    if: always()
-    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, llm-architecture-review, architecture-gate]
+    # When a newer run supersedes this one via workflow concurrency, avoid
+    # publishing a false failing gate from the cancelled run.
+    if: ${{ always() && !cancelled() }}
+    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results
@@ -1248,16 +1138,3 @@ jobs:
           fi
           echo "All required CI jobs passed."
 
-  # Architecture gate job that blocks merge if LLM review finds blocking issues
-  architecture-gate:
-    name: Architecture Gate
-    needs: llm-architecture-review
-    runs-on: ubuntu-latest
-    if: needs.llm-architecture-review.outputs.assessment == 'BLOCKING_ISSUES'
-    steps:
-      - name: Block PR on Architectural Violations
-        run: |
-          echo "::error::Architecture review found BLOCKING_ISSUES that must be resolved before merge."
-          echo "::error::Please review the LLM Architecture Review comment and address all critical violations."
-          echo "::error::Common blocking issues: dependency violations, controller usage, AOT incompatibility, missing docs."
-          exit 1

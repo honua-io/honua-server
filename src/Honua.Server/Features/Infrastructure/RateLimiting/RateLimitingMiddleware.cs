@@ -5,7 +5,6 @@ using System.Net;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
-using System.Text.Json;
 using Honua.Core.Features.RateLimiting.Abstractions;
 
 namespace Honua.Server.Features.Infrastructure.RateLimiting;
@@ -292,18 +291,21 @@ internal sealed class RateLimitingMiddleware
         context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
         context.Response.ContentType = "application/json";
 
-        var response = new
+        var response = new RateLimitExceededResponse
         {
-            error = "rate_limit_exceeded",
-            message = "Too many requests. Please try again later.",
-            details = new
+            Error = "rate_limit_exceeded",
+            Message = "Too many requests. Please try again later.",
+            Details = new RateLimitExceededDetails
             {
-                limit = result.Limit,
-                window_reset = result.WindowReset.ToUnixTimeSeconds()
+                Limit = result.Limit,
+                WindowReset = result.WindowReset.ToUnixTimeSeconds()
             }
         };
 
-        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+        await context.Response.WriteAsync(
+            System.Text.Json.JsonSerializer.Serialize(
+                response,
+                RateLimitingJsonContext.Default.RateLimitExceededResponse));
     }
 
     /// <summary>

@@ -1,12 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+<<<<<<< HEAD
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
+=======
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.ObjectPool;
+using System.Diagnostics.CodeAnalysis;
+>>>>>>> origin/trunk
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
@@ -16,6 +23,7 @@ namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 public static class ServiceRegistrationPatterns
 {
     /// <summary>
+<<<<<<< HEAD
     /// Register PostgreSQL-based services with standard schema pattern.
     /// </summary>
     public static IServiceCollection AddPostgresFeatureServices<TStore, TInterface>(
@@ -86,6 +94,8 @@ public static class ServiceRegistrationPatterns
     }
 
     /// <summary>
+=======
+>>>>>>> origin/trunk
     /// Register object pools for performance optimization.
     /// Common pattern across feature stores for StringBuilder and Dictionary pooling.
     /// </summary>
@@ -103,6 +113,7 @@ public static class ServiceRegistrationPatterns
     }
 
     /// <summary>
+<<<<<<< HEAD
     /// Register configuration-based provider pattern services.
     /// Used by geocoding, styling, and other pluggable features.
     /// </summary>
@@ -134,6 +145,14 @@ public static class ServiceRegistrationPatterns
     /// Used by Import, AutoDocs, Styling core features.
     /// </summary>
     public static IServiceCollection AddSimpleCoreFeature<TService, TImplementation>(
+=======
+    /// Register simple core feature services pattern.
+    /// Used by Import, AutoDocs, Styling core features.
+    /// </summary>
+    public static IServiceCollection AddSimpleCoreFeature<
+        TService,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation>(
+>>>>>>> origin/trunk
         this IServiceCollection services,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TService : class
@@ -149,6 +168,7 @@ public static class ServiceRegistrationPatterns
         services.TryAdd(descriptor);
         return services;
     }
+<<<<<<< HEAD
 
     /// <summary>
     /// Register HTTP client-based services with resilience policies.
@@ -288,6 +308,8 @@ public static class ServiceRegistrationPatterns
     {
         return serviceProvider => ActivatorUtilities.CreateInstance(serviceProvider, implementation);
     }
+=======
+>>>>>>> origin/trunk
 }
 
 /// <summary>

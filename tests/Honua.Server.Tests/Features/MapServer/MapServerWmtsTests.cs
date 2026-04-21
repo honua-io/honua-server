@@ -49,7 +49,7 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
+        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
         content.Should().Contain("<WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
     }
 
@@ -96,6 +96,22 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<Capabilities");
         content.Should().NotContain("evil.example");
+    }
+
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+        request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0, text/html;q=1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
     }
 
     [IntegrationTest]
@@ -219,7 +235,7 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
+        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrix>1</TileMatrix>");
         content.Should().Contain("<MaxTileRow>1</MaxTileRow>");
         content.Should().Contain("<MaxTileCol>1</MaxTileCol>");

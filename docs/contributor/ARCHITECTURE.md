@@ -38,7 +38,9 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **OGC Tiles**: tilesets metadata and vector tiles.
 - **OData**: CRUD + query options ($filter, $select, $orderby, $top, $skip, $count, $search, $apply, $batch).
 - **Tiles**: MVT + TileJSON.
-- **Geoprocessing**: gRPC `ProcessService` — plan validation, dry-run estimation, async job lifecycle. Workspace lifecycle management — artifact storage, retention policies, quota evaluation, promotion from temporary to durable workspaces, and background cleanup.
+- **Geoprocessing**: gRPC `ProcessService` — plan validation, dry-run estimation, async job lifecycle. Workspace lifecycle management — artifact storage, retention policies, quota evaluation, promotion from temporary to durable workspaces, and background cleanup. Protocol adapters: GeoServices REST GPServer — job status polling and cancellation over the canonical process runtime, with service info (stub), task info, submitJob, execute, and per-parameter result routes registered; and OGC API Processes — REST process discovery, async execution, and job/result endpoints over the same canonical runtime.
+- **Control Plane**: Durable job orchestration substrate — queue, claim/heartbeat, retry, reconciliation, structured execution logs, and artifact references ([ADR-0031](adr/0031-durable-job-orchestration-substrate.md)). `AddJobOrchestration()` is safe for lean API images; `AddJobWorker()` adds queue-based claim/execute for dedicated worker hosts (not yet wired). The pluggable batch-compute backend contract and execution-job reconciler are registered directly in the combined host. The execution-job reconciler (`ExecutionJobReconcilerBackgroundService`) runs on every Redis-enabled host, polling active jobs and dispatching to pluggable `IBatchComputeBackend` adapters resolved by `(BackendName, TargetKind)`. The `LocalBatchComputeBackend` bridges in-process worker progress; additional backends (AWS Batch, Kubernetes Job) plug in through the same contract.
+- **Orchestration**: Declarative workflow layer that composes canonical `AnalysisPlan` jobs into chained, scheduled, and DAG-style runs ([ADR-0032](adr/0032-workflow-orchestration-layer.md)). Steps submit through `IWorkflowJobExecutor` (geoprocessing-backed) so every workflow step reuses canonical job, retry, and cancellation semantics. Background services (`WorkflowOrchestrationBackgroundService`, `WorkflowSchedulerBackgroundService`) only start when Redis-backed stores are available.
 - **Admin**: connections, publishing, metadata, styles, imports, operations, observability.
 - **Import**: file import pipeline + Esri service import.
 
@@ -99,5 +101,4 @@ For deployment architecture and infrastructure details, see:
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md)
 - [Platform Overview](../PLATFORM.md)
 
-For the forward-looking AI-first analyst and builder direction, see:
-- [AI-First Operator Architecture](AI_OPERATOR_ARCHITECTURE.md)
+Historical AI-operator design notes are archived and are not part of the current contributor entrypoints.

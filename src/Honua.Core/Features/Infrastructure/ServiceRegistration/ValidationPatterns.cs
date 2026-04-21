@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+<<<<<<< HEAD
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -8,10 +9,17 @@ using System.Net;
 using System.Net.Sockets;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+=======
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Options;
+using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.Infrastructure.Validation;
+>>>>>>> origin/trunk
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 /// <summary>
+<<<<<<< HEAD
 /// Common validation patterns and configuration parsing helpers.
 /// </summary>
 public static class ValidationPatterns
@@ -159,6 +167,12 @@ public static class ValidationPatterns
 /// Base class for configuration validators with common patterns.
 /// </summary>
 public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptions>
+=======
+/// Base class for configuration validators with common patterns.
+/// </summary>
+public abstract class ConfigurationValidator<
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IValidateOptions<TOptions>
+>>>>>>> origin/trunk
     where TOptions : class
 {
     public ValidateOptionsResult Validate(string? name, TOptions options)
@@ -186,9 +200,15 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
     {
         // Validate using data annotations
         var validationResults = new List<ValidationResult>();
+<<<<<<< HEAD
         var validationContext = new ValidationContext(options);
 
         if (!Validator.TryValidateObject(options, validationContext, validationResults, true))
+=======
+        var validationContext = CreateValidationContext(options, typeof(TOptions).Name);
+
+        if (!TryValidateObject(options, validationContext, validationResults))
+>>>>>>> origin/trunk
         {
             errors.AddRange(validationResults.Select(r => r.ErrorMessage ?? "Unknown validation error"));
         }
@@ -299,7 +319,13 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
     }
 
     /// <summary>
+<<<<<<< HEAD
     /// Helper to validate outbound HTTP URLs.
+=======
+    /// Helper to validate outbound HTTPS URLs via <see cref="OutboundHttpUrlValidator.ValidateConfiguration(string)"/>,
+    /// which performs the same DNS-aware reservation checks as the runtime path so configuration-time
+    /// validation does not silently accept hostnames that the runtime would later reject.
+>>>>>>> origin/trunk
     /// </summary>
     protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> errors)
     {
@@ -309,6 +335,7 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
             return;
         }
 
+<<<<<<< HEAD
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
             errors.Add($"{propertyName} must be a valid absolute URL, but was '{url}'.");
@@ -336,21 +363,42 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
         if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
         {
             errors.Add($"{propertyName} must not target a private or loopback address.");
+=======
+        var result = OutboundHttpUrlValidator.ValidateConfiguration(url);
+        if (!result.IsValid)
+        {
+            errors.Add($"{propertyName} {result.ErrorMessage}");
+>>>>>>> origin/trunk
         }
     }
 
     /// <summary>
     /// Helper to validate data annotations on nested objects.
     /// </summary>
+<<<<<<< HEAD
     protected static void ValidateDataAnnotations(object? obj, List<string> errors, string propertyName)
+=======
+    protected static void ValidateDataAnnotations<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TObject>(
+        TObject? obj,
+        List<string> errors,
+        string propertyName)
+        where TObject : class
+>>>>>>> origin/trunk
     {
         if (obj == null)
             return;
 
         var validationResults = new List<ValidationResult>();
+<<<<<<< HEAD
         var validationContext = new ValidationContext(obj);
 
         if (!Validator.TryValidateObject(obj, validationContext, validationResults, true))
+=======
+        var validationContext = CreateValidationContext(obj, propertyName);
+
+        if (!TryValidateObject(obj, validationContext, validationResults))
+>>>>>>> origin/trunk
         {
             foreach (var result in validationResults)
             {
@@ -513,6 +561,7 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
         }
     }
 
+<<<<<<< HEAD
     private static bool IsLocalhostHostName(string host)
         => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
            || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
@@ -559,5 +608,31 @@ public abstract class ConfigurationValidator<TOptions> : IValidateOptions<TOptio
         }
 
         return false;
+=======
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "DisplayName is assigned explicitly to avoid trim-unsafe display-name reflection during validation.")]
+    private static ValidationContext CreateValidationContext(object instance, string displayName)
+    {
+        var validationContext = new ValidationContext(instance)
+        {
+            DisplayName = displayName
+        };
+
+        return validationContext;
+    }
+
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "Validation context is created with an explicit display name, avoiding trim-unsafe display-name reflection.")]
+    private static bool TryValidateObject(
+        object instance,
+        ValidationContext validationContext,
+        ICollection<ValidationResult> validationResults)
+    {
+        return Validator.TryValidateObject(instance, validationContext, validationResults, validateAllProperties: true);
+>>>>>>> origin/trunk
     }
 }

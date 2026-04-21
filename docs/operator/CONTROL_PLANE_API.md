@@ -96,13 +96,13 @@ Additional metrics endpoints:
 - `.github/workflows/control-plane-sdk-governance.yml`
 
 - Versioning/deprecation policy:
-- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 
 - Migration and upgrade guidance:
-- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 
 - AI/agent integration:
-- [MCP Server](MCP_SERVER.md)
+- [MCP Server](../developer/MCP_SERVER.md)
 
 ---
 
@@ -214,7 +214,7 @@ file=@parcels.geojson
 
 FlatGeobuf (`.fgb`) files can be uploaded directly — no archive wrapping needed. If the `.fgb` file does not embed CRS in its header, provide `sourceSrid` on the import request; the server rejects imports when it cannot detect the source coordinate system.
 
-For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md).
+For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](../gis/FILEGDB_IMPORT_WORKFLOW.md).
 
 For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The server reads GeoParquet `geo` metadata for CRS detection and requires WKB geometry encoding. Non-WKB encodings are rejected. Nested column types (Struct, List, Map) are skipped with warnings. Rows with null geometry are skipped during both preview and import, and reported as warnings in the import response. Files with more than 100,000 rows in a single Parquet row group are rejected to maintain bounded memory usage; re-export such files with smaller row groups.
 
@@ -366,7 +366,7 @@ Content-Type: application/json
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/v1/admin/version` | GET | Get legacy server + metadata API version info |
+| `/api/v1/admin/version` | GET | Get current control-plane and metadata schema version info |
 | `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities and the SDK compatibility contract |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
@@ -388,7 +388,7 @@ SDKs should call `GET /api/v1/admin/capabilities` once per authenticated session
 - `serverVersion` and `releaseChannel`: log or surface for diagnostics, rollout targeting, and support.
 
 Focused guidance and a concrete JSON example:
-- [SDK Compatibility Metadata](SDK_COMPATIBILITY_METADATA.md)
+- [SDK Compatibility Metadata](../developer/SDK_COMPATIBILITY_METADATA.md)
 
 ### **Operations and Monitoring Endpoints**
 
@@ -400,12 +400,41 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/operations/type/{operationType}` | GET | List operations by type |
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`,
-`TileCache`, `PMTilesArchive`, `Export`, `RasterImport`, `Print`, `Geoprocessing`.
+`TileCache`, `PMTilesArchive`, `Export`, `RasterImport`, `Print`, `Geoprocessing`,
+`Publishing`, `Orchestration`.
 
 Geoprocessing operations report workflow-specific progress including the current
 deterministic stage and plan step counts. Cancellation is supported through the
-cancel endpoint; the server re-reads progress before writing terminal state to
-mitigate TOCTOU races with worker-owned state transitions.
+cancel endpoint. Operations that have already reached a terminal state
+(`Completed` or `Failed`) return `409 Conflict`; already-cancelled operations
+return `200` idempotently. The server re-reads progress before writing the
+cancellation and checks the durable job store (when present) to mitigate TOCTOU
+races with worker-owned state transitions.
+
+Jobs submitted through the durable job orchestration substrate (via
+`ProcessService.SubmitPlanJob` or OGC API Processes `/execute`) surface
+through these same operations endpoints using the
+`Geoprocessing` operation type. The execution-job reconciler bridges
+progress from pluggable batch-compute backends into `IUniversalProgressStore`
+so all jobs — local and remote — appear through the operations surface.
+The substrate tracks additional claim, heartbeat, and retry state internally
+through `IExecutionJobStore`; structured execution logs are stored via
+`IExecutionLogStore` and are not yet exposed through a public API endpoint.
+See [Operations — Job Orchestration](operations.md#job-orchestration) for
+lifecycle and tuning details.
+
+Workflow runs produced by the declarative orchestration layer surface through
+the same endpoints using the `Orchestration` operation type. The progress
+payload is a `WorkflowProgress` record keyed by the workflow run identifier
+(`wf-<guid>`) and reports `runStatus`, `workflowId`, `stepsCompleted`, and
+`totalSteps`. Cancellation on an `Orchestration` operation is routed to the
+`WorkflowOrchestrationEngine`, which records the cancellation on the durable
+workflow run. The next reconcile tick cascades `CancelJobAsync` to any queued
+or running child jobs; callers should poll the same endpoint for the terminal
+status. When the engine is not registered (e.g., Redis-less deployments) the
+endpoint returns `503`. See
+[Operations — Workflow Orchestration](operations.md#workflow-orchestration)
+for run lifecycle, scheduler semantics, and tuning details.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -556,10 +585,10 @@ GET /healthz/live
 
 ## **Related Documentation**
 
-- [Admin UI](admin-ui.md)
-- [Geospatial API Examples](API_EXAMPLES.md)
-- [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md)
-- [Security](../devops/security.md)
-- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
-- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
-- [Upgrade and Rollback Runbook](../devops/runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes
+- [Operator Guide](README.md)
+- [Geospatial API Examples](../developer/API_EXAMPLES.md)
+- [FileGDB Import Workflow](../gis/FILEGDB_IMPORT_WORKFLOW.md)
+- [Security](security.md)
+- [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes

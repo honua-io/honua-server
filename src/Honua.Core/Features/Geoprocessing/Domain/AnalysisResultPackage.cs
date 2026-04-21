@@ -40,12 +40,12 @@ public sealed record AnalysisResultPackage
     public IReadOnlyList<WorkspaceRef> WorkspaceRefs { get; init; } = [];
 
     /// <summary>
-    /// Identifier of the composed map package, when applicable. Deferred: MapPackage type defined in #730.
+    /// Nullable reference to a separately materialized map package resource, when applicable.
     /// </summary>
     public string? MapPackageId { get; init; }
 
     /// <summary>
-    /// Identifier of the application package, when applicable. Deferred: AppPackage type defined in #731.
+    /// Nullable reference to a separately materialized application package resource, when applicable.
     /// </summary>
     public string? AppPackageId { get; init; }
 
@@ -68,7 +68,9 @@ public sealed record AnalysisResultPackage
         IReadOnlyList<ArtifactRef> artifacts,
         IReadOnlyList<WorkspaceRef> workspaceRefs,
         ProvenanceRecord provenance,
-        IReadOnlyList<string>? assumptions = null)
+        IReadOnlyList<string>? assumptions = null,
+        string? mapPackageId = null,
+        string? appPackageId = null)
         => new()
         {
             ResultPackageId = resultPackageId,
@@ -77,7 +79,9 @@ public sealed record AnalysisResultPackage
             Artifacts = artifacts,
             WorkspaceRefs = workspaceRefs,
             Provenance = provenance,
-            Assumptions = assumptions ?? []
+            Assumptions = assumptions ?? [],
+            MapPackageId = mapPackageId,
+            AppPackageId = appPackageId
         };
 
     /// <summary>

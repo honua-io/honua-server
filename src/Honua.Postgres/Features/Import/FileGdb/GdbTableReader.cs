@@ -72,6 +72,11 @@ internal sealed class GdbTableReader : IDisposable
         }
 
         RowCount = _reader.ReadInt32(); // bytes 4-7: numValidRows
+        if (RowCount < 0)
+        {
+            throw new InvalidDataException(
+                $"FileGDB table has an invalid numValidRows value ({RowCount}). The file is malformed.");
+        }
 
         // Skip bytes 8-31 (header metadata we don't need).
         _reader.ReadBytes(24);
@@ -204,7 +209,17 @@ internal sealed class GdbTableReader : IDisposable
         }
 
         var rowSize = BinaryPrimitives.ReadInt32LittleEndian(rowSizeBuffer);
-        if (rowSize <= 0 || offset > tableStream.Length - sizeof(int) - rowSize)
+        // Hard cap at 256 MiB per row — FileGDB rows are tens of KB in practice;
+        // anything larger is a malformed file and would make the subsequent
+        // tableStream.Length subtraction underflow for very large claimed sizes.
+        const int MaxRowSizeBytes = 256 * 1024 * 1024;
+        if (rowSize <= 0 || rowSize > MaxRowSizeBytes)
+        {
+            return null;
+        }
+
+        // Safe form: add on the left, compare without subtraction risk.
+        if ((long)offset + sizeof(int) + rowSize > tableStream.Length)
         {
             return null;
         }

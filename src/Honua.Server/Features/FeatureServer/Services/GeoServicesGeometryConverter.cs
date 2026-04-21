@@ -123,6 +123,10 @@ internal static class GeoServicesGeometryConverter
         if (targetSrid.HasValue)
         {
             ntsGeometry.SRID = targetSrid.Value;
+            if (IsGeographicSrid(targetSrid.Value))
+            {
+                ValidateGeographicCoordinateRange(ntsGeometry, targetSrid.Value);
+            }
         }
 
         var (hasZ, hasM) = GetHasZandM(ntsGeometry);
@@ -254,6 +258,25 @@ internal static class GeoServicesGeometryConverter
 
     private static bool IsGeographicSrid(int srid)
         => SpatialReference.Create(srid).IsGeographic;
+
+    // Rejects geographic geometries with coordinates outside the WGS84/geodetic bounds.
+    // PostGIS silently normalizes out-of-range values which masks client bugs and can
+    // produce topologically invalid geometries after downstream transformation.
+    private static void ValidateGeographicCoordinateRange(Geometry geometry, int srid)
+    {
+        foreach (var coord in geometry.Coordinates)
+        {
+            if (coord.X < -180.0 || coord.X > 180.0
+                || coord.Y < -90.0 || coord.Y > 90.0)
+            {
+                throw new ArgumentException(
+                    $"Coordinate ({coord.X.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}, "
+                    + $"{coord.Y.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}) "
+                    + $"is outside the valid range for geographic CRS EPSG:{srid} "
+                    + "(longitude -180..180, latitude -90..90).");
+            }
+        }
+    }
 
     private static Coordinate CreateCoordinate(double[] ordinates, bool? hasZ = null, bool? hasM = null)
     {

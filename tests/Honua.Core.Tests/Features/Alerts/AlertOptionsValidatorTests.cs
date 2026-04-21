@@ -13,11 +13,13 @@ public sealed class AlertOptionsValidatorTests
     [UnitTest]
     public void Validate_WithPublicHttpsDefaultWebhookUrl_ReturnsSuccess()
     {
+        // Literal public IP avoids depending on DNS in the unit-test process.
+        // OutboundHttpUrlValidatorTests cover the DNS resolution path independently.
         var options = new AlertOptions
         {
             Dispatch = new AlertDispatchOptions
             {
-                DefaultWebhookUrl = "https://hooks.example.com/alerts",
+                DefaultWebhookUrl = "https://8.8.8.8/alerts",
                 DefaultWebhookSecret = "signing-secret"
             }
         };
@@ -80,5 +82,24 @@ public sealed class AlertOptionsValidatorTests
         Assert.False(result.Succeeded);
         Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains("DefaultWebhookUrl") &&
             failure.Contains("HTTPS", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    public void Validate_WithOversizedWorkerNameAndLeaderElectionMode_ReturnsFailure()
+    {
+        var options = new AlertOptions
+        {
+            Evaluation = new AlertEvaluationOptions
+            {
+                WorkerName = new string('w', 65),
+                LeaderElectionMode = new string('l', 33)
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains(nameof(AlertEvaluationOptions.WorkerName), StringComparison.Ordinal));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), failure => failure.Contains(nameof(AlertEvaluationOptions.LeaderElectionMode), StringComparison.Ordinal));
     }
 }

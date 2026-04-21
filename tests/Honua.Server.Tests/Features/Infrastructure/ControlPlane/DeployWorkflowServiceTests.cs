@@ -3,8 +3,11 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -61,6 +64,58 @@ public sealed class DeployWorkflowServiceTests
 
         var persisted = await store.GetAsync(firstResult.OperationId);
         persisted!.ProviderOperationId.Should().Be($"test-backend:{firstResult.OperationId}");
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithEquivalentParameterOverridesInDifferentOrder_DeduplicatesRequest()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new BlockingDeployBackend();
+        var service = CreateService(store, backend);
+        var firstOverrides = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["featureFlag"] = "on",
+            ["region"] = "us-west-2"
+        };
+        var secondOverrides = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["region"] = "us-west-2",
+            ["featureFlag"] = "on"
+        };
+
+        var firstCreate = service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Initial submit",
+            "release-2026-04-15",
+            "corr-1",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: firstOverrides);
+
+        await backend.StartEntered.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var secondCreate = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Duplicate submit",
+            "release-2026-04-15",
+            "corr-2",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: secondOverrides);
+
+        backend.AllowStart();
+        var firstResult = await firstCreate;
+
+        secondCreate.Should().NotBeNull();
+        firstResult.Should().NotBeNull();
+        secondCreate!.OperationId.Should().Be(firstResult!.OperationId);
+        backend.StartCount.Should().Be(1);
     }
 
     [Fact]
@@ -145,6 +200,60 @@ public sealed class DeployWorkflowServiceTests
 
         var persisted = await store.GetAsync(operation.OperationId);
         persisted!.Deploy!.CurrentRevision.Should().Be("42");
+    }
+
+    [Fact]
+    public async Task CreateAsync_CanonicalApprovalRequired_PreventsImmediateSubmission()
+    {
+        // Scenario: static RequiresApproval=false, canonical evaluator says Required.
+        // The backend returns IsReadyToSubmit=true because it only sees the spec flag.
+        // The bridged approval must also clear IsReadyToSubmit so CreateAsync does not auto-submit.
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var approval = ApprovalRequirement.Required("operator.publish", "canonical-policy-gate");
+        var service = CreateService(store, backend, new StubApprovalEvaluator(approval));
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "alice")], "Test"));
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            null,
+            null,
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: null,
+            principal: principal);
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.AwaitingApproval);
+        operation.Audit.ApprovalPolicyRef.Should().Be("operator.publish");
+        backend.StartCount.Should().Be(0, "backend should not be called when approval is required");
+    }
+
+    [Fact]
+    public async Task PlanAsync_CanonicalApprovalRequired_MarksNotReadyToSubmit()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var approval = ApprovalRequirement.Required("operator.publish", "canonical-policy-gate");
+        var service = CreateService(store, backend, new StubApprovalEvaluator(approval));
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "alice")], "Test"));
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: null,
+            principal: principal);
+
+        plan.Should().NotBeNull();
+        plan!.Plan.RequiresApproval.Should().BeTrue();
+        plan.Plan.IsReadyToSubmit.Should().BeFalse("canonical approval must clear ready-to-submit");
     }
 
     [Fact]
@@ -386,11 +495,14 @@ public sealed class DeployWorkflowServiceTests
 
     private static DeployWorkflowService CreateService(
         TestWorkflowOperationStore store,
-        IDeployBackend backend)
+        IDeployBackend backend,
+        IOperatorApprovalEvaluator? approvalEvaluator = null)
         => new(
             new TestDeployTargetRegistry(),
             [store],
-            [backend]);
+            [backend],
+            approvalEvaluator ?? new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance);
 
     private static DeployWorkflowReconciler CreateReconciler(
         TestWorkflowOperationStore store,
@@ -875,6 +987,12 @@ public sealed class DeployWorkflowServiceTests
                 ObservedRevision = operation.Deploy?.CurrentRevision,
                 Message = "Rollback requested"
             });
+    }
+
+    private sealed class StubApprovalEvaluator(ApprovalRequirement? result = null) : IOperatorApprovalEvaluator
+    {
+        public ApprovalRequirement Evaluate(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
+            => result ?? ApprovalRequirement.NotRequired();
     }
 
     private sealed class StagedDeployBackend : IDeployBackend

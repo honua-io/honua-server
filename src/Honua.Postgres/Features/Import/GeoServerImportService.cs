@@ -49,6 +49,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             request.IncludeStyleContent,
             request.TimeoutSeconds,
             ResiliencePolicyOptions.Default.MaxRetryAttempts,
+            request.AllowUnsafeLocalUrls,
             cancellationToken);
     }
 
@@ -692,7 +693,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 Password = request.Password,
                 TimeoutSeconds = request.RequestTimeoutSeconds,
                 IncludeCompatibilityAnalysis = true,
-                IncludeStyleContent = request.ImportStyles
+                IncludeStyleContent = request.ImportStyles,
+                AllowUnsafeLocalUrls = request.AllowUnsafeLocalUrls
             };
 
             var serviceInfo = await DiscoverServiceAsync(discoveryRequest, cancellationToken);

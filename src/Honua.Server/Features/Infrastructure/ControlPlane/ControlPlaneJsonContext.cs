@@ -13,6 +13,7 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 [JsonSerializable(typeof(ExecutionJobRecord))]
 [JsonSerializable(typeof(DeployTargetDefinition))]
 [JsonSerializable(typeof(ExecutionJobDefinition))]
+[JsonSerializable(typeof(ExecutionLogEntry))]
 internal sealed partial class ControlPlaneJsonContext : JsonSerializerContext
 {
 }

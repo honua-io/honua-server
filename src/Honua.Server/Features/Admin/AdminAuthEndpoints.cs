@@ -147,6 +147,12 @@ internal static class AdminAuthEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Identity provider was not found.");
         }
 
+        var baseUrlRequirement = RequireConfiguredPublicBaseUrl(context);
+        if (baseUrlRequirement != null)
+        {
+            return baseUrlRequirement;
+        }
+
         try
         {
             var discovery = await GetDiscoveryDocumentAsync(
@@ -242,6 +248,12 @@ internal static class AdminAuthEndpoints
             codeVerifier = pendingSession.CodeVerifier;
         }
 
+        var baseUrlRequirement = RequireConfiguredPublicBaseUrl(context);
+        if (baseUrlRequirement != null)
+        {
+            return baseUrlRequirement;
+        }
+
         try
         {
             var discovery = await GetDiscoveryDocumentAsync(
@@ -297,19 +309,39 @@ internal static class AdminAuthEndpoints
             }
 
             var expiresIn = tokenResponse.ExpiresIn > 0 ? tokenResponse.ExpiresIn : 300;
+            var now = DateTimeOffset.UtcNow;
+            var sessionExpiresAt = now.AddSeconds(expiresIn);
+
+            // Clamp the session's effective lifetime to the earlier of the provider's
+            // declared ExpiresIn and the ID token's own `exp` claim. Without this, a
+            // session cookie can outlive the stored IdToken and every call that needs
+            // the token after expiry fails silently on a different replica.
+            var idTokenExpiry = TryGetIdTokenExpiry(validatedClaims);
+            if (idTokenExpiry.HasValue && idTokenExpiry.Value < sessionExpiresAt)
+            {
+                sessionExpiresAt = idTokenExpiry.Value;
+            }
+
+            var cookieLifetime = sessionExpiresAt - now;
+            if (cookieLifetime <= TimeSpan.Zero)
+            {
+                cookieLifetime = TimeSpan.FromSeconds(30);
+                sessionExpiresAt = now + cookieLifetime;
+            }
+
             var authSessionId = await sessionStore.CreateAuthenticatedSessionAsync(
                 provider.Key,
                 tokenResponse.AccessToken,
                 tokenResponse.IdToken,
                 sessionClaims,
-                DateTimeOffset.UtcNow.AddSeconds(expiresIn),
+                sessionExpiresAt,
                 context.RequestAborted).ConfigureAwait(false);
 
             SetCookie(
                 context.Response,
                 AdminAuthSessionStore.AuthSessionCookieName,
                 authSessionId,
-                CreateAdminAuthCookieOptions(context, TimeSpan.FromSeconds(expiresIn)));
+                CreateAdminAuthCookieOptions(context, cookieLifetime));
 
             if (!string.IsNullOrWhiteSpace(pendingSessionId))
             {
@@ -363,6 +395,12 @@ internal static class AdminAuthEndpoints
             return TypedResults.Ok(new AdminAuthLogoutUrlResponse());
         }
 
+        var baseUrlRequirement = RequireConfiguredPublicBaseUrl(context);
+        if (baseUrlRequirement != null)
+        {
+            return baseUrlRequirement;
+        }
+
         var logoutUrl = await TryBuildLogoutUrlAsync(
             provider,
             session.IdToken,
@@ -387,6 +425,12 @@ internal static class AdminAuthEndpoints
         if (!OidcProviderCatalog.TryResolveProvider(oidcOptions.Value, providerKey, out var provider))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Identity provider was not found.");
+        }
+
+        var baseUrlRequirement = RequireConfiguredPublicBaseUrl(context);
+        if (baseUrlRequirement != null)
+        {
+            return baseUrlRequirement;
         }
 
         var logoutUrl = await TryBuildLogoutUrlAsync(
@@ -451,6 +495,31 @@ internal static class AdminAuthEndpoints
                 cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException("OIDC discovery document response was empty.");
+    }
+
+    // Reads the standard JWT `exp` claim (seconds since Unix epoch) and returns the
+    // corresponding UTC DateTimeOffset. Returns null when the claim is missing or
+    // malformed — callers treat that as "no extra ceiling".
+    private static DateTimeOffset? TryGetIdTokenExpiry(IReadOnlyList<Claim> claims)
+    {
+        foreach (var claim in claims)
+        {
+            if (!string.Equals(claim.Type, "exp", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (long.TryParse(
+                    claim.Value,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var epoch))
+            {
+                return DateTimeOffset.FromUnixTimeSeconds(epoch);
+            }
+        }
+
+        return null;
     }
 
     private static async Task<IReadOnlyList<Claim>?> ValidateAdminSessionIdTokenAsync(
@@ -620,6 +689,24 @@ internal static class AdminAuthEndpoints
         {
             Path = "/"
         });
+    }
+
+    private static IResult? RequireConfiguredPublicBaseUrl(HttpContext context)
+    {
+        var environment = context.RequestServices.GetRequiredService<IHostEnvironment>();
+        if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
+        {
+            return null;
+        }
+
+        if (BaseUrlResolver.TryGetConfiguredBaseUrl(context, out _))
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateServiceUnavailable(
+            context,
+            "Admin OIDC requires Public:BaseUrl to be configured outside development and test environments.");
     }
 
     private static async Task<string?> TryBuildLogoutUrlAsync(

@@ -150,37 +150,24 @@ internal sealed partial class FeatureChangeRetryQueue(
             ? Task.CompletedTask
             : RenewClaimLeaseAsync(leaseCoordinator, renewalCts!.Token);
         var processingToken = processingCts?.Token ?? cancellationToken;
-
-        var pending = await TryGetPendingAsync(pendingId, processingToken).ConfigureAwait(false);
-        if (pending == null)
-        {
-            if (renewalCts != null)
-            {
-                renewalCts.Cancel();
-                await renewalTask.ConfigureAwait(false);
-                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        if (pending.BroadcastCompleted)
-        {
-            if (renewalCts != null)
-            {
-                renewalCts.Cancel();
-                await renewalTask.ConfigureAwait(false);
-                await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-            }
-
-            _pendingPublishes.TryRemove(pendingId, out _);
-            await RemovePendingAsync(pendingId, cancellationToken).ConfigureAwait(false);
-            LogRetryAlreadyDelivered(_logger, pendingId);
-            return;
-        }
+        PendingFeatureChangePublish? pending = null;
 
         try
         {
+            pending = await TryGetPendingAsync(pendingId, processingToken).ConfigureAwait(false);
+            if (pending == null)
+            {
+                return;
+            }
+
+            if (pending.BroadcastCompleted)
+            {
+                _pendingPublishes.TryRemove(pendingId, out _);
+                await RemovePendingAsync(pendingId, cancellationToken).ConfigureAwait(false);
+                LogRetryAlreadyDelivered(_logger, pendingId);
+                return;
+            }
+
             var persisted = await _store.AppendAsync(pending.Request, processingToken).ConfigureAwait(false);
             processingToken.ThrowIfCancellationRequested();
 
@@ -227,6 +214,11 @@ internal sealed partial class FeatureChangeRetryQueue(
         }
         catch (Exception ex)
         {
+            if (pending == null)
+            {
+                throw;
+            }
+
             var updated = pending with
             {
                 AttemptCount = pending.AttemptCount + 1,

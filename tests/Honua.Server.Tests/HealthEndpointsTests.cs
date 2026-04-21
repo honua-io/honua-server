@@ -139,11 +139,17 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     [Endpoint("GET /healthz/live")]
     public async Task LivenessProbe_ResponseTime_IsUnder200Ms()
     {
-        // Arrange
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // Warm the in-memory test host so the timing assertion measures the probe path
+        // instead of first-request startup overhead in local pre-PR runs.
+        using (var warmupResponse = await _client.GetAsync("/healthz/live"))
+        {
+            warmupResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
         var maxElapsedMs = Environment.GetEnvironmentVariable("CI") == "true" ? 1000 : 200;
 
         // Act
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var response = await _client.GetAsync("/healthz/live");
         stopwatch.Stop();
 
@@ -290,6 +296,36 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("status").GetString().Should().Be("not_ready");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("POST /healthz/metrics")]
+    [Endpoint("PUT /healthz/metrics")]
+    [Endpoint("DELETE /healthz/metrics")]
+    [Endpoint("PATCH /healthz/metrics")]
+    public async Task PerformanceMetricsEndpoint_WithNonGetMethods_Returns405AndAllowHeader()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/healthz/metrics");
+            var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            (response.Headers.TryGetValues("Allow", out var allowedValues) ||
+             response.Content.Headers.TryGetValues("Allow", out allowedValues))
+                .Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
+        }
     }
 
 }

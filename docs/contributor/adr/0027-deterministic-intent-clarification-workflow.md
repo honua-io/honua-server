@@ -113,3 +113,12 @@ package with:
 - Define plan validation and result packaging contracts in gRPC.
 - Build an evaluation suite that scores clarification quality, plan validity, and
   final output quality separately.
+
+### Implementation Landing
+
+- Honua-server #742 lands the deterministic grounding surface and the
+  material-ambiguity rule set this ADR defers. The canonical rule table,
+  confidence-band thresholds, and tool payload shapes live in
+  [docs/developer/GROUNDING.md](../../developer/GROUNDING.md); thresholds
+  are bound from the `Operator:Grounding` configuration section so the
+  eval suite can re-tune without a contract change.

@@ -44,8 +44,11 @@ internal sealed class OgcMapsConformanceHandler
                 // Supported CRS
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
 
-                // Spatial subsetting (bbox and related parameters)
-                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
+                // Bounding-box parameter support. The full "spatial-subsetting"
+                // requirements class (OGC 20-058 §7.6) also demands the generic
+                // `subset` dimension parameter which is not yet implemented, so the
+                // narrower "bbox" class is declared instead.
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox",
 
                 // PNG support
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/png",

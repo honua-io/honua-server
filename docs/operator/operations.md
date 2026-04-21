@@ -174,6 +174,536 @@ Honua uses a layered caching approach:
 
 ---
 
+## Job Orchestration
+
+The durable job orchestration substrate provides queuing, claim/heartbeat
+liveness, retry, cancellation, progress reporting, and structured execution
+logs for geoprocessing, ETL, and tile-cache workloads. Submission endpoints
+(gRPC `ProcessService.SubmitPlanJob`, OGC API Processes `/execute`, GPServer
+`submitJob`) resolve an optional `ExecutionWorkloadOptions` entry from the
+`ControlPlane:ExecutionWorkloads` catalog. When a matching workload is
+configured, the job spec inherits the workload's `Backend`, `TargetKind`,
+artifact reference, and parameters; otherwise the spec defaults to the
+`local` in-process backend.
+
+> **Deployment note:** Every Redis-enabled host registers the execution-job
+> reconciliation background service, which polls active jobs and bridges
+> status from pluggable batch-compute backends into the canonical job store.
+> Local (in-process) jobs are queued by the geoprocessing submission path.
+> Execution requires a worker host registered via `AddJobWorker()`;
+> the combined host does not currently wire this (see below).
+> The reconciler observes worker-published progress via
+> `IUniversalProgressStore` and bridges it into the canonical job store
+> once a worker host is available.
+> Kubernetes Jobs is available as an optional remote backend
+> (`honua-kubernetes-job`, target kind `KubernetesJob`) — configure under
+> `ControlPlane:Kubernetes` (namespace, default image, node selector, resource
+> requests, service account, active deadline). The adapter auto-detects the
+> in-cluster service account projection and accepts explicit bearer tokens for
+> out-of-cluster development; set `ControlPlane:Kubernetes:CaBundlePath` to a
+> PEM-encoded bundle when the target cluster's API server uses a private or
+> self-signed CA that does not chain to the OS trust store. Startup
+> validation (`ControlPlaneOptions`) rejects a malformed `ApiServerUrl`
+> whenever one is supplied, an unreadable bearer token file, and an empty or
+> malformed CA bundle PEM; it requires `ApiServerUrl` only when
+> `InClusterAutoDetect` is disabled. When auto-detect is on but the host is
+> not running inside a Kubernetes pod, submission fails at runtime in the
+> adapter with a clear error rather than surfacing as a 500. Remote jobs are started
+> synchronously on submission and subsequently observed by the reconciler on
+> any Redis-enabled host. `ttlSecondsAfterFinished` is clamped to a safe floor
+> (≥ 30 s, six reconciler poll cycles) so a completed Job cannot be
+> garbage-collected before the adapter has observed its terminal state.
+> Additional remote backends (AWS Batch, Azure Container Apps, etc.) are
+> defined by the pluggable `IBatchComputeBackend` contract but are not yet
+> registered; see provider tickets for implementation.
+> Dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute
+> on separate hosts is not yet wired; see
+> [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md#apiworker-host-separation).
+> See [ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md).
+
+### Supported Job Kinds
+
+| Kind | Description |
+|------|-------------|
+| Geoprocessing | Analytical compute workloads (buffer, spatial join, etc.) |
+| ExtractTransformLoad | Data movement and transformation workloads |
+| TileCache | Tile cache generation or refresh workloads |
+
+Workers can filter which job kinds they claim. In the default configuration
+a single worker host processes all kinds.
+
+### Job Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Queued | In the queue, not yet claimed by a worker |
+| Provisioning | Worker has claimed the job, preparing to execute |
+| Running | Execution is in progress |
+| Succeeded | Terminal: completed successfully |
+| Failed | Terminal: failed (may be retried if policy allows) |
+| Cancelled | Terminal: cancelled by user or system |
+
+### Heartbeat and Liveness
+
+Workers poll for claimable jobs every 5 seconds. Once a job is claimed,
+the worker registers its cancellation token and re-reads the job record
+before promoting to Running. If the job was cancelled or reached another
+terminal state during the claim-to-Running window, the worker skips
+execution and removes the queue entry. If the job was requeued or
+reclaimed by another worker, the worker skips execution but preserves
+the queue entry since it belongs to the new attempt. This prevents
+operator cancellations arriving between claim and Running from being
+silently overwritten, while also protecting pending retries from
+accidental deletion.
+
+Once the Running transition succeeds, the worker pumps heartbeats at the
+configured interval (default: 30 seconds). The heartbeat pump, progress
+reports, and artifact publications all verify ownership before writing —
+if the reconciler requeues the job or another worker reclaims it, the
+stale worker's writes are silently dropped. When a new worker registers
+its cancellation token for a reclaimed job, the previous worker's token
+source is cancelled automatically so the stale executor observes
+cancellation promptly even if the reconciler's Revoke has not yet run.
+Transient store failures during heartbeat persistence are caught and
+logged; the pump continues on the next interval rather than faulting.
+If the pump task does fault for any reason, finalization still proceeds
+from the executor outcome. The reconciliation service
+sweeps active jobs every 30 seconds. If a worker's last heartbeat exceeds
+the heartbeat timeout (default: 90 seconds), the job is considered
+abandoned. The claim itself sets `LastHeartbeatAt` to the claim time, so
+the reconciler normally uses this value; as a defensive fallback it uses
+`ClaimedAt` if `LastHeartbeatAt` is ever null. If retries remain, the
+reconciler requeues the job with a computed backoff delay; otherwise the
+job transitions to Failed.
+
+### Stale Claim Recovery
+
+The queue uses a two-phase claim: an atomic Redis move from the pending
+set to the claimed set, followed by a job store update. If the store
+update fails (e.g. transient Redis error), the claim is rolled back
+immediately. If the rollback also fails, the reconciliation service
+detects the orphaned claim after 60 seconds and requeues the job
+automatically. No operator intervention is required; monitor for
+`RedisJobQueue` Warning entries (`OrphanedClaimRequeued`,
+`ClaimRolledBack`) or Error entries (`ClaimRollbackFailed`) if you
+want visibility into recovery events.
+
+### Priority Queue
+
+Jobs are dequeued in priority order. Within a priority band, FIFO ordering
+applies. Delayed entries (jobs requeued with a visibility delay for retry
+backoff) and kind-mismatched entries do not consume the scan budget.
+Each poll scans up to 100 claimable candidates within a traverse window
+of 5,000 total entries. A rotating cursor advances the window across
+successive polls so that ready jobs beyond the first traverse window are
+discovered on subsequent claim attempts. When the queue is drained from
+the cursor position, the cursor resets to the beginning. Exceeding the
+traverse threshold is logged at Warning level to signal queue pathology.
+
+| Priority | Use case |
+|----------|----------|
+| Critical | Operator-initiated urgent work |
+| High | Time-sensitive processing |
+| Normal | Default for most workloads |
+| Low | Background or deferrable work |
+
+### Retry Policy
+
+Default: 3 attempts with exponential backoff starting at 30 seconds, capped
+at 10 minutes. Per-job override is supported via `JobRetryPolicy` on the
+`ExecutionJobRecord`.
+
+Supported backoff strategies: `Fixed` (constant delay), `Linear` (delay
+grows linearly per attempt), `Exponential` (delay doubles per attempt).
+Use `JobRetryPolicy.None` to disable retries for a specific job.
+
+### Timeout Policy
+
+Default maximum execution duration is 1 hour. Long-running ETL or
+geoprocessing workloads can use the 24-hour policy. Jobs exceeding their
+timeout are marked Failed directly by the worker (without retry). The
+reconciler serves as a fallback for jobs whose workers stop reporting
+heartbeats.
+
+### Structured Execution Logs
+
+Workers append `ExecutionLogEntry` records (timestamp, level, message,
+phase, optional metadata) through `IExecutionLogStore`. Logs are
+append-only during execution and read-only after terminal state. Redis-backed
+with 7-day retention applied when the owning worker finalizes the job.
+
+When a job is abandoned and requeued for retry, any warnings reported by the
+executor are persisted to the structured log before clearing them from the
+requeued record. This persistence is best-effort: a transient log-store
+failure is logged at Warning level but does not block the durable
+requeue or terminal transition. On terminal failure (retries exhausted),
+warnings are retained on the job record for post-mortem inspection.
+
+> **Note:** Execution logs are stored internally but are not yet exposed
+> through a public REST endpoint. Retrieval is available only through
+> direct Redis access or internal diagnostics.
+
+### Monitoring
+
+Active jobs surface through the existing operations endpoints:
+
+- `GET /api/v1/admin/operations/active` — lists all active operations
+- `GET /api/v1/admin/operations/{operationId}` — job progress and status
+- `GET /api/v1/admin/operations/type/Geoprocessing` — geoprocessing jobs
+
+> **Note:** The operations endpoints read from `IUniversalProgressStore`.
+> The execution-job reconciler bridges progress from `IExecutionJobStore`
+> into `IUniversalProgressStore` on each reconcile pass, so jobs managed
+> by pluggable batch-compute backends surface through the standard
+> operations endpoints. For local in-process jobs, progress written
+> through `IJobExecutionContext` is observed by the reconciler and
+> projected in the same way.
+
+The reconciliation service logs sweep results at Debug level only when at
+least one job was reconciled; clean sweeps are silent. Heartbeat and
+timeout expiry are logged at Warning/Error level. See
+[Monitoring — Job Orchestration Observability](monitoring.md#job-orchestration-observability)
+for the full log level table across `JobExecutionService`,
+`JobReconciliationService`, and `RedisJobQueue`.
+
+### Policy Defaults and Tuning
+
+The substrate's timing and retry behavior is governed by built-in defaults on
+the policy models. Per-job overrides are set on the `ExecutionJobRecord` at
+submission time.
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Worker claim poll interval | 5 s | How often workers check for claimable jobs |
+| Heartbeat interval | 30 s | `JobHeartbeatPolicy.Interval` — how often the worker refreshes liveness |
+| Heartbeat timeout | 90 s | `JobHeartbeatPolicy.Timeout` — stale threshold before reconciler acts |
+| Reconciliation sweep interval | 30 s | How often the reconciler checks active jobs for expiry |
+| Stale claim threshold | 60 s | Orphaned claims in the claimed set are recovered after this window |
+| Retry max attempts | 3 | `JobRetryPolicy.MaxAttempts` — includes initial attempt (1 = no retries) |
+| Retry backoff strategy | Exponential | `JobRetryPolicy.Strategy` — Fixed, Linear, or Exponential |
+| Retry base delay | 30 s | `JobRetryPolicy.BaseDelay` — starting delay for first retry |
+| Retry max delay | 10 min | `JobRetryPolicy.MaxDelay` — upper bound on computed backoff |
+| Execution timeout | 1 h | `JobTimeoutPolicy.MaxDuration` — default ceiling |
+| Long-running timeout | 24 h | `JobTimeoutPolicy.LongRunning` preset for ETL/large workloads |
+| Execution log retention | 7 d | TTL applied to Redis log lists at job finalization |
+
+These values are compile-time defaults on the policy record types. To change
+defaults for all jobs, modify the submission path that creates
+`ExecutionJobRecord` instances. To change a single job, set the corresponding
+policy field on the record before enqueuing.
+
+### Graceful Shutdown
+
+When a worker host shuts down, in-flight jobs are abandoned rather than
+marked as terminal failures. The worker itself transitions the job back to
+Queued, clears the claim fields (`ClaimedBy`, `ClaimedAt`,
+`LastHeartbeatAt`), and re-enqueues it immediately. This applies both
+during active execution and during the pre-execution window between
+claim and Running — if shutdown arrives before the executor is entered,
+the claim loop performs the same force-requeue. Shutdown requeue always
+succeeds regardless of the job's retry budget because a host shutdown is
+an infrastructure event, not an execution failure.
+
+Both the worker and the reconciler re-read the current job record
+before writing any state transition. If the record is already terminal or
+the claim owner has changed, the writer skips its update. Additionally,
+the reconciler re-validates the expiry predicate (heartbeat or timeout)
+against the fresh record — a heartbeat that landed between the sweep
+snapshot and the handler invocation means the worker is still alive, and a
+job reclaimed with a fresh claim time has not actually timed out. In both
+cases the transition is skipped. This bidirectional guard prevents four
+specific race windows:
+
+- **Worker completes after reconciler snapshot**: the reconciler snapshots
+  active jobs, then a worker finalizes the job before the reconciler
+  handler runs. Without the guard the reconciler would overwrite the
+  terminal state.
+- **Reconciler transitions before worker finalizes**: the reconciler
+  requeues or fails the job, then the worker's post-execution handler
+  runs. Without the guard the worker would overwrite the reconciler's
+  update.
+- **Heartbeat arrives between sweep and handler**: a heartbeat lands
+  after the reconciler's sweep snapshot but before the handler runs.
+  Without the guard the reconciler would requeue or fail a healthy
+  running job.
+- **Timeout snapshot outdated by reclaim**: the reconciler snapshots a
+  timed-out job, but the job is requeued and reclaimed (possibly by the
+  same worker) with a fresh claim time before the handler runs. Without
+  the guard the reconciler would fail a new attempt that has not yet
+  timed out.
+
+When the reconciler requeues or terminally fails a job, it also revokes the
+stale worker's cancellation token source. This ensures that a subsequent
+API-side `Cancel()` call does not return a false positive for a token that
+no longer corresponds to an active execution.
+
+In split API/worker deployments, the API host has no local cancellation
+notifier for jobs running on remote workers. When a cancel request arrives
+for a claimed job and no local notifier can signal the worker, the API
+persists a `CancellationRequestedAt` timestamp on the job record as a
+durable cancellation signal. The worker observes this signal during its
+next heartbeat read and cancels locally. If the worker's heartbeat expires
+before it processes the signal, the reconciler honours the request with a
+terminal Cancelled state instead of retrying.
+
+If a worker crashes without clean abandonment, the reconciliation service
+detects the stale heartbeat and performs the same recovery. This ensures
+rolling deployments and scale-down events do not permanently fail jobs
+that still have retry budget.
+
+---
+
+## Workflow Orchestration
+
+The workflow orchestration layer composes canonical `AnalysisPlan` jobs into
+declarative multi-step DAG runs. A `WorkflowDefinition` specifies steps,
+dependencies, artifact-to-input bindings, per-step retry policy, failure
+policy, and an optional cron trigger. Runs are reconciled by a lease-based
+engine on top of the durable job orchestration substrate; every step is
+submitted through `IWorkflowJobExecutor` (backed by the geoprocessing job
+service) so workflow steps reuse the same claim, heartbeat, retry, and
+cancellation semantics described in [Job Orchestration](#job-orchestration).
+
+> **Deployment note:** Orchestration stores (`IWorkflowDefinitionStore`,
+> `IWorkflowRunStore`) only register when an `IConnectionMultiplexer` is
+> available. Redis-less deployments do not host the orchestration engine or
+> its background services; the admin cancel endpoint returns `503` for
+> `Orchestration` operations in that configuration.
+
+### Run Lifecycle
+
+| State | Meaning |
+|-------|---------|
+| Pending | Run created; reconciliation has not yet started |
+| Running | Engine is reconciling steps |
+| Succeeded | All required steps reached a successful terminal state |
+| Failed | A required step exhausted retries under `Fail` policy or a workflow invariant broke |
+| Cancelled | Cancellation was requested; cascade cancellation finishes on the next tick. During cleanup the progress API projects this as `Processing` / `Cancelling` so the run remains visible in active-operations queries until every step is terminal. |
+
+Per-step states are `Pending`, `Queued`, `Running`, `Succeeded`, `Failed`,
+`Cancelled`, and `Skipped`. The engine maps the underlying execution-job
+status onto the step status, and cascades failure/skip decisions across
+dependents according to each step's `FailurePolicy`.
+
+### Step Wiring
+
+- `DependsOn` — structural order; a step enters `Pending` eligibility only when
+  every listed dependency is terminal.
+- `InputBindings` — artifact-to-input wiring. `SourceArtifactSelector` accepts
+  `artifact:{index}` or `artifact:{label}` and resolves against the upstream
+  step's `AnalysisResultPackage.Artifacts` (label match is case-insensitive).
+  The resolved reference is string-substituted into the downstream
+  `AnalysisPlanStep.Inputs` dictionary without extending the canonical model.
+- `RetryPolicy` — optional. Computes exponential backoff as
+  `min(InitialDelaySeconds * BackoffMultiplier^(attempt-1), MaxDelaySeconds)`.
+  A null policy means a single attempt with no retry.
+- `FailurePolicy` — `Fail` propagates run failure and cancels non-terminal
+  dependents; `Skip` marks the step `Skipped` and cascades `Skipped` only to
+  dependents that bind artifacts from this step (structural-only dependents
+  still proceed).
+- `TimeoutSeconds` — optional per-step wall-clock bound. When set to a
+  positive value it is surfaced to the underlying job substrate via the
+  `orchestration.timeoutSeconds` protocol metadata key; null or
+  non-positive values are omitted. Substrate enforcement is executor-specific.
+
+### Idempotency and Crash Safety
+
+- Each submission uses the idempotency key `{runId}:{stepId}:{attemptCount}`,
+  so retries and crash recovery never enqueue duplicate jobs.
+- Protocol metadata `orchestration.runId`, `orchestration.workflowId`,
+  `orchestration.stepId`, and `orchestration.attempt` is stamped on each
+  submitted job so downstream rate/cost controls and audit surfaces can
+  correlate step executions to their parent run. When the step definition
+  sets a positive `TimeoutSeconds`, the value is also stamped as
+  `orchestration.timeoutSeconds`.
+- When a completed step's artifact retrieval fails and any downstream step
+  binds artifacts from it, the step is marked `Failed` with a descriptive
+  error rather than succeeding with null artifacts. This prevents the
+  workflow from silently producing a null-artifact success and ensures
+  operators see the real cause (event `8120`).
+- Job submission precedes the run-state write; crash safety relies on the
+  per-attempt idempotency key (`{runId}:{stepId}:{attempt}`) and the
+  reconciler's idempotent replay rather than persist-before-side-effect
+  ordering. After a crash the reconciler rehydrates state from Redis and
+  resumes from the same DAG position; no in-memory workflow state is
+  required. When a replayed submission returns an already-terminal job,
+  the engine applies the same artifact-fetch and retry-policy paths used
+  during normal observation.
+- Transient job-observation failures (e.g. a Redis read error when polling
+  a step's underlying job status) are caught and logged at Warning level
+  (event `8118`). The failure is also appended as a deduplicated warning on
+  the run's `Warnings` list so operators can see degraded observation
+  through the progress API. The step is preserved in its current state and
+  retried on the next reconcile tick.
+- `IWorkflowRunStore` extends `IOperationStore`, so reconciliation uses the
+  canonical lease pattern with a 30-second lease renewed every 10 seconds.
+
+### Scheduler
+
+A separate background service evaluates cron-triggered definitions once per
+tick (30-second interval). For each definition, the scheduler:
+
+1. Compiles the trigger's 5-field cron expression with the declared IANA
+   time zone (default UTC) and caches the compiled expression.
+2. Seeds its in-memory cursor from the durable per-workflow cursor so
+   restarts never rewind into previously-fired occurrences.
+3. Claims the fire-time occurrence via `TryClaimScheduleFireAsync` so only
+   one replica creates a run per (workflow, fire-time) pair.
+4. After the winning replica successfully creates the run (or determines
+   the definition is permanently invalid), it persists a durable
+   pending-cursor marker so a process crash between occurrence consumption
+   and cursor advancement cannot cause the occurrence to be replayed after
+   the per-firing claim TTL expires. The in-memory cursor only advances
+   past the occurrence once a durable write has succeeded.
+5. Advances the durable cursor past the fired occurrence. If the advance
+   fails, the pending cursor retries on the next tick. Transient
+   `CreateRunAsync` failures release the claim so the same occurrence can be
+   retried on a later tick without losing the fire.
+
+DST transitions are handled per standard cron conventions: wall-clock times
+that fall in a spring-forward gap are skipped (the occurrence fires the
+next day), and ambiguous fall-back times fire at the first/daylight
+occurrence.
+
+Invalid cron expressions or unknown time zones are skipped and logged at
+`Warning` with event `8116`; the workflow stops firing until the definition
+is corrected.
+
+Deleting a scheduled workflow clears its durable cursor so a later recreate
+of the same workflow id starts fresh; the scheduler also evicts its
+in-memory compiled-cron cache on the next tick for any workflow id that is
+no longer present, so the replacement definition never inherits the
+predecessor's fire history.
+
+### Cancellation
+
+Cancellation on an `Orchestration` operation flows through
+`/api/v1/admin/operations/{runId}/cancel` to the
+`WorkflowOrchestrationEngine`, which marks the run `Cancelled` on the durable
+record. The cancel path acquires the same per-run reconcile lease used by the
+reconciler so a concurrent tick cannot overwrite the `Cancelled` status with
+a stale `SetAsync`. Cancelled runs stay in the active reconcile set until
+every step reaches a terminal state, so cascade cancellation keeps making
+progress across ticks. On each reconcile pass over a cancelled run the engine
+inspects every step:
+
+- `Pending` steps transition to `Cancelled` immediately.
+- `Queued` or `Running` steps are cancelled through `CancelJobAsync` on the
+  job executor before the step moves to `Cancelled`. If `CancelJobAsync`
+  fails, the step remains in its current (non-terminal) state, a warning is
+  recorded on the run, and the cancel is retried on subsequent reconcile
+  passes. The run stays active until all child jobs are actually cancelled
+  or observed in a terminal state.
+- Already-terminal steps are left as-is.
+
+The engine swallows `GeoprocessingNotFoundException` and
+`GeoprocessingPreconditionFailedException` from the cascade so partially
+pruned or already-terminal child jobs stay idempotent.
+
+If the cancel path cannot acquire the reconcile lease within its bounded
+retry window (a concurrent reconcile tick is holding it longer than expected),
+the endpoint returns a shaped `409 Conflict` with a retriable message rather
+than a `500`. The run state has not been mutated, so callers can safely retry
+the same cancel request.
+
+If the workflow definition is deleted while a run is still active, the next
+reconcile tick finalises every non-terminal step state to `Cancelled`. A run
+that was already in a terminal state (e.g. `Cancelled`) keeps that status;
+otherwise the run transitions to `Failed` with a descriptive error. This
+guarantees the run leaves the active reconcile set exactly once and emits
+terminal telemetry.
+
+If the workflow definition's step set is modified while a run is active (steps
+added or removed), the engine detects the mismatch on the next reconcile tick,
+cancels underlying child jobs for non-terminal steps, and fails the run with
+a descriptive error (event 8121). If `CancelJobAsync` fails for a step, the
+step remains in its current (non-terminal) state, a warning is recorded, and
+the cancel is retried on subsequent reconcile passes — the same invariant
+enforced by the cascade-cancel and definition-missing paths. This prevents
+`KeyNotFoundException` crashes or silent state loss when the definition shape
+diverges from the run's persisted step states.
+
+### Progress Projection
+
+The `WorkflowProgress` projection written to `IUniversalProgressStore` is
+best-effort. After the authoritative `WorkflowRun` is durably saved, a
+progress-store failure is caught, logged (event 8122), and does not propagate
+as an unhandled exception. This prevents three failure modes: duplicate cron
+runs on partial success, terminal runs dropping out of reconciliation before
+telemetry fires, and cancel returning `500` after a durable success. The
+progress view self-heals on the next reconcile tick that succeeds in writing.
+
+### Policy Defaults and Tuning
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Reconcile poll interval | 5 s | `WorkflowOrchestrationBackgroundService` poll cadence |
+| Reconcile lease duration | 30 s | Matches the deploy reconciler lease pattern |
+| Reconcile lease renewal | 10 s | Background renewal while a run is being reconciled |
+| Scheduler tick interval | 30 s | `WorkflowSchedulerBackgroundService` cadence |
+| Scheduler claim retention | 24 h | Window during which a `(workflow, fire-time)` claim is honoured |
+| Run progress retention | 7 d | TTL applied to the `WorkflowProgress` projection in `IUniversalProgressStore` |
+
+### Persistence
+
+| Store | Key pattern | TTL | Index sets |
+|-------|-------------|-----|------------|
+| `RedisWorkflowDefinitionStore` | `orchestration:def:{workflowId}` | none | `orchestration:def:all` |
+| `RedisWorkflowRunStore` | `orchestration:run:{runId}` | 7 d | `orchestration:run:active`, `orchestration:run:wf:{workflowId}` |
+| Run leases | `orchestration:run:lease:{runId}` | 30 s | — |
+| Schedule claims | `orchestration:schedule:claim:{workflowId}:{minuteStamp}` | 24 h | — |
+| Schedule cursors | `orchestration:schedule:cursor:{workflowId}` | none | — |
+| Schedule pending cursors | `orchestration:schedule:pending-cursor:{workflowId}` | none (cleared on cursor advance) | — |
+
+All serialization uses the source-generated `OrchestrationJsonContext`;
+orchestration does not introduce reflection or runtime JSON discovery.
+
+### Observability
+
+`WorkflowOrchestrationEngine`, the reconciler loop, and the scheduler emit
+structured logs in the `8100-8199` event-id band (`OrchestrationLog`). Notable
+events include `8100 WorkflowRunCreated`, `8101 WorkflowRunCompleted`,
+`8102 WorkflowStepSubmitted`, `8104 WorkflowStepRetrying`,
+`8105 WorkflowStepSkipped`, `8107 InputBindingFailed`,
+`8108 SchedulerTriggered`, `8110 ReconciliationFailed`,
+`8111 PollLoopFailed`, `8114 SchedulerTickFailed`,
+`8115 WorkflowStepFailed`, `8116 SchedulerDefinitionInvalid`,
+`8117 WorkflowStepCancelJobFailed`,
+`8118 WorkflowStepObservationTransientFailure`,
+`8119 WorkflowCancelLeaseContention`,
+`8120 WorkflowStepArtifactsUnavailableForBoundDependents`,
+`8121 DefinitionStepSetMismatch`, and
+`8122 ProgressProjectionFailed`.
+
+The engine contributes activities
+(`honua.orchestration.reconcile_run`, `honua.orchestration.execute_step`,
+`honua.orchestration.resolve_bindings`, `honua.orchestration.scheduler_tick`)
+and metrics (`honua.orchestration.runs_created_total`,
+`honua.orchestration.runs_completed_total`,
+`honua.orchestration.steps_completed_total`,
+`honua.orchestration.steps_retried_total`,
+`honua.orchestration.run_duration_ms`,
+`honua.orchestration.step_duration_ms`).
+
+---
+
+## OGC API Processes
+
+The OGC API Processes adapter is always registered and serves routes under
+`/ogc/processes`. Job lifecycle operations (execute, list, status, results,
+dismiss) require Redis-backed durable storage; they return `503` when the
+store is not configured.
+
+### Configuration
+
+All settings live under `OgcProcesses` (env prefix `OgcProcesses__`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `DefaultJobLimit` | 100 | Maximum jobs returned per `GET /ogc/processes/jobs` request |
+
+---
+
 ## Workspace Lifecycle
 
 Geoprocessing workspaces manage temporary and durable artifacts produced by
@@ -241,8 +771,38 @@ workspace does not block subsequent workspaces. If any artifact in a workspace
 fails to delete, the workspace itself is skipped for that sweep to prevent
 orphaned artifact records.
 
-For full lifecycle semantics, see the
-[AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md#workspace-lifecycle).
+The lifecycle rules described in this section are the current workspace contract for expiration, grace-period promotion, and cleanup behavior.
+
+### GPServer Job Lifecycle
+
+GPServer REST endpoints expose the canonical geoprocessing job lifecycle to
+Esri clients. Currently, job status polling and cancellation are functional;
+`submitJob` and `execute` return 501 pending GPServer per-task projection of the
+built-in `IProcessCatalog` (19 seeded processes across `geometry.*`,
+`analytics.*`, `generalization.*`, and `data-management.*`) and canonical
+`ExecutePlan` support. Destructive `data-management.*` ids
+(`delete-features`, `calculate-field`) are classified server-side and route
+through `OperatorApprovalGate` with `IsDestructive = true`. When
+`Operator:Approval:DestructiveActionsRequireApproval` is on, submissions
+hard-fail at the gate (gRPC `FailedPrecondition`, OGC `403 Approval required`)
+before any job or progress record is created; pending-approval persistence and
+a `Validated → AwaitingApproval` status projection are follow-on work.
+The mapping between admin operation tracking and GPServer responses (once
+submission is available):
+
+| Admin operation state | GPServer `jobStatus` | Endpoint |
+|-----------------------|----------------------|----------|
+| Queued | `esriJobSubmitted` | `submitJob` returns 202 |
+| Provisioning | `esriJobWaiting` | `jobs/{jobId}` status poll |
+| Running | `esriJobExecuting` | `jobs/{jobId}` status poll |
+| Succeeded | `esriJobSucceeded` | `jobs/{jobId}` status (result URLs pending result-storage support) |
+| Failed | `esriJobFailed` | `jobs/{jobId}` with error messages |
+| Cancelled | `esriJobCancelled` | After `jobs/{jobId}/cancel` |
+
+GPServer jobs appear in `GET /api/v1/admin/operations/type/Geoprocessing`
+alongside jobs submitted through the gRPC `ProcessService`. Both share the
+same underlying `IExecutionJobStore` and `IUniversalProgressStore`, so admin
+observability covers all protocol surfaces.
 
 ---
 

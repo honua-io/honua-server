@@ -21,10 +21,31 @@ internal sealed class PostgresGeometryOperationService(
     private readonly IDatabaseConnectionProvider _connectionProvider = connectionProvider
         ?? throw new ArgumentNullException(nameof(connectionProvider));
 
+    // Web Mercator (EPSG:3857) is only well-defined within roughly ±85.0511° latitude;
+    // outside this band the planar distortion is severe enough to produce wildly wrong
+    // buffer geometries. Planar buffers over geographic CRS route through 3857, so we
+    // refuse when the input geometry extends past this limit.
+    private const double WebMercatorMaxAbsoluteLatitudeDegrees = 85.0511287798066;
+
     public async Task<byte[]> BufferAsync(byte[] wkb, int srid, double distance, bool geodesic, CancellationToken ct = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(ct).ConfigureAwait(false);
         var crsMetrics = await GetCrsMetricsAsync(connection, srid, ct).ConfigureAwait(false);
+
+        if (!geodesic && crsMetrics.IsGeographic)
+        {
+            var latitudeBounds = await GetGeographicLatitudeBoundsAsync(connection, wkb, srid, ct).ConfigureAwait(false);
+            if (latitudeBounds is { } bounds
+                && (Math.Abs(bounds.MinY) > WebMercatorMaxAbsoluteLatitudeDegrees
+                    || Math.Abs(bounds.MaxY) > WebMercatorMaxAbsoluteLatitudeDegrees))
+            {
+                throw new ArgumentException(
+                    $"Planar buffer on geographic CRS EPSG:{srid} is only accurate within "
+                    + $"±{WebMercatorMaxAbsoluteLatitudeDegrees:F4}° latitude. Input extends to "
+                    + $"[{bounds.MinY:F4}°, {bounds.MaxY:F4}°]. Use geodesic=true for polar geometries.");
+            }
+        }
+
         await using var cmd = connection.CreateCommand();
 
         if (geodesic)
@@ -50,6 +71,25 @@ internal sealed class PostgresGeometryOperationService(
 
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result as byte[] ?? throw new InvalidOperationException("PostGIS buffer returned null.");
+    }
+
+    private readonly record struct LatitudeBounds(double MinY, double MaxY);
+
+    private static async Task<LatitudeBounds?> GetGeographicLatitudeBoundsAsync(
+        DbConnection connection, byte[] wkb, int srid, CancellationToken ct)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT ST_YMin(g), ST_YMax(g) FROM (SELECT ST_SetSRID($1::geometry, $2) AS g) t";
+        cmd.Parameters.Add(new NpgsqlParameter { Value = wkb });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = srid });
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false) || reader.IsDBNull(0) || reader.IsDBNull(1))
+        {
+            return null;
+        }
+
+        return new LatitudeBounds(reader.GetDouble(0), reader.GetDouble(1));
     }
 
     public async Task<byte[]> SimplifyAsync(byte[] wkb, double tolerance, bool preserveTopology, CancellationToken ct = default)
@@ -264,6 +304,9 @@ internal sealed class PostgresGeometryOperationService(
         }
 
         await using var cmd = connection.CreateCommand();
+        // Geographic CRS detection must be authoritative (WKT prefix or +proj=longlat).
+        // The prior 4000–4999 range rule misclassified projected and geocentric CRS that
+        // fall in that range (notably EPSG:4978 WGS84 geocentric 3D Cartesian).
         cmd.CommandText = """
             SELECT
                 CASE
@@ -271,7 +314,6 @@ internal sealed class PostgresGeometryOperationService(
                         OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGRAPHICCRS[%'
                         OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
                         OR COALESCE(proj4text, '') ILIKE '%+proj=longlat%'
-                        OR srid BETWEEN 4000 AND 4999
                     THEN TRUE
                     ELSE FALSE
                 END AS is_geographic,
@@ -311,6 +353,9 @@ internal sealed class PostgresGeometryOperationService(
         return metrics;
     }
 
+    // Fallback used only when spatial_ref_sys has no row for the SRID.
+    // Restricted to the well-known, unambiguously geographic codes; the prior range-rule
+    // (4000–4999) swept in EPSG:4978 (geocentric) and assorted projected variants.
     private static bool IsLikelyGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+        => srid is 4326 or 4269 or 4267 or 4258 or 4619 or 4283;
 }

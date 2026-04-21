@@ -104,7 +104,8 @@ internal static class MigrationScannerEndpoints
                                 Password = request.Password,
                                 TimeoutSeconds = request.TimeoutSeconds ?? 120,
                                 IncludeCompatibilityAnalysis = true,
-                                IncludeStyleContent = request.IncludeStyleContent ?? false
+                                IncludeStyleContent = request.IncludeStyleContent ?? false,
+                                AllowUnsafeLocalUrls = allowUnsafeLocalUrls
                             },
                             cancellationToken).ConfigureAwait(false);
                         break;

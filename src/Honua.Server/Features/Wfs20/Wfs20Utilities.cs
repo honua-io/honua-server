@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Http;
 using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.Wfs20;
@@ -487,5 +489,58 @@ internal static class Wfs20Utilities
 
         normalizedResultType = resultType;
         return false;
+    }
+
+    /// <summary>
+    /// Returns true when the <c>Accept</c> header explicitly rejects XML responses
+    /// (any media range matching <c>application/xml</c>, <c>text/xml</c>, or the
+    /// wildcards with <c>q=0</c>). WFS 2.0 operations are XML-only, so an explicit
+    /// XML rejection should surface as <c>406 Not Acceptable</c> instead of being
+    /// silently ignored.
+    /// </summary>
+    public static bool AcceptHeaderExplicitlyRejectsXml(HttpRequest request)
+    {
+        var values = request.Headers.Accept;
+        if (values.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            foreach (var entry in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!MediaTypeWithQualityHeaderValue.TryParse(entry, out var parsed))
+                {
+                    continue;
+                }
+
+                if (parsed.Quality is not double quality || quality > 0)
+                {
+                    continue;
+                }
+
+                var mediaType = parsed.MediaType ?? string.Empty;
+                if (MediaTypeMatchesXml(mediaType))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MediaTypeMatchesXml(string mediaType)
+    {
+        return string.Equals(mediaType, "application/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/*", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "*/*", StringComparison.OrdinalIgnoreCase);
     }
 }

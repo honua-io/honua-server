@@ -24,10 +24,5 @@ public enum CloudStorageProvider
     /// <summary>
     /// Microsoft Azure Blob Storage
     /// </summary>
-    AzureBlob = 2,
-
-    /// <summary>
-    /// Google Cloud Storage
-    /// </summary>
-    GoogleCloudStorage = 3
+    AzureBlob = 2
 }

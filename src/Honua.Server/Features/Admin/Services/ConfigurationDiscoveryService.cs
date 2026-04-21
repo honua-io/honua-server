@@ -18,9 +18,15 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Tiles;
+<<<<<<< HEAD
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+=======
+using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.ServiceDefaults;
+>>>>>>> origin/trunk
 
 namespace Honua.Server.Features.Admin.Services;
 
@@ -276,6 +282,7 @@ public sealed class ConfigurationDiscoveryService
 
         try
         {
+<<<<<<< HEAD
             // Try to get from IOptions if registered
             var optionsType = typeof(IOptions<>).MakeGenericType(type);
             var options = _serviceProvider.GetService(optionsType);
@@ -300,6 +307,26 @@ public sealed class ConfigurationDiscoveryService
                             {
                                 values[prop.Name] = null;
                             }
+=======
+            var registration = _serviceProvider
+                .GetServices<IConfigurationOptionsRegistration>()
+                .FirstOrDefault(candidate => candidate.Metadata.OptionsType == type);
+
+            if (registration?.GetConfiguredOptions(_serviceProvider) is { } instance)
+            {
+                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (prop.CanRead && prop.GetIndexParameters().Length == 0)
+                    {
+                        try
+                        {
+                            var value = prop.GetValue(instance);
+                            values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
+                        }
+                        catch
+                        {
+                            values[prop.Name] = null;
+>>>>>>> origin/trunk
                         }
                     }
                 }

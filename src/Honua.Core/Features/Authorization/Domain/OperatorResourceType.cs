@@ -21,5 +21,8 @@ public enum OperatorResourceType
     Deployment,
 
     /// <summary>Background execution job.</summary>
-    Job
+    Job,
+
+    /// <summary>Published hosted service produced by the promotion lifecycle.</summary>
+    PublishedService
 }

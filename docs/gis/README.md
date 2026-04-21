@@ -4,7 +4,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Getting Started
 
-- [Protocols Overview](STANDARDS_APIS.md) — All supported protocols (FeatureServer, MapServer, STAC, OGC, OData, MVT)
+- [Protocols Overview](STANDARDS_APIS.md) — Major protocol families, client fit, and entry points
 - [QGIS Tutorial](tutorials/qgis-getting-started.md) — Zero to querying in 5 minutes
 - [GeoServer Migration](tutorials/geoserver-migration-guide.md) — Endpoint mapping, inventory scan, compatibility review, and dry-run import
 
@@ -21,7 +21,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Protocol Coverage
 
-- [GeoServices REST Parity](geoservices-rest-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, and Geometry Service
+- [GeoServices REST Parity](geoservices-rest-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, Geometry Service, and GPServer
 - [GeoServices REST Parity Data (JSON)](data/geoservices-rest-parity.json) — Machine-readable export of the same parity contract
 - [FeatureServer Matrix](feature-server-matrix.md) — Esri FeatureServer endpoint coverage
 - [MapServer Matrix](map-server-matrix.md) — MapServer, WMS 1.3, WMTS 1.0 coverage
@@ -30,6 +30,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Geoprocess Framework Analysis](geoprocess-framework-analysis.md) — GPServer, OGC API Processes, and GeoServer WPS mapped to Honua canonical model
 - [OGC API Features](specifications/ogc-api-features-coverage.md) — Parts [1](specifications/ogc-api-features-part1-core.md), [2](specifications/ogc-api-features-part2-crs.md), [3](specifications/ogc-api-features-part3-filtering.md)
 - [OGC API Tiles](specifications/ogc-api-tiles-coverage.md)
+- [OGC API Processes](specifications/ogc-api-processes-coverage.md) — async geoprocessing adapter over canonical runtime
 - [OData v4](specifications/odata-v4-coverage.md)
 
 ## Compatibility

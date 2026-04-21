@@ -12,15 +12,19 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
 {
     private static DefaultOperatorApprovalEvaluator CreateEvaluator(
         bool publishRequiresApproval = true,
-        bool destructiveActionsRequireApproval = true)
+        bool destructiveActionsRequireApproval = true,
+        bool adminExemptFromApproval = true)
     {
         var options = Options.Create(new OperatorApprovalOptions
         {
             PublishRequiresApproval = publishRequiresApproval,
-            DestructiveActionsRequireApproval = destructiveActionsRequireApproval
+            DestructiveActionsRequireApproval = destructiveActionsRequireApproval,
+            AdminExemptFromApproval = adminExemptFromApproval
         });
+        var rbacOptions = Options.Create(new RbacOptions());
         return new DefaultOperatorApprovalEvaluator(
             options,
+            rbacOptions,
             NullLogger<DefaultOperatorApprovalEvaluator>.Instance);
     }
 
@@ -159,7 +163,7 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
         var result = evaluator.Evaluate(CreatePrincipal(), request);
 
         result.IsRequired.Should().BeTrue();
-        result.PolicyRef.Should().Be("operator.destructive");
+        result.PolicyRef.Should().Be("operator.destructive.process");
         result.ReasonCodes.Should().Contain("destructive-action-requires-approval");
     }
 
@@ -193,5 +197,117 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
         var result = evaluator.Evaluate(CreatePrincipal(), request);
 
         result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_AdminPrincipal_ExemptByDefault()
+    {
+        var evaluator = CreateEvaluator(publishRequiresApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        };
+
+        var result = evaluator.Evaluate(CreateAdminPrincipal(), request);
+
+        result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_AdminPrincipal_GatedWhenExemptionDisabled()
+    {
+        var evaluator = CreateEvaluator(publishRequiresApproval: true, adminExemptFromApproval: false);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        };
+
+        var result = evaluator.Evaluate(CreateAdminPrincipal(), request);
+
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.publish");
+        result.ReasonCodes.Should().Contain("publish-requires-approval");
+    }
+
+    [UnitTest]
+    public void Evaluate_DeploymentPublish_IncludesDeployPublishReasonCode()
+    {
+        var evaluator = CreateEvaluator(publishRequiresApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish
+        };
+
+        var result = evaluator.Evaluate(CreatePrincipal(), request);
+
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.publish");
+        result.ReasonCodes.Should().Contain("publish-requires-approval");
+        result.ReasonCodes.Should().Contain("deploy-publish");
+    }
+
+    [UnitTest]
+    public void Evaluate_NonDeploymentPublish_DoesNotIncludeDeployPublishReasonCode()
+    {
+        var evaluator = CreateEvaluator(publishRequiresApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Package,
+            Operation = OperatorOperation.Publish
+        };
+
+        var result = evaluator.Evaluate(CreatePrincipal(), request);
+
+        result.IsRequired.Should().BeTrue();
+        result.ReasonCodes.Should().Contain("publish-requires-approval");
+        result.ReasonCodes.Should().NotContain("deploy-publish");
+    }
+
+    [UnitTest]
+    public void Evaluate_DestructiveDeployment_IncludesResourceQualifiedPolicyRef()
+    {
+        var evaluator = CreateEvaluator(destructiveActionsRequireApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        };
+
+        var result = evaluator.Evaluate(CreatePrincipal(), request);
+
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.destructive.deployment");
+    }
+
+    [UnitTest]
+    public void Evaluate_DestructiveJob_IncludesResourceQualifiedPolicyRef()
+    {
+        var evaluator = CreateEvaluator(destructiveActionsRequireApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        };
+
+        var result = evaluator.Evaluate(CreatePrincipal(), request);
+
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.destructive.job");
+    }
+
+    private static ClaimsPrincipal CreateAdminPrincipal(string userId = "admin-1")
+    {
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim("roles", "admin")
+            ],
+            "TestScheme");
+        return new ClaimsPrincipal(identity);
     }
 }

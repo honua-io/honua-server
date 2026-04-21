@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: cite-tiles-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cite-tiles-conformance:
     runs-on: ubuntu-latest
@@ -33,16 +37,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Cache Docker layers
-        uses: actions/cache@v5
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-cite-tiles-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-cite-tiles-
-            ${{ runner.os }}-buildx-cite-
-            ${{ runner.os }}-buildx-
-
       - name: Build Honua Server image
         uses: docker/build-push-action@v7
         with:
@@ -50,13 +44,8 @@ jobs:
           file: ./Dockerfile
           push: false
           tags: honua-server:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          cache-from: type=gha,scope=cite-tiles
+          cache-to: type=gha,mode=max,scope=cite-tiles
 
       - name: Install dependencies
         run: |

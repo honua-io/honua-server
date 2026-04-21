@@ -29,10 +29,10 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     private static readonly TimeSpan LeaseRenewalInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan DeliveryClaimTtl = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan DeliveryCompletedTtl = TimeSpan.FromDays(7);
-    private const string DeliveryStateClaimed = "claimed";
     private const string DeliveryStateCompleted = "completed";
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly IDistributedCache? _distributedCache = distributedCache;
+    private readonly IConnectionMultiplexer? _redis = redis;
     private readonly IDatabase? _redisDb = redis?.GetDatabase();
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
     private readonly FeatureChangeWebhookOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
@@ -136,13 +136,13 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                                 break;
                             }
 
-                            var deliveryState = await TryAcquireDeliveryClaimAsync(featureEvent.EventId).ConfigureAwait(false);
-                            if (deliveryState == DeliveryClaimResult.InProgress)
+                            var deliveryClaim = await TryAcquireDeliveryClaimAsync(featureEvent.EventId).ConfigureAwait(false);
+                            if (deliveryClaim.Result == DeliveryClaimResult.InProgress)
                             {
                                 break;
                             }
 
-                            if (deliveryState == DeliveryClaimResult.Completed)
+                            if (deliveryClaim.Result == DeliveryClaimResult.Completed)
                             {
                                 _deliveredCursor = featureEvent.Cursor;
                                 if (!await TryPersistDeliveredCursorAsync(_deliveredCursor, processingToken).ConfigureAwait(false))
@@ -155,17 +155,47 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
 
                             processingToken.ThrowIfCancellationRequested();
 
-                            var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, processingToken).ConfigureAwait(false);
-                            if (!delivered)
+                            using var deliveryClaimRenewalCts = deliveryClaim.LeaseCoordinator is null
+                                ? null
+                                : CancellationTokenSource.CreateLinkedTokenSource(processingToken);
+                            using var deliveryProcessingCts = deliveryClaim.LeaseCoordinator is null
+                                ? null
+                                : CancellationTokenSource.CreateLinkedTokenSource(
+                                    processingToken,
+                                    deliveryClaim.LeaseCoordinator.LeaseLostToken);
+                            var deliveryClaimRenewalTask = deliveryClaimRenewalCts is null
+                                ? Task.CompletedTask
+                                : deliveryClaim.LeaseCoordinator!.MaintainLeaseAsync(LeaseRenewalInterval, deliveryClaimRenewalCts.Token);
+                            var deliveryToken = deliveryProcessingCts?.Token ?? processingToken;
+
+                            try
+                            {
+                                var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, deliveryToken).ConfigureAwait(false);
+                                if (!delivered)
+                                {
+                                    break;
+                                }
+
+                                await MarkDeliveryCompletedAsync(featureEvent.EventId).ConfigureAwait(false);
+                                _deliveredCursor = featureEvent.Cursor;
+                                if (!await TryPersistDeliveredCursorAsync(_deliveredCursor, processingToken).ConfigureAwait(false))
+                                {
+                                    break;
+                                }
+                            }
+                            catch (OperationCanceledException) when (deliveryClaim.LeaseCoordinator?.LeaseLostToken.IsCancellationRequested == true)
                             {
                                 break;
                             }
-
-                            await MarkDeliveryCompletedAsync(featureEvent.EventId).ConfigureAwait(false);
-                            _deliveredCursor = featureEvent.Cursor;
-                            if (!await TryPersistDeliveredCursorAsync(_deliveredCursor, processingToken).ConfigureAwait(false))
+                            finally
                             {
-                                break;
+                                if (deliveryClaimRenewalCts is not null)
+                                {
+                                    deliveryClaimRenewalCts.Cancel();
+                                    await deliveryClaimRenewalTask.ConfigureAwait(false);
+                                }
+
+                                deliveryClaim.LeaseCoordinator?.Dispose();
                             }
                         }
                     }
@@ -316,31 +346,27 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<DeliveryClaimResult> TryAcquireDeliveryClaimAsync(string eventId)
+    private async Task<DeliveryClaimState> TryAcquireDeliveryClaimAsync(string eventId)
     {
         if (_redisDb != null)
         {
-            var stateKey = GetDeliveryStateKey(eventId);
-            var claimed = await _redisDb.StringSetAsync(
-                    stateKey,
-                    DeliveryStateClaimed,
-                    DeliveryClaimTtl,
-                    when: When.NotExists)
-                .ConfigureAwait(false);
-            if (claimed)
+            var claimLease = new RedisLeaseCoordinator(_redis, GetDeliveryStateKey(eventId), DeliveryClaimTtl);
+            if (await claimLease.TryAcquireOrExtendAsync().ConfigureAwait(false))
             {
-                return DeliveryClaimResult.Acquired;
+                return new DeliveryClaimState(DeliveryClaimResult.Acquired, claimLease);
             }
 
+            claimLease.Dispose();
+            var stateKey = GetDeliveryStateKey(eventId);
             var existingState = await _redisDb.StringGetAsync(stateKey).ConfigureAwait(false);
             return string.Equals(existingState.ToString(), DeliveryStateCompleted, StringComparison.Ordinal)
-                ? DeliveryClaimResult.Completed
-                : DeliveryClaimResult.InProgress;
+                ? new DeliveryClaimState(DeliveryClaimResult.Completed, null)
+                : new DeliveryClaimState(DeliveryClaimResult.InProgress, null);
         }
 
         return _completedDeliveries.ContainsKey(eventId)
-            ? DeliveryClaimResult.Completed
-            : DeliveryClaimResult.Acquired;
+            ? new DeliveryClaimState(DeliveryClaimResult.Completed, null)
+            : new DeliveryClaimState(DeliveryClaimResult.Acquired, null);
     }
 
     private async Task MarkDeliveryCompletedAsync(string eventId)
@@ -409,6 +435,10 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         InProgress,
         Completed
     }
+
+    private readonly record struct DeliveryClaimState(
+        DeliveryClaimResult Result,
+        RedisLeaseCoordinator? LeaseCoordinator);
 
     private void LogWebhookConfigurationInvalidOnce()
     {

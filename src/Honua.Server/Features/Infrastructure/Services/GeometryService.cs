@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -35,10 +36,12 @@ internal sealed class GeometryService : IGeometryService
     private static readonly GeoJsonReader _geoJsonReader = new();
     private static readonly GeoJsonWriter _geoJsonWriter = new();
     private readonly GeometryLimits _geometryLimits;
+    private readonly GeometryValidationOptions _validationOptions;
 
     public GeometryService(IOptions<LimitsOptions> limitsOptions)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _validationOptions = limitsOptions?.Value?.Validation ?? new GeometryValidationOptions();
     }
 
     /// <inheritdoc />
@@ -115,9 +118,12 @@ internal sealed class GeometryService : IGeometryService
             return null;
         }
 
+        ValidateInputGeometryTextSize(geoJson);
+
         try
         {
             var geometry = _geoJsonReader.Read<Geometry>(geoJson);
+            ValidateInputGeometryComplexity(geometry);
             if (geometry == null)
             {
                 return null;
@@ -151,9 +157,12 @@ internal sealed class GeometryService : IGeometryService
             return null;
         }
 
+        ValidateInputGeometryTextSize(wkt);
+
         try
         {
             var geometry = _wktReader.Read(wkt);
+            ValidateInputGeometryComplexity(geometry);
             if (geometry == null)
             {
                 return null;
@@ -298,6 +307,69 @@ internal sealed class GeometryService : IGeometryService
                 }
                 yield break;
         }
+    }
+
+    private void ValidateInputGeometryTextSize(string geometryText)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(geometryText);
+
+        var maxInputBytes = ResolveMaxInputGeometryBytes();
+        if (maxInputBytes > 0 && Encoding.UTF8.GetByteCount(geometryText) > maxInputBytes)
+        {
+            throw new ArgumentException("Geometry payload exceeds the configured maximum size.");
+        }
+    }
+
+    private void ValidateInputGeometryComplexity(Geometry? geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return;
+        }
+
+        var maxVertices = ResolveMaxVertices();
+        if (maxVertices > 0 && geometry.NumPoints > maxVertices)
+        {
+            throw new ArgumentException("Geometry exceeds the configured complexity limits.");
+        }
+
+        var maxRings = _validationOptions.MaxRings;
+        if (maxRings > 0 && CountRings(geometry) > maxRings)
+        {
+            throw new ArgumentException("Geometry exceeds the configured complexity limits.");
+        }
+    }
+
+    private int ResolveMaxInputGeometryBytes()
+    {
+        var candidates = new List<long>(2);
+        if (_geometryLimits.MaxGeometrySize > 0)
+        {
+            candidates.Add(_geometryLimits.MaxGeometrySize);
+        }
+
+        if (_validationOptions.MaxWkbSize > 0)
+        {
+            candidates.Add(_validationOptions.MaxWkbSize);
+        }
+
+        return candidates.Count == 0 ? 0 : (int)candidates.Min();
+    }
+
+    private int ResolveMaxVertices()
+    {
+        var candidates = new List<int>(2);
+        if (_geometryLimits.MaxVerticesPerGeometry > 0)
+        {
+            candidates.Add(_geometryLimits.MaxVerticesPerGeometry);
+        }
+
+        if (_validationOptions.MaxVertices > 0)
+        {
+            candidates.Add(_validationOptions.MaxVertices);
+        }
+
+        return candidates.Count == 0 ? 0 : candidates.Min();
     }
 
     /// <summary>

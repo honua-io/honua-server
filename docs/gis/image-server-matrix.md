@@ -250,7 +250,7 @@ These endpoints are exposed under the ImageServer route prefix for parity with E
 
 - The current Honua route shape is layer-scoped: `GET /rest/services/{id}/ImageServer`, where `{id}` is the addressed raster layer identifier rather than a FeatureServer/MapServer-style `{serviceId}`.
 - Metadata, export, and identify all operate on the primary raster for the layer. Honua does not currently expose full mosaic-dataset catalog/query behavior.
-- Export responses always return JSON with a temporary file URL. Temporary exports are stored through `ITemporaryFileService` and expire after one hour.
+- Export responses always return JSON with a temporary file URL. Temporary exports are stored through `ITemporaryFileService`, expire after one hour, and use shared cloud file storage instead of node-local disk when the configured `FileStorage` provider is `AwsS3` or `AzureBlob`. Shared cloud-backed temporary files require Redis coordination so quota enforcement remains correct across replicas.
 - `exportImage` and `identify` accept more request fields than they currently honor. Unsupported fields are intentionally documented here so they are not mistaken for full parity.
 - Tile access returns rendered raster tiles only. Honua does not expose ImageServer WMTS or offline tile-export workflows.
 

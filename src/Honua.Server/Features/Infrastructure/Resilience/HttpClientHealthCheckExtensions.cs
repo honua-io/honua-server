@@ -63,6 +63,10 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
     private readonly string _httpClientName;
     private readonly string _serviceType;
     private readonly string _healthCheckUri;
+<<<<<<< HEAD
+=======
+    private readonly string _healthCheckUriSafe;
+>>>>>>> origin/trunk
     private readonly TimeSpan _timeout;
 
     public HttpClientHealthCheck(
@@ -78,9 +82,30 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
         _httpClientName = httpClientName;
         _serviceType = serviceType;
         _healthCheckUri = healthCheckUri;
+<<<<<<< HEAD
         _timeout = timeout;
     }
 
+=======
+        // Query strings may contain credentials or tokens; surface only scheme+host+path in logs.
+        _healthCheckUriSafe = SanitizeForLogging(healthCheckUri);
+        _timeout = timeout;
+    }
+
+    private static string SanitizeForLogging(string uri)
+    {
+        if (string.IsNullOrEmpty(uri)
+            || !Uri.TryCreate(uri, UriKind.RelativeOrAbsolute, out var parsed))
+        {
+            return uri ?? string.Empty;
+        }
+
+        return parsed.IsAbsoluteUri
+            ? parsed.GetLeftPart(UriPartial.Path)
+            : parsed.ToString().Split('?', 2)[0];
+    }
+
+>>>>>>> origin/trunk
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -96,7 +121,11 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
             var data = new Dictionary<string, object>
             {
                 ["service_type"] = _serviceType,
+<<<<<<< HEAD
                 ["health_check_uri"] = _healthCheckUri,
+=======
+                ["health_check_uri"] = _healthCheckUriSafe,
+>>>>>>> origin/trunk
                 ["circuit_breaker_state"] = circuitBreakerState?.ToString() ?? "unknown"
             };
 
@@ -153,7 +182,11 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
                 new Dictionary<string, object>
                 {
                     ["service_type"] = _serviceType,
+<<<<<<< HEAD
                     ["health_check_uri"] = _healthCheckUri,
+=======
+                    ["health_check_uri"] = _healthCheckUriSafe,
+>>>>>>> origin/trunk
                     ["cancelled"] = true
                 });
         }
@@ -169,7 +202,11 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
                 new Dictionary<string, object>
                 {
                     ["service_type"] = _serviceType,
+<<<<<<< HEAD
                     ["health_check_uri"] = _healthCheckUri,
+=======
+                    ["health_check_uri"] = _healthCheckUriSafe,
+>>>>>>> origin/trunk
                     ["exception"] = ex.GetType().Name
                 });
         }

@@ -206,6 +206,20 @@ public sealed class MetadataSchemaRegistry : IMetadataSchemaRegistry
                 Kind = MetadataResourceKinds.Connection,
                 Description = "Secure connection metadata resource",
                 RequiredSpecFields = new[] { "name", "host", "databaseName" }
+            },
+            new ResourceSchemaDefinition
+            {
+                ApiVersion = CurrentVersion,
+                Kind = MetadataResourceKinds.MapTemplate,
+                Description = "Map template metadata resource",
+                RequiredSpecFields = new[] { "name", "category" }
+            },
+            new ResourceSchemaDefinition
+            {
+                ApiVersion = CurrentVersion,
+                Kind = MetadataResourceKinds.Theme,
+                Description = "Theme metadata resource",
+                RequiredSpecFields = new[] { "name" }
             }
         };
 

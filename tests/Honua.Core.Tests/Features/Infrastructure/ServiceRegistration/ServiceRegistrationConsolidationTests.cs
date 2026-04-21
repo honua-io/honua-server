@@ -2,9 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.ServiceRegistration;
+<<<<<<< HEAD
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+=======
+using Microsoft.Extensions.DependencyInjection;
+>>>>>>> origin/trunk
 
 namespace Honua.Core.Tests.Features.Infrastructure.ServiceRegistration;
 
@@ -68,6 +72,7 @@ public class ServiceRegistrationConsolidationTests
     }
 
     [Fact]
+<<<<<<< HEAD
     public void ServiceRegistrationHelpers_AddConfigurationOptions_WithValidator_RegistersCorrectly()
     {
         // Arrange
@@ -155,6 +160,8 @@ public class ServiceRegistrationConsolidationTests
     }
 
     [Fact]
+=======
+>>>>>>> origin/trunk
     public void ServiceRegistrationPatterns_AddSimpleCoreFeature_RegistersCorrectly()
     {
         // Arrange
@@ -189,6 +196,7 @@ public class ServiceRegistrationConsolidationTests
         Assert.NotNull(dictionaryPool);
     }
 
+<<<<<<< HEAD
     [Fact]
     public void DefaultProviderRegistry_RegisterAndRetrieveProvider_WorksCorrectly()
     {
@@ -264,4 +272,10 @@ public class ServiceRegistrationConsolidationTests
     {
         public Dictionary<string, Func<IServiceProvider, ITestProvider>> Providers { get; } = new();
     }
+=======
+    // Test interfaces and implementations
+    public interface ITestService { }
+
+    public class TestService : ITestService { }
+>>>>>>> origin/trunk
 }

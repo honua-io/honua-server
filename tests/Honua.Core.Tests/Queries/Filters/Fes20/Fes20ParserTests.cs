@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
@@ -30,6 +31,40 @@ public sealed class Fes20ParserTests
         var act = () => Fes20Parser.ParseFilter(filterXml);
 
         act.Should().Throw<Fes20ParseException>();
+    }
+
+    [UnitTest]
+    public void ParseFilter_WithInvalidPosListNumber_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:Intersects>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:LineString>
+                  <gml:posList>0 0 bad 1</gml:posList>
+                </gml:LineString>
+              </fes:Intersects>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*invalid numeric ordinates*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_WithNestedLogicalExpressionsBeyondLimit_ThrowsParseException()
+    {
+        var nested = string.Concat(Enumerable.Repeat("<fes:Not>", FilterParserGuard.MaxExpressionDepth + 1)) +
+            "<fes:PropertyIsEqualTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>deep</fes:Literal></fes:PropertyIsEqualTo>" +
+            string.Concat(Enumerable.Repeat("</fes:Not>", FilterParserGuard.MaxExpressionDepth + 1));
+        var filterXml = @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" + nested + @"</fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
     [UnitTest]

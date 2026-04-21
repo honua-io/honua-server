@@ -2,9 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
-using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -15,74 +12,43 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 internal sealed class ProductionMetricsCollector : IDisposable
 {
     private readonly Meter _meter;
-    private readonly IMemoryCache _memoryCache;
     private readonly ConnectionPoolMetrics _connectionPoolMetrics;
     private readonly IActiveDbConnectionTracker _connectionTracker;
     private readonly ICacheMetricsSnapshotProvider _cacheMetricsSnapshotProvider;
-    private readonly CacheOptions _cacheOptions;
+    private readonly IHttpRequestMetricsSnapshotProvider _httpRequestMetricsSnapshotProvider;
     private readonly ILogger<ProductionMetricsCollector> _logger;
     private readonly IServiceProvider _serviceProvider;
 
     // Metrics instruments
-    private readonly Histogram<double> _queryLatency;
-    private readonly Counter<long> _queryCount;
-    private readonly Counter<long> _errorCount;
     private readonly ObservableGauge<double> _memoryUsage;
     private readonly ObservableGauge<double> _cacheHitRatio;
-    private readonly ObservableGauge<int> _cacheEntryCount;
-    private readonly Counter<long> _rateLimitViolations;
-    private readonly Histogram<double> _fileUploadDuration;
     private readonly ObservableGauge<int> _uploadQueueDepth;
-
-    // State tracking
-    private long _totalQueries;
-    private long _totalErrors;
-    private long _cacheHits;
-    private long _cacheMisses;
-    private long _rateLimitViolationsCount;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProductionMetricsCollector"/> class.
     /// </summary>
-    /// <param name="memoryCache">Memory cache instance.</param>
     /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
     /// <param name="connectionTracker">Connection tracker.</param>
     /// <param name="cacheMetricsSnapshotProvider">Live cache metrics snapshot provider.</param>
-    /// <param name="cacheOptions">Cache options.</param>
+    /// <param name="httpRequestMetricsSnapshotProvider">Live HTTP request metrics snapshot provider.</param>
     /// <param name="logger">Logger instance.</param>
     /// <param name="serviceProvider">Service provider for accessing upload service.</param>
     public ProductionMetricsCollector(
-        IMemoryCache memoryCache,
         ConnectionPoolMetrics connectionPoolMetrics,
         IActiveDbConnectionTracker connectionTracker,
         ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider,
-        IOptions<CacheOptions> cacheOptions,
+        IHttpRequestMetricsSnapshotProvider httpRequestMetricsSnapshotProvider,
         ILogger<ProductionMetricsCollector> logger,
         IServiceProvider serviceProvider)
     {
-        _memoryCache = memoryCache;
         _connectionPoolMetrics = connectionPoolMetrics;
         _connectionTracker = connectionTracker;
         _cacheMetricsSnapshotProvider = cacheMetricsSnapshotProvider;
-        _cacheOptions = cacheOptions.Value;
+        _httpRequestMetricsSnapshotProvider = httpRequestMetricsSnapshotProvider;
         _logger = logger;
         _serviceProvider = serviceProvider;
 
         _meter = new Meter("Honua.Production.Metrics");
-
-        // Initialize metrics instruments
-        _queryLatency = _meter.CreateHistogram<double>(
-            "honua_query_duration_ms",
-            "milliseconds",
-            "Query execution time");
-
-        _queryCount = _meter.CreateCounter<long>(
-            "honua_queries_total",
-            description: "Total number of queries processed");
-
-        _errorCount = _meter.CreateCounter<long>(
-            "honua_errors_total",
-            description: "Total number of errors");
 
         _memoryUsage = _meter.CreateObservableGauge<double>(
             "honua_memory_usage_bytes",
@@ -94,127 +60,10 @@ internal sealed class ProductionMetricsCollector : IDisposable
             () => CalculateCacheHitRatio(),
             description: "Cache hit ratio (0.0-1.0)");
 
-        _cacheEntryCount = _meter.CreateObservableGauge<int>(
-            "honua_cache_entries",
-            () => GetCacheEntryCount(),
-            description: "Number of entries in memory cache");
-
-        _rateLimitViolations = _meter.CreateCounter<long>(
-            "honua_rate_limit_violations_total",
-            description: "Total number of rate limit violations");
-
-        _fileUploadDuration = _meter.CreateHistogram<double>(
-            "honua_file_upload_duration_ms",
-            "milliseconds",
-            "File upload processing time");
-
         _uploadQueueDepth = _meter.CreateObservableGauge<int>(
             "honua_upload_queue_depth",
             () => GetUploadQueueDepth(),
             description: "Current upload queue depth");
-    }
-
-    /// <summary>
-    /// Records a query execution.
-    /// </summary>
-    /// <param name="duration">Query duration.</param>
-    /// <param name="protocol">Protocol used (e.g., "FeatureServer", "OGC", "OData").</param>
-    /// <param name="operation">Operation type (e.g., "Query", "GetFeature").</param>
-    /// <param name="success">Whether the query was successful.</param>
-    public void RecordQuery(TimeSpan duration, string protocol, string operation, bool success)
-    {
-        var tags = new KeyValuePair<string, object?>[]
-        {
-            new("protocol", protocol),
-            new("operation", operation),
-            new("success", success.ToString().ToLowerInvariant())
-        };
-
-        _queryLatency.Record(duration.TotalMilliseconds, tags);
-        _queryCount.Add(1, tags);
-
-        Interlocked.Increment(ref _totalQueries);
-
-        if (!success)
-        {
-            _errorCount.Add(1, tags);
-            Interlocked.Increment(ref _totalErrors);
-        }
-    }
-
-    /// <summary>
-    /// Records a cache hit.
-    /// </summary>
-    /// <param name="cacheType">Type of cache (e.g., "Layer", "Service", "Query").</param>
-    public void RecordCacheHit(string cacheType)
-    {
-        Interlocked.Increment(ref _cacheHits);
-    }
-
-    /// <summary>
-    /// Records a cache miss.
-    /// </summary>
-    /// <param name="cacheType">Type of cache (e.g., "Layer", "Service", "Query").</param>
-    public void RecordCacheMiss(string cacheType)
-    {
-        Interlocked.Increment(ref _cacheMisses);
-    }
-
-    /// <summary>
-    /// Records a rate limit violation.
-    /// </summary>
-    /// <param name="reason">Reason for rate limiting.</param>
-    /// <param name="clientId">Client identifier.</param>
-    public void RecordRateLimitViolation(string reason, string? clientId = null)
-    {
-        var tags = new List<KeyValuePair<string, object?>>
-        {
-            new("reason", reason)
-        };
-
-        if (!string.IsNullOrEmpty(clientId))
-        {
-            tags.Add(new("client_id", clientId));
-        }
-
-        _rateLimitViolations.Add(1, tags.ToArray());
-        Interlocked.Increment(ref _rateLimitViolationsCount);
-    }
-
-    /// <summary>
-    /// Records file upload processing time.
-    /// </summary>
-    /// <param name="duration">Upload duration.</param>
-    /// <param name="fileSizeBytes">File size in bytes.</param>
-    /// <param name="success">Whether upload was successful.</param>
-    public void RecordFileUpload(TimeSpan duration, long fileSizeBytes, bool success)
-    {
-        var tags = new KeyValuePair<string, object?>[]
-        {
-            new("success", success.ToString().ToLowerInvariant()),
-            new("size_category", CategorizeFileSize(fileSizeBytes))
-        };
-
-        _fileUploadDuration.Record(duration.TotalMilliseconds, tags);
-    }
-
-    /// <summary>
-    /// Records an application error.
-    /// </summary>
-    /// <param name="errorType">Type of error.</param>
-    /// <param name="source">Source of the error.</param>
-    /// <param name="severity">Error severity.</param>
-    public void RecordError(string errorType, string source, string severity = "Error")
-    {
-        var tags = new KeyValuePair<string, object?>[]
-        {
-            new("error_type", errorType),
-            new("source", source),
-            new("severity", severity)
-        };
-
-        _errorCount.Add(1, tags);
-        Interlocked.Increment(ref _totalErrors);
     }
 
     /// <summary>
@@ -226,6 +75,9 @@ internal sealed class ProductionMetricsCollector : IDisposable
         var memoryUsage = GC.GetTotalMemory(false);
         var hasPoolUtilization = _connectionPoolMetrics.TryGetPoolUtilization(out var utilization);
         var cacheHitRatio = CalculateCacheHitRatio();
+        var requestMetrics = _httpRequestMetricsSnapshotProvider.GetHttpRequestMetricsSnapshot();
+        var totalRequests = requestMetrics.TotalRequests;
+        var totalServerErrors = requestMetrics.TotalServerErrors;
 
         return new ProductionHealthMetrics
         {
@@ -234,13 +86,13 @@ internal sealed class ProductionMetricsCollector : IDisposable
             DatabaseConnectionPoolUtilization = hasPoolUtilization ? utilization : 0.0,
             HasDatabaseConnectionPoolUtilization = hasPoolUtilization,
             CacheHitRatio = cacheHitRatio,
-            TotalQueries = Volatile.Read(ref _totalQueries),
-            TotalErrors = Volatile.Read(ref _totalErrors),
-            ErrorRate = CalculateErrorRate(),
+            TotalQueries = totalRequests,
+            TotalErrors = totalServerErrors,
+            ErrorRate = CalculateErrorRate(totalRequests, totalServerErrors),
             ActiveConnections = _connectionTracker.GetActiveCount(),
             ConnectionAcquisitionTimeouts = _connectionPoolMetrics.GetTotalTimeouts(),
             ConnectionAcquisitionFailures = _connectionPoolMetrics.GetTotalFailures(),
-            RateLimitViolations = Volatile.Read(ref _rateLimitViolationsCount),
+            RateLimitViolations = 0,
             Timestamp = DateTimeOffset.UtcNow
         };
     }
@@ -262,36 +114,12 @@ internal sealed class ProductionMetricsCollector : IDisposable
     /// <summary>
     /// Gets the current error rate.
     /// </summary>
+    /// <param name="totalRequests">Total number of live HTTP requests observed.</param>
+    /// <param name="totalServerErrors">Total number of live HTTP server errors observed.</param>
     /// <returns>Error rate (0.0-1.0).</returns>
-    private double CalculateErrorRate()
+    private static double CalculateErrorRate(long totalRequests, long totalServerErrors)
     {
-        var errors = Volatile.Read(ref _totalErrors);
-        var queries = Volatile.Read(ref _totalQueries);
-
-        return queries > 0 ? (double)errors / queries : 0.0;
-    }
-
-    /// <summary>
-    /// Gets the number of entries in the memory cache.
-    /// </summary>
-    /// <returns>Cache entry count.</returns>
-    private int GetCacheEntryCount()
-    {
-        try
-        {
-            if (_memoryCache is MemoryCache memoryCache)
-            {
-                var field = typeof(MemoryCache).GetField("_count",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                return field?.GetValue(memoryCache) as int? ?? 0;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get memory cache entry count");
-        }
-
-        return 0;
+        return totalRequests > 0 ? (double)totalServerErrors / totalRequests : 0.0;
     }
 
     /// <summary>
@@ -314,22 +142,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
         }
 
         return 0;
-    }
-
-    /// <summary>
-    /// Categorizes file size for metrics.
-    /// </summary>
-    /// <param name="sizeBytes">File size in bytes.</param>
-    /// <returns>Size category.</returns>
-    private static string CategorizeFileSize(long sizeBytes)
-    {
-        return sizeBytes switch
-        {
-            < 1024 * 1024 => "small",        // < 1MB
-            < 10 * 1024 * 1024 => "medium",  // < 10MB
-            < 100 * 1024 * 1024 => "large",  // < 100MB
-            _ => "very_large"                 // >= 100MB
-        };
     }
 
     /// <summary>
@@ -390,17 +202,17 @@ public sealed class ProductionHealthMetrics
     public required double CacheHitRatio { get; set; }
 
     /// <summary>
-    /// Gets or sets total number of queries processed.
+    /// Gets or sets total number of live HTTP requests processed.
     /// </summary>
     public required long TotalQueries { get; set; }
 
     /// <summary>
-    /// Gets or sets total number of errors.
+    /// Gets or sets total number of live HTTP server errors.
     /// </summary>
     public required long TotalErrors { get; set; }
 
     /// <summary>
-    /// Gets or sets current error rate.
+    /// Gets or sets the live HTTP server error rate.
     /// </summary>
     public required double ErrorRate { get; set; }
 

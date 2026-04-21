@@ -414,7 +414,7 @@ public class OidcAuthenticationOptionsValidatorTests
 
         // Assert
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("ResponseType") && f.Contains("not a valid OIDC response type"));
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("ResponseType") && f.Contains("must be 'code'"));
     }
 
     [UnitTest]
@@ -500,33 +500,56 @@ public class OidcAuthenticationOptionsValidatorTests
     }
 
     [UnitTest]
-    public void Validate_ValidResponseTypes_ReturnsSuccess()
+    public void Validate_GenericAuthorizationCodeFlowWithPkce_ReturnsSuccess()
     {
         // Arrange
-        var validResponseTypes = new[] { "code", "id_token", "token", "id_token token", "code id_token", "code token", "code id_token token" };
-
-        foreach (var responseType in validResponseTypes)
+        var options = new OidcAuthenticationOptions
         {
-            var options = new OidcAuthenticationOptions
+            Enabled = true,
+            DefaultRole = "user",
+            AdminRoles = ["admin"],
+            Generic = new GenericOidcProviderOptions
             {
                 Enabled = true,
-                DefaultRole = "user",
-                AdminRoles = ["admin"],
-                Generic = new GenericOidcProviderOptions
-                {
-                    Enabled = true,
-                    Authority = "https://auth.example.com",
-                    ClientId = "my-client-id",
-                    ResponseType = responseType
-                }
-            };
+                Authority = "https://auth.example.com",
+                ClientId = "my-client-id",
+                ResponseType = "code",
+                UsePkce = true
+            }
+        };
 
-            // Act
-            var result = _validator.Validate(null, options);
+        // Act
+        var result = _validator.Validate(null, options);
 
-            // Assert
-            Assert.True(result.Succeeded, $"Response type '{responseType}' should be valid");
-        }
+        // Assert
+        Assert.True(result.Succeeded);
+    }
+
+    [UnitTest]
+    public void Validate_GenericAuthorizationCodeFlowWithoutPkce_ReturnsFail()
+    {
+        // Arrange
+        var options = new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            DefaultRole = "user",
+            AdminRoles = ["admin"],
+            Generic = new GenericOidcProviderOptions
+            {
+                Enabled = true,
+                Authority = "https://auth.example.com",
+                ClientId = "my-client-id",
+                ResponseType = "code",
+                UsePkce = false
+            }
+        };
+
+        // Act
+        var result = _validator.Validate(null, options);
+
+        // Assert
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("UsePkce") && f.Contains("must be enabled"));
     }
 
     [UnitTest]

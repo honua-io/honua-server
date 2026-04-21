@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -18,13 +19,16 @@ namespace Honua.Server.Features.OgcFeatures.Services;
 /// </summary>
 internal sealed partial class OgcFeaturesGeometryServices
 {
+    private readonly IGeometryService _geometryService;
     private readonly GeometryLimits _geometryLimits;
     private readonly ILogger<OgcFeaturesGeometryServices> _logger;
 
     public OgcFeaturesGeometryServices(
+        IGeometryService geometryService,
         IOptions<LimitsOptions> limitsOptions,
         ILogger<OgcFeaturesGeometryServices> logger)
     {
+        _geometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _logger = logger;
     }
@@ -154,8 +158,14 @@ internal sealed partial class OgcFeaturesGeometryServices
 
         try
         {
-            var reader = new GeoJsonReader();
-            var ntsGeometry = reader.Read<Geometry>(json);
+            var converted = _geometryService.ConvertGeoJsonToWkb(json, srid > 0 ? srid : null);
+            if (converted == null || converted.Length == 0)
+            {
+                return WkbCreationResult.Failure("Invalid geometry.");
+            }
+
+            var reader = new WKBReader();
+            var ntsGeometry = reader.Read(converted);
             if (ntsGeometry == null)
             {
                 return WkbCreationResult.Failure("Invalid geometry.");
@@ -178,7 +188,7 @@ internal sealed partial class OgcFeaturesGeometryServices
             var wkb = writer.Write(ntsGeometry);
             return WkbCreationResult.Success(wkb);
         }
-        catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
+        catch (Exception ex) when (ex is ArgumentException or ParseException or FormatException or JsonException)
         {
             return WkbCreationResult.Failure("Invalid geometry.");
         }

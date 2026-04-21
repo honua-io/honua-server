@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Cql2;
@@ -162,6 +163,18 @@ public class Cql2JsonParserTests
 
         act.Should().Throw<ArgumentException>()
             .WithMessage("*3D bounding boxes are not supported*");
+    }
+
+    [Fact]
+    public void Parse_GeometryLiteral_WithTooManyVertices_ThrowsArgumentException()
+    {
+        var coordinates = string.Join(",", Enumerable.Range(0, 50_001).Select(i => $"[{i},0]"));
+        var json = @"{""op"":""s_intersects"",""args"":[{""property"":""geom""},{""type"":""LineString"",""coordinates"":[" + coordinates + @"]}]}";
+
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*maximum geometry complexity*");
     }
 
     [Fact]

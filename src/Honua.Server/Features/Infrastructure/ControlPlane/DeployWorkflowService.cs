@@ -1,13 +1,18 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Infrastructure.ControlPlane;
 
@@ -20,11 +25,15 @@ internal sealed class DeployWorkflowService
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends;
+    private readonly IOperatorApprovalEvaluator _approvalEvaluator;
+    private readonly ILogger<DeployWorkflowService> _logger;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
         IEnumerable<IWorkflowOperationStore> workflowStores,
-        IEnumerable<IDeployBackend> backends)
+        IEnumerable<IDeployBackend> backends,
+        IOperatorApprovalEvaluator approvalEvaluator,
+        ILogger<DeployWorkflowService> logger)
     {
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
@@ -32,6 +41,8 @@ internal sealed class DeployWorkflowService
             backend => (backend.BackendName, backend.TargetKind),
             backend => backend,
             EqualityComparer<(string Backend, DeployTargetKind TargetKind)>.Default);
+        _approvalEvaluator = approvalEvaluator;
+        _logger = logger;
     }
 
     public bool HasDurableStore => _workflowStore != null;
@@ -41,6 +52,7 @@ internal sealed class DeployWorkflowService
         string desiredRevision,
         string? currentRevision,
         IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
     {
         var target = await _targetRegistry.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
@@ -55,11 +67,28 @@ internal sealed class DeployWorkflowService
             ? null
             : await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
 
+        // Bridge canonical approval evaluator with static RequiresApproval flag.
+        // OR-combine: approval is required if either source says so.
+        ApprovalRequirement? canonicalApproval = null;
+        var requiresApproval = spec.RequiresApproval;
+        if (principal != null)
+        {
+            canonicalApproval = _approvalEvaluator.Evaluate(principal, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Deployment,
+                Operation = OperatorOperation.Publish
+            });
+            var combinedApproval = spec.RequiresApproval || canonicalApproval.IsRequired;
+            OperatorAuthorizationLog.DeployApprovalBridged(
+                _logger, spec.RequiresApproval, canonicalApproval.IsRequired, combinedApproval);
+            requiresApproval = combinedApproval;
+        }
+
         var plan = backend == null
             ? new DeployPlan
             {
                 IsReadyToSubmit = false,
-                RequiresApproval = spec.RequiresApproval,
+                RequiresApproval = requiresApproval,
                 RequiresOutOfBandMigrations = spec.RequiresOutOfBandMigrations,
                 BlockingReasons =
                 [
@@ -69,7 +98,19 @@ internal sealed class DeployWorkflowService
             }
             : await backend.PlanAsync(spec, cancellationToken).ConfigureAwait(false);
 
-        return new DeployWorkflowPlanResult(target, spec, plan, capabilities);
+        // If the backend returned its own plan, override RequiresApproval with the bridged value
+        // and recompute IsReadyToSubmit — backends derive it from spec.RequiresApproval which
+        // does not yet include the canonical evaluator's decision.
+        if (backend != null && requiresApproval != plan.RequiresApproval)
+        {
+            plan = plan with
+            {
+                RequiresApproval = requiresApproval,
+                IsReadyToSubmit = plan.IsReadyToSubmit && !requiresApproval
+            };
+        }
+
+        return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
 
     public async Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
@@ -89,6 +130,7 @@ internal sealed class DeployWorkflowService
         OperationPriority priority,
         bool submitImmediately,
         IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
@@ -98,6 +140,7 @@ internal sealed class DeployWorkflowService
                 desiredRevision,
                 currentRevision,
                 parameterOverrides,
+                principal,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -110,6 +153,8 @@ internal sealed class DeployWorkflowService
         var operationId = CreateOperationId(idempotencyKey);
         var requestFingerprint = CreateRequestFingerprint(
             targetId,
+            planningResult.Target.Backend,
+            planningResult.Target.TargetKind,
             desiredRevision,
             currentRevision,
             priority,
@@ -136,7 +181,9 @@ internal sealed class DeployWorkflowService
                 Reason = reason,
                 IdempotencyKey = idempotencyKey,
                 CorrelationId = correlationId,
-                RequestFingerprint = requestFingerprint
+                RequestFingerprint = requestFingerprint,
+                ApprovalPolicyRef = planningResult.CanonicalApproval?.PolicyRef,
+                ApprovalReasonCodes = planningResult.CanonicalApproval?.ReasonCodes ?? []
             },
             Concurrency = new OperationConcurrencyPolicy
             {
@@ -435,6 +482,8 @@ internal sealed class DeployWorkflowService
 
     private static string CreateRequestFingerprint(
         string targetId,
+        string backend,
+        DeployTargetKind targetKind,
         string desiredRevision,
         string? currentRevision,
         OperationPriority priority,
@@ -442,21 +491,33 @@ internal sealed class DeployWorkflowService
         IReadOnlyDictionary<string, string>? parameterOverrides)
     {
         var normalizedParameters = parameterOverrides == null
-            ? Array.Empty<KeyValuePair<string, string>>()
+            ? Array.Empty<DeployRequestFingerprintParameter>()
             : parameterOverrides
                 .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
-                .Select(static pair => new KeyValuePair<string, string>(pair.Key, pair.Value))
+                .Select(static pair => new DeployRequestFingerprintParameter
+                {
+                    Key = pair.Key,
+                    Value = pair.Value
+                })
                 .ToArray();
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            targetId = targetId.Trim(),
-            desiredRevision = desiredRevision.Trim(),
-            currentRevision = currentRevision?.Trim(),
-            priority = priority.ToString(),
-            submitImmediately,
-            parameters = normalizedParameters
-        });
+        var payload = JsonSerializer.Serialize(
+            new DeployRequestFingerprintPayload
+            {
+                TargetId = targetId.Trim(),
+                // Backend + TargetKind participate in the fingerprint: two targets
+                // may share a TargetId string but route to different backends (e.g.
+                // kubernetes vs. cloud-run). Excluding them lets a replay for one
+                // backend be accepted as idempotent for another.
+                Backend = backend?.Trim(),
+                TargetKind = targetKind.ToString(),
+                DesiredRevision = desiredRevision.Trim(),
+                CurrentRevision = currentRevision?.Trim(),
+                Priority = priority.ToString(),
+                SubmitImmediately = submitImmediately,
+                Parameters = normalizedParameters
+            },
+            DeployControlJsonContext.Default.DeployRequestFingerprintPayload);
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
@@ -549,6 +610,24 @@ internal sealed class DeployWorkflowService
     }
 }
 
+internal sealed record DeployRequestFingerprintPayload
+{
+    public required string TargetId { get; init; }
+    public string? Backend { get; init; }
+    public string? TargetKind { get; init; }
+    public required string DesiredRevision { get; init; }
+    public string? CurrentRevision { get; init; }
+    public required string Priority { get; init; }
+    public required bool SubmitImmediately { get; init; }
+    public required DeployRequestFingerprintParameter[] Parameters { get; init; }
+}
+
+internal sealed record DeployRequestFingerprintParameter
+{
+    public required string Key { get; init; }
+    public required string Value { get; init; }
+}
+
 /// <summary>
 /// Result of resolving a deploy target and planning a workflow operation.
 /// </summary>
@@ -556,4 +635,5 @@ internal sealed record DeployWorkflowPlanResult(
     DeployTargetDefinition Target,
     DeployOperationSpec Spec,
     DeployPlan Plan,
-    DeployBackendCapabilities? Capabilities);
+    DeployBackendCapabilities? Capabilities,
+    ApprovalRequirement? CanonicalApproval = null);

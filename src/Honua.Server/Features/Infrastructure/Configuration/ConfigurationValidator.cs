@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
@@ -16,6 +17,17 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+=======
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Collections.Concurrent;
+using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Configuration;
+using Honua.Core.Configuration.Validation;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+>>>>>>> origin/trunk
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
@@ -27,7 +39,11 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ConfigurationValidator> _logger;
+<<<<<<< HEAD
     private readonly ConcurrentDictionary<Type, ConfigurationOptionsMetadata> _registeredOptions = new();
+=======
+    private readonly ConcurrentDictionary<Type, IConfigurationOptionsRegistration> _registeredOptions = new();
+>>>>>>> origin/trunk
 
     /// <summary>
     /// Initializes a new instance of the ConfigurationValidator.
@@ -35,11 +51,24 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     public ConfigurationValidator(
         IServiceProvider serviceProvider,
         IConfiguration configuration,
+<<<<<<< HEAD
         ILogger<ConfigurationValidator> logger)
+=======
+        ILogger<ConfigurationValidator> logger,
+        IEnumerable<IConfigurationOptionsRegistration> registrations)
+>>>>>>> origin/trunk
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+<<<<<<< HEAD
+=======
+
+        foreach (var registration in registrations)
+        {
+            _registeredOptions[registration.Metadata.OptionsType] = registration;
+        }
+>>>>>>> origin/trunk
     }
 
     /// <inheritdoc />
@@ -49,10 +78,14 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     public IEnumerable<string> ValidateConfiguration(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+<<<<<<< HEAD
         // Use Task.Run with ConfigureAwait(false) to safely validate in sync context
         // This is necessary because IConfigurationValidator is inherently synchronous
         return Task.Run(async () =>
             (await ValidateAllAsync().ConfigureAwait(false)).AllErrors).ConfigureAwait(false).GetAwaiter().GetResult();
+=======
+        return ValidateAllAsync().GetAwaiter().GetResult().AllErrors;
+>>>>>>> origin/trunk
     }
 
     /// <summary>
@@ -68,6 +101,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionName);
 
+<<<<<<< HEAD
         var context = new ValidationContext(options)
         {
             DisplayName = typeof(TOptions).Name
@@ -82,6 +116,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         ValidateConfigurationAttributes(options, context, validationResults, sectionName);
 
         return new ConfigurationValidationResult(validationResults, isDevelopment);
+=======
+        return ValidateOptionsInstance(options, sectionName, isDevelopment, ConfigurationOptionsMetadataFactory.CreatePropertyAccessors<TOptions>());
+>>>>>>> origin/trunk
     }
 
     /// <summary>
@@ -92,9 +129,15 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         var results = new List<OptionsValidationResult>();
         var validationTasks = new List<Task<OptionsValidationResult>>();
 
+<<<<<<< HEAD
         foreach (var metadata in _registeredOptions.Values)
         {
             validationTasks.Add(ValidateOptionsTypeAsync(metadata.OptionsType, metadata, isDevelopment, isTest));
+=======
+        foreach (var registration in _registeredOptions.Values)
+        {
+            validationTasks.Add(ValidateOptionsTypeAsync(registration, isDevelopment, isTest));
+>>>>>>> origin/trunk
         }
 
         if (validationTasks.Count > 0)
@@ -105,7 +148,10 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
 
         var summary = new ConfigurationValidationSummary(results);
 
+<<<<<<< HEAD
         // Log summary
+=======
+>>>>>>> origin/trunk
         if (summary.IsValid)
         {
             _logger.LogInformation("Configuration validation completed successfully. Validated {Count} sections",
@@ -143,8 +189,13 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         bool isRequired = true)
         where TOptions : class
     {
+<<<<<<< HEAD
         var metadata = CreateOptionsMetadata<TOptions>(sectionName, isRequired);
         _registeredOptions[typeof(TOptions)] = metadata;
+=======
+        var registration = new ManualConfigurationOptionsRegistration<TOptions>(_configuration, sectionName, isRequired);
+        _registeredOptions[typeof(TOptions)] = registration;
+>>>>>>> origin/trunk
 
         _logger.LogDebug("Registered configuration options type {OptionsType} for section {SectionName}",
             typeof(TOptions).Name, sectionName);
@@ -154,7 +205,11 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     /// Gets all registered configuration options types.
     /// </summary>
     public IEnumerable<ConfigurationOptionsMetadata> GetAllOptions() =>
+<<<<<<< HEAD
         _registeredOptions.Values.ToList();
+=======
+        _registeredOptions.Values.Select(static registration => registration.Metadata).ToList();
+>>>>>>> origin/trunk
 
     /// <summary>
     /// Gets configuration metadata for a specific options type.
@@ -165,12 +220,17 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
     {
         if (_registeredOptions.TryGetValue(typeof(TOptions), out var metadata))
         {
+<<<<<<< HEAD
             return metadata;
+=======
+            return metadata.Metadata;
+>>>>>>> origin/trunk
         }
 
         throw new InvalidOperationException($"Options type {typeof(TOptions).Name} has not been registered for validation");
     }
 
+<<<<<<< HEAD
     /// <summary>
     /// Validates a specific options type asynchronously.
     /// </summary>
@@ -184,6 +244,21 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         {
             // Get the configured options instance
             var optionsInstance = GetConfiguredOptionsInstance(optionsType, metadata.SectionName);
+=======
+    private async Task<OptionsValidationResult> ValidateOptionsTypeAsync(
+        IConfigurationOptionsRegistration registration,
+        bool isDevelopment,
+        bool isTest)
+    {
+        _ = isTest;
+
+        var metadata = registration.Metadata;
+        var optionsType = metadata.OptionsType;
+
+        try
+        {
+            var optionsInstance = GetConfiguredOptionsInstance(registration);
+>>>>>>> origin/trunk
 
             if (optionsInstance == null)
             {
@@ -192,11 +267,19 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
                 return new OptionsValidationResult(metadata.SectionName, optionsType.Name, result, metadata.IsRequired);
             }
 
+<<<<<<< HEAD
             // Validate using reflection to call generic method
             var method = GetType().GetMethod(nameof(ValidateOptions), BindingFlags.Public | BindingFlags.Instance)!
                 .MakeGenericMethod(optionsType);
 
             var validationResult = (ConfigurationValidationResult)method.Invoke(this, new[] { optionsInstance, metadata.SectionName, isDevelopment })!;
+=======
+            var validationResult = ValidateOptionsInstance(
+                optionsInstance,
+                metadata.SectionName,
+                isDevelopment,
+                registration.PropertyAccessors);
+>>>>>>> origin/trunk
 
             return new OptionsValidationResult(metadata.SectionName, optionsType.Name, validationResult, metadata.IsRequired);
         }
@@ -211,6 +294,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         }
     }
 
+<<<<<<< HEAD
     /// <summary>
     /// Gets a configured options instance from the service provider or configuration.
     /// </summary>
@@ -247,10 +331,22 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to create and bind configuration instance for {OptionsType}", optionsType.Name);
+=======
+    private object? GetConfiguredOptionsInstance(IConfigurationOptionsRegistration registration)
+    {
+        try
+        {
+            return registration.GetConfiguredOptions(_serviceProvider);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to resolve configuration instance for {OptionsType}", registration.Metadata.OptionsType.Name);
+>>>>>>> origin/trunk
             return null;
         }
     }
 
+<<<<<<< HEAD
     /// <summary>
     /// Validates configuration-specific attributes that require additional context.
     /// </summary>
@@ -269,6 +365,40 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
             foreach (var attribute in configAttributes)
             {
                 // Set configuration path for better error messages
+=======
+    private static ConfigurationValidationResult ValidateOptionsInstance(
+        object options,
+        string sectionName,
+        bool isDevelopment,
+        IReadOnlyList<ConfigurationPropertyAccessor> propertyAccessors)
+    {
+        var context = new ValidationContext(options)
+        {
+            DisplayName = options.GetType().Name
+        };
+        context.Items["IsDevelopment"] = isDevelopment;
+        context.Items["SectionName"] = sectionName;
+
+        var validationResults = new List<ValidationResult>();
+        Validator.TryValidateObject(options, context, validationResults, validateAllProperties: true);
+
+        ValidateConfigurationAttributes(options, context, validationResults, sectionName, propertyAccessors);
+
+        return new ConfigurationValidationResult(validationResults, isDevelopment);
+    }
+
+    private static void ValidateConfigurationAttributes(
+        object options,
+        ValidationContext context,
+        List<ValidationResult> validationResults,
+        string sectionName,
+        IReadOnlyList<ConfigurationPropertyAccessor> propertyAccessors)
+    {
+        foreach (var property in propertyAccessors)
+        {
+            foreach (var attribute in property.ValidationAttributes)
+            {
+>>>>>>> origin/trunk
                 attribute.ConfigurationPath ??= sectionName;
 
                 var propertyContext = new ValidationContext(options, context, context.Items)
@@ -287,6 +417,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
             }
         }
     }
+<<<<<<< HEAD
 
     /// <summary>
     /// Creates metadata for a configuration options type.
@@ -356,3 +487,6 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
 }
 
 #pragma warning restore IL2067, IL2071, IL2072, IL2090
+=======
+}
+>>>>>>> origin/trunk

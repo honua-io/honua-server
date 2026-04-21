@@ -2,14 +2,13 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
 Honua needs to support both Esri GeoServices GPServer and OGC API Processes as
 compatibility adapters projected from a single canonical process model (see
-[ADR-0026](0026-ai-first-operator-contract.md) and the
-[AI Operator Architecture](../AI_OPERATOR_ARCHITECTURE.md)).
+[ADR-0026](0026-ai-first-operator-contract.md)).
 
 The existing canonical model — `AnalysisPlan`, `ExecutionJobRecord`,
 `AnalysisResultPackage`, `Workspace`, `Artifact`, and supporting types — was
@@ -37,7 +36,7 @@ map to and from these nouns. Adapters must not introduce new domain types into
 
 | Canonical Noun | Domain Type | Adapter Responsibility |
 | --- | --- | --- |
-| Process definition | Registered via `CatalogService` | Adapters project into protocol-specific discovery responses (GPServer task list, OGC process list) |
+| Process definition | `ProcessDefinition` registered in `IProcessCatalog` (seeded built-in catalog from honua-server#735) | Adapters project into protocol-specific discovery responses (GPServer task list, OGC process list) |
 | Analysis plan | `AnalysisPlan` | Adapters construct plans from protocol-specific execution requests |
 | Plan step | `AnalysisPlanStep` | Adapters translate protocol-specific parameters into opaque step inputs |
 | Execution job | `ExecutionJobRecord` | Adapters project job status into protocol-specific status values |
@@ -84,11 +83,14 @@ Adapters reshape it:
   must be a stable output identifier, not `ArtifactRef.Label` (which is
   human-readable). Adapters should bind artifacts to process definition
   output parameter names via `ArtifactRef.Metadata` or a follow-on field
-- **OGC API Processes (v1 subset)**: return all `Artifacts` in a single
+- **OGC API Processes (v1 subset)**: target all `Artifacts` in a single
   `/jobs/{jobId}/results` JSON response using document-mode, by-value
-  transmission. This is a Honua v1 adapter decision — the full OGC spec
-  (§7.13) also supports raw-mode responses and reference-based transmission,
-  which are deferred
+  transmission. The `#529` implementation returns `200 OK` with the
+  document-mode body on success (empty `{}` until the canonical process
+  declares value-typed outputs and the execution engine populates result
+  storage); failed jobs return `500`, and dismissed jobs return `410`. This
+  is a Honua v1 adapter decision — the full OGC spec (§7.13) also supports
+  raw-mode responses and reference-based transmission, which are deferred
 
 ### Parameter Translation Is An Adapter Concern
 
@@ -125,7 +127,7 @@ into the canonical model:
    multipart, `204` with `Link` headers) are out of scope.
 
 6. **OGC output transmission negotiation** (`value` vs `reference`): deferred.
-   V1 returns results by value.
+   When successful results are populated, V1 returns them by value.
 
 7. **OGC callback notification**: deferred. V1 uses polling.
 
@@ -171,9 +173,20 @@ model. Must not add domain types to `Honua.Core`.
 
 - honua-server#721: implement the canonical process contract per these constraints
 - honua-server#723: implement the GPServer adapter per the mapping tables
-- honua-server#529: implement the OGC API Processes adapter per the mapping tables
+- honua-server#529: OGC API Processes adapter — **implemented** (see [coverage](../../gis/specifications/ogc-api-processes-coverage.md))
 - geospatial-grpc#6: align the public gRPC contract with the canonical
   `process_service.proto`
-- Formalize `ProcessDefinition` as a first-class domain type when the process
-  catalog is implemented
+- Formalize `ProcessDefinition` as a first-class domain type — **implemented** in
+  honua-server#735 and extended in honua-server#737. `ProcessDefinition`,
+  `ProcessParameterSpec`, and `ProcessParameterValueType` live in
+  `Honua.Core.Features.Geoprocessing.Domain`, and `IProcessCatalog` now seeds
+  19 built-in processes across four categories (10 `geometry.*`, 4 `analytics.*`,
+  2 `generalization.*`, 3 `data-management.*`) that plan validation checks
+  `AnalysisPlanStep.ProcessId` against. Destructive `data-management.*` ids
+  (`delete-features`, `calculate-field`) are classified server-side by
+  `ProcessDestructiveClassifier` so submission and execution route the plan
+  through `OperatorApprovalGate` with `IsDestructive = true` without adding a
+  destruction flag to the canonical `ProcessDefinition`. Per-process projection
+  into the GPServer and OGC API Processes adapter surfaces remains follow-on
+  work
 - Consider richer parameter typing when the opaque dictionary proves insufficient

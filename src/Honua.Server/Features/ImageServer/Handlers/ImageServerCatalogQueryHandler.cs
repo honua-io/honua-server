@@ -227,6 +227,14 @@ internal sealed class ImageServerCatalogQueryHandler
             return Results.Json(extentResponse, ImageServerJsonContext.Default.CatalogExtentResponse);
         }
 
+        // Keep the response envelope in the native SRID because the MVP does not
+        // reproject footprints. Stamping the envelope with the requested outSR while
+        // leaving geometries in the native SRID would mislead clients that project
+        // by the envelope's declared spatial reference.
+        var responseSrid = page.AggregateExtent?.Srid
+            ?? page.Items.FirstOrDefault(i => i.FootprintSrid.HasValue)?.FootprintSrid
+            ?? 4326;
+
         var response = new CatalogQueryResponse
         {
             ObjectIdFieldName = "OBJECTID",
@@ -234,8 +242,8 @@ internal sealed class ImageServerCatalogQueryHandler
             GeometryType = "esriGeometryPolygon",
             SpatialReference = new SpatialReference
             {
-                Wkid = page.AggregateExtent?.Srid ?? query.OutputSrid ?? 4326,
-                LatestWkid = page.AggregateExtent?.Srid ?? query.OutputSrid ?? 4326,
+                Wkid = responseSrid,
+                LatestWkid = responseSrid,
             },
             Fields = BuildCatalogFields(),
             Features = page.Items.Select(item => BuildFeature(item, query)).ToArray(),

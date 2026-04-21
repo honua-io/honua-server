@@ -19,6 +19,7 @@ Source discovery pages:
 | OGC API - Tiles | Part 1: Core | 1.0.0 | https://docs.ogc.org/is/20-057/20-057.html | `specs/20-057-ogcapi-tiles-part1-core.html` |
 | OGC API - Maps | Part 1: Core | 1.0.0 | https://docs.ogc.org/is/20-058/20-058.html | `specs/20-058-ogcapi-maps-part1-core.html` |
 | OGC API - Common | Part 1: Core | 1.0.0 | https://docs.ogc.org/is/19-072/19-072.html | `specs/19-072-ogcapi-common-part1-core.html` |
+| OGC API - Processes | Part 1: Core | 1.0.0 | https://docs.ogc.org/is/18-062r2/18-062r2.html | *(external reference only — not snapshotted)* |
 
 ## OGC API portal snapshots
 

@@ -107,9 +107,9 @@ public class ContentSecurityPolicyBuilderTests
         var policy = builder.Build();
 
         // Assert
-        Assert.Contains("script-src 'self' cdnjs.cloudflare.com unpkg.com cdn.jsdelivr.net *.googleapis.com *.gstatic.com example-cdn.com", policy);
-        Assert.Contains("style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com unpkg.com cdn.jsdelivr.net *.googleapis.com *.gstatic.com example-cdn.com", policy);
-        Assert.Contains("font-src 'self' data: cdnjs.cloudflare.com unpkg.com cdn.jsdelivr.net *.googleapis.com *.gstatic.com example-cdn.com", policy);
+        Assert.Contains("script-src 'self' cdnjs.cloudflare.com unpkg.com cdn.jsdelivr.net example-cdn.com", policy);
+        Assert.Contains("style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com unpkg.com cdn.jsdelivr.net example-cdn.com", policy);
+        Assert.Contains("font-src 'self' data: cdnjs.cloudflare.com unpkg.com cdn.jsdelivr.net example-cdn.com", policy);
     }
 
     [Fact]

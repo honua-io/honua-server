@@ -37,7 +37,6 @@ using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Transforms;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Infrastructure.Styling;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -50,6 +49,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using StackExchange.Redis;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Postgres;
 
@@ -64,6 +64,8 @@ internal static class ServiceCollectionExtensions
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Configuration to get connection string from</param>
     /// <returns>Updated service collection</returns>
+    [RequiresDynamicCode("Calls Microsoft.Extensions.DependencyInjection.OptionsConfigurationServiceCollectionExtensions.Configure<TOptions>(IConfiguration)")]
+    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
         var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
@@ -218,10 +220,13 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
 
         // Register CRS warmup service with leader election for distributed deployments
-        // Note: Redis implementation is registered in the Server project to avoid circular dependencies
-        services.AddSingleton<IDistributedLeaderElection>(_ =>
-            new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
-                "honua:leader:crs-warmup"));
+        services.AddSingleton<IDistributedLeaderElection>(serviceProvider =>
+        {
+            // Use the no-op implementation here; distributed leader election is only enabled
+            // when the Server composition root supplies a real coordinator.
+            return new Honua.Postgres.Features.Infrastructure.Coordination.NoOpDistributedLeaderElection(
+                "honua:leader:crs-warmup");
+        });
 
         services.AddSingleton<PostgresCrsWarmupService>(serviceProvider =>
             new PostgresCrsWarmupService(
@@ -321,7 +326,8 @@ internal static class ServiceCollectionExtensions
             {
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
-            });
+            },
+            configureHandler: static () => GeoServerRestClient.CreatePinnedDnsHttpMessageHandler());
 
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();

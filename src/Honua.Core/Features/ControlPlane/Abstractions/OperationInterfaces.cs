@@ -138,6 +138,21 @@ public interface IExecutionJobStore : IOperationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically persists the execution job record only when the stored version
+    /// matches the record's <see cref="ExecutionJobRecord.Version"/>. The stored
+    /// version is incremented on success. Returns <c>false</c> on version conflict,
+    /// indicating a concurrent write was detected and the caller should re-read.
+    /// </summary>
+    /// <param name="job">Execution job record with the expected version.</param>
+    /// <param name="ttl">Optional retention period.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when updated; false when a concurrent write was detected.</returns>
+    Task<bool> TrySetAsync(
+        ExecutionJobRecord job,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists active execution jobs, optionally filtered by job kind.
     /// </summary>
     /// <param name="kind">Optional execution job kind filter.</param>
@@ -275,9 +290,9 @@ public interface IBatchComputeBackend
 }
 
 /// <summary>
-/// Reconciles workflow operations and execution jobs against external provider state.
+/// Reconciles durable workflow operations such as deploy and rollback against external provider state.
 /// </summary>
-public interface IOperationReconciler
+public interface IWorkflowOperationReconciler
 {
     /// <summary>
     /// Reconciles a workflow operation by identifier.
@@ -287,7 +302,13 @@ public interface IOperationReconciler
     Task ReconcileWorkflowOperationAsync(
         string operationId,
         CancellationToken cancellationToken = default);
+}
 
+/// <summary>
+/// Reconciles durable execution jobs such as geoprocessing and ETL against external provider state.
+/// </summary>
+public interface IExecutionJobReconciler
+{
     /// <summary>
     /// Reconciles an execution job by identifier.
     /// </summary>

@@ -16,6 +16,10 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
 
+concurrency:
+  group: security-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   security-vulnerability-scan:
     name: Security Vulnerability Scan
@@ -24,7 +28,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 

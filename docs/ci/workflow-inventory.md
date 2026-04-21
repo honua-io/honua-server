@@ -1,13 +1,13 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-04-03 (ticket #463)
+> Last updated: 2026-04-18 (ticket #734)
 
 ## honua-server
 
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; includes merge-blocking `esri-leaflet-browser-tests` and uploads STAC plus Esri Leaflet client-compat artifacts |
+| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; includes the merge-blocking operator eval harness lane (`Features.Eval|Features.Geoprocessing|Features.OgcProcesses|Features.Grpc`) and uploads `operator-eval-report` plus STAC and Esri Leaflet client-compat artifacts |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
 | `proto-wire-governance.yml` | Proto Wire Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to `.proto` changes |

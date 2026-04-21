@@ -1,12 +1,21 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+<<<<<<< HEAD
+=======
+using System.Diagnostics.CodeAnalysis;
+
+>>>>>>> origin/trunk
 namespace Honua.Core.Features.Infrastructure.Redis;
 
 /// <summary>
 /// Interface for Redis-backed job queue with fallback capabilities.
 /// </summary>
+<<<<<<< HEAD
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Queue is the correct domain term for this public abstraction.")]
+=======
+[SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "Queue is the established domain term for this Redis abstraction.")]
+>>>>>>> origin/trunk
 public interface IRedisJobQueue : IRedisService
 {
     /// <summary>

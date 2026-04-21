@@ -124,6 +124,85 @@ curl http://localhost:8080/api/v1/admin/import/jobs
 
 ---
 
+## Job Orchestration Issues
+
+**Symptom**: jobs stuck in Provisioning or Running without progress.
+
+**Quick triage**:
+```bash
+# Check worker host logs for heartbeat/claim events
+docker logs honua-worker 2>&1 | grep -E "JobExecutionService|JobReconciliationService|RedisJobQueue"
+
+# Verify Redis connectivity (job queue, execution logs, and claim state require Redis)
+redis-cli -h redis ping
+redis-cli -h redis ZCARD controlplane:jobqueue:pending
+```
+
+**Common causes and fixes**:
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Jobs stay Queued (local backend) | Worker host not wired or worker failed silently | The combined host queues local jobs but does not execute them — execution requires a worker host registered via `AddJobWorker()`. Check that a worker host is running and healthy; the local backend observes worker-published progress and the reconciler bridges it into the job store |
+| Jobs stay Queued (remote backend) | No `IBatchComputeBackend` registered for the job's `(Backend, TargetKind)` | Verify the backend adapter is registered and the `ControlPlane:ExecutionWorkloads` catalog entry matches |
+| Kubernetes Job submission fails with `401/403` | Service account token missing or RBAC insufficient for `batch/v1/jobs` | Confirm the pod projection at `/var/run/secrets/kubernetes.io/serviceaccount/` or configure `ControlPlane:Kubernetes:BearerTokenPath`; grant `create`/`get`/`delete` on `jobs.batch` and `list` on `pods` in the target namespace |
+| Out-of-cluster submission fails with TLS certificate validation errors | API server uses a private or self-signed CA that does not chain to the OS trust store | Set `ControlPlane:Kubernetes:CaBundlePath` to a PEM bundle containing the cluster CA. The adapter extends trust to those roots via `X509ChainTrustMode.CustomRootTrust` while preserving normal hostname-binding and expiry checks — a matching custom root does not suppress name mismatches or expired certificates. In-cluster auto-detection still takes precedence when running inside the cluster |
+| Server fails to start with `ControlPlane:Kubernetes:ApiServerUrl` validation error | Malformed or missing API server URL while `InClusterAutoDetect` is disabled | Supply an absolute URL (e.g. `https://cluster.example.com:6443` or `https://proxy.example/k8s` for a path-based gateway) or re-enable `InClusterAutoDetect`. A non-root base path is preserved when building request URIs |
+| Kubernetes Job never scheduled on GDAL-class nodes | `k8s.node_selector` not set on the workload | Add the node selector to the workload spec parameters (`k8s.node_selector = workload=gdal`) or configure `ControlPlane:Kubernetes:DefaultNodeSelector` for the backend |
+| Heartbeat expiry warnings | Worker crashed or network partition | Check worker health; reconciler auto-recovers |
+| Retry exhaustion errors | Executor fails repeatedly | Check executor logs for root cause |
+| Claim rollback warnings | Transient Redis error during claim | Self-healing; monitor frequency |
+| Claim scan traverse threshold | Queue front dominated by delayed retries | Review retry backoff settings; clear stale entries |
+| `503` on OGC Processes or GPServer job routes | Redis not configured | Enable Redis — see [Infrastructure](infrastructure.md) |
+
+The reconciliation service automatically recovers abandoned jobs when heartbeats
+expire. No operator intervention is required unless retry budgets are exhausted.
+For log-level details and alerting thresholds, see
+[Monitoring — Job Orchestration Observability](monitoring.md#job-orchestration-observability).
+For policy tuning, see
+[Operations — Job Orchestration](operations.md#job-orchestration).
+
+---
+
+## Workflow Orchestration Issues
+
+**Symptom**: workflow runs stuck in Pending or Running, steps not progressing.
+
+**Quick triage**:
+```bash
+# Check reconciler and scheduler logs
+docker logs honua-server 2>&1 | grep -E "Orchestration|8100|8101|8110"
+
+# Verify Redis connectivity (workflow stores require Redis)
+redis-cli -h redis ping
+
+# Check for active workflow runs
+redis-cli -h redis SMEMBERS orchestration:run:active
+```
+
+**Common causes and fixes**:
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `503` on cancel for Orchestration operations | Redis not configured; orchestration engine not registered | Enable Redis — see [Infrastructure](infrastructure.md) |
+| Runs stuck in Pending | Reconciler background service not running | Verify `AddOrchestrationBackgroundServices()` is wired and Redis is reachable |
+| Steps not submitted | Upstream dependency not terminal | Check step `DependsOn` graph and upstream step status |
+| `409 Conflict` on cancel | Reconcile lease held by concurrent tick | Retry the cancel request; this is transient |
+| Scheduled workflow not firing | Invalid cron expression or time zone | Check logs for event `8116`; correct the definition |
+| Step marked Failed with artifact error | Upstream artifact retrieval failed | Check logs for event `8120`; investigate upstream result storage |
+| Step observation failures in run warnings | Transient job-observation failure (store outage, network) | Check logs for event `8118`; verify substrate health. The step is preserved and observation retries automatically |
+| Reconciliation error spikes | Redis connectivity or data corruption | Check Redis health and `OrchestrationLog` Warning (8110) |
+| Run failed with "step-set changed" | Definition steps modified while run was active | Check logs for event `8121`; avoid mutating definitions with active runs |
+| Progress view stale after run update | Progress store write failed; authoritative state is still durable | Check logs for event `8122`; verify Redis health. The run is correct — only the progress projection is delayed |
+
+The reconciler automatically resumes runs after crashes or restarts by
+rehydrating state from Redis. No operator intervention is required unless
+the underlying Redis store is unavailable. For observability details, see
+[Monitoring — Workflow Orchestration Observability](monitoring.md#workflow-orchestration-observability).
+For policy tuning, see
+[Operations — Workflow Orchestration](operations.md#workflow-orchestration).
+
+---
+
 ## Spatial Query Problems
 
 **FeatureServer bbox query**:

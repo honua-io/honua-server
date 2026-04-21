@@ -48,7 +48,7 @@ internal static class GeoPackageExportWriter
 
         await using (var cmd = connection.CreateCommand())
         {
-            cmd.CommandText = "PRAGMA user_version = 10201;"; // GeoPackage 1.2.1
+            cmd.CommandText = "PRAGMA user_version = 10200;"; // GeoPackage 1.2.0 (OGC 12-128r16)
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -115,15 +115,42 @@ internal static class GeoPackageExportWriter
     private static async Task InsertSpatialRefAsync(
         SqliteConnection connection, int srid, string? srsName, string? srsWkt, CancellationToken ct)
     {
+        var (organization, coordsysId) = ResolveSrsAuthority(srid, srsName);
+
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT OR IGNORE INTO gpkg_spatial_ref_sys (srs_name, srs_id, organization, organization_coordsys_id, definition)
-            VALUES ($name, $srid, 'EPSG', $srid, $definition);
+            VALUES ($name, $srid, $org, $orgCoordsysId, $definition);
             """;
         cmd.Parameters.AddWithValue("$name", srsName ?? $"EPSG:{srid}");
         cmd.Parameters.AddWithValue("$srid", srid);
+        cmd.Parameters.AddWithValue("$org", organization);
+        cmd.Parameters.AddWithValue("$orgCoordsysId", coordsysId);
         cmd.Parameters.AddWithValue("$definition", srsWkt ?? "undefined");
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    // Parses "AUTHORITY:CODE" forms (e.g. "EPSG:4326", "ESRI:102100") to populate
+    // gpkg_spatial_ref_sys.organization and organization_coordsys_id per OGC 12-128r16 §1.1.2.
+    // Falls back to EPSG with srs_id when the name is absent or unparseable.
+    private static (string Organization, int CoordsysId) ResolveSrsAuthority(int srid, string? srsName)
+    {
+        if (!string.IsNullOrWhiteSpace(srsName))
+        {
+            var colonIndex = srsName.IndexOf(':');
+            if (colonIndex > 0 && colonIndex < srsName.Length - 1)
+            {
+                var authority = srsName[..colonIndex].Trim();
+                var codeText = srsName[(colonIndex + 1)..].Trim();
+                if (authority.Length > 0
+                    && int.TryParse(codeText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var code))
+                {
+                    return (authority.ToUpperInvariant(), code);
+                }
+            }
+        }
+
+        return ("EPSG", srid);
     }
 
     private static async Task CreateFeatureTableAsync(
@@ -254,6 +281,10 @@ internal static class GeoPackageExportWriter
 
             if (batchCount > 0)
             {
+                // Surface cancellation *before* attempting the final commit so we do
+                // not persist a partial batch whose in-flight features may have been
+                // truncated by the async source.
+                ct.ThrowIfCancellationRequested();
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
             }
         }

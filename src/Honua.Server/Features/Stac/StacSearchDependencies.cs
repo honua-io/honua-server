@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Stac;
@@ -15,12 +16,14 @@ internal sealed class StacSearchDependencies
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
         IGeometryService geometryService,
+        ICrsRegistry crsRegistry,
         ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
         GeometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
+        CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -28,5 +31,6 @@ internal sealed class StacSearchDependencies
     public IFeatureReader FeatureReader { get; }
     public IFilterExpressionService FilterExpressionService { get; }
     public IGeometryService GeometryService { get; }
+    public ICrsRegistry CrsRegistry { get; }
     public ILogger<StacEndpoints.StacEndpointsLog> Logger { get; }
 }

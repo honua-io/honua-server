@@ -39,6 +39,26 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_LogsMeasuredDatabaseElapsedTime()
+    {
+        var logger = new MockLogger<ReadinessCheckService>();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var service = new ReadinessCheckService(
+            new DelayedHealthyDatabaseChecker(TimeSpan.FromMilliseconds(25)),
+            migrationState,
+            logger);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+        logger.LogCalls.Should().ContainSingle(call =>
+            call.Message.Contains("DatabaseHealth", StringComparison.Ordinal)
+            && !call.Message.Contains("in 0.00ms", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithUnhealthyDatabase_ReturnsNotReady()
     {
         // Arrange
@@ -142,6 +162,27 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithUnavailableFeatureChangeStore_LogsMeasuredElapsedTime()
+    {
+        var logger = new MockLogger<ReadinessCheckService>();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var service = new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(),
+            migrationState,
+            logger,
+            featureChangeEventStoreHealth: new DelayedFeatureChangeEventStoreHealth(false, TimeSpan.FromMilliseconds(25)));
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeFalse();
+        logger.LogCalls.Should().ContainSingle(call =>
+            call.Message.Contains("FeatureChangeEventStore", StringComparison.Ordinal)
+            && !call.Message.Contains("in 0.00ms", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithDatabaseException_ReturnsNotReadyWithException()
     {
         // Arrange
@@ -154,8 +195,24 @@ public sealed class ReadinessCheckServiceTests
         // Assert
         result.IsReady.Should().BeFalse();
         result.StatusCode.Should().Be(503);
-        result.Message.Should().Be("Not Ready - Database unavailable");
+        result.Message.Should().Be("Not Ready - Database health check failed");
         result.Exception.Should().NotBeNull();
+        result.Exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithCacheException_ReturnsContextualFailure()
+    {
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var throwingCacheChecker = new ThrowingCacheHealthChecker();
+        var service = CreateService(mockDatabaseChecker, throwingCacheChecker);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Be("Not Ready - Cache health check failed");
         result.Exception.Should().BeOfType<InvalidOperationException>();
     }
 
@@ -253,6 +310,15 @@ internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
     }
 }
 
+internal sealed class DelayedHealthyDatabaseChecker(TimeSpan delay) : IDatabaseHealthChecker
+{
+    public async Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(delay, cancellationToken);
+        return true;
+    }
+}
+
 /// <summary>
 /// Mock database health checker that always returns unhealthy
 /// </summary>
@@ -290,6 +356,26 @@ internal sealed class MockCancellationDatabaseChecker : IDatabaseHealthChecker
 internal sealed class MockFeatureChangeEventStoreHealth(bool canPersistEvents) : IFeatureChangeEventStoreHealth
 {
     public bool CanPersistEvents { get; } = canPersistEvents;
+}
+
+internal sealed class ThrowingCacheHealthChecker : ICacheHealthChecker
+{
+    public bool IsUsingFallback => false;
+
+    public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Cache connection failed");
+}
+
+internal sealed class DelayedFeatureChangeEventStoreHealth(bool canPersistEvents, TimeSpan delay) : IFeatureChangeEventStoreHealth
+{
+    public bool CanPersistEvents
+    {
+        get
+        {
+            Thread.Sleep(delay);
+            return canPersistEvents;
+        }
+    }
 }
 
 /// <summary>

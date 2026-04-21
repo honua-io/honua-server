@@ -20,6 +20,101 @@ namespace Honua.Server.Features.NlQuery;
 /// </summary>
 internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
 {
+    private static readonly JsonElement FilterPlanJsonSchema = JsonDocument.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "combinator": {
+              "type": "string",
+              "enum": ["and", "or"]
+            },
+            "clauses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["comparison", "spatial", "temporal", "nested"]
+                  },
+                  "comparison": {
+                    "type": "object",
+                    "properties": {
+                      "property": { "type": "string" },
+                      "operator": {
+                        "type": "string",
+                        "enum": ["eq", "neq", "lt", "lte", "gt", "gte", "like", "in"]
+                      },
+                      "value": {
+                        "anyOf": [
+                          { "type": "string" },
+                          { "type": "number" },
+                          { "type": "boolean" },
+                          {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["property", "operator", "value"],
+                    "additionalProperties": false
+                  },
+                  "spatial": {
+                    "type": "object",
+                    "properties": {
+                      "operator": {
+                        "type": "string",
+                        "enum": ["intersects", "within", "contains", "dwithin"]
+                      },
+                      "geometry": { "type": "object" },
+                      "distance": { "type": "number" },
+                      "distanceUnit": { "type": "string" }
+                    },
+                    "required": ["operator", "geometry"],
+                    "additionalProperties": false
+                  },
+                  "temporal": {
+                    "type": "object",
+                    "properties": {
+                      "property": { "type": "string" },
+                      "operator": {
+                        "type": "string",
+                        "enum": ["before", "after", "during"]
+                      },
+                      "start": { "type": "string" },
+                      "end": { "type": "string" }
+                    },
+                    "required": ["property", "operator"],
+                    "additionalProperties": false
+                  },
+                  "nested": {
+                    "type": "object",
+                    "properties": {
+                      "combinator": {
+                        "type": "string",
+                        "enum": ["and", "or"]
+                      },
+                      "clauses": {
+                        "type": "array",
+                        "items": { "type": "object" }
+                      }
+                    },
+                    "required": ["combinator", "clauses"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["combinator", "clauses"],
+          "additionalProperties": false
+        }
+        """).RootElement.Clone();
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<OpenAiNlQueryPlanProvider> _logger;
     private readonly NlQueryConfiguration _configuration;
@@ -48,6 +143,18 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
         activity?.SetTag("nl.collection", request.CollectionId);
 
         NlQueryLog.PlanRequested(_logger, request.CollectionId ?? "unknown", _configuration.Model);
+
+        // Cap user-supplied text before it is shipped to the model so that a runaway
+        // prompt cannot exhaust the provider's token budget or produce a billing spike.
+        // 8 000 characters is well below every current OpenAI context window and is
+        // larger than any reasonable natural-language query.
+        const int MaxQueryCharacters = 8_000;
+        if (!string.IsNullOrEmpty(request.Query) && request.Query.Length > MaxQueryCharacters)
+        {
+            throw new ArgumentException(
+                $"Natural-language query exceeds the {MaxQueryCharacters:N0}-character limit.",
+                nameof(request));
+        }
 
         try
         {
@@ -144,135 +251,9 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
                 {
                     Name = "filter_plan",
                     Strict = true,
-                    Schema = SerializeSchemaToElement(BuildFilterPlanJsonSchema())
+                    Schema = FilterPlanJsonSchema
                 }
             }
         };
-    }
-
-    private static Dictionary<string, object> BuildFilterPlanJsonSchema()
-    {
-        // Minimal JSON Schema for the FilterPlan type, used by OpenAI structured output.
-        // This constrains the model to only produce valid filter plan shapes.
-        return new Dictionary<string, object>
-        {
-            ["type"] = "object",
-            ["properties"] = new Dictionary<string, object>
-            {
-                ["combinator"] = new Dictionary<string, object>
-                {
-                    ["type"] = "string",
-                    ["enum"] = new[] { "and", "or" }
-                },
-                ["clauses"] = new Dictionary<string, object>
-                {
-                    ["type"] = "array",
-                    ["items"] = new Dictionary<string, object>
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object>
-                        {
-                            ["type"] = new Dictionary<string, object>
-                            {
-                                ["type"] = "string",
-                                ["enum"] = new[] { "comparison", "spatial", "temporal", "nested" }
-                            },
-                            ["comparison"] = new Dictionary<string, object>
-                            {
-                                ["type"] = "object",
-                                ["properties"] = new Dictionary<string, object>
-                                {
-                                    ["property"] = new Dictionary<string, string> { ["type"] = "string" },
-                                    ["operator"] = new Dictionary<string, object>
-                                    {
-                                        ["type"] = "string",
-                                        ["enum"] = new[] { "eq", "neq", "lt", "lte", "gt", "gte", "like", "in" }
-                                    },
-                                    ["value"] = new Dictionary<string, object>
-                                    {
-                                        ["anyOf"] = new object[]
-                                        {
-                                            new Dictionary<string, string> { ["type"] = "string" },
-                                            new Dictionary<string, string> { ["type"] = "number" },
-                                            new Dictionary<string, string> { ["type"] = "boolean" },
-                                            new Dictionary<string, object>
-                                            {
-                                                ["type"] = "array",
-                                                ["items"] = new Dictionary<string, string> { ["type"] = "string" }
-                                            }
-                                        }
-                                    }
-                                },
-                                ["required"] = new[] { "property", "operator", "value" },
-                                ["additionalProperties"] = false
-                            },
-                            ["spatial"] = new Dictionary<string, object>
-                            {
-                                ["type"] = "object",
-                                ["properties"] = new Dictionary<string, object>
-                                {
-                                    ["operator"] = new Dictionary<string, object>
-                                    {
-                                        ["type"] = "string",
-                                        ["enum"] = new[] { "intersects", "within", "contains", "dwithin" }
-                                    },
-                                    ["geometry"] = new Dictionary<string, string> { ["type"] = "object" },
-                                    ["distance"] = new Dictionary<string, string> { ["type"] = "number" },
-                                    ["distanceUnit"] = new Dictionary<string, string> { ["type"] = "string" }
-                                },
-                                ["required"] = new[] { "operator", "geometry" },
-                                ["additionalProperties"] = false
-                            },
-                            ["temporal"] = new Dictionary<string, object>
-                            {
-                                ["type"] = "object",
-                                ["properties"] = new Dictionary<string, object>
-                                {
-                                    ["property"] = new Dictionary<string, string> { ["type"] = "string" },
-                                    ["operator"] = new Dictionary<string, object>
-                                    {
-                                        ["type"] = "string",
-                                        ["enum"] = new[] { "before", "after", "during" }
-                                    },
-                                    ["start"] = new Dictionary<string, string> { ["type"] = "string" },
-                                    ["end"] = new Dictionary<string, string> { ["type"] = "string" }
-                                },
-                                ["required"] = new[] { "property", "operator" },
-                                ["additionalProperties"] = false
-                            },
-                            ["nested"] = new Dictionary<string, object>
-                            {
-                                ["type"] = "object",
-                                ["properties"] = new Dictionary<string, object>
-                                {
-                                    ["combinator"] = new Dictionary<string, object>
-                                    {
-                                        ["type"] = "string",
-                                        ["enum"] = new[] { "and", "or" }
-                                    },
-                                    ["clauses"] = new Dictionary<string, object>
-                                    {
-                                        ["type"] = "array",
-                                        ["items"] = new Dictionary<string, string> { ["type"] = "object" }
-                                    }
-                                },
-                                ["required"] = new[] { "combinator", "clauses" },
-                                ["additionalProperties"] = false
-                            }
-                        },
-                        ["required"] = new[] { "type" },
-                        ["additionalProperties"] = false
-                    }
-                }
-            },
-            ["required"] = new[] { "combinator", "clauses" },
-            ["additionalProperties"] = false
-        };
-    }
-
-    private static JsonElement SerializeSchemaToElement(Dictionary<string, object> schema)
-    {
-        var json = JsonSerializer.Serialize(schema);
-        return JsonDocument.Parse(json).RootElement.Clone();
     }
 }

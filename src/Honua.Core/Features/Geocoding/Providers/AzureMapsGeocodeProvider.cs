@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Geocoding.Providers;
 
@@ -21,7 +22,7 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
 
     private readonly AzureMapsProviderConfiguration _configuration;
     private readonly HttpClient _httpClient;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private int _validatedBaseUrl;
 
     /// <summary>
     /// Initialize a new Azure Maps geocode provider
@@ -43,12 +44,6 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.InvalidConfiguration
             };
         }
-
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true
-        };
 
         // Configure HTTP client
         _httpClient.Timeout = TimeSpan.FromSeconds(configuration.TimeoutSeconds);
@@ -95,6 +90,8 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             };
         }
 
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             var url = BuildSearchUrl(request);
@@ -118,7 +115,9 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var searchResponse = JsonSerializer.Deserialize<AzureMapsSearchResponse>(content, _jsonOptions);
+            var searchResponse = JsonSerializer.Deserialize(
+                content,
+                AzureMapsProviderJsonContext.Default.AzureMapsSearchResponse);
 
             return ConvertSearchResults(searchResponse?.Results ?? [], request);
         }
@@ -155,6 +154,8 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             };
         }
 
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             var url = BuildReverseUrl(request);
@@ -176,7 +177,9 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var reverseResponse = JsonSerializer.Deserialize<AzureMapsReverseResponse>(content, _jsonOptions);
+            var reverseResponse = JsonSerializer.Deserialize(
+                content,
+                AzureMapsProviderJsonContext.Default.AzureMapsReverseResponse);
 
             return ConvertReverseResult(reverseResponse?.Addresses?.FirstOrDefault(), request);
         }
@@ -210,6 +213,8 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             return [];
         }
 
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             var url = BuildSuggestUrl(request);
@@ -231,7 +236,9 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
             }
 
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var suggestionResponse = JsonSerializer.Deserialize<AzureMapsSuggestionResponse>(content, _jsonOptions);
+            var suggestionResponse = JsonSerializer.Deserialize(
+                content,
+                AzureMapsProviderJsonContext.Default.AzureMapsSuggestionResponse);
 
             return ConvertSuggestionResults(suggestionResponse?.Results ?? []);
         }
@@ -256,6 +263,8 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
     /// <inheritdoc />
     protected override async Task CheckHealthCoreAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+
         try
         {
             // Simple health check using a known address
@@ -289,6 +298,30 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
                 ErrorCode = GeocodeErrorCodes.NetworkTimeout
             };
         }
+    }
+
+    private async Task EnsureSafeBaseUrlAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _validatedBaseUrl) == 1)
+        {
+            return;
+        }
+
+        var validation = await OutboundHttpUrlValidator
+            .ValidateAsync(_configuration.BaseUrl, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!validation.IsValid)
+        {
+            throw new GeocodeProviderException(
+                $"Azure Maps BaseUrl {validation.ErrorMessage ?? "must be a valid HTTPS URL."}")
+            {
+                ProviderName = Name,
+                ErrorCode = GeocodeErrorCodes.InvalidConfiguration
+            };
+        }
+
+        Volatile.Write(ref _validatedBaseUrl, 1);
     }
 
     private string BuildSearchUrl(ForwardGeocodeRequest request)
@@ -562,22 +595,22 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
     }
 
     // Azure Maps API response models
-    private sealed class AzureMapsSearchResponse
+    internal sealed class AzureMapsSearchResponse
     {
         public AzureMapsSearchResult[]? Results { get; set; }
     }
 
-    private sealed class AzureMapsReverseResponse
+    internal sealed class AzureMapsReverseResponse
     {
         public AzureMapsReverseAddress[]? Addresses { get; set; }
     }
 
-    private sealed class AzureMapsSuggestionResponse
+    internal sealed class AzureMapsSuggestionResponse
     {
         public AzureMapsSearchResult[]? Results { get; set; }
     }
 
-    private sealed class AzureMapsSearchResult
+    internal sealed class AzureMapsSearchResult
     {
         public string? Type { get; set; }
         public string? Id { get; set; }
@@ -591,7 +624,7 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         public string? MatchCode { get; set; }
     }
 
-    private sealed class AzureMapsReverseAddress
+    internal sealed class AzureMapsReverseAddress
     {
         public string? Type { get; set; }
         public string? Id { get; set; }
@@ -600,13 +633,13 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         public string? MatchCode { get; set; }
     }
 
-    private sealed class AzureMapsPosition
+    internal sealed class AzureMapsPosition
     {
         public double? Lat { get; set; }
         public double? Lon { get; set; }
     }
 
-    private sealed class AzureMapsAddress
+    internal sealed class AzureMapsAddress
     {
         public string? StreetNumber { get; set; }
         public string? StreetName { get; set; }
@@ -619,16 +652,24 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         public string? FreeformAddress { get; set; }
     }
 
-    private sealed class AzureMapsPoi
+    internal sealed class AzureMapsPoi
     {
         public string? Name { get; set; }
         public string? CategorySet { get; set; }
         public string? Categories { get; set; }
     }
 
-    private sealed class AzureMapsDataSources
+    internal sealed class AzureMapsDataSources
     {
         public string? QueryType { get; set; }
         public string? GeometryType { get; set; }
     }
 }
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    PropertyNameCaseInsensitive = true)]
+[JsonSerializable(typeof(AzureMapsGeocodeProvider.AzureMapsSearchResponse))]
+[JsonSerializable(typeof(AzureMapsGeocodeProvider.AzureMapsReverseResponse))]
+[JsonSerializable(typeof(AzureMapsGeocodeProvider.AzureMapsSuggestionResponse))]
+internal sealed partial class AzureMapsProviderJsonContext : JsonSerializerContext;

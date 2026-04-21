@@ -4,8 +4,12 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+<<<<<<< HEAD
 using Microsoft.Extensions.Options;
 using System.Reflection;
+=======
+using System.Diagnostics.CodeAnalysis;
+>>>>>>> origin/trunk
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
@@ -97,7 +101,13 @@ public static class ServiceRegistrationHelpers
     /// Register a scoped service with interface and implementation.
     /// Uses TryAddScoped to avoid duplicate registrations.
     /// </summary>
+<<<<<<< HEAD
     public static IServiceCollection AddScopedService<TInterface, TImplementation>(
+=======
+    public static IServiceCollection AddScopedService<
+        TInterface,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation>(
+>>>>>>> origin/trunk
         this IServiceCollection services)
         where TInterface : class
         where TImplementation : class, TInterface
@@ -123,7 +133,13 @@ public static class ServiceRegistrationHelpers
     /// Register a singleton service with interface and implementation.
     /// Uses TryAddSingleton to avoid duplicate registrations.
     /// </summary>
+<<<<<<< HEAD
     public static IServiceCollection AddSingletonService<TInterface, TImplementation>(
+=======
+    public static IServiceCollection AddSingletonService<
+        TInterface,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation>(
+>>>>>>> origin/trunk
         this IServiceCollection services)
         where TInterface : class
         where TImplementation : class, TInterface
@@ -144,6 +160,7 @@ public static class ServiceRegistrationHelpers
         services.TryAddSingleton(factory);
         return services;
     }
+<<<<<<< HEAD
 
     /// <summary>
     /// Register configuration options with standard validation pattern.
@@ -393,4 +410,6 @@ internal class DefaultProviderRegistry<TInterface, TOptions> : IProviderRegistry
             }
         }
     }
+=======
+>>>>>>> origin/trunk
 }

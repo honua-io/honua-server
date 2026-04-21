@@ -4,7 +4,7 @@ Honua Server includes intelligent adaptive sampling that automatically adjusts O
 
 ## Quick Start
 
-Adaptive sampling is **enabled by default** with sensible settings for self-hosted installations:
+Adaptive sampling is **enabled by default** in the shipped `Honua.Server` configuration with sensible settings for self-hosted installations:
 
 ```bash
 # Check current configuration
@@ -23,21 +23,23 @@ curl -H "Authorization: Bearer your-admin-token" \
 ## How It Works
 
 ### 1. **Dynamic Rate Adjustment**
-- **Base rate**: 10% sampling under normal conditions
+- **Shipped Honua.Server config**: Starts at 10% sampling under normal conditions
 - **High load**: Reduces to 1% minimum to preserve performance
 - **Error conditions**: Increases to 50% maximum for debugging
 - **Critical operations**: Always sampled (authentication, data writes)
+
+These percentages reflect the shipped `src/Honua.Server/appsettings.json` defaults. If the entire `AdaptiveSampling` section is absent, the bare `AdaptiveSamplingOptions` fallback defaults are lower: base `1%`, minimum `0.1%`, maximum `100%`.
 
 ### 2. **System Load Detection**
 Monitors:
 - CPU usage (threshold: 70%)
 - Memory usage (threshold: 80%)
-- Active requests (threshold: 50)
+- Active requests (threshold: 50 in shipped config; `100` if the `AdaptiveSampling` section is absent)
 - Response times (threshold: 1000ms)
 
 ### 3. **Error Rate Response**
 - **Normal**: <5% errors = standard sampling
-- **Incident**: >5% errors = 3x sampling boost
+- **Incident**: >5% errors = 3x sampling boost in shipped config (`2x` if the `AdaptiveSampling` section is absent)
 - **Time window**: 5-minute sliding window
 
 ## Configuration via Environment Variables
@@ -50,7 +52,7 @@ All settings can be configured via environment variables:
 HONUA__ADAPTIVESAMPLING__ENABLED=false
 
 # Adjust base sampling rate
-HONUA__ADAPTIVESAMPLING__BASESAMPLRATE=0.05  # 5% instead of 10%
+HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE=0.05  # 5% instead of 10%
 ```
 
 ### Load Thresholds
@@ -109,8 +111,8 @@ services:
     environment:
       # Enable adaptive sampling with conservative settings
       HONUA__ADAPTIVESAMPLING__ENABLED: "true"
-      HONUA__ADAPTIVESAMPLING__BASESAMPLRATE: "0.05"
-      HONUA__ADAPTIVESAMPLING__MAXSAMPLRATE: "0.3"
+      HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE: "0.05"
+      HONUA__ADAPTIVESAMPLING__MAXSAMPLINGRATE: "0.3"
 
       # Aspire/OTLP endpoint for trace export
       HONUA__TRACING__OTLPENDPOINT: "http://jaeger:4317"
@@ -147,7 +149,7 @@ spec:
 ### Too Much Tracing
 ```bash
 # Reduce base sampling rate
-HONUA__ADAPTIVESAMPLING__BASESAMPLRATE=0.02
+HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE=0.02
 
 # Increase load sensitivity
 HONUA__ADAPTIVESAMPLING__LOAD__CPUTHRESHOLD=60

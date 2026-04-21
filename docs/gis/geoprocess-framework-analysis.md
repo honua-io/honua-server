@@ -2,7 +2,7 @@
 
 **Ticket:** honua-io/honua-server#360
 **Date:** 2026-04-12
-**Status:** Active reference — constrains #721, #723, #529
+**Status:** Active reference — constrains #721, #723, #529, #724
 
 This document compares Esri GPServer, GeoServer process exposure patterns, and
 OGC API Processes semantics, then maps each to the Honua canonical process model.
@@ -138,7 +138,10 @@ Honua's canonical model supports both modes:
 - **Synchronous**: `ProcessService.ExecutePlan` (currently stubbed, returns
   `Unimplemented` — to be completed in #721)
 - **Asynchronous**: `ProcessService.SubmitPlanJob` → `ExecutionJob` with status
-  polling via `GetJob`
+  polling via `GetJob`. The durable job orchestration substrate
+  ([ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
+  defines the claim/heartbeat/retry/cancellation contracts that this path will
+  use once wired end-to-end (follow-on: #721).
 
 The canonical model does not force a per-process execution type. Both modes
 operate on the same `AnalysisPlan`. The protocol adapters determine how to
@@ -247,8 +250,10 @@ The critical adapter difference is result access pattern:
   Adapters should establish a binding between the process definition's
   output parameter name and the artifact, using `ArtifactRef.Metadata`
   with a well-known key or a follow-on field addition to `ArtifactRef`
-- **OGC adapter** (#529): v1 supports document-mode, by-value results only —
-  return all artifacts in a single `/jobs/{jobId}/results` JSON response.
+- **OGC adapter** (#529): v1 targets document-mode, by-value results — a single
+  `/jobs/{jobId}/results` JSON response keyed by output identifier. Successful
+  jobs return `200 OK` with an empty body (`{}`) until the canonical process
+  declares value-typed outputs and the execution engine populates result storage.
   Raw-mode responses, reference-based transmission, and multipart output are
   deferred (see [Deliberately Excluded Behaviors](#from-ogc-api-processes))
 
@@ -258,13 +263,13 @@ The critical adapter difference is result access pattern:
 | --- | --- | --- |
 | Esri GPServer | `POST /{task}/jobs/{jobId}/cancel` | Transitions through `esriJobCancelling` to `esriJobCancelled` |
 | OGC API Processes | `DELETE /jobs/{jobId}` | Transitions to `dismissed`; may also delete the job resource |
-| Honua canonical | `ProcessService.CancelJob` | Sets `ExecutionJobStatus.Cancelled` via `IJobCancellationNotifier`; best-effort, no transient cancelling state |
+| Honua canonical | `ProcessService.CancelJob` | Attempts `IJobCancellationNotifier` for in-process workers; delegates to `IBatchComputeBackend.CancelAsync` for remote backends that advertise `SupportsCancellation`; falls back to `ExecutionJobCancellationHelper` for local durable cancellation; best-effort, no transient cancelling state |
 
 Adapter notes:
 
-- GPServer adapter: should accept POST to cancel and return the current job
-  status; the `esriJobCancelling` transient state can be synthesized if the
-  backend has not yet acknowledged cancellation
+- GPServer adapter (#723): accepts both GET and POST to cancel and returns the
+  current job status; does not synthesize `esriJobCancelling` — cancellation is
+  best-effort and the response reflects the post-cancellation state
 - OGC adapter: should accept DELETE and return 200 with the dismissed job
   status; if the protocol expects the job resource to be removed after
   dismissal, the adapter can return 404 on subsequent GET requests while the
@@ -289,14 +294,14 @@ Adapter notes:
 | WPS XML encoding | XML transport is not supported. OGC API Processes (JSON) supersedes WPS for Honua's purposes. |
 | PPIO (Process Parameter I/O) framework | GeoServer-internal serialization concern. Not relevant to Honua's architecture. |
 | Process groups with security integration | Honua handles authorization through `IOperatorAuthorizationEvaluator` and `IOperatorApprovalEvaluator` at the service layer, not process-group-level ACLs. |
-| Process chaining (WPS) | Honua supports step composition natively through `AnalysisPlan` DAGs. WPS-style chaining where one process output feeds another inline is subsumed by plan step dependencies. |
+| Process chaining (WPS) | Honua supports step composition natively through `AnalysisPlan` DAGs. WPS-style chaining where one process output feeds another inline is subsumed by plan step dependencies. For multi-plan workflow composition (chaining separate plan executions with artifact-binding and retry/failure policies), see the declarative workflow orchestration layer ([ADR-0032](../contributor/adr/0032-workflow-orchestration-layer.md)). |
 
 ### From OGC API Processes
 
 | Behavior | Reason for Exclusion |
 | --- | --- |
-| Response mode negotiation (`document` vs `raw`) | Deferred. V1 supports only document-mode responses (single JSON object with all outputs). Raw-mode responses (direct media type, multipart, or `204` with `Link` headers) can be added when single-output streaming or large-result downloads are needed. |
-| Output transmission negotiation (`value` vs `reference`) | Deferred. V1 returns results by value. Reference-based output can be added when large-result streaming is needed. |
+| Response mode negotiation (`document` vs `raw`) | Deferred. V1 accepts only document-mode execution requests; the planned successful results shape is a single JSON object with all outputs. The current implementation does not yet emit successful results documents. Raw-mode responses (direct media type, multipart, or `204` with `Link` headers) can be added when single-output streaming or large-result downloads are needed. |
+| Output transmission negotiation (`value` vs `reference`) | Deferred. When successful results are populated, V1 returns them by value. Reference-based output can be added when large-result streaming is needed. |
 | `Prefer: return=minimal` / `return=representation` | Deferred. V1 returns full job representation on creation. |
 | Nested process execution (Part 2: Deploy, Replace, Undeploy) | Out of scope. Honua does not support user-deployed process definitions in v1. |
 | Callback/subscriber notification (`Prefer: respond-async; callback=...`) | Deferred. V1 uses polling. Webhook/callback notification can be added later. |
@@ -309,7 +314,7 @@ semantics.
 
 | Canonical Noun | Domain Type | Purpose |
 | --- | --- | --- |
-| Process definition | Via `CatalogService` (not yet formalized as a domain type) | Discoverable unit of geoprocessing capability |
+| Process definition | `ProcessDefinition` (with `ProcessParameterSpec` / `ProcessParameterValueType`) discoverable via `IProcessCatalog` | Discoverable unit of geoprocessing capability; the built-in catalog seeds 19 processes across four families (10 `geometry.*`, 4 `analytics.*`, 2 `generalization.*`, 3 `data-management.*`) referenced by `AnalysisPlanStep.ProcessId` |
 | Analysis intent | `AnalysisIntent` | Natural-language or structured goal before planning |
 | Analysis plan | `AnalysisPlan` | Executable DAG of steps compiled from a grounded intent |
 | Plan step | `AnalysisPlanStep` | One unit of work in the execution DAG |
@@ -351,24 +356,24 @@ Adapter invariants:
 The OGC API Processes adapter projects the Honua canonical model into the OGC
 API Processes Part 1 Core contract. Key mappings:
 
-| OGC Concept | Honua Source |
+| OGC Concept | Honua Source / V1 implementation |
 | --- | --- |
-| `GET /processes` | `CatalogService` process definitions |
-| `GET /processes/{processId}` | Process definition → OGC process description with JSON Schema inputs/outputs |
-| `POST /processes/{id}/execution` (sync) | `ProcessService.ExecutePlan` |
-| `POST /processes/{id}/execution` (async) | `ProcessService.SubmitPlanJob` |
-| `GET /jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
-| `GET /jobs/{jobId}/results` | `ProcessService.GetJobResults` → v1: document-mode, by-value output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
-| `DELETE /jobs/{jobId}` | `ProcessService.CancelJob` |
+| `GET /processes` | V1 static single-process projection (`honua-geoprocessing`); the internal `IProcessCatalog` now enumerates 19 built-in processes across `geometry.*`, `analytics.*`, `generalization.*`, and `data-management.*`, but per-process projection into the adapter surface is follow-on work |
+| `GET /processes/{processId}` | V1 static process description with JSON Schema inputs/outputs for the canonical process stub |
+| `POST /processes/{id}/execution` (sync) | Not implemented in V1; synchronous execution returns `501 Not Implemented` |
+| `POST /processes/{id}/execution` (async) | Adapter validates plan structure, requires `Prefer: respond-async`, and creates durable `ExecutionJobRecord` + `GeoprocessingProgress` state |
+| `GET /jobs/{jobId}` | `IExecutionJobStore` → `ExecutionJobRecord` projected to OGC `StatusInfo` |
+| `GET /jobs/{jobId}/results` | Succeeded `200` with document-mode JSON body keyed by output identifier (empty `{}` until the canonical process declares value-typed outputs); non-terminal `404`, failed `500`, dismissed `410`. Planned successful shape: output map derived from `AnalysisResultPackage.Artifacts` only (no job status, summary, or error envelope in `/results`) |
+| `DELETE /jobs/{jobId}` | `IJobCancellationNotifier` → remote backend `CancelAsync` (if applicable) → `ExecutionJobCancellationHelper` + durable job store cancellation mapping to OGC `dismissed` |
 | Job status values | `ExecutionJobStatus` → OGC status string (see state matrix) |
-| `jobControlOptions` | Derived from process definition capabilities |
-| `Prefer: respond-async` | Route to `SubmitPlanJob` vs `ExecutePlan` |
+| `jobControlOptions` | V1 fixed capability declaration for the canonical process stub: `async-execute`, `dismiss` |
+| `Prefer: respond-async` | Required for execution; successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` |
 
 Adapter invariants:
 
 1. The adapter must not add lifecycle states beyond what `ExecutionJobStatus` provides
 2. Input/output schema translation to JSON Schema is the adapter's responsibility
-3. V1 results use document-mode, by-value only: return a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. Raw-mode and reference-based transmission are deferred
+3. V1 targets document-mode, by-value successful results only: the shape is a single JSON object keyed by stable output identifiers (not `ArtifactRef.Label`), not per-parameter. The canonical process declares no value-typed outputs yet, so `/results` returns `200 OK` with an empty body (`{}`) on success until the execution engine populates result packages. Raw-mode and reference-based transmission are deferred
 4. `DELETE /jobs/{jobId}` maps to cancellation, not resource deletion — the canonical job record persists
 
 ## Backlog Guidance
@@ -382,26 +387,57 @@ This ticket builds the canonical process contract. It must:
 - Ensure `AnalysisResultPackage` is populated by the execution engine
 - Not introduce protocol-specific concepts into the canonical model
 
-### honua-server#723 — GeoServices GPServer Adapter
+### honua-server#723 — GeoServices GPServer Adapter ✓
 
-This is a **protocol adapter** ticket. It must:
+**Implemented.** The GPServer adapter is a protocol adapter that:
 
-- Implement GPServer REST routes that project canonical process service operations
-- Translate Esri GP parameter types to/from canonical step inputs and `ArtifactKind`
-- Map `ExecutionJobStatus` to Esri job status strings per the state matrix above
-- Decompose `AnalysisResultPackage.Artifacts` into per-parameter result endpoints
-- Not add internal domain types or lifecycle states
+- Maps GPServer REST routes over canonical process service operations (`GPServerEndpoints.cs`)
+- Translates Esri GP parameter types to/from canonical step inputs and `ArtifactKind` (`GPServerParameterTranslation.cs`)
+- Maps `ExecutionJobStatus` to Esri job status strings per the state matrix above (`GPServerStatusMapping.cs`)
+- Routes per-parameter result endpoints via the `geoservices.output_parameter` metadata key (route registered; actual output retrieval pending execution-engine/result-storage support)
+- Persists route binding metadata (`gpserver.serviceId`, `gpserver.taskName`) at submit time and validates it on status/result/cancel to prevent cross-protocol job access
+- Does not add internal domain types or lifecycle states
 
-### honua-server#529 — OGC API Processes Adapter
+### honua-server#529 — OGC API Processes Adapter (Implemented)
 
-This is a **protocol adapter** ticket. It must:
+This **protocol adapter** is implemented. The adapter:
 
-- Implement OGC API Processes Part 1 Core routes that project canonical process service operations
-- Translate JSON Schema process descriptions from canonical process definitions
-- Map `ExecutionJobStatus` to OGC job status strings per the state matrix above
-- V1: return results as document-mode, by-value JSON (raw-mode and reference transmission deferred)
-- Support `Prefer: respond-async` negotiation
-- Not add internal domain types or lifecycle states
+- Implements OGC API Processes Part 1 Core routes that project canonical process service operations
+- V1 exposes one static canonical process descriptor (`honua-geoprocessing`) in `/processes`; plan submissions are validated against the built-in `IProcessCatalog` (19 seeded processes: 10 `geometry.*`, 4 `analytics.*`, 2 `generalization.*`, 3 `data-management.*`) so unknown process IDs and missing required parameters are rejected at the adapter boundary, but per-process projection into the OGC surface is follow-on work
+- Translates JSON Schema process descriptions from the canonical process stub
+- Validates canonical plan structure at the adapter boundary before durable job creation
+- Maps `ExecutionJobStatus` to OGC job status strings per the state matrix above
+- V1 is async-only: `Prefer: respond-async` is required, successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async`, and sync execution returns `501`
+- V1: `/results` returns `200 OK` with a document-mode, by-value JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is populated), `404` for non-terminal jobs, `500` for failed jobs, and `410` for dismissed jobs (raw-mode and reference transmission deferred)
+- Does not add internal domain types or lifecycle states
+
+See [OGC API Processes Coverage](specifications/ogc-api-processes-coverage.md) for endpoint and conformance details.
+
+### honua-server#724 — Workflow Orchestration Layer ✓
+
+**Implemented.** The declarative workflow orchestration layer composes
+canonical `AnalysisPlan` executions into multi-step, chained, scheduled, and
+DAG-style workflows:
+
+- `WorkflowDefinition` declares a step graph where each step wraps an
+  `AnalysisPlan` with optional `DependsOn`, `InputBindings` (artifact
+  selectors), `RetryPolicy`, `FailurePolicy`, and `TimeoutSeconds`
+- `WorkflowRun` tracks durable run and per-step state with lease-based
+  reconciliation over the ADR-0031 substrate
+- `GeoprocessingWorkflowJobExecutor` adapts `IWorkflowJobExecutor` to the
+  canonical `ProcessService`, stamping idempotency keys and protocol metadata
+  on every child-job submission
+- Cron-based scheduling via `WorkflowTrigger` with durable per-workflow
+  cursors and atomic fire-time claims
+- Redis-gated: stores and background services only register when
+  `IConnectionMultiplexer` is available (no fallback; non-Redis deployments
+  do not host the engine)
+- Does not extend the canonical process or result-package model; workflows
+  compose plans, they do not redefine them
+
+See [ADR-0032](../contributor/adr/0032-workflow-orchestration-layer.md) for
+design rationale and [Operations — Workflow Orchestration](../operator/operations.md)
+for operator guidance.
 
 ### geospatial-grpc#6 — Public Execution Contract
 
@@ -423,6 +459,4 @@ be derived from this proto definition.
 
 - [ADR-0029: Geoprocess Canonical Model Mappings](../contributor/adr/0029-geoprocess-canonical-model-mappings.md)
 - [ADR-0026: AI-First Operator Contract](../contributor/adr/0026-ai-first-operator-contract.md)
-- [AI Operator Architecture](../contributor/AI_OPERATOR_ARCHITECTURE.md)
-- [AI Operator Contract](../developer/AI_OPERATOR_CONTRACT.md)
 - [GeoServices REST Parity](geoservices-rest-parity.md)

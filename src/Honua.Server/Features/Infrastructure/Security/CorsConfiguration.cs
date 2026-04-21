@@ -23,12 +23,25 @@ public static class CorsConfiguration
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         var logger = loggerFactory.CreateLogger("Honua.Server.CorsConfiguration");
 
+        // Guard against booting a Development profile on a hosted environment.
+        // A container or cloud signal (DOTNET_RUNNING_IN_CONTAINER or KUBERNETES_SERVICE_HOST)
+        // combined with ASPNETCORE_ENVIRONMENT=Development indicates the dev profile is
+        // leaking into a deployed box — collapse the permissive CORS policy and log loudly.
+        var runningInManagedHost =
+            string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KUBERNETES_SERVICE_HOST"));
+        var permissiveCorsDisabled = environment.IsDevelopment() && runningInManagedHost;
+        if (permissiveCorsDisabled)
+        {
+            CorsLog.DevelopmentCorsDisabledInHostedEnvironment(logger);
+        }
+
         services.AddCors(options =>
         {
             // Development policy - controlled development origins only
             options.AddPolicy(DevelopmentPolicy, policy =>
             {
-                if (environment.IsDevelopment())
+                if (environment.IsDevelopment() && !permissiveCorsDisabled)
                 {
                     // Get development-specific allowed origins from configuration
                     var devOrigins = configuration.GetSection("Cors:DevelopmentOrigins").Get<string[]>()
@@ -306,6 +319,19 @@ internal static partial class CorsLog
         Level = LogLevel.Warning,
         Message = "No CORS origins configured. All cross-origin requests will be blocked in production.")]
     public static partial void NoCorsOriginsConfigured(ILogger logger);
+
+    /// <summary>
+    /// Log when Development CORS is refused because the process appears to be running inside
+    /// a container or Kubernetes-managed environment. This prevents a misconfigured
+    /// ASPNETCORE_ENVIRONMENT from exposing AllowAnyOrigin on a hosted deployment.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4061,
+        Level = LogLevel.Warning,
+        Message = "ASPNETCORE_ENVIRONMENT=Development detected inside a managed host "
+                  + "(DOTNET_RUNNING_IN_CONTAINER or KUBERNETES_SERVICE_HOST). Permissive "
+                  + "Development CORS policy disabled; falling back to production CORS rules.")]
+    public static partial void DevelopmentCorsDisabledInHostedEnvironment(ILogger logger);
 }
 
 /// <summary>

@@ -1,6 +1,10 @@
 # HTTP Client Resilience Configuration
 
+<<<<<<< HEAD
 This document describes the HTTP client resilience patterns implemented in Honua Server to provide standardized retry policies, circuit breakers, and health monitoring for external service dependencies.
+=======
+This document describes the HTTP client resilience patterns implemented in Honua Server to provide standardized retry policies, circuit breakers, and operational visibility for external service dependencies.
+>>>>>>> origin/trunk
 
 ## Overview
 
@@ -9,7 +13,11 @@ The HTTP resilience system provides:
 - **Retry Policies**: Automatic retry with exponential backoff for transient failures
 - **Circuit Breakers**: Fail-fast protection to prevent cascading failures
 - **Health Monitoring**: Circuit breaker state tracking and external service health checks
+<<<<<<< HEAD
 - **Metrics Collection**: Telemetry for retry attempts and circuit breaker state changes
+=======
+- **Operational Visibility**: Structured logs for retry attempts and circuit breaker state changes
+>>>>>>> origin/trunk
 - **Service Isolation**: Per-service circuit breakers to prevent cross-contamination
 
 ## Configuration
@@ -170,6 +178,7 @@ When a circuit breaker opens:
 
 ## Health Checks
 
+<<<<<<< HEAD
 The system provides comprehensive health monitoring:
 
 ### HTTP Client Health Checks
@@ -193,10 +202,16 @@ Monitors the overall state of circuit breakers:
 services.AddHealthChecks()
     .AddCircuitBreakerHealthCheck();
 ```
+=======
+This branch does not register dedicated HTTP-client or circuit-breaker health checks by default.
+The runtime health/readiness endpoints cover the checks that are actually wired from the composition root.
+External HTTP-client resilience is currently observable through logs and the generic health-state endpoints, not through preconfigured per-service probes.
+>>>>>>> origin/trunk
 
 ### Health Check Results
 
 - **Healthy**: Service is responding normally
+<<<<<<< HEAD
 - **Degraded**: Service is failing or circuit breaker is open (application continues to function)
 - **Unhealthy**: Reserved for critical internal failures
 
@@ -217,6 +232,16 @@ honua.http.retries (counter)
 honua.http.retry_delay_ms (histogram)
 honua.http.circuit_breaker_state_changes (counter)
 ```
+=======
+- **Degraded**: Reserved for checks the runtime explicitly wires as degraded rather than unhealthy
+- **Unhealthy**: Reserved for critical internal failures
+
+## Logging and Observability
+
+### Current Behavior
+
+The current implementation emits structured retry and circuit-breaker logs and exposes health-state checks. Dedicated retry/circuit-breaker metrics are not wired yet, so do not assume the following counters or histograms exist until the runtime telemetry implementation lands.
+>>>>>>> origin/trunk
 
 ### Metric Dimensions
 
@@ -391,4 +416,8 @@ Monitor these key metrics:
 Set up alerts for:
 - Circuit breakers staying open for extended periods
 - High retry rates indicating service degradation
+<<<<<<< HEAD
 - Health check failures for critical services
+=======
+- Health check failures for critical services
+>>>>>>> origin/trunk

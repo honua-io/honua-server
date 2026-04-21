@@ -42,6 +42,7 @@ using Honua.Server.Features.Infrastructure.RateLimiting;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Streaming;
 // Disabled unified services due to compilation issues
 // using Honua.Server.Features.Query;
@@ -82,9 +83,6 @@ var registerInfrastructureInTestEnvironment =
         Environment.GetEnvironmentVariable("HONUA_REGISTER_TEST_INFRASTRUCTURE"),
         "true",
         StringComparison.OrdinalIgnoreCase);
-var serveAdminUi = builder.Configuration.GetValue(
-    "ServeAdminUI",
-    builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
 var serveStacOpsDemo = builder.Configuration.GetValue(
     "ServeStacOpsDemo",
     builder.Configuration.GetValue(
@@ -94,12 +92,8 @@ var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
 var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !isTestEnvironment;
-var adminStaticAssetsManifestPath = Path.Combine(
-    AppContext.BaseDirectory,
-    "Honua.Admin.staticwebassets.endpoints.json");
-var adminUiPathPrefix = new PathString("/admin");
 var stacOpsDemoPathPrefix = new PathString("/samples/stac-ops");
-if ((serveAdminUi || serveStacOpsDemo) && !builder.Environment.IsDevelopment())
+if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
 {
     builder.WebHost.UseStaticWebAssets();
 }
@@ -292,6 +286,8 @@ builder.Services.AddSingleton<IValidateOptions<ControlPlaneOptions>, ControlPlan
 builder.Services.AddOptions<ControlPlaneOptions>()
     .Bind(builder.Configuration.GetSection(ControlPlaneOptions.SectionName))
     .ValidateOnStart();
+builder.Services.AddOptions<KubernetesExecutionOptions>()
+    .Bind(builder.Configuration.GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes"));
 builder.Services.AddResilientHttpClient(
     "import-source",
     "import-source",
@@ -305,9 +301,28 @@ builder.Services.AddResilientHttpClient(
     "control-plane-azure",
     "control-plane-azure",
     HttpResiliencePolicies.FastApiDefaults);
+var kubernetesExecutionOptions = builder.Configuration
+    .GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes")
+    .Get<KubernetesExecutionOptions>() ?? new KubernetesExecutionOptions();
+var kubernetesCaBundlePath = kubernetesExecutionOptions.CaBundlePath;
+var kubernetesInClusterAutoDetect = kubernetesExecutionOptions.InClusterAutoDetect;
+builder.Services.AddResilientHttpClient(
+    KubernetesJobClient.HttpClientName,
+    "control-plane-kubernetes",
+    HttpResiliencePolicies.FastApiDefaults,
+    configureHandler: () => KubernetesJobClient.CreatePrimaryHandler(
+        kubernetesInClusterAutoDetect,
+        kubernetesCaBundlePath));
+builder.Services.AddResilientHttpClient(
+    AzureBatchDataPlaneClient.HttpClientName,
+    "control-plane-azure-batch",
+    HttpResiliencePolicies.FastApiDefaults);
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
 builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
 builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
+builder.Services.AddSingleton<IAzureBatchClient, AzureBatchDataPlaneClient>();
+builder.Services.AddSingleton<AzureBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AzureBatchComputeBackend>());
 builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
 builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
 builder.Services.AddSingleton<DeployWorkflowService>();
@@ -324,13 +339,32 @@ builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureC
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
+builder.Services.AddSingleton<LocalBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp =>
+    sp.GetRequiredService<LocalBatchComputeBackend>());
+
+// AWS Batch backend follows the unconditional registration pattern used by sibling AWS deploy
+// backends. Per-workload AWS Batch settings (job definition ARN, queue ARN, region, resource
+// overrides) are carried on each ExecutionJobSpec.Parameters entry via ControlPlane:ExecutionWorkloads,
+// so the adapter has no global options section it depends on. Registering unconditionally keeps
+// the backend visible to the reconciler whenever an operator targets Backend=honua-aws-batch.
+builder.Services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
+builder.Services.AddSingleton<AwsBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());
+
+builder.Services.AddSingleton<IKubernetesJobClient, KubernetesJobClient>();
+builder.Services.AddSingleton<KubernetesJobBatchComputeBackend>();
+builder.Services.AddSingleton<IBatchComputeBackend>(sp =>
+    sp.GetRequiredService<KubernetesJobBatchComputeBackend>());
 if (connectedRedis != null)
 {
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
-    builder.Services.AddSingleton<IOperationReconciler, DeployWorkflowReconciler>();
+    builder.Services.AddSingleton<IWorkflowOperationReconciler, DeployWorkflowReconciler>();
+    builder.Services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
     if (!isTestEnvironment)
     {
         builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
+        builder.Services.AddHostedService<ExecutionJobReconcilerBackgroundService>();
     }
 }
 
@@ -360,6 +394,7 @@ builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDepl
     Honua.Server.Features.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
+builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // Register license status provider (reads edition from AlertOptions until #338)
 builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider,
@@ -439,8 +474,9 @@ builder.Services.AddStyleSuggestionCore();
 // Configure temporary file service for image exports
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions.SectionName));
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
-    Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
+    Honua.Server.Features.Infrastructure.Services.CloudBackedTemporaryFileService>();
 builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.TemporaryFileCleanupService>();
 
 // Register shared validation services
@@ -455,6 +491,11 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+if (!isTestEnvironment)
+{
+    builder.Services.AddOrchestrationBackgroundServices();
+}
+
 builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(sp =>
     new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),
@@ -482,6 +523,8 @@ builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IU
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Import.UniversalProgressStore>>(),
         sp.GetService<IConnectionMultiplexer>()));
+builder.Services.Configure<Honua.Server.Features.Import.FileUploadOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Import.FileUploadOptions.SectionName));
 builder.Services.AddSingleton<Honua.Server.Features.Import.StreamingFileUploadService>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Abstractions.IUploadQueueMetricsProvider>(sp =>
     sp.GetRequiredService<Honua.Server.Features.Import.StreamingFileUploadService>());
@@ -670,6 +713,7 @@ builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IOp
     Honua.Server.Features.Infrastructure.Authentication.DefaultOperatorApprovalEvaluator>();
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions.SectionName));
+builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalGate>();
 
 // Configure authentication and authorization
 builder.Services.AddApiKeyAuthentication();
@@ -692,12 +736,11 @@ builder.Services.AddApiVersioning(options =>
     options.ApiVersionReader = Asp.Versioning.ApiVersionReader.Combine(
         new Asp.Versioning.UrlSegmentApiVersionReader());
 
-    // Default version for unversioned endpoints
+    // Declare the currently published control-plane version. Unversioned admin routes remain unsupported.
     options.DefaultApiVersion = new Asp.Versioning.ApiVersion(1, 0);
     options.AssumeDefaultVersionWhenUnspecified = false;
 
-    // Use versioning conventions for better AOT compatibility
-    options.UnsupportedApiVersionStatusCode = 400;
+    // Keep versioning metadata explicit without publishing additional major paths.
 });
 
 // Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
@@ -752,7 +795,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Stac.StacJsonContext.Default,
         Honua.Server.Features.CloudCog.CloudCogJsonContext.Default,
         Honua.Server.Features.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
-        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default);
+        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
+        Honua.Server.Features.OgcProcesses.OgcProcessesJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
@@ -760,15 +804,8 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
-var oidcEnabledForAdminUi = app.Configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
-var blockAdminUi = serveAdminUi &&
-                   !oidcEnabledForAdminUi &&
-                   !app.Environment.IsDevelopment() &&
-                   !app.Environment.IsEnvironment("Test");
-
 FilterHostedBlazorStaticAssetEndpoints(
     app,
-    allowAdminUiAssets: serveAdminUi && !blockAdminUi,
     allowStacOpsDemoAssets: serveStacOpsDemo);
 
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
@@ -863,37 +900,10 @@ app.UseSecurityHeaders();
 app.UseResponseCompression();
 app.UseWebSockets();
 
-if (serveAdminUi)
-{
-    // F-01: Block admin UI in non-Development environments when OIDC is not configured.
-    // Without OIDC the Blazor WASM client uses AnonymousAuthenticationStateProvider,
-    // which renders the full admin dashboard to any visitor.
-    if (blockAdminUi)
-    {
-        app.Map("/admin", adminApp =>
-        {
-            adminApp.Run(async context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/problem+json; charset=utf-8";
-                await context.Response.WriteAsync(
-                    """{"title":"Unauthorized","status":401,"detail":"Admin UI is disabled because OIDC authentication is not configured. Configure Oidc:Enabled in appsettings or environment variables before accessing the admin UI in production."}""")
-                    .ConfigureAwait(false);
-            });
-        });
-    }
-    else
-    {
-        ConfigureHostedBlazorAssets(app, adminUiPathPrefix);
-        app.MapGet("/admin", () => Results.Redirect("/admin/index.html"))
-            .ExcludeFromDescription();
-        MapHostedBlazorFallback(app, adminUiPathPrefix);
-    }
-}
-else
-{
-    MapDisabledHostedBlazorPrefix(app, adminUiPathPrefix);
-}
+// The admin web UI lives in the sibling `honua-server-admin` repo and is deployed
+// as a standalone Blazor WebAssembly app. This server only exposes the backing
+// `/api/v1/admin/*` REST + gRPC surface; the `/admin` static-asset prefix is no
+// longer served in-process.
 
 if (serveStacOpsDemo)
 {
@@ -918,6 +928,7 @@ if (serveApiDocs)
             .AddDocument("features", "OGC API Features", "/openapi.json", isDefault: true)
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
             .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
+            .AddDocument("processes", "OGC API Processes", "/ogc/processes/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     });
 }
@@ -1001,6 +1012,7 @@ app.MapAdminAuthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();
+app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 
 // Configure layer publishing endpoints
@@ -1101,6 +1113,7 @@ if (useAspire)
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
 app.MapDatabasePerformanceEndpoints();
+app.MapProductionMonitoringEndpoints();
 
 // Map enhanced performance monitoring endpoints
 app.MapEnhancedPerformanceEndpoints();
@@ -1298,7 +1311,7 @@ async Task RunDatabaseMigrationsAsync()
             var errorMessage = result.ErrorMessage ?? "Database migration failed.";
             var error = result.Error ?? new InvalidOperationException(errorMessage);
             Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, errorMessage, error);
-            migrationState.MarkFailed(errorMessage);
+            migrationState.MarkFailed("Database migrations failed.");
 
             // In non-Development environments, re-throw so the app fails to start
             // (gives a clear CrashLoopBackOff signal in Kubernetes).
@@ -1331,7 +1344,7 @@ async Task RunDatabaseMigrationsAsync()
     catch (Exception ex)
     {
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
-        migrationState.MarkFailed(ex.Message);
+        migrationState.MarkFailed("Database migrations failed.");
 
         // In non-Development environments, re-throw so the app fails to start
         // (gives a clear CrashLoopBackOff signal in Kubernetes).
@@ -1609,23 +1622,17 @@ static void MapHostedBlazorFallback(
 
 static void FilterHostedBlazorStaticAssetEndpoints(
     WebApplication app,
-    bool allowAdminUiAssets,
     bool allowStacOpsDemoAssets)
 {
-    var blockedPrefixes = new List<string>(2);
-    if (!allowAdminUiAssets)
-    {
-        blockedPrefixes.Add("admin/");
-    }
+    var blockedPrefixes = new List<string>(1);
+    // Always block the `admin/` static-asset prefix — the in-tree Blazor admin UI
+    // moved to the sibling `honua-server-admin` repo and ships as a separately
+    // deployed static site.
+    blockedPrefixes.Add("admin/");
 
     if (!allowStacOpsDemoAssets)
     {
         blockedPrefixes.Add("samples/stac-ops/");
-    }
-
-    if (blockedPrefixes.Count == 0)
-    {
-        return;
     }
 
     var routeBuilder = (IEndpointRouteBuilder)app;

@@ -37,9 +37,11 @@ internal static class HealthEndpoints
             .WithDisplayName("Readiness Probe Method Not Allowed");
 
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
-        var metricsEndpoint = endpoints.Map("/healthz/metrics", HandlePerformanceMetrics)
+        var metricsEndpoint = endpoints.MapMethods("/healthz/metrics", [HttpMethods.Get], HandlePerformanceMetrics)
             .WithDisplayName("Performance Metrics")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        _ = endpoints.MapMethods("/healthz/metrics", NonGetMethods, HandleGetMethodNotAllowed)
+            .WithDisplayName("Performance Metrics Method Not Allowed");
 
         metricsEndpoint.RequireAdminAuthorization();
     }
@@ -196,7 +198,7 @@ internal static class HealthEndpoints
 
     private static Task HandleGetMethodNotAllowed(HttpContext context)
     {
-        context.Response.Headers.Allow = HttpMethods.Get;
+        context.Response.Headers["Allow"] = HttpMethods.Get;
         context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
         return context.Response.CompleteAsync();
     }

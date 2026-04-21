@@ -12,10 +12,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Suppress trim warnings from Serilog and endpoint mapping for AOT compatibility -->
-    <!-- Suppress obsolete warnings for deprecated interfaces during transition period -->
     <!-- Suppress analyzer warnings that are not critical for compilation -->
     <!-- Temporarily allow CS1591 while establishing warnings-as-errors framework -->
-    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CS0618;CS0612;CA1041;CA1000;CA1848;CA1862;IDE0051;IDE0052;IDE0005;CA1844;CA1861;CA1822;CA1835;CA1873;CA1513;CA1510;IL2075</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1848;CA1862;IDE0051;IDE0052;IDE0005;CA1844;CA1861;CA1822;CA1835;CA1873;CA1513;CA1510;IL2075</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,10 +31,6 @@
     <ProjectReference Include="..\Honua.DuckDB\Honua.DuckDB.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference
-      Include="..\Honua.Admin\Honua.Admin.csproj"
-      Condition="'$(HonuaSkipAdminClientForAotVerification)' != 'true' and '$(HonuaIncludeAdminUi)' != 'false'"
-      GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
-    <ProjectReference
       Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"
       Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')"
       GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
@@ -44,19 +39,18 @@
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" Version="8.1.1" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.21.1" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.21.2" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
-    <PackageReference Include="Google.Cloud.Storage.V1" Version="4.14.0" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" Version="2.76.0" />
     <PackageReference Include="Grpc.AspNetCore.Web" Version="2.76.0" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" Version="2.76.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.5" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.5" />
-    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.5" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.6" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.6" />
+    <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.6" />
     <PackageReference Include="Polly" Version="8.6.6" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
@@ -76,17 +70,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AWSSDK.Batch" Version="4.0.8.8" />
     <PackageReference Include="AWSSDK.Lambda" Version="4.0.14.1" />
     <PackageReference Include="Grpc.Tools" Version="2.80.0" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.27" />
     <PackageReference Include="AWSSDK.SQS" Version="4.0.2.25" />
     <PackageReference Include="Azure.Messaging.EventGrid" Version="5.0.0" />
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.5" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.25" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.6" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.6" />
     <PackageReference Include="ParquetSharp" Version="21.0.0" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.13.22" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.14.1" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
     <Content Update="openapi.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -97,6 +92,10 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Update="ogc-maps-openapi.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Update="ogc-processes-openapi.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

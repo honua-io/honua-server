@@ -8,6 +8,10 @@ using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
+<<<<<<< HEAD
+=======
+using Honua.Server.Features.Infrastructure.Helpers;
+>>>>>>> origin/trunk
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -71,7 +75,10 @@ public static class ConfigurationServiceExtensions
             if (isDevelopment)
             {
                 options.FailOnSecretValidationError = false; // Be more lenient in development
+<<<<<<< HEAD
                 options.AutoResolveSecrets = true;
+=======
+>>>>>>> origin/trunk
             }
         });
 
@@ -160,6 +167,14 @@ public static class ConfigurationServiceExtensions
     /// <param name="isRequired">Whether this configuration is required for startup</param>
     /// <param name="enableSecretResolution">Whether to enable automatic secret resolution</param>
     /// <returns>The service collection for chaining</returns>
+<<<<<<< HEAD
+=======
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "SYSLIB1104",
+        Justification = "This generic helper is retained for non-AOT/test usage. NativeAOT startup uses concrete registrations in AddStandardConfiguration.")]
+    [RequiresUnreferencedCode("Generic configuration binding helper is not trim-safe. Use AddStandardConfiguration or concrete option registrations in NativeAOT-critical paths.")]
+>>>>>>> origin/trunk
     public static IServiceCollection ConfigureWithValidation<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         this IServiceCollection services,
@@ -172,6 +187,7 @@ public static class ConfigurationServiceExtensions
         // Secret provider options must bind directly. Resolving them through
         // ISecretProvider would require constructing the provider to configure
         // the options the provider itself consumes, creating a DI cycle.
+<<<<<<< HEAD
         var shouldEnableSecretResolution =
             enableSecretResolution && typeof(TOptions) != typeof(SecretProviderOptions);
 
@@ -214,6 +230,24 @@ public static class ConfigurationServiceExtensions
         services.AddSingleton<IValidateOptions<TOptions>, DataAnnotationValidateOptions<TOptions>>();
 
         return services;
+=======
+        return RegisterConfiguredOptions<TOptions>(
+            services,
+            configuration,
+            sectionName,
+            isRequired,
+            enableSecretResolution,
+            static (collection, config, name) =>
+            {
+                collection.Configure<TOptions>(options =>
+                {
+                    var bindMethod = typeof(ConfigurationBinder).GetMethod(
+                        nameof(ConfigurationBinder.Bind),
+                        new[] { typeof(IConfiguration), typeof(object) });
+                    bindMethod?.Invoke(null, new object[] { config.GetSection(name), options! });
+                });
+            });
+>>>>>>> origin/trunk
     }
 
     /// <summary>
@@ -233,6 +267,7 @@ public static class ConfigurationServiceExtensions
         services.AddConfigurationValidation(configuration);
 
         // Register standard configuration types
+<<<<<<< HEAD
         services.ConfigureWithValidation<StandardTtlOptions>(configuration, StandardTtlOptions.SectionName);
         services.ConfigureWithValidation<SecretProviderOptions>(
             configuration,
@@ -247,6 +282,71 @@ public static class ConfigurationServiceExtensions
 
         return services;
     }
+=======
+        RegisterConfiguredOptions<StandardTtlOptions>(
+            services,
+            configuration,
+            StandardTtlOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: true,
+            static (collection, config, name) => collection.Configure<StandardTtlOptions>(config.GetSection(name)));
+        RegisterConfiguredOptions<SecretProviderOptions>(
+            services,
+            configuration,
+            SecretProviderOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: false,
+            static (collection, config, name) => collection.Configure<SecretProviderOptions>(config.GetSection(name)));
+        RegisterConfiguredOptions<SecureConfigurationOptions>(
+            services,
+            configuration,
+            SecureConfigurationOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: true,
+            static (collection, config, name) => collection.Configure<SecureConfigurationOptions>(config.GetSection(name)));
+        RegisterConfiguredOptions<Core.Features.Caching.CacheOptions>(
+            services,
+            configuration,
+            Core.Features.Caching.CacheOptions.SectionName,
+            isRequired: true,
+            enableSecretResolution: true,
+            static (collection, config, name) => collection.Configure<Core.Features.Caching.CacheOptions>(config.GetSection(name)));
+
+        return services;
+    }
+
+    private static IServiceCollection RegisterConfiguredOptions<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
+        IServiceCollection services,
+        IConfiguration configuration,
+        string sectionName,
+        bool isRequired,
+        bool enableSecretResolution,
+        Action<IServiceCollection, IConfiguration, string> bindOptions)
+        where TOptions : class
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sectionName);
+        ArgumentNullException.ThrowIfNull(bindOptions);
+
+        var shouldEnableSecretResolution =
+            enableSecretResolution && typeof(TOptions) != typeof(SecretProviderOptions);
+
+        services.AddSingleton<IConfigurationOptionsRegistration>(
+            new ConfigurationOptionsRegistration<TOptions>(sectionName, isRequired));
+
+        bindOptions(services, configuration, sectionName);
+
+        if (shouldEnableSecretResolution)
+        {
+            services.AddSingleton<IPostConfigureOptions<TOptions>, SecretResolutionPostConfigureOptions<TOptions>>();
+        }
+
+        services.AddSingleton<IValidateOptions<TOptions>, DataAnnotationValidateOptions<TOptions>>();
+        return services;
+    }
+>>>>>>> origin/trunk
 }
 
 /// <summary>
@@ -292,6 +392,7 @@ internal sealed class SecretResolutionPostConfigureOptions<
             if (property.PropertyType == typeof(string) && property.CanWrite && property.CanRead)
             {
                 var value = property.GetValue(options) as string;
+<<<<<<< HEAD
                 if (!string.IsNullOrWhiteSpace(value) && _secretProvider.IsSecretReference(value))
                 {
                     try
@@ -314,6 +415,40 @@ internal sealed class SecretResolutionPostConfigureOptions<
                         throw;
                     }
                 }
+=======
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (SecretReferenceResolver.IsEnvironmentReference(value))
+                    {
+                        var resolvedValue = SecretReferenceResolver.ResolveEnvironmentReference(
+                            value,
+                            $"{typeof(TOptions).Name}.{property.Name}");
+                        property.SetValue(options, resolvedValue);
+                        _logger.LogDebug(
+                            "Resolved environment secret reference for {OptionsType}.{PropertyName}",
+                            typeof(TOptions).Name,
+                            property.Name);
+                        continue;
+                    }
+
+                    if (_secretProvider.IsSecretReference(value))
+                    {
+                        throw new InvalidOperationException(
+                            $"Configuration option '{typeof(TOptions).Name}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to resolve secret reference for {OptionsType}.{PropertyName}: {SecretRef}",
+                        typeof(TOptions).Name, property.Name, value);
+                    throw;
+                }
+>>>>>>> origin/trunk
             }
         }
     }

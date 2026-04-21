@@ -35,5 +35,5 @@ This OGC standard extends OGC API - Features - Part 1: Core with enhanced filter
 - ✅ Proper error handling for invalid filters
 - ✅ Queryables discovery endpoint with JSON Schema
 - ✅ Queryables as query parameters for simple-valued fields
-- ✅ filter-crs parameter support and validation
+- ✅ filter-crs parameter support and validation, including registry-backed EPSG identifiers and explicit geometry CRS members
 - ⚠️ Accent-insensitive comparisons require the PostgreSQL `unaccent` extension

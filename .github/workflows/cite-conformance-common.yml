@@ -1,0 +1,142 @@
+# Reusable workflow for single-suite OGC CITE conformance runs.
+#
+# The KML 2.2 / GeoPackage 1.2 / GML 3.2 / WMS 1.3 / WMTS 1.0 suites all shared
+# the same ~100-line skeleton — this workflow consolidates them so each dispatcher
+# file only has to declare its schedule, display name, and a handful of suite-
+# specific paths. OGC API Features, OGC API Tiles, and WFS 2.0 diverge enough
+# that they keep their own standalone workflows.
+
+name: CITE Conformance (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      suite:
+        description: 'Short suite id used for cache scope and artifact naming (e.g. "kml22")'
+        required: true
+        type: string
+      display-name:
+        description: 'Human-friendly suite label for log + error messages (e.g. "KML 2.2")'
+        required: true
+        type: string
+      runner-script:
+        description: 'Path to the suite runner script, relative to repo root'
+        required: true
+        type: string
+      results-dir:
+        description: 'Directory where the runner writes results (relative to repo root)'
+        required: true
+        type: string
+      summary-file:
+        description: 'Path to the suite summary markdown inside results-dir'
+        required: true
+        type: string
+      timeout-seconds:
+        description: 'Timeout to pass to the runner script'
+        required: false
+        type: number
+        default: 1800
+      job-timeout-minutes:
+        description: 'GitHub Actions job timeout'
+        required: false
+        type: number
+        default: 30
+      cite-profile:
+        description: 'CITE_PROFILE value passed to the runner script'
+        required: false
+        type: string
+        default: 'default'
+      extra-artifact-paths:
+        description: 'Additional newline-separated paths to include in the results artifact'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  cite:
+    name: ${{ inputs.display-name }} CITE
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.job-timeout-minutes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Honua Server image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: honua-server:latest
+          cache-from: type=gha,scope=cite-${{ inputs.suite }}
+          cache-to: type=gha,mode=max,scope=cite-${{ inputs.suite }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
+      - name: Run ${{ inputs.display-name }} CITE conformance tests
+        env:
+          CITE_PROFILE: ${{ inputs.cite-profile }}
+        run: |
+          timeout ${{ inputs.timeout-seconds }} ${{ inputs.runner-script }} \
+            --profile "$CITE_PROFILE" --verbose || cite_exit_code=$?
+
+          if [[ ${cite_exit_code:-0} -eq 124 ]]; then
+            echo "CITE tests timed out after ${{ inputs.timeout-seconds }} seconds"
+            exit 1
+          elif [[ ${cite_exit_code:-0} -ne 0 ]]; then
+            echo "CITE tests failed with exit code: ${cite_exit_code:-0}"
+            exit 1
+          fi
+
+      - name: Parse CITE results
+        id: parse-results
+        run: |
+          summary="${{ inputs.results-dir }}/${{ inputs.summary-file }}"
+          if [ -f "$summary" ]; then
+            TOTAL_TESTS=$(grep "Total Tests" "$summary" | grep -o '[0-9]\+' || echo "0")
+            PASSED_TESTS=$(grep "Passed" "$summary" | grep -o '[0-9]\+' | head -1 || echo "0")
+            FAILED_TESTS=$(grep "Failed" "$summary" | grep -o '[0-9]\+' | head -1 || echo "0")
+            SUCCESS_RATE=$(grep "Success Rate" "$summary" | grep -o '[0-9]\+' || echo "0")
+
+            echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+            echo "passed_tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
+            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
+            echo "success_rate=$SUCCESS_RATE" >> $GITHUB_OUTPUT
+            echo "results_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "results_available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload CITE test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cite-${{ inputs.suite }}-conformance-results-${{ github.run_number }}
+          # Primary results dir plus any runner-specific extras (e.g. config dump).
+          path: |
+            ${{ inputs.results-dir }}/
+            ${{ inputs.extra-artifact-paths }}
+          retention-days: 30
+
+      - name: Fail on conformance issues
+        if: steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0'
+        run: |
+          if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
+            echo "${{ inputs.display-name }} CITE conformance results were not produced"
+            exit 1
+          fi
+
+          echo "${{ inputs.display-name }} CITE conformance tests failed"
+          echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
+          echo "Review the test results and fix conformance issues"
+          exit 1

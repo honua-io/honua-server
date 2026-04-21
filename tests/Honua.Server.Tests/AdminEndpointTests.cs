@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests;
 
@@ -145,6 +146,11 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         sectionNames.Should().Contain("Cache");
         sectionNames.Should().Contain("Limits.Query");
         sectionNames.Should().Contain("Security");
+        sectionNames.Should().Contain("TemporaryFiles");
+        sectionNames.Should().Contain("FeatureChangeEvents");
+        sectionNames.Should().Contain("FeatureStreaming");
+        sectionNames.Should().Contain("ManifestApproval");
+        sectionNames.Should().Contain("GitOpsWatch");
         sectionNames.Should().Contain("Geoprocessing:Workspace");
     }
 
@@ -183,9 +189,49 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         // Assert - verify environment variable quick reference is populated
         var envVars = configDoc!.EnvironmentVariables;
         envVars.Should().Contain(e => e.Name == "ConnectionStrings__DefaultConnection");
-        envVars.Should().Contain(e => e.Name == "HONUA_ADMIN_UI");
         envVars.Should().Contain(e => e.Name == "Cache__Enabled");
+        envVars.Should().Contain(e => e.Name == "HONUA_ENABLE_BASIC_AUTH_COMPAT");
+        envVars.Should().Contain(e => e.Name == "HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__BASESAMPLINGRATE");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__MINSAMPLINGRATE");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__MAXSAMPLINGRATE");
+        envVars.Should().Contain(e => e.Name == "HONUA__ADAPTIVESAMPLING__LOAD__ACTIVEREQUESTTHRESHOLD");
         envVars.Should().Contain(e => e.Name == "Geoprocessing__Workspace__CleanupInterval");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/admin/config")]
+    public async Task GetConfiguration_WhenPublicBaseUrlProvidedViaAlias_UsesEnvironmentSourceAndCurrentValue()
+    {
+        var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+                builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+                    configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["PUBLIC_BASE_URL"] = "https://api.public.example.test"
+                    })));
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            var response = await isolatedFixture.Client.GetAsync("/api/v1/admin/config");
+            var content = await response.Content.ReadAsStringAsync();
+            var configDoc = JsonSerializer.Deserialize<ConfigurationDocumentation>(
+                content,
+                ConfigurationJsonContext.Default.ConfigurationDocumentation);
+
+            var networkingSection = configDoc!.Sections.Single(section => section.Name == "Networking");
+            var baseUrlProperty = networkingSection.Properties.Single(property => property.Path == "Public:BaseUrl");
+
+            baseUrlProperty.CurrentValue?.ToString().Should().Be("https://api.public.example.test");
+            baseUrlProperty.Source.Should().Be("Environment");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -216,57 +262,19 @@ public sealed class AdminEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /admin/")]
-    public async Task GetAdminUi_WithTrailingSlash_ServesHostedShell()
-    {
-        var response = await _fixture.Client.GetAsync("/admin/");
-
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("text/html");
-
-        var html = await response.Content.ReadAsStringAsync();
-        html.Should().Contain("<base href=\"/admin/\" />");
-        html.Should().Contain("Honua Admin");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Configuration)]
-    [Endpoint("GET /admin/_framework/blazor.webassembly.js")]
-    public async Task GetAdminUiFrameworkAsset_WhenAdminUiEnabled_ReturnsStaticFile()
-    {
-        using var response = await _fixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
-
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Contain("javascript");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Configuration)]
     [Endpoint("GET /admin/index.html")]
     [Endpoint("GET /admin/_framework/blazor.webassembly.js")]
-    public async Task GetAdminUiAssets_WhenAdminUiDisabled_Return404EvenWhenStacDemoEnabled()
+    public async Task GetAdminUiAssets_NotServedByServer()
     {
-        var isolatedFixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("ServeAdminUI", "false");
-                builder.UseSetting("ServeStacOpsDemo", "true");
-            });
+        // The in-tree Blazor admin UI was removed; admin UI now lives in the
+        // sibling honua-server-admin repo and is deployed separately. Verify
+        // the server returns 404 for the /admin/* prefix to catch any
+        // accidental re-introduction of the hosted shell.
+        using var shellResponse = await _fixture.Client.GetAsync("/admin/index.html");
+        using var frameworkResponse = await _fixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
 
-        try
-        {
-            await isolatedFixture.InitializeAsync();
-
-            using var shellResponse = await isolatedFixture.Client.GetAsync("/admin/index.html");
-            using var frameworkResponse = await isolatedFixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
-
-            shellResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            frameworkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        }
-        finally
-        {
-            await isolatedFixture.DisposeAsync();
-        }
+        shellResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        frameworkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -309,6 +317,27 @@ public sealed class AdminEndpointTests : IAsyncLifetime
                 new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/config"));
 
             response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /api/v1/admin/openapi.json")]
+    [Endpoint("PUT /api/v1/admin/openapi.json")]
+    [Endpoint("DELETE /api/v1/admin/openapi.json")]
+    [Endpoint("PATCH /api/v1/admin/openapi.json")]
+    public async Task GetAdminOpenApiSpec_WithWrongHttpMethods_Returns405AndAllowHeader()
+    {
+        foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
+        {
+            var response = await _fixture.Client.SendAsync(
+                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/openapi.json"));
+
+            response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
+            (response.Headers.TryGetValues("Allow", out var allowedValues) ||
+             response.Content.Headers.TryGetValues("Allow", out allowedValues))
+                .Should().BeTrue();
+            allowedValues.Should().ContainSingle().Which.Should().Be("GET");
         }
     }
 }

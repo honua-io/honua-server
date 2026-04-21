@@ -113,7 +113,11 @@ public class Wfs20CapabilitiesXmlValidationTests
             xml.Should().Contain($"name=\"{constraint}\"",
                 $"XML should contain Constraint with name='{constraint}'");
             // Verify the constraint is set to TRUE (implementation-dependent check)
+<<<<<<< HEAD
             xml.Should().MatchRegex($@"name=""{constraint}""[^>]*>.*TRUE.*</",
+=======
+            xml.Should().MatchRegex($@"name=""{constraint}""[^>]*>[\s\S]*?TRUE[\s\S]*?</",
+>>>>>>> origin/trunk
                 $"Constraint '{constraint}' should have DefaultValue='TRUE' in XML");
         }
 
@@ -159,9 +163,15 @@ public class Wfs20CapabilitiesXmlValidationTests
         parseAction.Should().NotThrow("Generated XML should be well-formed and parseable");
 
         // Verify required sections are present with content
+<<<<<<< HEAD
         xml.Should().MatchRegex(@"<.*ComparisonOperators[^>]*>.*PropertyIsEqualTo.*</",
             "ComparisonOperators should contain standard comparison operators");
         xml.Should().MatchRegex(@"<.*GeometryOperands[^>]*>.*Point.*</",
+=======
+        xml.Should().MatchRegex(@"<[\s\S]*?ComparisonOperators[^>]*>[\s\S]*?PropertyIsEqualTo[\s\S]*?</",
+            "ComparisonOperators should contain standard comparison operators");
+        xml.Should().MatchRegex(@"<[\s\S]*?GeometryOperands[^>]*>[\s\S]*?Point[\s\S]*?</",
+>>>>>>> origin/trunk
             "GeometryOperands should contain supported geometry types");
     }
 
@@ -229,7 +239,11 @@ public class Wfs20CapabilitiesXmlValidationTests
             Encoding = System.Text.Encoding.UTF8
         });
 
+<<<<<<< HEAD
         serializer.Serialize(xmlWriter, capabilities);
+=======
+        serializer.Serialize(xmlWriter, capabilities, capabilities.Namespaces);
+>>>>>>> origin/trunk
         return stringWriter.ToString();
     }
 
@@ -241,8 +255,13 @@ public class Wfs20CapabilitiesXmlValidationTests
         var totalChecks = 0;
         var passedChecks = 0;
 
+<<<<<<< HEAD
         // Temporal operators check (20 points)
         totalChecks += 20;
+=======
+        // Temporal operators check
+        totalChecks += 15;
+>>>>>>> origin/trunk
         var temporalOperators = new[]
         {
             "After", "Before", "During", "Contains", "Equals", "Disjoint",
@@ -321,7 +340,11 @@ public class Wfs20CapabilitiesXmlValidationTests
         };
         foreach (var constraint in criticalConstraints)
         {
+<<<<<<< HEAD
             xml.Should().MatchRegex($@"name=""{constraint}""[^>]*>.*TRUE.*</",
+=======
+            xml.Should().MatchRegex($@"name=""{constraint}""[^>]*>[\s\S]*?TRUE[\s\S]*?</",
+>>>>>>> origin/trunk
                 $"Critical constraint '{constraint}' must be declared as TRUE in XML");
         }
     }

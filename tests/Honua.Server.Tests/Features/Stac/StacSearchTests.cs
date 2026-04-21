@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -76,6 +77,80 @@ public sealed class StacSearchTests : IAsyncLifetime
         {
             item.GetProperty("collection").GetString().Should().Be(collectionId);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithUnsupportedExplicitGeometryCrsInFilter_ReturnsBadRequest()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var filterJson =
+            """{"op":"s_intersects","args":[{"property":"geometry"},{"type":"Point","coordinates":[0,0],"crs":{"type":"name","properties":{"name":"EPSG:999999"}}}]}""";
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&filter-lang=cql2-json&filter={Uri.EscapeDataString(filterJson)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+        problem.GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:999999'");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithRegistryBackedFilterCrs_AcceptsNonDefaultCrs()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var projectedPoint = await TransformSeedPointAsync(3395);
+        var filter = $"S_INTERSECTS(geometry, {BuildSquarePolygonText(projectedPoint)})";
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&filter={Uri.EscapeDataString(filter)}&filter-crs=EPSG:3395");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray()
+            .Should().Contain(feature => feature.GetProperty("id").GetString() == "1", content);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithRegistryBackedExplicitGeometryCrsInFilter_AcceptsNonDefaultCrs()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var projectedPoint = await TransformSeedPointAsync(3395);
+        var ring = BuildSquareRing(projectedPoint);
+        var filterJson = JsonSerializer.Serialize(new
+        {
+            op = "s_intersects",
+            args = new object[]
+            {
+                new { property = "geometry" },
+                new
+                {
+                    type = "Polygon",
+                    coordinates = new[] { ring },
+                    crs = new
+                    {
+                        type = "name",
+                        properties = new { name = "EPSG:3395" }
+                    }
+                }
+            }
+        });
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&filter-lang=cql2-json&filter={Uri.EscapeDataString(filterJson)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray()
+            .Should().Contain(feature => feature.GetProperty("id").GetString() == "1", content);
     }
 
     [IntegrationTest]
@@ -204,5 +279,44 @@ public sealed class StacSearchTests : IAsyncLifetime
             item.GetProperty("properties").TryGetProperty("datetime", out _).Should().BeTrue();
             item.GetProperty("links").EnumerateArray().Should().NotBeEmpty();
         }
+    }
+
+    private static double[][] BuildSquareRing((double X, double Y) point, double halfSize = 1d)
+        =>
+        [
+            [point.X - halfSize, point.Y - halfSize],
+            [point.X + halfSize, point.Y - halfSize],
+            [point.X + halfSize, point.Y + halfSize],
+            [point.X - halfSize, point.Y + halfSize],
+            [point.X - halfSize, point.Y - halfSize]
+        ];
+
+    private static string BuildSquarePolygonText((double X, double Y) point, double halfSize = 1d)
+    {
+        var ring = BuildSquareRing(point, halfSize);
+        return FormattableString.Invariant(
+            $"POLYGON(({ring[0][0]} {ring[0][1]}, {ring[1][0]} {ring[1][1]}, {ring[2][0]} {ring[2][1]}, {ring[3][0]} {ring[3][1]}, {ring[4][0]} {ring[4][1]}))");
+    }
+
+    private async Task<(double X, double Y)> TransformSeedPointAsync(int targetSrid)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                ST_X(ST_Transform(geometry, @targetSrid)),
+                ST_Y(ST_Transform(geometry, @targetSrid))
+            FROM features
+            WHERE layer_id = @layerId AND objectid = @objectId;
+            """;
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("objectId", 1L);
+        command.Parameters.AddWithValue("targetSrid", targetSrid);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return (reader.GetDouble(0), reader.GetDouble(1));
     }
 }

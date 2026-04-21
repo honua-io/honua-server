@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -43,7 +44,13 @@ internal static class LayerPublishingEndpoints
 
         group.MapPost("/", HandlePublishLayer)
             .WithDisplayName("Publish Layer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<ApiResponse<PublishedLayerSummary>>(StatusCodes.Status201Created)
+            .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
+            .Produces<ApiResponse<object>>(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         group.MapPut("/{layerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
@@ -103,7 +110,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<PublishedLayerSummary>>, BadRequest<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<IResult>
         HandlePublishLayer(
             string id,
             PublishLayerRequest request,
@@ -113,6 +120,11 @@ internal static class LayerPublishingEndpoints
             HttpContext context,
             [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
     {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approvalResult = gate.EvaluateApproval(
+            context, OperatorResourceType.Catalog, OperatorOperation.Publish);
+        if (approvalResult != null) return approvalResult;
+
         var validationResults = new List<ValidationResult>();
         if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
         {

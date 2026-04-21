@@ -87,6 +87,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             SingleWriter = false
         });
 
+<<<<<<< HEAD
         // Subscribe to invalidation notifications if Redis is available
         if (_redisSubscriber != null)
         {
@@ -103,6 +104,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                 }
             });
         }
+=======
+        // Redis subscription is established inside ExecuteAsync so the task handle is
+        // observed by the host's BackgroundService lifecycle (fire-and-forget Task.Run
+        // in the constructor dropped the handle and hid startup faults).
+>>>>>>> origin/trunk
     }
 
     /// <inheritdoc />
@@ -147,7 +153,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         try
         {
+<<<<<<< HEAD
             await _redisSubscriber.PublishAsync(RedisInvalidationChannel, key);
+=======
+            await _redisSubscriber.PublishAsync(RedisChannel.Literal(RedisInvalidationChannel), key);
+>>>>>>> origin/trunk
             Log.ClusterInvalidationSent(_logger, key);
         }
         catch (Exception ex)
@@ -235,6 +245,26 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             return;
         }
 
+<<<<<<< HEAD
+=======
+        if (_redisSubscriber != null)
+        {
+            try
+            {
+                await _redisSubscriber
+                    .SubscribeAsync(RedisChannel.Literal(RedisInvalidationChannel), OnInvalidationReceived)
+                    .ConfigureAwait(false);
+                Log.InvalidationSubscriptionStarted(_logger);
+            }
+            catch (Exception ex)
+            {
+                // Subscription failure must not prevent the background refresh loop
+                // from starting; the coordinator degrades to local-only invalidation.
+                Log.InvalidationSubscriptionFailed(_logger, ex);
+            }
+        }
+
+>>>>>>> origin/trunk
         Log.BackgroundRefreshStarted(_logger, _options.MaxConcurrentRefreshes, IsDistributed);
 
         using var semaphore = new SemaphoreSlim(_options.MaxConcurrentRefreshes, _options.MaxConcurrentRefreshes);
@@ -459,6 +489,13 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     private void NotifyLocalInvalidation(string key)
     {
         // Atomically mark the key as invalidated regardless of current state.
+<<<<<<< HEAD
+=======
+        // 0 → 1: marks a pending refresh as invalidated (before write-back claimed it).
+        // 2 → 1: marks a write-claimed refresh as invalidated.
+        // If the key is not present (no pending refresh), invalidation is a no-op
+        // to avoid creating stale markers that would block a later TryEnqueueRefresh.
+>>>>>>> origin/trunk
         _localPendingKeys.TryUpdate(key, 1, 0);
         _localPendingKeys.TryUpdate(key, 1, 2);
     }

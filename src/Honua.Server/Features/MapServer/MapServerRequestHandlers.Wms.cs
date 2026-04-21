@@ -18,6 +18,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,6 +143,11 @@ internal static partial class MapServerEndpoints
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
+                if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
+                {
+                    return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+                }
+
                 MapServerLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
                 var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl).ConfigureAwait(false);
@@ -928,6 +934,13 @@ internal static partial class MapServerEndpoints
                string.Equals(exceptionsValue, "application/vnd.ogc.se_xml", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string GetWmsExceptionMimeType(string? exceptionsValue)
+    {
+        return string.Equals(exceptionsValue, "application/vnd.ogc.se_xml", StringComparison.OrdinalIgnoreCase)
+            ? "application/vnd.ogc.se_xml"
+            : WmsXmlExceptionMimeType;
+    }
+
     private static bool TryParseWmsTransparent(string? value, out bool transparent)
     {
         transparent = false;
@@ -1201,7 +1214,8 @@ internal static partial class MapServerEndpoints
         }
 
         var xml = BuildWmsServiceExceptionReport(code, message);
-        return Results.Content(xml, WmsXmlExceptionMimeType, Encoding.UTF8, statusCode);
+        var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"));
+        return Results.Content(xml, contentType, Encoding.UTF8, statusCode);
     }
 
     private static string BuildWmsServiceExceptionReport(string code, string message)

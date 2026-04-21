@@ -25,6 +25,11 @@ public static class Protocols
     public const string OgcApiFeatures = "OGC-API-Features";
 
     /// <summary>
+    /// OGC API - Processes (Part 1: Core).
+    /// </summary>
+    public const string OgcApiProcesses = "OGC-API-Processes";
+
+    /// <summary>
     /// OGC API - Tiles (Part 1: Core).
     /// </summary>
     public const string OgcApiTiles = "OGC-API-Tiles";
@@ -124,4 +129,20 @@ public static class Protocols
     /// aggregate, density binning). Mirrored under both REST and OGC route families.
     /// </summary>
     public const string SpatialAnalytics = "SpatialAnalytics";
+
+    /// <summary>
+    /// GeoServices GPServer REST API (geoprocessing tasks).
+    /// </summary>
+    public const string GPServer = "GPServer";
+
+    /// <summary>
+    /// Model Context Protocol operator surface (planning, execution, lifecycle).
+    /// </summary>
+    public const string Mcp = "Mcp";
+
+    /// <summary>
+    /// End-to-end operator workflow eval harness (analyst workflows,
+    /// result packages, map/app outputs).
+    /// </summary>
+    public const string OperatorEval = "OperatorEval";
 }

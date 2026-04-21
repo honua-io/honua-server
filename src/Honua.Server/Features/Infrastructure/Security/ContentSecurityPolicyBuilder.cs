@@ -25,9 +25,7 @@ internal sealed class ContentSecurityPolicyBuilder
     [
         "cdnjs.cloudflare.com",
         "unpkg.com",
-        "cdn.jsdelivr.net",
-        "*.googleapis.com",
-        "*.gstatic.com"
+        "cdn.jsdelivr.net"
     ];
 
     private readonly Dictionary<string, HashSet<string>> _directives = new();

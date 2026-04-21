@@ -144,5 +144,20 @@ public enum OperationType
     /// <summary>
     /// Geoprocessing analysis or operator workflow operation.
     /// </summary>
-    Geoprocessing
+    Geoprocessing,
+
+    /// <summary>
+    /// Publishing lifecycle operation (intent validation, execution, service creation).
+    /// </summary>
+    Publishing,
+
+    /// <summary>
+    /// Multi-step orchestration workflow that chains canonical process steps.
+    /// </summary>
+    Orchestration,
+
+    /// <summary>
+    /// Deployment lifecycle operation that hosts a promoted publish or package artifact.
+    /// </summary>
+    Deployment
 }

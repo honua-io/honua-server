@@ -169,9 +169,17 @@ internal sealed class ODataFilterLexer
         }
 
         var value = _input[start.._position];
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
         {
             throw new ODataFilterParseException($"Invalid numeric literal '{value}'", start);
+        }
+
+        // `1e999` parses successfully into +Infinity under NumberStyles.Float; reject it
+        // so out-of-range exponents do not flow through comparison operators as a weird
+        // "always greater-than" marker.
+        if (!double.IsFinite(parsed))
+        {
+            throw new ODataFilterParseException($"Numeric literal '{value}' is not a finite number.", start);
         }
 
         return new ODataFilterToken(ODataFilterTokenType.NumberLiteral, value, start);
@@ -251,6 +259,7 @@ internal sealed class ODataFilterLexer
         }
 
         var value = _input[start.._position];
+        FilterParserGuard.EnsureIdentifierLength(value.Length, "OData identifier");
         var normalized = value.ToLowerInvariant();
 
         return normalized switch

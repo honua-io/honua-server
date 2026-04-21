@@ -16,6 +16,7 @@ public sealed class Cql2Parser
 {
     private IReadOnlyList<Cql2Token> _tokens = [];
     private int _position;
+    private int _expressionDepth;
     private string _input = string.Empty;
 
     /// <summary>
@@ -33,6 +34,7 @@ public sealed class Cql2Parser
         var lexer = new Cql2Lexer(cql2Text);
         _tokens = lexer.Tokenize();
         _position = 0;
+        _expressionDepth = 0;
 
         try
         {
@@ -85,15 +87,16 @@ public sealed class Cql2Parser
     }
 
     private FilterExpression ParseBooleanFactor(bool allowBareScalar)
-    {
-        if (Match(Cql2TokenType.Not))
+        => ParseWithDepth(() =>
         {
-            var operand = ParseBooleanFactor(allowBareScalar);
-            return new UnaryExpression(UnaryOperator.Not, operand);
-        }
+            if (Match(Cql2TokenType.Not))
+            {
+                var operand = ParseBooleanFactor(allowBareScalar);
+                return new UnaryExpression(UnaryOperator.Not, operand);
+            }
 
-        return ParseBooleanPrimary(allowBareScalar);
-    }
+            return ParseBooleanPrimary(allowBareScalar);
+        });
 
     private FilterExpression ParseBooleanPrimary(bool allowBareScalar)
     {
@@ -239,6 +242,9 @@ public sealed class Cql2Parser
             do
             {
                 values.Add(ParseScalarExpression());
+                // Cap the number of IN operands to prevent an adversarial `IN (...)`
+                // list from pinning a giant allocation pre-validation.
+                FilterParserGuard.EnsureInListSize(values.Count, "CQL2");
             }
             while (Match(Cql2TokenType.Comma));
         }
@@ -375,22 +381,23 @@ public sealed class Cql2Parser
     }
 
     private FilterExpression ParseArithmeticFactor()
-    {
-        if (Match(Cql2TokenType.Minus))
+        => ParseWithDepth(() =>
         {
-            var operand = ParseArithmeticFactor();
-            return new UnaryExpression(UnaryOperator.Negate, operand);
-        }
+            if (Match(Cql2TokenType.Minus))
+            {
+                var operand = ParseArithmeticFactor();
+                return new UnaryExpression(UnaryOperator.Negate, operand);
+            }
 
-        if (Match(Cql2TokenType.LeftParen))
-        {
-            var expr = ParseArithmeticExpression();
-            Consume(Cql2TokenType.RightParen, "Expected ')' after arithmetic expression");
-            return expr;
-        }
+            if (Match(Cql2TokenType.LeftParen))
+            {
+                var expr = ParseArithmeticExpression();
+                Consume(Cql2TokenType.RightParen, "Expected ')' after arithmetic expression");
+                return expr;
+            }
 
-        return ParseArithmeticOperand();
-    }
+            return ParseArithmeticOperand();
+        });
 
     private FilterExpression ParseArithmeticOperand()
     {
@@ -721,8 +728,7 @@ public sealed class Cql2Parser
 
         try
         {
-            var reader = new WKTReader();
-            var geometry = reader.Read(wktText);
+            var geometry = FilterParserGuard.ParseWktGeometry(wktText, "CQL2 geometry literal");
             var writer = new WKBWriter();
             var wkb = writer.Write(geometry);
 
@@ -731,6 +737,20 @@ public sealed class Cql2Parser
         catch (Exception ex)
         {
             throw new ArgumentException($"Invalid geometry literal: {wktText}", ex);
+        }
+    }
+
+    private T ParseWithDepth<T>(Func<T> parse)
+    {
+        _expressionDepth++;
+        try
+        {
+            FilterParserGuard.EnsureExpressionDepth(_expressionDepth);
+            return parse();
+        }
+        finally
+        {
+            _expressionDepth--;
         }
     }
 
@@ -846,6 +866,8 @@ public sealed class Cql2Parser
 
         if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
         {
+            // Reject exponent overflow and NaN/Infinity literals per FilterParserGuard.
+            FilterParserGuard.EnsureFiniteNumber(number, "Numeric literal");
             return new Literal(number, LiteralType.Number);
         }
 
@@ -967,6 +989,7 @@ public sealed class Cql2Parser
             throw new ArgumentException($"Invalid numeric literal: {token.Value}");
         }
 
+        FilterParserGuard.EnsureFiniteNumber(number, "Numeric literal");
         return sign * number;
     }
 

@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.Infrastructure.ControlPlane;
 
@@ -31,6 +33,122 @@ internal sealed class ControlPlaneOptions
     /// Named telemetry query connections used for deploy health gating.
     /// </summary>
     public List<DeployTelemetryConnectionOptions> TelemetryConnections { get; set; } = [];
+
+    /// <summary>
+    /// Optional Kubernetes execution backend configuration. Left at defaults when
+    /// Kubernetes is not used; populated when operators enable the adapter.
+    /// </summary>
+    public KubernetesExecutionOptions Kubernetes { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration model for the optional Kubernetes Jobs execution backend.
+/// </summary>
+internal sealed class KubernetesExecutionOptions
+{
+    /// <summary>
+    /// When true, the adapter attempts to discover its API server, bearer token,
+    /// and CA bundle from the projected service-account mount before falling back
+    /// to explicit configuration. Defaults to <c>true</c> so in-cluster
+    /// deployments are zero-config.
+    /// </summary>
+    public bool InClusterAutoDetect { get; set; } = true;
+
+    /// <summary>
+    /// Explicit Kubernetes API server URL. Required when the adapter is used
+    /// out-of-cluster or when auto-detection is disabled.
+    /// </summary>
+    public string? ApiServerUrl { get; set; }
+
+    /// <summary>
+    /// File path to a bearer token the adapter should present. Typically a
+    /// projected service-account token or a kubeconfig-derived token file.
+    /// </summary>
+    public string? BearerTokenPath { get; set; }
+
+    /// <summary>
+    /// Optional literal bearer token. Use <see cref="BearerTokenPath"/> when
+    /// possible so rotation is picked up without restarts.
+    /// </summary>
+    public string? BearerToken { get; set; }
+
+    /// <summary>
+    /// Optional path to a PEM-encoded CA bundle that the adapter should trust when
+    /// verifying the Kubernetes API server certificate. Required for out-of-cluster
+    /// targets whose API server certificate is signed by a private or self-signed CA
+    /// that does not chain to the OS trust store. Ignored only when
+    /// <see cref="InClusterAutoDetect"/> is enabled and the projected service-account
+    /// CA bundle is available; in that case the in-cluster bundle is used. When
+    /// <see cref="InClusterAutoDetect"/> is disabled — including from inside a pod
+    /// that targets a different cluster — this value is honored even if the local
+    /// projected CA file exists.
+    /// </summary>
+    public string? CaBundlePath { get; set; }
+
+    /// <summary>
+    /// Namespace used when an execution job does not specify one through its spec
+    /// parameters. When unset, the projected in-cluster namespace is used when
+    /// available; otherwise falls back to <c>default</c>.
+    /// </summary>
+    public string? DefaultNamespace { get; set; }
+
+    /// <summary>
+    /// Fallback container image used when a job spec does not resolve to one.
+    /// </summary>
+    public string? DefaultImage { get; set; }
+
+    /// <summary>
+    /// Fallback image pull policy (<c>Always</c>, <c>IfNotPresent</c>, <c>Never</c>).
+    /// </summary>
+    public string? DefaultImagePullPolicy { get; set; }
+
+    /// <summary>
+    /// Fallback service account for pods.
+    /// </summary>
+    public string? DefaultServiceAccount { get; set; }
+
+    /// <summary>
+    /// Fallback container CPU request (for example <c>500m</c>).
+    /// </summary>
+    public string? DefaultCpuRequest { get; set; }
+
+    /// <summary>
+    /// Fallback container CPU limit.
+    /// </summary>
+    public string? DefaultCpuLimit { get; set; }
+
+    /// <summary>
+    /// Fallback container memory request (for example <c>4Gi</c>).
+    /// </summary>
+    public string? DefaultMemoryRequest { get; set; }
+
+    /// <summary>
+    /// Fallback container memory limit.
+    /// </summary>
+    public string? DefaultMemoryLimit { get; set; }
+
+    /// <summary>
+    /// Fallback node selector applied to pods when a job spec does not override it.
+    /// Useful for steering GDAL-class workloads onto dedicated nodes.
+    /// </summary>
+    public Dictionary<string, string> DefaultNodeSelector { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Fallback image pull secret names.
+    /// </summary>
+    public List<string> DefaultImagePullSecrets { get; set; } = [];
+
+    /// <summary>
+    /// Fallback pod active deadline in seconds. Overridden by the spec when present
+    /// or by the job's <see cref="Honua.Core.Features.ControlPlane.Domain.JobTimeoutPolicy"/>.
+    /// </summary>
+    public int? DefaultActiveDeadlineSeconds { get; set; }
+
+    /// <summary>
+    /// Fallback <c>ttlSecondsAfterFinished</c> used so completed Jobs clean up
+    /// automatically without relying on the canonical runtime's retention.
+    /// </summary>
+    public int? DefaultTtlSecondsAfterFinished { get; set; } = 3600;
 }
 
 /// <summary>
@@ -124,6 +242,8 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
 {
     protected override void ValidateOptions(ControlPlaneOptions options, List<string> failures)
     {
+        ValidateKubernetes(options.Kubernetes, failures);
+
         var connectionIds = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < options.TelemetryConnections.Count; i++)
         {
@@ -172,6 +292,77 @@ internal sealed class ControlPlaneOptionsValidator : OptionsValidator<ControlPla
             {
                 failures.Add($"{propertyPrefix}:TimeoutSeconds must be greater than 0.");
             }
+        }
+    }
+
+    private static void ValidateKubernetes(KubernetesExecutionOptions options, List<string> failures)
+    {
+        const string prefix = "ControlPlane:Kubernetes";
+
+        if (!string.IsNullOrWhiteSpace(options.ApiServerUrl))
+        {
+            // The Kubernetes API receives a bearer token via the Authorization header on every
+            // CreateJob/GetJob/DeleteJob request; a non-HTTPS endpoint would ship those credentials
+            // and the job payload in clear text. Reject at startup so misconfiguration cannot
+            // silently land on a production deployment.
+            if (!Uri.TryCreate(options.ApiServerUrl, UriKind.Absolute, out var parsed))
+            {
+                failures.Add($"{prefix}:ApiServerUrl must be an absolute URL (e.g. https://cluster.example).");
+            }
+            else if (!string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add($"{prefix}:ApiServerUrl must use the https scheme (scheme '{parsed.Scheme}' is not allowed).");
+            }
+        }
+
+        if (!options.InClusterAutoDetect && string.IsNullOrWhiteSpace(options.ApiServerUrl))
+        {
+            failures.Add($"{prefix}:ApiServerUrl must be configured when InClusterAutoDetect is disabled.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.CaBundlePath))
+        {
+            if (!File.Exists(options.CaBundlePath))
+            {
+                failures.Add($"{prefix}:CaBundlePath '{options.CaBundlePath}' does not exist or is unreadable.");
+            }
+            else
+            {
+                ValidateCaBundleContents(options.CaBundlePath!, prefix, failures);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.BearerTokenPath) && !File.Exists(options.BearerTokenPath))
+        {
+            failures.Add($"{prefix}:BearerTokenPath '{options.BearerTokenPath}' does not exist or is unreadable.");
+        }
+    }
+
+    // Empty/malformed PEM files otherwise pass existence-only validation and then
+    // silently fall back to the OS trust store at runtime
+    // (KubernetesJobClient.CreatePrimaryHandler swallows import exceptions), which
+    // masks a misconfiguration as TLS failures against private-CA clusters. Fail
+    // startup so the operator is told upfront.
+    private static void ValidateCaBundleContents(string path, string prefix, List<string> failures)
+    {
+        try
+        {
+            var collection = new X509Certificate2Collection();
+            collection.ImportFromPemFile(path);
+            if (collection.Count == 0)
+            {
+                failures.Add(
+                    $"{prefix}:CaBundlePath '{path}' does not contain any PEM-encoded certificates.");
+            }
+        }
+        catch (CryptographicException ex)
+        {
+            failures.Add(
+                $"{prefix}:CaBundlePath '{path}' is not a valid PEM certificate bundle: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            failures.Add($"{prefix}:CaBundlePath '{path}' could not be read: {ex.Message}");
         }
     }
 }

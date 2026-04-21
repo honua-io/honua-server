@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Server.Features.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Import;
 
@@ -141,6 +144,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                 monitorCancellation.Token);
 
             await using var scope = _scopeFactory.CreateAsyncScope();
+            request = await ResolveSecretReferencesAsync(request, scope.ServiceProvider, jobCancellation.Token).ConfigureAwait(false);
             var importService = scope.ServiceProvider.GetRequiredService<IGeoServerImportService>();
             var progressReporter = new Progress<GeoServerImportProgress>(p =>
                 _ = progressController.TryReportProgressAsync(p, _logger, Log.ProgressUpdateFailed, CancellationToken.None));
@@ -291,6 +295,76 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
 
             await ImportBackgroundServiceCoordinator.StopMonitorAsync(monitorCancellation, monitorTask).ConfigureAwait(false);
         }
+    }
+
+    private static async Task<GeoServerImportRequest> ResolveSecretReferencesAsync(
+        GeoServerImportRequest request,
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(serviceProvider);
+
+        if (string.IsNullOrWhiteSpace(request.PasswordSecretReference) &&
+            string.IsNullOrWhiteSpace(request.HonuaApiKeySecretReference))
+        {
+            return request;
+        }
+
+        var resolvedPassword = request.Password;
+        if (!string.IsNullOrWhiteSpace(request.PasswordSecretReference))
+        {
+            resolvedPassword = await ResolveRequiredSecretAsync(
+                serviceProvider,
+                request.PasswordSecretReference,
+                "GeoServer password",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var resolvedHonuaApiKey = request.HonuaApiKey;
+        if (!string.IsNullOrWhiteSpace(request.HonuaApiKeySecretReference))
+        {
+            resolvedHonuaApiKey = await ResolveRequiredSecretAsync(
+                serviceProvider,
+                request.HonuaApiKeySecretReference,
+                "Honua API key",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return request with
+        {
+            Password = resolvedPassword,
+            HonuaApiKey = resolvedHonuaApiKey
+        };
+    }
+
+    private static async Task<string> ResolveRequiredSecretAsync(
+        IServiceProvider serviceProvider,
+        string secretReference,
+        string secretDescription,
+        CancellationToken cancellationToken)
+    {
+        if (SecretReferenceResolver.IsEnvironmentReference(secretReference))
+        {
+            var resolvedEnvironmentValue = SecretReferenceResolver.ResolveEnvironmentReference(secretReference, secretDescription);
+            if (string.IsNullOrWhiteSpace(resolvedEnvironmentValue))
+            {
+                throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
+            }
+
+            return resolvedEnvironmentValue;
+        }
+
+        var secretProvider = serviceProvider.GetService<ISecretProvider>()
+            ?? throw new InvalidOperationException("GeoServer import secret references require secret provider services.");
+
+        var resolved = await secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
+        }
+
+        return resolved;
     }
 
     private static bool IsTerminalStatus(GeoServerImportStatus status)

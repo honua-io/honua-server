@@ -29,6 +29,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: control-plane-sdk-governance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   generate-control-plane-sdks:
     runs-on: ubuntu-latest

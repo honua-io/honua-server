@@ -12,6 +12,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | **MapServer REST** | Map rendering | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs |
 | **STAC API** | Catalog discovery and item search | `/stac` | STAC browsers, catalog tooling |
 | **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
+| **OGC API Processes** | Async geoprocessing | `/ogc/processes` | OGC-compliant process clients |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
 
@@ -21,6 +22,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 - [MapServer REST](#mapserver-rest)
 - [STAC API](#stac-api)
 - [OGC API Features](#ogc-api-features)
+- [OGC API Processes](#ogc-api-processes)
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
 - [Error Handling](#error-handling)
@@ -402,6 +404,89 @@ The other OGC analytics mirrors are:
 - `POST /ogc/features/collections/{collectionId}/buffer-aggregate`
 
 As with the FeatureServer mirror, `numberReturned` equals `features.length` after truncation, and `metadata.maxOutputRows` is populated for density and cluster hull mode while remaining `null` for per-feature clusters, spatial join, and buffer aggregate. Per-feature cluster and spatial-join rows keep `properties.objectId` plus nested `properties.attributes`; spatial join also exposes `matchCount` and any array-valued `carryFields`, buffer aggregate dissolved rows expose `featureCount`, and density rows expose `cellId`, `featureCount`, and optional `weight`.
+
+---
+
+## **OGC API Processes**
+
+### **Landing Page**
+
+```bash
+curl http://localhost:8080/ogc/processes
+```
+
+### **List Processes**
+
+```bash
+curl http://localhost:8080/ogc/processes/processes
+```
+
+### **Describe a Process**
+
+```bash
+curl http://localhost:8080/ogc/processes/processes/honua-geoprocessing
+```
+
+### **Execute (Async)**
+
+Async execution requires the `Prefer: respond-async` header and only accepts `response: "document"` in V1. The `plan` input must be a JSON object with a `planId` and at least one step. Each step requires a `kind` from the canonical step kinds (`queryFeatures`, `geoprocess`, `aggregate`, `renderMap`, `export`); step input values and `dependsOn` entries must be strings, and `outputs` must be an array of supported artifact-kind strings when present. Geoprocess steps are additionally validated against the built-in process catalog: `processId` must match a catalog entry (e.g. `geometry.buffer`) and required parameters must be supplied. Successful submissions return `201 Created` with `Location` and `Preference-Applied: respond-async` headers.
+
+```bash
+curl -X POST http://localhost:8080/ogc/processes/processes/honua-geoprocessing/execution \
+  -H "Content-Type: application/json" \
+  -H "Prefer: respond-async" \
+  -d '{
+    "inputs": {
+      "plan": {
+        "planId": "plan-1",
+        "steps": [
+          {
+            "stepId": "s1",
+            "kind": "geoprocess",
+            "processId": "geometry.buffer",
+            "inputs": {
+              "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "srid": "4326",
+              "distance": "100"
+            }
+          }
+        ]
+      }
+    }
+  }'
+```
+
+### **List Jobs**
+
+Returns a `jobList` object with `jobs` array and navigation `links`. Use `?limit=N` to control page size (defaults to `OgcProcesses:DefaultJobLimit`).
+
+```bash
+curl "http://localhost:8080/ogc/processes/jobs?limit=10"
+```
+
+### **Poll Job Status**
+
+```bash
+curl http://localhost:8080/ogc/processes/jobs/{jobId}
+```
+
+Succeeded jobs include the OGC `results` relation in the `StatusInfo` document so clients can follow the link to `/jobs/{jobId}/results`.
+
+### **Retrieve Results**
+
+Succeeded jobs return `200 OK` with a document-mode, by-value JSON body keyed by stable output identifiers (OGC API Processes Part 1 §7.11.1). V1's canonical process declares no value-typed outputs, so the body is an empty object (`{}`) until the execution engine populates result storage. Non-terminal jobs return `404` (result not ready), failed jobs return `500`, and dismissed jobs return `410 Gone`.
+
+```bash
+curl http://localhost:8080/ogc/processes/jobs/{jobId}/results
+```
+
+### **Dismiss a Job**
+
+Cancels a running job. Terminal jobs (successful, failed) return `409 Conflict`; already-dismissed jobs return `200`.
+
+```bash
+curl -X DELETE http://localhost:8080/ogc/processes/jobs/{jobId}
+```
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-04-12",
+  "lastReviewed": "2026-04-13",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -1823,12 +1823,14 @@
       "drillDownDoc": "docs/gis/geoprocess-framework-analysis.md",
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
-        "PrintingTools Get Layout Templates Info Task (sync execute)"
+        "PrintingTools Get Layout Templates Info Task (sync execute)",
+        "Generic GPServer adapter (#723): service info, job status, job result, cancel job over the canonical process runtime; task info and submitJob return 501 pending per-task projection of the built-in IProcessCatalog (19 seeded processes across geometry.*, analytics.*, generalization.*, data-management.*) into the GPServer surface"
       ],
       "knownGaps": [
-        "generic task discovery across arbitrary GP services",
-        "cancel job",
-        "multi-parameter result access (PrintingTools only exposes Output_File)"
+        "synchronous execute returns 501 pending #721 ExecutePlan",
+        "task info and submitJob return 501 pending per-task projection of the built-in IProcessCatalog into the GPServer surface",
+        "GP environment controls (env:*, context) are rejected with 400 until engine support is available",
+        "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
       ],
       "evidence": {
         "canonicalModel": [
@@ -1837,10 +1839,15 @@
         ],
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
+          "src/Honua.Server/Features/Geoprocessing/GPServer/GPServerEndpoints.cs",
           "src/Honua.Server/EndpointRegistry.cs"
         ],
         "tests": [
-          "tests/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs"
+          "tests/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
+          "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
+          "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
+          "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs",
+          "tests/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
         ]
       },
       "operations": {
@@ -1880,49 +1887,57 @@
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute",
             "methods": ["GET"],
             "notes": "Returns available layout templates. PrintingTools-specific implementation."
-          }
-        ],
-        "not_implemented": [
+          },
           {
-            "name": "GP Task List (generic)",
+            "name": "GP Service Info (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer",
             "methods": ["GET"],
-            "notes": "Deferred to #723. Canonical model maps task list to CatalogService process definitions."
-          },
-          {
-            "name": "Execute Task (generic)",
-            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
-            "methods": ["POST"],
-            "notes": "Deferred to #723. Maps to ProcessService.ExecutePlan. PrintingTools subset already implemented above."
-          },
-          {
-            "name": "Submit Job (generic)",
-            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
-            "methods": ["POST"],
-            "notes": "Deferred to #723. Maps to ProcessService.SubmitPlanJob. PrintingTools subset already implemented above."
+            "notes": "Returns service metadata. Task list is stub (empty) pending per-task projection of the built-in IProcessCatalog into the GPServer surface. Implemented in #723."
           },
           {
             "name": "Job Status (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}",
             "methods": ["GET"],
-            "notes": "Deferred to #723. Maps to ProcessService.GetJob → ExecutionJobRecord. PrintingTools subset already implemented above."
+            "notes": "Job status polling with route binding validation. Maps ExecutionJobRecord to Esri status. Implemented in #723."
           },
           {
             "name": "Job Results (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}",
             "methods": ["GET"],
-            "notes": "Deferred to #723. Maps to ProcessService.GetJobResults → individual ArtifactRef from AnalysisResultPackage.Artifacts. PrintingTools subset already implemented above."
+            "notes": "Per-output result access with route binding validation. Result storage pending execution engine. Implemented in #723."
           },
           {
-            "name": "Cancel Job",
+            "name": "Cancel Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel",
-            "methods": ["POST"],
-            "notes": "Deferred to #723. Maps to ProcessService.CancelJob."
+            "methods": ["GET", "POST"],
+            "notes": "Job cancellation with route binding validation. Implemented in #723."
+          }
+        ],
+        "not_implemented": [
+          {
+            "name": "GP Task Info (generic)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}",
+            "methods": ["GET"],
+            "notes": "Returns 501. Task metadata resolution pending per-task projection of the built-in IProcessCatalog into the GPServer surface. Route registered in #723."
+          },
+          {
+            "name": "Execute Task (generic, sync)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
+            "methods": ["GET", "POST"],
+            "notes": "Returns 501 (auth and env-control validation enforced first). Pending #721 ExecutePlan. Routes registered in #723."
+          },
+          {
+            "name": "Submit Job (generic)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
+            "methods": ["GET", "POST"],
+            "notes": "Returns 501 (auth and env-control validation enforced first). Job submission pending per-task projection of the built-in IProcessCatalog into the GPServer surface. Route registered in #723."
           }
         ]
       },
       "knownLimitations": [
-        "Only the PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented. The canonical GP adapter for arbitrary GP services is downstream work in #723.",
+        "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 19 processes across geometry.*, analytics.*, generalization.*, and data-management.* families for plan validation (#735, #737); destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Task info and submitJob return 501 pending per-task projection of that catalog into the GPServer surface.",
+        "Synchronous execute returns 501 pending #721 ExecutePlan.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]
     }

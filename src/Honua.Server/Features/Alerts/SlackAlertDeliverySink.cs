@@ -6,7 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -75,21 +75,23 @@ internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
                 _ => ":bell:"
             };
 
-            var payload = JsonSerializer.Serialize(new
-            {
-                attachments = new[]
+            var payload = JsonSerializer.Serialize(
+                new SlackAlertPayload
                 {
-                    new
-                    {
-                        color,
-                        fallback = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
-                        title = $"{statusEmoji} Honua Alert: {alertEvent.TriggerType}",
-                        text = $"*Severity:* {alertEvent.Severity}\n*Status:* {alertEvent.IncidentStatus}\n*Rule:* {alertEvent.RuleId}\n*Layer:* {alertEvent.LayerId} / Feature: {alertEvent.ObjectId}",
-                        footer = "Honua Alerts",
-                        ts = alertEvent.OccurredAt.ToUnixTimeSeconds()
-                    }
-                }
-            });
+                    Attachments =
+                    [
+                        new SlackAlertAttachment
+                        {
+                            Color = color,
+                            Fallback = $"Honua Alert: {alertEvent.TriggerType} ({alertEvent.Severity})",
+                            Title = $"{statusEmoji} Honua Alert: {alertEvent.TriggerType}",
+                            Text = $"*Severity:* {alertEvent.Severity}\n*Status:* {alertEvent.IncidentStatus}\n*Rule:* {alertEvent.RuleId}\n*Layer:* {alertEvent.LayerId} / Feature: {alertEvent.ObjectId}",
+                            Footer = "Honua Alerts",
+                            Timestamp = alertEvent.OccurredAt.ToUnixTimeSeconds()
+                        }
+                    ]
+                },
+                AlertDeliveryJsonContext.Default.SlackAlertPayload);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
             {

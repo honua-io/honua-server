@@ -46,6 +46,9 @@ internal sealed partial class ArcGisRestClient
         return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
+            // Bound per-host connections against slow ArcGIS REST endpoints so import
+            // discovery cannot exhaust the local socket pool under pathological conditions.
+            MaxConnectionsPerServer = 32,
             ConnectCallback = (context, cancellationToken) =>
                 ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
         };

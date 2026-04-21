@@ -176,7 +176,12 @@ public enum BatchComputeTargetKind
     /// <summary>
     /// AWS Batch backend.
     /// </summary>
-    AwsBatch
+    AwsBatch,
+
+    /// <summary>
+    /// Azure Batch backend.
+    /// </summary>
+    AzureBatch
 }
 
 /// <summary>
@@ -234,6 +239,16 @@ public sealed record OperationAuditInfo
     /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
     /// </summary>
     public string? RequestFingerprint { get; init; }
+
+    /// <summary>
+    /// Reference to the approval policy that was evaluated, if any.
+    /// </summary>
+    public string? ApprovalPolicyRef { get; init; }
+
+    /// <summary>
+    /// Machine-readable reason codes from the approval evaluation.
+    /// </summary>
+    public IReadOnlyList<string> ApprovalReasonCodes { get; init; } = [];
 }
 
 /// <summary>
@@ -568,6 +583,11 @@ public sealed record ExecutionJobRecord
     public required ExecutionJobStatus Status { get; init; }
 
     /// <summary>
+    /// Optimistic concurrency version token incremented on every store write.
+    /// </summary>
+    public long Version { get; init; }
+
+    /// <summary>
     /// Relative operator priority.
     /// </summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;
@@ -626,6 +646,77 @@ public sealed record ExecutionJobRecord
     /// Backend execution specification.
     /// </summary>
     public required ExecutionJobSpec Spec { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Claim and heartbeat fields (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Stable identifier of the worker that claimed this job for execution.
+    /// Null when the job has not been claimed.
+    /// </summary>
+    public string? ClaimedBy { get; init; }
+
+    /// <summary>
+    /// Time when the job was claimed by a worker.
+    /// </summary>
+    public DateTimeOffset? ClaimedAt { get; init; }
+
+    /// <summary>
+    /// Time of the most recent heartbeat signal from the executing worker.
+    /// </summary>
+    public DateTimeOffset? LastHeartbeatAt { get; init; }
+
+    /// <summary>
+    /// Time when cancellation was durably requested via the API. Workers observe
+    /// this signal during heartbeat and cancel locally; the reconciler honours it
+    /// when the worker's heartbeat expires before the signal is processed.
+    /// </summary>
+    public DateTimeOffset? CancellationRequestedAt { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Retry tracking (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Number of execution attempts completed so far (including the current attempt).
+    /// </summary>
+    public int AttemptCount { get; init; }
+
+    /// <summary>
+    /// Earliest time the next retry attempt may begin.
+    /// Null when no retry is pending.
+    /// </summary>
+    public DateTimeOffset? NextRetryAt { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Policies (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Retry policy governing failure retry behavior. Null uses the system default.
+    /// </summary>
+    public JobRetryPolicy? RetryPolicy { get; init; }
+
+    /// <summary>
+    /// Heartbeat policy governing worker liveness detection. Null uses the system default.
+    /// </summary>
+    public JobHeartbeatPolicy? HeartbeatPolicy { get; init; }
+
+    /// <summary>
+    /// Timeout policy governing maximum execution duration. Null uses the system default.
+    /// </summary>
+    public JobTimeoutPolicy? TimeoutPolicy { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Artifact references (ticket #681)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// References to artifacts produced during execution, appended by the worker
+    /// through the execution context.
+    /// </summary>
+    public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -807,6 +898,17 @@ public sealed record BatchComputeSubmissionResult
     /// Operator-facing message from submission.
     /// </summary>
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Provider-resolved spec parameters that should be persisted back onto the durable
+    /// execution-job record so subsequent observe, cancel, and retry calls target the same
+    /// remote coordinates the adapter picked at submission time. Backends use this to pin
+    /// values resolved from ambient configuration (for example the Kubernetes namespace)
+    /// that would otherwise drift if the operator changes the default between a submission
+    /// and a later lifecycle call. Entries are merged into <see cref="ExecutionJobSpec.Parameters"/>
+    /// and override any prior values. Leave null when the adapter has nothing to persist.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? ResolvedParameters { get; init; }
 }
 
 /// <summary>

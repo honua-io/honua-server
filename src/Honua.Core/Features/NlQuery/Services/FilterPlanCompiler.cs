@@ -266,22 +266,14 @@ public static class FilterPlanCompiler
         };
     }
 
-    private static GeometryLiteral ParseGeoJsonGeometry(object? geometry)
+    private static GeometryLiteral ParseGeoJsonGeometry(JsonElement? geometry)
     {
-        if (geometry is null)
+        if (!geometry.HasValue)
         {
             throw new FilterPlanCompilationException("Spatial clause geometry is null.");
         }
 
-        string geoJson;
-        if (geometry is JsonElement jsonElement)
-        {
-            geoJson = jsonElement.GetRawText();
-        }
-        else
-        {
-            geoJson = JsonSerializer.Serialize(geometry);
-        }
+        var geoJson = geometry.Value.GetRawText();
 
         try
         {

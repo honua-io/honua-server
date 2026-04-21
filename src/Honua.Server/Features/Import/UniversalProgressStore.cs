@@ -4,11 +4,14 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Orchestration.Domain;
+using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
@@ -259,6 +262,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
             nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
             nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
+            nameof(PublishingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PublishingProgress),
+            nameof(WorkflowProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.WorkflowProgress),
+            nameof(DeploymentProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.DeploymentProgress),
             _ => null
         };
     }
@@ -276,6 +282,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             PrintProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PrintProgress),
             RasterImportProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.RasterImportProgress),
             GeoprocessingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.GeoprocessingProgress),
+            PublishingProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.PublishingProgress),
+            WorkflowProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.WorkflowProgress),
+            DeploymentProgress value => JsonSerializer.SerializeToElement(value, UniversalProgressJsonContext.Default.DeploymentProgress),
             _ => throw new NotSupportedException($"Unsupported progress type '{progress.GetType().FullName}'.")
         };
 
@@ -604,6 +613,9 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(ExportProgress) => OperationType.Export,
             nameof(PrintProgress) => OperationType.Print,
             nameof(GeoprocessingProgress) => OperationType.Geoprocessing,
+            nameof(PublishingProgress) => OperationType.Publishing,
+            nameof(WorkflowProgress) => OperationType.Orchestration,
+            nameof(DeploymentProgress) => OperationType.Deployment,
             _ => null
         };
     }
@@ -638,6 +650,13 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(GeoprocessingWorkflowStatus))]
 [JsonSerializable(typeof(GeoprocessingStageKind))]
 [JsonSerializable(typeof(GeoprocessingStageStatus))]
+[JsonSerializable(typeof(PublishingProgress))]
+[JsonSerializable(typeof(PublishIntentStatus))]
+[JsonSerializable(typeof(WorkflowProgress))]
+[JsonSerializable(typeof(WorkflowRunStatus))]
+[JsonSerializable(typeof(DeploymentProgress))]
+[JsonSerializable(typeof(DeploymentStatus))]
+[JsonSerializable(typeof(RolloutState))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

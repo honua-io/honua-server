@@ -8,12 +8,14 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Honua.Server.Tests.Helpers;
 using NSubstitute;
 using Proto = Geospatial.V1;
 
@@ -25,28 +27,34 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Protocol(Protocols.Grpc)]
 public sealed class GrpcProcessServiceTests
 {
-    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>();
+    private readonly IExecutionJobStore _jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
     private readonly IUniversalProgressStore _progressStore = Substitute.For<IUniversalProgressStore>();
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
     private readonly IOperatorApprovalEvaluator _approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+    private readonly IProcessCatalog _processCatalog = new BuiltInProcessCatalog();
     private readonly HonuaProcessService _sut;
 
     public GrpcProcessServiceTests()
     {
         _authEvaluator
-            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(AccessDecision.Allowed());
 
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.NotRequired());
 
-        _sut = new HonuaProcessService(
-            _progressStore, _cancellationNotifier,
+        var jobService = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
-            Substitute.For<ILogger<HonuaProcessService>>(),
+            _processCatalog,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             _jobStore);
+
+        _sut = new HonuaProcessService(
+            jobService,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
 
     // -----------------------------------------------------------------------
@@ -162,6 +170,50 @@ public sealed class GrpcProcessServiceTests
         response.EstimatedArtifacts.Should().ContainSingle(a => a == Proto.ArtifactKind.FeatureLayer);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithUnknownProcessId_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
+        plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "does.not.exist"
+        });
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("UNKNOWN_PROCESS");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/DryRunPlan")]
+    public async Task DryRunPlan_WithMissingRequiredParameter_ThrowsInvalidArgument()
+    {
+        var plan = new Proto.AnalysisPlan { PlanId = "plan-1", IntentId = "intent-1" };
+        plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-1",
+            Kind = Proto.PlanStepKind.Geoprocess,
+            ProcessId = "geometry.buffer"
+        });
+
+        var request = new Proto.DryRunPlanRequest { Plan = plan };
+
+        var act = async () => await _sut.DryRunPlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("MISSING_REQUIRED_PARAMETER");
+    }
+
     // -----------------------------------------------------------------------
     // ExecutePlan
     // -----------------------------------------------------------------------
@@ -184,6 +236,9 @@ public sealed class GrpcProcessServiceTests
     [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
     public async Task ExecutePlan_Unauthorized_ThrowsPermissionDenied()
     {
+        // Even though ExecutePlan is unimplemented (#721), auth is enforced first
+        // so that unauthorized callers get 403 rather than an implementation-detail
+        // 501 (consistent with the contract: auth on all mutating RPCs).
         _authEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(AccessDecision.Forbidden());
@@ -223,6 +278,28 @@ public sealed class GrpcProcessServiceTests
         await _progressStore.Received(1).SetProgressAsync(
             Arg.Any<string>(), Arg.Any<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingProgress>(),
             Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_WhenRequestIsCancelled_ThrowsCancelled()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromCanceled<bool>(cts.Token));
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = CreateValidPlan(),
+            IdempotencyKey = "idem-cancelled"
+        };
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext(cts.Token));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Cancelled);
     }
 
     // -----------------------------------------------------------------------
@@ -347,7 +424,7 @@ public sealed class GrpcProcessServiceTests
 
         response.Should().NotBeNull();
         _cancellationNotifier.Received(1).Cancel("job-123");
-        await _jobStore.Received(1).SetAsync(
+        await _jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),
             Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
@@ -365,6 +442,26 @@ public sealed class GrpcProcessServiceTests
 
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /geospatial.v1.ProcessService/CancelJob")]
+    public async Task CancelJob_ApprovalRequired_ThrowsFailedPrecondition()
+    {
+        var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("destructive-policy", "destructive-action"));
+
+        var request = new Proto.CancelJobRequest { JobId = "job-123" };
+
+        var act = async () => await _sut.CancelJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
     }
 
     [UnitTest]
@@ -714,6 +811,70 @@ public sealed class GrpcProcessServiceTests
     }
 
     // -----------------------------------------------------------------------
+    // Auth-before-validation ordering
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public async Task ValidatePlan_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var request = new Proto.ValidatePlanRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.ValidatePlan(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
+            "auth must be checked before proto structural validation");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitPlanJob")]
+    public async Task SubmitPlanJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
+    {
+        _authEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(AccessDecision.RequiresAuth());
+
+        var request = new Proto.SubmitPlanJobRequest
+        {
+            Plan = new Proto.AnalysisPlan
+            {
+                PlanId = "plan-1",
+                IntentId = "intent-1"
+            }
+        };
+        request.Plan.Steps.Add(new Proto.AnalysisPlanStep
+        {
+            StepId = "step-bad",
+            Kind = Proto.PlanStepKind.Unspecified
+        });
+
+        var act = async () => await _sut.SubmitPlanJob(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated,
+            "auth must be checked before proto structural validation");
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -733,7 +894,8 @@ public sealed class GrpcProcessServiceTests
         {
             StepId = "step-1",
             Kind = Proto.PlanStepKind.Geoprocess,
-            ProcessId = "buffer"
+            ProcessId = "geometry.buffer",
+            Inputs = { { "wkb", "AAAA" }, { "srid", "4326" }, { "distance", "100" } }
         };
 
     private static string ComputeExpectedFingerprint(Proto.AnalysisPlan protoPlan)
@@ -809,7 +971,7 @@ public sealed class GrpcProcessServiceTests
         };
     }
 
-    private static TestServerCallContext CreateCallContext()
+    private static TestServerCallContext CreateCallContext(CancellationToken cancellationToken = default)
     {
         var httpContext = new DefaultHttpContext
         {
@@ -817,24 +979,37 @@ public sealed class GrpcProcessServiceTests
                 [new Claim(ClaimTypes.Name, "test-user")], "Test"))
         };
 
-        var ctx = new TestServerCallContext();
+        var ctx = new TestServerCallContext(cancellationToken);
         ctx.UserState["__HttpContext"] = httpContext;
         return ctx;
     }
 
     private sealed class TestServerCallContext : ServerCallContext, IDisposable
     {
-        private readonly CancellationTokenSource _cts = new();
+        private readonly CancellationTokenSource? _cts;
+        private readonly CancellationToken _cancellationToken;
         private readonly Metadata _responseTrailers = new();
 
-        public void Dispose() => _cts.Dispose();
+        public TestServerCallContext(CancellationToken cancellationToken)
+        {
+            if (cancellationToken.CanBeCanceled)
+            {
+                _cancellationToken = cancellationToken;
+                return;
+            }
+
+            _cts = new CancellationTokenSource();
+            _cancellationToken = _cts.Token;
+        }
+
+        public void Dispose() => _cts?.Dispose();
 
         protected override string MethodCore => "/geospatial.v1.ProcessService/ValidatePlan";
         protected override string HostCore => "localhost";
         protected override string PeerCore => "127.0.0.1";
         protected override DateTime DeadlineCore => DateTime.UtcNow.AddMinutes(5);
         protected override Metadata RequestHeadersCore => new();
-        protected override CancellationToken CancellationTokenCore => _cts.Token;
+        protected override CancellationToken CancellationTokenCore => _cancellationToken;
         protected override Metadata ResponseTrailersCore => _responseTrailers;
         protected override Status StatusCore { get; set; }
         protected override WriteOptions? WriteOptionsCore { get; set; }

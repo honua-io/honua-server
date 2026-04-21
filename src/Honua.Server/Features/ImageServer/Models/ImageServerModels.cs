@@ -506,8 +506,14 @@ public sealed class ExportImageRequest
     [StringLength(100, ErrorMessage = "Bbox is too long")]
     public string? Bbox { get; init; }
 
-    [Range(1, 4096, ErrorMessage = "Size must be between 1 and 4096")]
-    public int? Size { get; init; }
+    // Esri /exportImage size is "width,height" (comma-separated). Also accept a bare
+    // integer for callers that send only the width and let the server derive height
+    // from the raster's aspect ratio. Parsing is done in the handler so validation
+    // messages stay precise.
+    [RegularExpression(@"^\d{1,4}(,\d{1,4})?$",
+        ErrorMessage = "Size must be an integer or a comma-separated width,height pair")]
+    [StringLength(11, ErrorMessage = "Size is too long")]
+    public string? Size { get; init; }
 
     [RegularExpression(@"^\d{1,6}$", ErrorMessage = "ImageSr must be a valid SRID")]
     public string? ImageSr { get; init; }

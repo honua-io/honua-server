@@ -1,12 +1,21 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+<<<<<<< HEAD
+=======
+using System.Diagnostics.CodeAnalysis;
+
+>>>>>>> origin/trunk
 namespace Honua.Core.Features.Security.Domain;
 
 /// <summary>
 /// SSL connection mode for database connections.
 /// </summary>
+<<<<<<< HEAD
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1708:Identifiers should differ by more than case", Justification = "VerifyCA is kept as a compatibility alias for existing callers while VerifyCa remains the canonical member.")]
+=======
+[SuppressMessage("Naming", "CA1708:Identifiers should differ by more than case", Justification = "VerifyCA is a required compatibility alias for existing callers.")]
+>>>>>>> origin/trunk
 public enum SslMode
 {
     /// <summary>

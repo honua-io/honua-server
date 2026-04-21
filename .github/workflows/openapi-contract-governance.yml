@@ -26,6 +26,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: openapi-contract-governance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-openapi-contracts:
     runs-on: ubuntu-latest

@@ -6,6 +6,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Wfs20.Models;
 using Honua.Server.Features.Wfs20.Services;
 
@@ -198,6 +199,15 @@ internal static class Wfs20DispatcherEndpoint
             }
         }
 
+        // GetCapabilities is inherently XML-only. Tolerate catch-all Accept
+        // headers, but honor an explicit rejection of XML (e.g. `q=0` on
+        // application/xml): there is no non-XML representation to fall back on,
+        // so surface 406 Not Acceptable per RFC 9110.
+        if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+        {
+            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+        }
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var sections = parameters.Get(Wfs20Utilities.ParameterNames.Sections);
         if (!Wfs20Utilities.TryParseSections(sections, out var requestedSections, out var sectionsError))
@@ -262,6 +272,16 @@ internal static class Wfs20DispatcherEndpoint
                     "InvalidParameterValue",
                     $"Unsupported output format '{outputFormat}'. DescribeFeatureType requires XML-based formats.",
                     "outputFormat");
+            }
+
+            // DescribeFeatureType's outputFormat check above already enforces an
+            // XML-compatible format. Tolerate catch-all Accept headers, but
+            // honor an explicit rejection of XML (e.g. `q=0` on
+            // application/xml): there is no non-XML representation to fall back
+            // on, so surface 406 Not Acceptable per RFC 9110.
+            if (Wfs20Utilities.AcceptHeaderExplicitlyRejectsXml(context.Request))
+            {
+                return Results.StatusCode(StatusCodes.Status406NotAcceptable);
             }
 
             // Handle the request

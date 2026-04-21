@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
@@ -18,7 +19,6 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AlertAdminEndpoints
 {
-    private static readonly WKTReader _wktReader = new();
     private static readonly WKBReader _wkbReader = new();
     private static readonly WKTWriter _wktWriter = new();
     private static readonly WKBWriter _wkbWriter = new();
@@ -77,9 +77,10 @@ internal static class AlertAdminEndpoints
     private static async Task<IResult> HandleCreateZone(
         AlertZoneRequest request,
         [FromServices] IAlertAdminStore store,
+        [FromServices] IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
-        if (!TryCreateZoneDefinition(0, request, out var zone, out var error))
+        if (!TryCreateZoneDefinition(0, request, geometryService, out var zone, out var error))
         {
             return BadRequest(error);
         }
@@ -92,9 +93,10 @@ internal static class AlertAdminEndpoints
         long zoneId,
         AlertZoneRequest request,
         [FromServices] IAlertAdminStore store,
+        [FromServices] IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
-        if (!TryCreateZoneDefinition(zoneId, request, out var zone, out var error))
+        if (!TryCreateZoneDefinition(zoneId, request, geometryService, out var zone, out var error))
         {
             return BadRequest(error);
         }
@@ -193,7 +195,12 @@ internal static class AlertAdminEndpoints
         return Results.Json(ApiResponse<object>.SuccessWithMessage("Rule deleted."), AlertAdminJsonContext.Default.ApiResponseObject);
     }
 
-    private static bool TryCreateZoneDefinition(long zoneId, AlertZoneRequest request, out AlertZoneDefinition zone, out string error)
+    private static bool TryCreateZoneDefinition(
+        long zoneId,
+        AlertZoneRequest request,
+        IGeometryService geometryService,
+        out AlertZoneDefinition zone,
+        out string error)
     {
         zone = default!;
 
@@ -209,7 +216,7 @@ internal static class AlertAdminEndpoints
             return false;
         }
 
-        if (!TryParseWkt(request.Wkt, request.Srid ?? 4326, out var geometry, out error))
+        if (!TryParseWkt(request.Wkt, request.Srid ?? 4326, geometryService, out var geometry, out error))
         {
             return false;
         }
@@ -354,7 +361,12 @@ internal static class AlertAdminEndpoints
         };
     }
 
-    private static bool TryParseWkt(string? wkt, int srid, out byte[]? wkb, out string error)
+    private static bool TryParseWkt(
+        string? wkt,
+        int srid,
+        IGeometryService geometryService,
+        out byte[]? wkb,
+        out string error)
     {
         if (string.IsNullOrWhiteSpace(wkt))
         {
@@ -365,7 +377,14 @@ internal static class AlertAdminEndpoints
 
         try
         {
-            Geometry geometry = _wktReader.Read(wkt);
+            wkb = geometryService.ConvertWktToWkb(wkt, srid);
+            if (wkb is null)
+            {
+                error = "Invalid WKT geometry.";
+                return false;
+            }
+
+            Geometry geometry = _wkbReader.Read(wkb);
             geometry.SRID = srid;
 
             if (geometry is Polygon polygon)
@@ -383,6 +402,12 @@ internal static class AlertAdminEndpoints
             wkb = _wkbWriter.Write(geometry);
             error = string.Empty;
             return true;
+        }
+        catch (ArgumentException ex)
+        {
+            wkb = null;
+            error = ex.Message;
+            return false;
         }
         catch (ParseException)
         {

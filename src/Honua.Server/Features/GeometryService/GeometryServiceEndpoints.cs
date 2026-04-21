@@ -19,6 +19,15 @@ internal static class GeometryServiceEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Esri REST clients probe the GeometryServer root for currentVersion and
+        // service description before invoking operations. Routing is case-insensitive,
+        // so a single lowercase route covers both `/rest/services/Geometry/...` and
+        // `/rest/services/geometry/...` forms.
+        endpoints.MapGet("/rest/services/geometry/GeometryServer", HandleServiceInfo)
+            .WithDisplayName("Geometry Service Info")
+            .WithName("GeometryServiceInfo")
+            .WithTags("GeometryService");
+
         endpoints.MapGet("/rest/services/geometry/buffer", (Delegate)HandleBuffer)
             .WithDisplayName("Geometry Service Buffer (GET)")
             .WithName("GeometryServiceBufferGet")
@@ -111,6 +120,19 @@ internal static class GeometryServiceEndpoints
 
         return endpoints;
     }
+
+    // Minimal ArcGIS REST service descriptor for GeometryServer. The schema matches
+    // Esri's documented response so probing clients (ArcGIS Pro, JS API) can complete
+    // their discovery handshake before invoking buffer/simplify/etc.
+    private const string GeometryServerInfoJson =
+        "{\"currentVersion\":11.1,"
+        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, area, length.\","
+        + "\"maxBufferCount\":1000,"
+        + "\"maxSimplifyCount\":1000,"
+        + "\"resampled\":true}";
+
+    private static IResult HandleServiceInfo()
+        => Results.Text(GeometryServerInfoJson, "application/json");
 
     private static async Task<IResult> HandleBuffer(
         HttpContext context,

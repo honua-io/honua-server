@@ -26,7 +26,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Control Plane API](CONTROL_PLANE_API.md) — Admin REST API for connections, layers, services, and migration inventory scans
 - [GeoServer Migration Guide](../gis/tutorials/geoserver-migration-guide.md) — Discovery-only scanner workflow, compatibility review, and dry-run import planning
 - [Tile Operations](tile-operations-runbook.md) — Vector tile seeding, warming, invalidation
-- [Operations](operations.md) — Backups, migrations, connection pooling, query tuning
+- [Operations](operations.md) — Backups, migrations, connection pooling, query tuning, job orchestration, workflow orchestration, workspace lifecycle
 
 ## Monitoring
 

@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 namespace Honua.Core.Features.Infrastructure.Abstractions;
 
 /// <summary>
-/// Reads byte ranges from cloud-hosted objects (S3, Azure Blob, GCS).
+/// Reads byte ranges from cloud-hosted objects (S3 and Azure Blob).
 /// Separate from <see cref="ICloudFileStorage"/> because the use case is fundamentally
 /// different: low-latency partial reads vs. full file upload/download.
 /// </summary>

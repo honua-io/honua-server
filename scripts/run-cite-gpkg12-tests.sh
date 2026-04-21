@@ -191,9 +191,10 @@ done
 echo -e "${GREEN}Honua Server is healthy${NC}"
 
 GPKG_EXPORT_URL_HOST="http://localhost:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg"
+GPKG_ADMIN_PASSWORD="CiteAdminPassword123!"
 
 echo -e "${YELLOW}Verifying GeoPackage export endpoint...${NC}"
-if ! curl -s -f -H 'X-API-Key: cite-admin-password' "$GPKG_EXPORT_URL_HOST" -o /dev/null; then
+if ! curl -s -f -H "X-API-Key: $GPKG_ADMIN_PASSWORD" "$GPKG_EXPORT_URL_HOST" -o /dev/null; then
     echo -e "${YELLOW}GeoPackage export preflight failed; continuing to CITE execution for full diagnostics${NC}"
 else
     echo -e "${GREEN}GeoPackage export endpoint is accessible${NC}"
@@ -214,7 +215,7 @@ mkdir -p "$CITE_RESULTS_DIR"
 rm -rf "$CITE_RESULTS_DIR"/*
 
 echo -e "${YELLOW}Capturing GeoPackage output...${NC}"
-if ! curl -s -f -H 'X-API-Key: cite-admin-password' "$GPKG_EXPORT_URL_HOST" -o "$CITE_RESULTS_DIR/export.gpkg"; then
+if ! curl -s -f -H "X-API-Key: $GPKG_ADMIN_PASSWORD" "$GPKG_EXPORT_URL_HOST" -o "$CITE_RESULTS_DIR/export.gpkg"; then
     echo -e "${YELLOW}Failed to capture GeoPackage output; continuing to CITE execution${NC}"
 fi
 

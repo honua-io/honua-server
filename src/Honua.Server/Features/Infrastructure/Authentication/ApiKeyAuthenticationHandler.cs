@@ -9,7 +9,6 @@ using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -191,8 +190,8 @@ internal sealed class ApiKeyAuthenticationHandler(
 
     private bool IsHttpsRequest()
     {
-        // Trust transport-level TLS state only; this cannot be spoofed by request headers.
-        return Context.Features.Get<ITlsHandshakeFeature>() is not null;
+        // Request.IsHttps reflects direct TLS and trusted forwarded HTTPS once ForwardedHeaders middleware has run.
+        return Request.IsHttps;
     }
 
     /// <summary>

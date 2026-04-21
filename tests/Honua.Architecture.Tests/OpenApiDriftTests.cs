@@ -57,6 +57,198 @@ public sealed class OpenApiDriftTests
             "OGC API Maps",
             mapsSpecEndpoints,
             mapsRegistryEndpoints);
+
+        var processesSpecEndpoints = LoadOpenApiEndpoints(ResolveOpenApiPath("ogc-processes-openapi.json"));
+        var processesRegistryEndpoints = EndpointRegistry.All
+            .Where(endpoint => endpoint.Path.StartsWith("/ogc/processes", StringComparison.OrdinalIgnoreCase))
+            .Where(endpoint => !endpoint.Path.Equals("/ogc/processes/openapi.json", StringComparison.OrdinalIgnoreCase))
+            .Select(endpoint => FormatKey(endpoint.Method, endpoint.Path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        AssertSpecMatchesRegistry(
+            "OGC API Processes",
+            processesSpecEndpoints,
+            processesRegistryEndpoints);
+    }
+
+    [ArchitectureTest]
+    public void OgcProcessesSchemas_IncludeFieldsEmittedByEndpoints()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+
+        var processSummaryProps = schemas.GetProperty("ProcessSummary")
+            .GetProperty("properties");
+        processSummaryProps.TryGetProperty("links", out _).Should()
+            .BeTrue("ProcessSummary must document the links array emitted by GetProcessList");
+
+        var statusInfoProps = schemas.GetProperty("StatusInfo")
+            .GetProperty("properties");
+        statusInfoProps.TryGetProperty("type", out _).Should()
+            .BeTrue("StatusInfo must document the type discriminator emitted by all job status responses");
+
+        // Execute schema must require inputs.plan (server enforces this at runtime).
+        var execute = schemas.GetProperty("Execute");
+        execute.TryGetProperty("required", out var executeRequired).Should()
+            .BeTrue("Execute must declare required properties");
+        executeRequired.EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("inputs", "Execute must require 'inputs'");
+
+        var executeInputs = execute.GetProperty("properties").GetProperty("inputs");
+        executeInputs.TryGetProperty("required", out var inputsRequired).Should()
+            .BeTrue("Execute.inputs must declare required properties");
+        inputsRequired.EnumerateArray().Select(e => e.GetString())
+            .Should().Contain("plan", "Execute.inputs must require 'plan'");
+
+        // AnalysisPlan schema must describe the minimum accepted shape.
+        var plan = schemas.GetProperty("AnalysisPlan");
+        plan.TryGetProperty("required", out var planRequired).Should().BeTrue();
+        var planRequiredFields = planRequired.EnumerateArray().Select(e => e.GetString()).ToList();
+        planRequiredFields.Should().Contain("planId").And.Contain("steps");
+
+        // PlanStep must expose the optional processId field documented in API examples
+        // and aligned with the canonical AnalysisPlanStep.process_id proto field.
+        var planStepProps = schemas.GetProperty("PlanStep").GetProperty("properties");
+        planStepProps.TryGetProperty("processId", out _).Should()
+            .BeTrue("PlanStep must document the optional processId field used in request examples and the canonical proto contract");
+
+        // ProcessIoSchema must expose the fields emitted by process description endpoints.
+        var ioSchema = schemas.GetProperty("ProcessIoSchema");
+        var ioSchemaProps = ioSchema.GetProperty("properties");
+        ioSchemaProps.TryGetProperty("type", out _).Should()
+            .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
+        ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
+            .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+
+        // InputDescription and OutputDescription must reference ProcessIoSchema.
+        foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })
+        {
+            var schemaRef = schemas.GetProperty(schemaName)
+                .GetProperty("properties")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString();
+            schemaRef.Should().Be("#/components/schemas/ProcessIoSchema",
+                $"{schemaName}.schema must reference ProcessIoSchema");
+        }
+    }
+
+    [ArchitectureTest]
+    public void OgcProcessesAuthProtectedEndpoints_Document401And403Responses()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var paths = document.RootElement.GetProperty("paths");
+
+        (string Path, string Method)[] authProtectedOps =
+        [
+            ("/ogc/processes/processes/{processId}/execution", "post"),
+            ("/ogc/processes/jobs", "get"),
+            ("/ogc/processes/jobs/{jobId}", "get"),
+            ("/ogc/processes/jobs/{jobId}", "delete"),
+            ("/ogc/processes/jobs/{jobId}/results", "get")
+        ];
+
+        foreach (var (path, method) in authProtectedOps)
+        {
+            var responses = paths.GetProperty(path)
+                .GetProperty(method)
+                .GetProperty("responses");
+
+            responses.TryGetProperty("401", out _).Should()
+                .BeTrue($"{method.ToUpperInvariant()} {path} must document 401 Unauthorized");
+
+            responses.TryGetProperty("403", out _).Should()
+                .BeTrue($"{method.ToUpperInvariant()} {path} must document 403 Forbidden");
+        }
+    }
+
+    [ArchitectureTest]
+    public void OgcMapsTileSetEndpoints_DescribeRuntimeParameterAndErrorContracts()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-maps-openapi.json")));
+        var paths = document.RootElement.GetProperty("paths");
+
+        var tileSets = paths.GetProperty("/ogc/maps/collections/{collectionId}/map/tiles").GetProperty("get");
+        var tileSetsCollectionId = tileSets.GetProperty("parameters").EnumerateArray()
+            .First(parameter => parameter.GetProperty("name").GetString() == "collectionId");
+        tileSetsCollectionId.GetProperty("schema").GetProperty("type").GetString().Should().Be("integer");
+        tileSets.GetProperty("responses").GetProperty("200").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()
+            .Should().Be("#/components/schemas/TileSetsList");
+        tileSets.GetProperty("responses").TryGetProperty("400", out _).Should().BeTrue();
+        tileSets.GetProperty("responses").TryGetProperty("404", out _).Should().BeTrue();
+
+        var tileSet = paths.GetProperty("/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}").GetProperty("get");
+        var tileSetCollectionId = tileSet.GetProperty("parameters").EnumerateArray()
+            .First(parameter => parameter.GetProperty("name").GetString() == "collectionId");
+        tileSetCollectionId.GetProperty("schema").GetProperty("type").GetString().Should().Be("integer");
+        tileSet.GetProperty("responses").GetProperty("200").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()
+            .Should().Be("#/components/schemas/TileSet");
+        tileSet.GetProperty("responses").TryGetProperty("400", out _).Should().BeTrue();
+        tileSet.GetProperty("responses").TryGetProperty("404", out _).Should().BeTrue();
+    }
+
+    [ArchitectureTest]
+    public void OgcMapsMapEndpoints_DescribeRuntimeMediaTypes_AndAuthErrors()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-maps-openapi.json")));
+        var paths = document.RootElement.GetProperty("paths");
+
+        var openApiDocument = paths.GetProperty("/ogc/maps/openapi.json").GetProperty("get");
+        openApiDocument.GetProperty("responses")
+            .GetProperty("200")
+            .GetProperty("content")
+            .TryGetProperty("application/vnd.oai.openapi+json", out _)
+            .Should()
+            .BeTrue();
+
+        var datasetMap = paths.GetProperty("/ogc/maps/map").GetProperty("get");
+        var datasetResponses = datasetMap.GetProperty("responses");
+        var datasetContent = datasetResponses.GetProperty("200").GetProperty("content");
+        datasetContent.TryGetProperty("image/png", out _).Should().BeTrue();
+        datasetContent.TryGetProperty("image/jpeg", out _).Should().BeTrue();
+        datasetContent.TryGetProperty("image/tiff", out _).Should().BeTrue();
+        datasetResponses.TryGetProperty("400", out _).Should().BeTrue();
+        datasetResponses.TryGetProperty("401", out _).Should().BeTrue();
+        datasetResponses.TryGetProperty("403", out _).Should().BeTrue();
+        datasetResponses.TryGetProperty("404", out _).Should().BeTrue();
+
+        var collectionMap = paths.GetProperty("/ogc/maps/collections/{collectionId}/map").GetProperty("get");
+        var collectionIdParameter = collectionMap.GetProperty("parameters").EnumerateArray()
+            .First(parameter => parameter.GetProperty("name").GetString() == "collectionId");
+        collectionIdParameter.GetProperty("schema").GetProperty("type").GetString().Should().Be("integer");
+        var collectionResponses = collectionMap.GetProperty("responses");
+        var collectionContent = collectionResponses.GetProperty("200").GetProperty("content");
+        collectionContent.TryGetProperty("image/png", out _).Should().BeTrue();
+        collectionContent.TryGetProperty("image/jpeg", out _).Should().BeTrue();
+        collectionContent.TryGetProperty("image/tiff", out _).Should().BeTrue();
+        collectionResponses.TryGetProperty("400", out _).Should().BeTrue();
+        collectionResponses.TryGetProperty("401", out _).Should().BeTrue();
+        collectionResponses.TryGetProperty("403", out _).Should().BeTrue();
+        collectionResponses.TryGetProperty("404", out _).Should().BeTrue();
+    }
+
+    [ArchitectureTest]
+    public void OgcTilesTileEndpoints_DescribeRasterFormats_AndValidationResponses()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-tiles-openapi.json")));
+        var paths = document.RootElement.GetProperty("paths");
+
+        AssertCollectionIdParameterIsInteger(paths.GetProperty("/collections/{collectionId}").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/collections/{collectionId}").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/tiles").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/tiles/{tileMatrixSetId}").GetProperty("get"));
+        AssertCollectionIdParameterIsInteger(paths.GetProperty("/collections/{collectionId}/tiles").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/collections/{collectionId}/tiles").GetProperty("get"));
+        AssertCollectionIdParameterIsInteger(paths.GetProperty("/collections/{collectionId}/tiles/{tileMatrixSetId}").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/collections/{collectionId}/tiles/{tileMatrixSetId}").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/tileMatrixSets").GetProperty("get"));
+        AssertMetadataEndpointHasValidationResponses(paths.GetProperty("/tileMatrixSets/{tileMatrixSetId}").GetProperty("get"));
+        AssertTileEndpoint(paths.GetProperty("/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}").GetProperty("get"));
+        var collectionTileEndpoint = paths.GetProperty("/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}").GetProperty("get");
+        AssertCollectionIdParameterIsInteger(collectionTileEndpoint);
+        AssertTileEndpoint(collectionTileEndpoint);
     }
 
     [ArchitectureTest]
@@ -326,6 +518,41 @@ public sealed class OpenApiDriftTests
         }
 
         return Path.Combine(directory.FullName, "docs", "developer", "api-specs", fileName);
+    }
+
+    private static void AssertTileEndpoint(JsonElement tileEndpoint)
+    {
+        var formatParameter = tileEndpoint.GetProperty("parameters").EnumerateArray()
+            .First(parameter => parameter.GetProperty("name").GetString() == "f");
+        var formats = formatParameter.GetProperty("schema")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+        formats.Should().Contain("mvt").And.Contain("png");
+
+        var responses = tileEndpoint.GetProperty("responses");
+        var successContent = responses.GetProperty("200").GetProperty("content");
+        successContent.TryGetProperty("application/vnd.mapbox-vector-tile", out _).Should().BeTrue();
+        successContent.TryGetProperty("image/png", out _).Should().BeTrue();
+        responses.TryGetProperty("400", out _).Should().BeTrue();
+        responses.TryGetProperty("404", out _).Should().BeTrue();
+        responses.TryGetProperty("406", out _).Should().BeTrue();
+    }
+
+    private static void AssertCollectionIdParameterIsInteger(JsonElement operation)
+    {
+        var collectionIdParameter = operation.GetProperty("parameters").EnumerateArray()
+            .First(parameter => parameter.GetProperty("name").GetString() == "collectionId");
+        collectionIdParameter.GetProperty("schema").GetProperty("type").GetString().Should().Be("integer");
+        collectionIdParameter.GetProperty("schema").GetProperty("minimum").GetInt32().Should().Be(0);
+    }
+
+    private static void AssertMetadataEndpointHasValidationResponses(JsonElement operation)
+    {
+        var responses = operation.GetProperty("responses");
+        responses.TryGetProperty("400", out _).Should().BeTrue();
+        responses.TryGetProperty("406", out _).Should().BeTrue();
     }
 
     private static HashSet<string> GetRequestBodyPropertyNames(JsonElement paths, string path)

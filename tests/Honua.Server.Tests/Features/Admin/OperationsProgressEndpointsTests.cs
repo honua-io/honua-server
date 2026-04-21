@@ -4,13 +4,21 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Publishing.Domain;
+using Honua.Server.Tests.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -92,6 +100,1008 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         var updated = await _progressStore.GetProgressAsync(operationId);
         updated.Should().NotBeNull();
         updated!.Status.Should().Be(OperationStatus.Cancelled);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenBackedByExecutionJob_CancelsJobStoreAndRemovesFromQueue()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        var jobQueue = _fixture.GetOptionalService<IJobQueue>();
+        if (jobStore == null || jobQueue == null)
+        {
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Queued,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = "Queued",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-admin-cancel"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+        await jobQueue.EnqueueAsync(operationId);
+
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-test");
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updatedJob = await jobStore.GetAsync(operationId);
+        updatedJob.Should().NotBeNull();
+        updatedJob!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        updatedJob.CompletedAt.Should().NotBeNull();
+
+        var queueDepth = await jobQueue.GetQueueDepthAsync();
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Cancelled);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenDurableJobAlreadySucceeded_Returns409()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Completed",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-admin-cancel-terminal"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        // Progress store still shows Processing (stale), but durable job is terminal
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-terminal-test");
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Completed,
+            "Terminal durable job must bridge progress to authoritative state");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteDurableJobAlreadySucceeded_Returns409AndBridgesProgress()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Completed",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "test-admin-remote-cancel-terminal"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-remote-cancel-terminal-test");
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Completed,
+            "Terminal durable job must bridge progress to authoritative state");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenDurableJobAlreadyCancelled_CleansUpQueueAndReturns200()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        var jobQueue = _fixture.GetOptionalService<IJobQueue>();
+        if (jobStore == null || jobQueue == null)
+        {
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Cancelled,
+            CreatedAt = now.AddMinutes(-5),
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Cancelled",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-already-cancelled"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+        await jobQueue.EnqueueAsync(operationId);
+
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "already-cancelled-test") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+            CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+            CompletedAt = now
+        };
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenProgressAlreadyCancelledAndDurableJobClaimed_PersistsSignalWithoutRemovingClaim()
+    {
+        var fixture = new WebAppFixture();
+        var jobQueue = Substitute.For<IJobQueue>();
+        fixture.ReplaceService<IJobQueue>(jobQueue);
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var jobStore = fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            await fixture.DisposeAsync();
+            return;
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now.AddMinutes(-1),
+                UpdatedAt = now,
+                ClaimedBy = "worker-remote",
+                ClaimedAt = now.AddSeconds(-30),
+                LastHeartbeatAt = now.AddSeconds(-5),
+                CurrentPhase = "Running",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "test-admin-reconcile-claimed-cancel"
+                }
+            };
+
+            await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "already-cancelled-running") with
+            {
+                WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+                CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+                CompletedAt = now
+            };
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var updatedJob = await jobStore.GetAsync(operationId);
+            updatedJob.Should().NotBeNull();
+            updatedJob!.Status.Should().Be(ExecutionJobStatus.Running);
+            updatedJob.CancellationRequestedAt.Should().NotBeNull();
+
+            await jobQueue.DidNotReceive().RemoveAsync(operationId, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenProgressAlreadyCancelledAndDurableJobNonterminal_BridgesProgressToNonterminal()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return;
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-1),
+            UpdatedAt = now,
+            ClaimedBy = "worker-local",
+            ClaimedAt = now.AddSeconds(-30),
+            LastHeartbeatAt = now.AddSeconds(-5),
+            CurrentPhase = "Running",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-reconcile-bridges-progress"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        var staleProgress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "stale-cancelled-progress") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+            CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+            CompletedAt = now
+        };
+        await _progressStore.SetProgressAsync(operationId, staleProgress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Processing,
+            "nonterminal durable job must be bridged over stale Cancelled progress so admin polling reflects the live state");
+        updatedProgress.CompletedAt.Should().BeNull("bridging a nonterminal job must clear stale terminal timestamps");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenProgressCancelledButDurableJobSucceeded_Returns409AndBridgesProgress()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return;
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now.AddMinutes(-5),
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = "Completed",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test-progress-cancelled-job-succeeded"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "progress-cancelled-job-succeeded") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+            CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+            CompletedAt = now
+        };
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var updatedProgress = await _progressStore.GetProgressAsync(operationId);
+        updatedProgress.Should().NotBeNull();
+        updatedProgress!.Status.Should().Be(OperationStatus.Completed,
+            "Durable job terminal state must be bridged into stale cancelled progress");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenProgressCancelledAndRemoteBackendMissing_Returns409()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>();
+        if (jobStore == null)
+        {
+            return;
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var jobRecord = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-2),
+            UpdatedAt = now,
+            CurrentPhase = "Processing",
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.AwsBatch,
+                Backend = "aws-batch",
+                WorkloadName = "test-progress-cancelled-remote-missing"
+            }
+        };
+
+        await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+
+        var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "progress-cancelled-remote-missing") with
+        {
+            WorkflowStatus = GeoprocessingWorkflowStatus.Cancelled,
+            CurrentStageStatus = GeoprocessingStageStatus.Cancelled,
+            CompletedAt = now
+        };
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenQueueRemovalFailsAfterDurableCancel_StillReturns200AndUpdatesProgress()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<IJobQueue>(new ThrowingRemoveJobQueue());
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var jobStore = fixture.GetOptionalService<IExecutionJobStore>();
+        var jobQueue = fixture.GetOptionalService<IJobQueue>();
+        if (jobStore == null || jobQueue == null)
+        {
+            await fixture.DisposeAsync();
+            return; // Job orchestration not registered; skip.
+        }
+
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Queued",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "test-admin-cancel-remove-failure"
+                }
+            };
+
+            await jobStore.TryCreateAsync(jobRecord, TimeSpan.FromMinutes(5));
+            await jobQueue.EnqueueAsync(operationId);
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-remove-failure");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var updatedJob = await jobStore.GetAsync(operationId);
+            updatedJob.Should().NotBeNull();
+            updatedJob!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+
+            var updatedProgress = await progressStore.GetProgressAsync(operationId);
+            updatedProgress.Should().NotBeNull();
+            updatedProgress!.Status.Should().Be(OperationStatus.Cancelled);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenDurableCancelCannotBeConfirmed_Returns409AndPreservesProgress()
+    {
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue);
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Queued",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "test-admin-cancel-unconfirmed"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord, jobRecord, jobRecord, jobRecord);
+            jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns(false);
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-unconfirmed");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+            var updatedProgress = await progressStore.GetProgressAsync(operationId);
+            updatedProgress.Should().NotBeNull();
+            updatedProgress!.Status.Should().NotBe(OperationStatus.Cancelled);
+
+            await jobQueue.DidNotReceive().RemoveAsync(operationId, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteQueuedNeverSubmitted_CancelsLocallyWithoutCallingBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
+        cancellationNotifier.Cancel(Arg.Any<string>()).Returns(false);
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(cancellationNotifier);
+                services.AddSingleton(backend);
+            });
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-never-submitted"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-never-submitted");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await backend.DidNotReceive().CancelAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<CancellationToken>());
+            await jobStore.Received(1).TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(j =>
+                    j.OperationId == operationId &&
+                    j.Status == ExecutionJobStatus.Cancelled &&
+                    j.CompletedAt.HasValue &&
+                    j.CurrentPhase == "Cancelled before submission"),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // Regression: a remote job the reconciler re-queued for retry sits at
+    // Queued + AttemptCount > 0 + NextRetryAt != null + ProviderOperationId == null. The
+    // admin cancel surface must treat that between-retries state as pre-submission and must
+    // not invoke backend.CancelAsync against the stale (possibly TTL-cleaned) prior attempt.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
+        cancellationNotifier.Cancel(Arg.Any<string>()).Returns(false);
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(cancellationNotifier);
+                services.AddSingleton(backend);
+            });
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                AttemptCount = 1,
+                ProviderOperationId = null,
+                NextRetryAt = now.AddSeconds(15),
+                CurrentPhase = "Retrying (attempt 2/3)",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-retry-backoff"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-retry-backoff");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await backend.DidNotReceive().CancelAsync(
+                Arg.Any<ExecutionJobRecord>(),
+                Arg.Any<CancellationToken>());
+            await jobStore.Received(1).TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(j =>
+                    j.OperationId == operationId &&
+                    j.Status == ExecutionJobStatus.Cancelled &&
+                    j.CompletedAt.HasValue &&
+                    j.CurrentPhase == "Cancelled before submission"),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteQueuedNeverSubmitted_CasFailure_Returns409()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+
+        var jobStore = Substitute.For<IExecutionJobStore>();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
+        cancellationNotifier.Cancel(Arg.Any<string>()).Returns(false);
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IJobCancellationNotifier>();
+                services.AddSingleton(cancellationNotifier);
+                services.AddSingleton(backend);
+            });
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cas-failure"
+                }
+            };
+
+            var runningRecord = jobRecord with
+            {
+                Status = ExecutionJobStatus.Running,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord, runningRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+            jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns(false);
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cas-failure");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteBackendReturnsNonterminal_PersistsCancellationRequestedAt()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Running,
+                Message = "Cancellation pending"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services => services.AddSingleton(backend));
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Processing",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-nonterminal"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-nonterminal");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await jobStore.Received().TrySetAsync(
+                Arg.Is<ExecutionJobRecord>(j =>
+                    j.OperationId == operationId &&
+                    j.CancellationRequestedAt.HasValue &&
+                    j.Status == ExecutionJobStatus.Running),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>());
+
+            var polled = await progressStore.GetProgressAsync<GeoprocessingProgress>(operationId);
+            polled.Should().NotBeNull();
+            polled!.CurrentPhase.Should().Be("Cancellation pending");
+            polled.WorkflowStatus.Should().Be(GeoprocessingWorkflowStatus.Running);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteBackendReturnsSucceeded_Returns409()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Succeeded,
+                Message = "Job already completed"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services => services.AddSingleton(backend));
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Processing",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-terminal-race"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-terminal-race");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenRemoteBackendReturnsFailed_Returns409()
+    {
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new BatchComputeBackendCapabilities
+        {
+            SupportsCancellation = true
+        });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = "Job already failed"
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var jobQueue = Substitute.For<IJobQueue>();
+        var fixture = new WebAppFixture()
+            .ReplaceService<IExecutionJobStore>(jobStore)
+            .ReplaceService<IJobQueue>(jobQueue)
+            .ConfigureServices(services => services.AddSingleton(backend));
+
+        await fixture.InitializeAsync();
+
+        var client = fixture.Client;
+        var progressStore = fixture.GetService<IUniversalProgressStore>();
+        var operationId = $"gp-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = operationId,
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Processing",
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.AwsBatch,
+                    Backend = "aws-batch",
+                    WorkloadName = "test-admin-cancel-failed-race"
+                }
+            };
+
+            jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+                .Returns(jobRecord);
+            jobStore.ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<ExecutionJobRecord>());
+
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(operationId, "admin-cancel-failed-race");
+            await progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+
+            var response = await client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            await progressStore.DeleteProgressAsync(operationId);
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -199,7 +1209,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_AlreadyCancelled_ReturnsIdempotent()
+    public async Task CancelOperation_AlreadyCancelled_ReturnsIdempotent200()
     {
         var operationId = Guid.NewGuid().ToString("N");
         var progress = UploadProgress.CreateInitial(operationId, "double-cancel.geojson", 10) with
@@ -212,12 +1222,12 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
-    public async Task CancelOperation_CompletedOperation_ReturnsBadRequest()
+    public async Task CancelOperation_CompletedOperation_Returns409Conflict()
     {
         var operationId = Guid.NewGuid().ToString("N");
         var progress = UploadProgress.CreateInitial(operationId, "completed.geojson", 50) with
@@ -230,7 +1240,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [IntegrationTest]
@@ -263,6 +1273,63 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_PublishingType_ReturnsWorkflowFields()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var intentId = Guid.NewGuid().ToString("N");
+        var progress = PublishingProgress.CreateExecuting(operationId, intentId) with
+        {
+            ServiceId = "svc-" + Guid.NewGuid().ToString("N")
+        };
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Publishing");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+
+        var op = operations[0];
+        GetPropertyCaseInsensitive(op, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(op, "intentId").GetString().Should().Be(intentId);
+        GetPropertyCaseInsensitive(op, "serviceId").GetString().Should().Be(progress.ServiceId);
+        GetPropertyCaseInsensitive(op, "intentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
+    public async Task GetOperationStatus_PublishingType_ReturnsWorkflowFields()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var intentId = Guid.NewGuid().ToString("N");
+        var progress = PublishingProgress.CreateExecuting(operationId, intentId) with
+        {
+            ServiceId = "svc-" + Guid.NewGuid().ToString("N")
+        };
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(json.RootElement, "intentId").GetString().Should().Be(intentId);
+        GetPropertyCaseInsensitive(json.RootElement, "serviceId").GetString().Should().Be(progress.ServiceId);
+        GetPropertyCaseInsensitive(json.RootElement, "intentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
     public async Task ListActiveOperations_WhenNoneActive_ReturnsEmptyList()
     {
         // Use a unique type filter to avoid matching other operations
@@ -275,6 +1342,108 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         // The response should be parseable and contain an operations array
         var operations = GetOperationsArray(json.RootElement);
         operations.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
+    public async Task GetOperationStatus_DeploymentType_ReturnsLifecycleFields()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateRollingOut(operationId, deploymentId, RolloutState.InProgress);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync($"/api/v1/admin/operations/{operationId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(json.RootElement, "deploymentId").GetString().Should().Be(deploymentId);
+        GetPropertyCaseInsensitive(json.RootElement, "deploymentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        GetPropertyCaseInsensitive(json.RootElement, "rolloutState").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_DeploymentType_ReturnsLifecycleFields()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateProvisioning(operationId, deploymentId);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Deployment");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        operations.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+
+        var op = operations.EnumerateArray()
+            .First(e => GetPropertyCaseInsensitive(e, "operationId").GetString() == operationId);
+        GetPropertyCaseInsensitive(op, "type").GetInt32().Should().Be((int)OperationType.Deployment);
+        GetPropertyCaseInsensitive(op, "deploymentId").GetString().Should().Be(deploymentId);
+        GetPropertyCaseInsensitive(op, "deploymentStatus").ValueKind.Should().NotBe(JsonValueKind.Undefined);
+        CountPropertiesIgnoringCase(op, "operationId").Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/type/{operationType}")]
+    public async Task GetOperationsByType_DeploymentType_ReturnsOperations()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateInitial(operationId, deploymentId);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.GetAsync("/api/v1/admin/operations/type/Deployment");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        var operations = GetOperationsArray(json.RootElement);
+        var op = operations.EnumerateArray()
+            .First(e => GetPropertyCaseInsensitive(e, "operationId").GetString() == operationId);
+        GetPropertyCaseInsensitive(op, "type").GetInt32().Should().Be((int)OperationType.Deployment);
+        GetPropertyCaseInsensitive(op, "deploymentId").GetString().Should().Be(deploymentId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_DeploymentType_PersistsCancelledStateWithNormalizedRollout()
+    {
+        var operationId = $"deploy-{Guid.NewGuid():N}";
+        var deploymentId = $"dep-{Guid.NewGuid():N}";
+        var progress = DeploymentProgress.CreateRollingOut(operationId, deploymentId, RolloutState.InProgress);
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        GetPropertyCaseInsensitive(json.RootElement, "operationId").GetString().Should().Be(operationId);
+        GetPropertyCaseInsensitive(json.RootElement, "type").GetInt32().Should().Be((int)OperationType.Deployment);
+
+        var updated = await _progressStore.GetProgressAsync<DeploymentProgress>(operationId);
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(OperationStatus.Cancelled);
+        updated.DeploymentStatus.Should().Be(DeploymentStatus.Cancelled);
+        updated.RolloutState.Should().Be(RolloutState.Cancelled);
     }
 
     private static JsonElement GetOperationsArray(JsonElement root)
@@ -322,5 +1491,43 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         }
 
         return count;
+    }
+
+    private sealed class ThrowingRemoveJobQueue : IJobQueue
+    {
+        private readonly HashSet<string> _operationIds = [];
+
+        public Task EnqueueAsync(
+            string operationId,
+            OperationPriority priority = OperationPriority.Normal,
+            CancellationToken cancellationToken = default)
+        {
+            _operationIds.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_operationIds.FirstOrDefault());
+
+        public Task RequeueAsync(
+            string operationId,
+            OperationPriority priority = OperationPriority.Normal,
+            TimeSpan? visibleAfter = null,
+            CancellationToken cancellationToken = default)
+        {
+            _operationIds.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveAsync(
+            string operationId,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Simulated queue removal failure");
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult((long)_operationIds.Count);
     }
 }

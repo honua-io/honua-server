@@ -134,6 +134,9 @@ public static class HonuaTelemetry
 
         /// <summary>Anomaly detection activity.</summary>
         public const string AnomalyDetection = "honua.ml.anomaly_detection";
+
+        /// <summary>Operator execution admission evaluation activity.</summary>
+        public const string ExecutionAdmission = "honua.execution.admission";
     }
 
     /// <summary>
@@ -269,6 +272,12 @@ public static class HonuaTelemetry
 
         /// <summary>Real-time feature-change streaming (WebSocket/SSE).</summary>
         public const string Streaming = "Streaming";
+
+        /// <summary>GeoServices GPServer REST API.</summary>
+        public const string GPServer = "GPServer";
+
+        /// <summary>Model Context Protocol operator surface.</summary>
+        public const string Mcp = "Mcp";
     }
 
     /// <summary>

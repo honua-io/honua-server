@@ -5,6 +5,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Import.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -103,7 +104,8 @@ internal static partial class GeoServerImportEndpoints
                 Password = request.Password,
                 TimeoutSeconds = request.TimeoutSeconds ?? 120,
                 IncludeCompatibilityAnalysis = request.IncludeCompatibilityAnalysis ?? true,
-                IncludeStyleContent = request.IncludeStyleContent ?? false
+                IncludeStyleContent = request.IncludeStyleContent ?? false,
+                AllowUnsafeLocalUrls = allowUnsafeLocalUrls
             };
 
             var serviceInfo = await importService.DiscoverServiceAsync(discoveryRequest, cancellationToken);
@@ -184,6 +186,13 @@ internal static partial class GeoServerImportEndpoints
             return;
         }
 
+        var queuedCredentialValidationError = ValidateQueuedCredentialRequest(context, request);
+        if (queuedCredentialValidationError != null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, queuedCredentialValidationError, StatusCodes.Status400BadRequest);
+            return;
+        }
+
         try
         {
             jobManager = context.RequestServices.GetRequiredService<GeoServerImportJobManager>();
@@ -205,9 +214,9 @@ internal static partial class GeoServerImportEndpoints
                 JobId = jobId,
                 GeoServerRestUrl = request.GeoServerRestUrl,
                 Username = request.Username,
-                Password = request.Password,
+                PasswordSecretReference = request.PasswordSecretReference,
                 TargetHonuaUrl = request.TargetHonuaUrl ?? "https://localhost", // Placeholder for dry run
-                HonuaApiKey = request.HonuaApiKey,
+                HonuaApiKeySecretReference = request.HonuaApiKeySecretReference,
                 WorkspaceNames = request.WorkspaceNames,
                 DataStoreNames = request.DataStoreNames,
                 LayerNames = request.LayerNames,
@@ -227,7 +236,8 @@ internal static partial class GeoServerImportEndpoints
                     ContinueOnResourceFailure = request.ImportOptions.ContinueOnResourceFailure ?? true,
                     WorkspaceNameMappings = request.ImportOptions.WorkspaceNameMappings,
                     DefaultWorkspaceName = request.ImportOptions.DefaultWorkspaceName ?? "geoserver-import"
-                } : null
+                } : null,
+                AllowUnsafeLocalUrls = allowUnsafeLocalStartUrls
             };
 
             var progress = GeoServerImportProgress.CreateInitial(
@@ -267,16 +277,9 @@ internal static partial class GeoServerImportEndpoints
                     statusCode: StatusCodes.Status202Accepted)
                 .ExecuteAsync(context);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import queue is unavailable", StringComparison.OrdinalIgnoreCase))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import", StringComparison.OrdinalIgnoreCase) && ex.Message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
         {
-            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
-            {
-                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
+            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
 
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(
@@ -286,14 +289,7 @@ internal static partial class GeoServerImportEndpoints
         }
         catch (ArgumentException ex)
         {
-            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
-            {
-                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
+            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
 
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(
@@ -303,17 +299,75 @@ internal static partial class GeoServerImportEndpoints
         }
         catch (Exception ex)
         {
-            if (jobManager != null && !string.IsNullOrWhiteSpace(jobId) && !jobQueued)
-            {
-                await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    CancellationToken.None).ConfigureAwait(false);
-            }
+            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
 
             Log.ImportStartFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static string? ValidateQueuedCredentialRequest(HttpContext context, GeoServerImportApiRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            return "Password must be provided as passwordSecretReference for queued GeoServer imports.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.HonuaApiKey))
+        {
+            return "HonuaApiKey must be provided as honuaApiKeySecretReference for queued GeoServer imports.";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PasswordSecretReference) &&
+            string.IsNullOrWhiteSpace(request.HonuaApiKeySecretReference))
+        {
+            return null;
+        }
+
+        var secretProvider = context.RequestServices.GetService<ISecretProvider>();
+        if (!IsSupportedSecretReference(request.PasswordSecretReference, secretProvider))
+        {
+            return "PasswordSecretReference must use a supported secret reference format.";
+        }
+
+        if (!IsSupportedSecretReference(request.HonuaApiKeySecretReference, secretProvider))
+        {
+            return "HonuaApiKeySecretReference must use a supported secret reference format.";
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedSecretReference(string? secretReference, ISecretProvider? secretProvider)
+    {
+        if (string.IsNullOrWhiteSpace(secretReference))
+        {
+            return true;
+        }
+
+        return SecretReferenceResolver.IsEnvironmentReference(secretReference) ||
+            (secretProvider?.IsSecretReference(secretReference) ?? false);
+    }
+
+    private static async Task TryRollbackQueuedStateAsync(
+        GeoServerImportJobManager? jobManager, string? jobId, bool jobQueued)
+    {
+        if (jobManager == null || string.IsNullOrWhiteSpace(jobId) || jobQueued)
+        {
+            return;
+        }
+
+        try
+        {
+            await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
+                jobManager.RequestStore,
+                jobManager.ProgressStore,
+                jobId,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort rollback; state will expire via TTL.
         }
     }
 

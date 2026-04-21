@@ -25,12 +25,16 @@ public sealed class VerticalSliceIsolationTests
         "Geocoding",
         "Geoprocessing",
         "GeometryService",
+        "Grounding",
         "ImageServer",
         "MapServer",
+        "Mcp",
         "Ogc",
         "OgcFeatures",
         "OgcMaps",
+        "OgcProcesses",
         "OgcTiles",
+        "Orchestration",
         "Tiles",
         "Wfs20",
         "OData",
@@ -48,6 +52,22 @@ public sealed class VerticalSliceIsolationTests
         "StaticMap",
         "SpatialAnalytics"
     };
+
+    /// <summary>
+    /// Protocol-adapter features that are allowed to consume a specific domain
+    /// feature's transport-neutral services. The Mcp operator surface adapts
+    /// <c>IGeoprocessingJobService</c> the same way the gRPC and GPServer
+    /// adapters do, but lives in its own vertical slice per ticket #728.
+    /// Grounding is a domain feature that reuses the Geoprocessing process
+    /// catalog + destructive classifier per ticket #742. Each entry lists the
+    /// cross-feature references permitted for the key.
+    /// </summary>
+    private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
+        new(StringComparer.Ordinal)
+        {
+            ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
+            ["Grounding"] = new[] { "Geoprocessing" }
+        };
 
     [ArchitectureTest]
     public void Features_ShouldNotDirectlyReference_OtherFeatures()
@@ -126,6 +146,47 @@ public sealed class VerticalSliceIsolationTests
     }
 
     [ArchitectureTest]
+    public void Mcp_ShouldNotReference_OtherProtocolAdapters()
+    {
+        var serverAssembly = typeof(EndpointRegistry).Assembly;
+        var mcpTypes = GetTypesInFeature(serverAssembly, "Mcp");
+
+        var forbiddenNamespaces = new[]
+        {
+            "Honua.Server.Features.Grpc",
+            "Honua.Server.Features.Geoprocessing.GPServer"
+        };
+
+        var violations = new List<string>();
+        foreach (var type in mcpTypes)
+        {
+            foreach (var referenced in CollectReferencedTypes(type))
+            {
+                var ns = referenced.Namespace;
+                if (string.IsNullOrEmpty(ns))
+                {
+                    continue;
+                }
+
+                foreach (var forbidden in forbiddenNamespaces)
+                {
+                    if (ns.Equals(forbidden, StringComparison.Ordinal) ||
+                        ns.StartsWith(forbidden + ".", StringComparison.Ordinal))
+                    {
+                        violations.Add(
+                            $"Mcp type '{type.FullName}' references '{referenced.FullName}' from '{forbidden}'. " +
+                            $"The MCP operator surface must only consume canonical domain services, not other protocol adapters.");
+                    }
+                }
+            }
+        }
+
+        violations.Should().BeEmpty(
+            "The MCP feature must only adapt transport-neutral domain services (Geoprocessing), " +
+            "not other protocol adapters like Grpc or the GPServer REST endpoints.");
+    }
+
+    [ArchitectureTest]
     public void FeatureNamespaces_ShouldMatchDirectoryStructure()
     {
         var serverAssembly = typeof(EndpointRegistry).Assembly;
@@ -169,7 +230,14 @@ public sealed class VerticalSliceIsolationTests
     private static List<string> FindCrossFeatureReferences(Type[] featureTypes, string currentFeature)
     {
         var violations = new List<string>();
-        var otherFeatures = _featureNames.Where(f => f != currentFeature && f is not ("Infrastructure" or "Ogc" or "Wfs20")).ToArray();
+        var allowed = _allowedCrossFeatureRefs.TryGetValue(currentFeature, out var permitted)
+            ? permitted
+            : Array.Empty<string>();
+        var otherFeatures = _featureNames
+            .Where(f => f != currentFeature
+                && f is not ("Infrastructure" or "Ogc" or "Wfs20")
+                && !allowed.Contains(f, StringComparer.Ordinal))
+            .ToArray();
 
         foreach (var type in featureTypes)
         {
@@ -273,6 +341,69 @@ public sealed class VerticalSliceIsolationTests
             return true;
 
         return false;
+    }
+
+    private static IEnumerable<Type> CollectReferencedTypes(Type type)
+    {
+        var seen = new HashSet<Type>();
+
+        foreach (var field in type.GetFields(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+        {
+            foreach (var t in Expand(field.FieldType))
+            {
+                if (seen.Add(t)) yield return t;
+            }
+        }
+
+        foreach (var property in type.GetProperties(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+        {
+            foreach (var t in Expand(property.PropertyType))
+            {
+                if (seen.Add(t)) yield return t;
+            }
+        }
+
+        foreach (var constructor in type.GetConstructors(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance))
+        {
+            foreach (var parameter in constructor.GetParameters())
+            {
+                foreach (var t in Expand(parameter.ParameterType))
+                {
+                    if (seen.Add(t)) yield return t;
+                }
+            }
+        }
+
+        foreach (var method in type.GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
+        {
+            foreach (var t in Expand(method.ReturnType))
+            {
+                if (seen.Add(t)) yield return t;
+            }
+
+            foreach (var parameter in method.GetParameters())
+            {
+                foreach (var t in Expand(parameter.ParameterType))
+                {
+                    if (seen.Add(t)) yield return t;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<Type> Expand(Type type)
+    {
+        yield return type;
+        if (type.IsGenericType)
+        {
+            foreach (var arg in type.GetGenericArguments())
+            {
+                foreach (var inner in Expand(arg))
+                {
+                    yield return inner;
+                }
+            }
+        }
     }
 
     private static string FindProjectRoot(string startPath)

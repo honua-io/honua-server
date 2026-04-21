@@ -2,154 +2,99 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Grpc.Core;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ServiceDefaults;
-using Microsoft.Extensions.DependencyInjection;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Geoprocessing;
 
 /// <summary>
 /// gRPC service implementation for typed geoprocessing execution and job lifecycle management.
+/// Thin proto-to-domain translator that delegates to <see cref="IGeoprocessingJobService"/>.
 /// </summary>
 internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
-    private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
-
-    private readonly IExecutionJobStore? _jobStore;
-    private readonly IUniversalProgressStore _progressStore;
-    private readonly IJobCancellationNotifier _cancellationNotifier;
-    private readonly IOperatorAuthorizationEvaluator _authEvaluator;
-    private readonly IOperatorApprovalEvaluator _approvalEvaluator;
+    private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<HonuaProcessService> _logger;
 
-    [ActivatorUtilitiesConstructor]
     public HonuaProcessService(
-        IUniversalProgressStore progressStore,
-        IJobCancellationNotifier cancellationNotifier,
-        IOperatorAuthorizationEvaluator authEvaluator,
-        IOperatorApprovalEvaluator approvalEvaluator,
-        ILogger<HonuaProcessService> logger,
-        IExecutionJobStore? jobStore = null)
+        IGeoprocessingJobService jobService,
+        ILogger<HonuaProcessService> logger)
     {
-        _jobStore = jobStore;
-        _progressStore = progressStore;
-        _cancellationNotifier = cancellationNotifier;
-        _authEvaluator = authEvaluator;
-        _approvalEvaluator = approvalEvaluator;
+        _jobService = jobService;
         _logger = logger;
     }
 
-    public HonuaProcessService(
-        IExecutionJobStore jobStore,
-        IUniversalProgressStore progressStore,
-        IJobCancellationNotifier cancellationNotifier,
-        IOperatorAuthorizationEvaluator authEvaluator,
-        IOperatorApprovalEvaluator approvalEvaluator)
-        : this(progressStore, cancellationNotifier, authEvaluator, approvalEvaluator,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance, jobStore)
-    {
-    }
-
-    public override async Task<Proto.ValidatePlanResponse> ValidatePlan(
+    public override Task<Proto.ValidatePlanResponse> ValidatePlan(
         Proto.ValidatePlanRequest request,
         ServerCallContext context)
     {
         EnrichActivity("ValidatePlan");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Read).ConfigureAwait(false);
 
-        var plan = request.Plan;
-        ValidatePlanStructure(plan);
-
-        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(plan);
-
-        var violations = new List<GeoprocessingValidationFailure>();
-        var warnings = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(domainPlan.PlanId))
+        try
         {
-            violations.Add(new GeoprocessingValidationFailure
-            {
-                Code = "EMPTY_PLAN_ID",
-                Message = "Plan identifier is required.",
-                FieldPath = "plan_id"
-            });
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Read);
+
+            ValidateProtoStructure(request.Plan);
+            var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
+            var result = _jobService.ValidatePlan(domainPlan, context.GetHttpContext().User);
+            return Task.FromResult(GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result));
         }
-
-        if (domainPlan.Steps.Count == 0)
+        catch (Exception ex) when (ex is not RpcException)
         {
-            violations.Add(new GeoprocessingValidationFailure
-            {
-                Code = "EMPTY_STEPS",
-                Message = "Plan must contain at least one step.",
-                FieldPath = "steps"
-            });
+            throw MapToRpcException(ex);
         }
-
-        var approvalReq = _approvalEvaluator.Evaluate(
-            context.GetHttpContext().User,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Process,
-                Operation = OperatorOperation.Execute
-            });
-
-        var result = new PlanValidationResult
-        {
-            IsExecutable = violations.Count == 0,
-            RequiresApproval = approvalReq.IsRequired,
-            Violations = violations,
-            Warnings = warnings
-        };
-
-        GeoprocessingServiceLog.PlanValidated(_logger, domainPlan.PlanId ?? "", result.IsExecutable, violations.Count);
-
-        return GeoprocessingConversionHelpers.ToProtoValidatePlanResponse(result);
     }
 
-    public override async Task<Proto.DryRunPlanResponse> DryRunPlan(
+    public override Task<Proto.DryRunPlanResponse> DryRunPlan(
         Proto.DryRunPlanRequest request,
         ServerCallContext context)
     {
         EnrichActivity("DryRunPlan");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Read).ConfigureAwait(false);
 
-        var plan = request.Plan;
-        ValidatePlanStructure(plan);
-
-        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(plan);
-
-        var result = new DryRunResult
+        try
         {
-            EstimatedDurationSeconds = 0,
-            EstimatedArtifacts = domainPlan.Outputs,
-            SideEffects = []
-        };
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Read);
 
-        GeoprocessingServiceLog.DryRunCompleted(_logger, domainPlan.PlanId, result.EstimatedDurationSeconds);
-
-        return GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result);
+            ValidateProtoStructure(request.Plan);
+            var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
+            var result = _jobService.DryRunPlan(domainPlan, context.GetHttpContext().User);
+            return Task.FromResult(GeoprocessingConversionHelpers.ToProtoDryRunPlanResponse(result));
+        }
+        catch (Exception ex) when (ex is not RpcException)
+        {
+            throw MapToRpcException(ex);
+        }
     }
 
-    public override async Task<Proto.ExecutePlanResponse> ExecutePlan(
+    public override Task<Proto.ExecutePlanResponse> ExecutePlan(
         Proto.ExecutePlanRequest request,
         ServerCallContext context)
     {
         EnrichActivity("ExecutePlan");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Execute).ConfigureAwait(false);
 
-        throw new RpcException(new Status(
-            StatusCode.Unimplemented,
-            "Synchronous plan execution is not yet available. Use SubmitPlanJob for asynchronous execution."));
+        try
+        {
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+            throw new RpcException(new Status(
+                StatusCode.Unimplemented,
+                "Synchronous plan execution is not yet available. Use SubmitPlanJob for asynchronous execution."));
+        }
+        catch (Exception ex) when (ex is not RpcException)
+        {
+            throw MapToRpcException(ex);
+        }
     }
 
     public override async Task<Proto.ExecutionJob> SubmitPlanJob(
@@ -157,67 +102,28 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("SubmitPlanJob");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Process, OperatorOperation.Execute).ConfigureAwait(false);
 
-        var plan = request.Plan;
-        ValidatePlanStructure(plan);
-        EnsurePlanExecutable(plan);
-        EnsureApproved(context);
-
-        var jobStore = RequireJobStore();
-        var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(plan);
-        var now = DateTimeOffset.UtcNow;
-        var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey;
-        var jobId = CreateJobId(idempotencyKey);
-        var requestFingerprint = CreateRequestFingerprint(domainPlan);
-
-        var jobRecord = new ExecutionJobRecord
+        try
         {
-            OperationId = jobId,
-            Status = ExecutionJobStatus.Queued,
-            CreatedAt = now,
-            UpdatedAt = now,
-            CurrentPhase = "Queued",
-            Audit = new OperationAuditInfo
-            {
-                IdempotencyKey = idempotencyKey,
-                RequestedBy = context.GetHttpContext().User.Identity?.Name,
-                RequestFingerprint = requestFingerprint
-            },
-            Spec = new ExecutionJobSpec
-            {
-                Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
-                WorkloadName = $"geoprocessing:{domainPlan.PlanId}"
-            }
-        };
+            _jobService.EnsureCallerAuthorized(
+                context.GetHttpContext().User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
 
-        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: context.CancellationToken)
-            .ConfigureAwait(false);
-
-        if (!created)
-        {
-            var existing = await jobStore.GetAsync(jobId, context.CancellationToken).ConfigureAwait(false);
-            if (existing != null)
-            {
-                EnsureMatchingIdempotentRequest(existing, requestFingerprint);
-                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
-                return GeoprocessingConversionHelpers.ToProtoExecutionJob(existing);
-            }
-
-            throw new RpcException(new Status(StatusCode.Internal,
-                "Failed to create or locate execution job."));
+            ValidateProtoStructure(request.Plan);
+            var domainPlan = GeoprocessingConversionHelpers.ToDomainPlan(request.Plan);
+            var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+                ? null
+                : request.IdempotencyKey;
+            var jobRecord = await _jobService.SubmitJobAsync(
+                domainPlan, idempotencyKey,
+                context.GetHttpContext().User, null, context.CancellationToken).ConfigureAwait(false);
+            return GeoprocessingConversionHelpers.ToProtoExecutionJob(jobRecord);
         }
-
-        var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, domainPlan.PlanId);
-        await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        GeoprocessingServiceLog.JobSubmitted(_logger, jobId, domainPlan.PlanId);
-        GeoprocessingServiceLog.JobSubmittedStubbed(_logger, jobId);
-
-        return GeoprocessingConversionHelpers.ToProtoExecutionJob(jobRecord);
+        catch (Exception ex) when (ex is not RpcException)
+        {
+            throw MapToRpcException(ex);
+        }
     }
 
     public override async Task<Proto.ExecutionJob> GetJob(
@@ -225,24 +131,17 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("GetJob");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Job, OperatorOperation.Read).ConfigureAwait(false);
 
-        if (string.IsNullOrWhiteSpace(request.JobId))
+        try
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "Job identifier is required."));
+            var job = await _jobService.GetJobAsync(
+                request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
+            return GeoprocessingConversionHelpers.ToProtoExecutionJob(job);
         }
-
-        var jobStore = RequireJobStore();
-        var job = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
-        if (job == null)
+        catch (Exception ex) when (ex is not RpcException)
         {
-            GeoprocessingServiceLog.JobNotFound(_logger, request.JobId);
-            throw new RpcException(new Status(StatusCode.NotFound, $"Job '{request.JobId}' not found."));
+            throw MapToRpcException(ex);
         }
-
-        GeoprocessingServiceLog.JobRetrieved(_logger, request.JobId, job.Status.ToString());
-
-        return GeoprocessingConversionHelpers.ToProtoExecutionJob(job);
     }
 
     public override async Task<Proto.AnalysisResultPackage> GetJobResults(
@@ -250,34 +149,17 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("GetJobResults");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Job, OperatorOperation.Read).ConfigureAwait(false);
 
-        if (string.IsNullOrWhiteSpace(request.JobId))
+        try
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "Job identifier is required."));
+            var results = await _jobService.GetJobResultsAsync(
+                request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
+            return GeoprocessingConversionHelpers.ToProtoResultPackage(results);
         }
-
-        var jobStore = RequireJobStore();
-        var job = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
-        if (job == null)
+        catch (Exception ex) when (ex is not RpcException)
         {
-            GeoprocessingServiceLog.JobNotFound(_logger, request.JobId);
-            throw new RpcException(new Status(StatusCode.NotFound, $"Job '{request.JobId}' not found."));
+            throw MapToRpcException(ex);
         }
-
-        if (!IsTerminal(job.Status))
-        {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                $"Job '{request.JobId}' has not reached a terminal state (current: {job.Status})."));
-        }
-
-        GeoprocessingServiceLog.JobResultsUnavailable(_logger, request.JobId);
-
-        throw new RpcException(new Status(
-            StatusCode.NotFound,
-            $"Result package for job '{request.JobId}' is not yet available. " +
-            "Result storage will be implemented with the execution engine."));
     }
 
     public override async Task<Proto.CancelJobResponse> CancelJob(
@@ -285,147 +167,24 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         ServerCallContext context)
     {
         EnrichActivity("CancelJob");
-        await EnsureAuthorizedAsync(context, OperatorResourceType.Job, OperatorOperation.Execute).ConfigureAwait(false);
 
-        if (string.IsNullOrWhiteSpace(request.JobId))
+        try
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "Job identifier is required."));
-        }
-
-        var jobStore = RequireJobStore();
-        var job = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
-        if (job == null)
-        {
-            GeoprocessingServiceLog.JobNotFound(_logger, request.JobId);
-            throw new RpcException(new Status(StatusCode.NotFound, $"Job '{request.JobId}' not found."));
-        }
-
-        if (job.Status == ExecutionJobStatus.Cancelled)
-        {
+            await _jobService.CancelJobAsync(
+                request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
             return new Proto.CancelJobResponse();
         }
-
-        if (IsTerminal(job.Status))
+        catch (Exception ex) when (ex is not RpcException)
         {
-            GeoprocessingServiceLog.CancelRejectedTerminal(_logger, request.JobId, job.Status.ToString());
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                $"Job '{request.JobId}' is in terminal state '{job.Status}' and cannot be cancelled."));
+            throw MapToRpcException(ex);
         }
-
-        var workerOwnsTerminalState = _cancellationNotifier.Cancel(request.JobId);
-
-        if (workerOwnsTerminalState)
-        {
-            GeoprocessingServiceLog.JobCancellationDelegated(_logger, request.JobId);
-            return new Proto.CancelJobResponse();
-        }
-
-        var latest = await jobStore.GetAsync(request.JobId, context.CancellationToken).ConfigureAwait(false);
-        if (latest != null && IsTerminal(latest.Status))
-        {
-            return new Proto.CancelJobResponse();
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        var cancelled = (latest ?? job) with
-        {
-            Status = ExecutionJobStatus.Cancelled,
-            UpdatedAt = now,
-            CompletedAt = now,
-            CurrentPhase = "Cancelled"
-        };
-
-        await jobStore.SetAsync(cancelled, cancellationToken: context.CancellationToken).ConfigureAwait(false);
-
-        var progress = await _progressStore.GetProgressAsync<GeoprocessingProgress>(
-            request.JobId, context.CancellationToken).ConfigureAwait(false);
-        if (progress != null)
-        {
-            var cancelledProgress = progress.WithCancellation(now, "Cancelled");
-            await _progressStore.SetProgressAsync(
-                request.JobId, cancelledProgress, ProgressRetention, context.CancellationToken).ConfigureAwait(false);
-        }
-
-        GeoprocessingServiceLog.JobCancelled(_logger, request.JobId);
-
-        return new Proto.CancelJobResponse();
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    private async Task EnsureAuthorizedAsync(
-        ServerCallContext context,
-        OperatorResourceType resourceType,
-        OperatorOperation operation)
-    {
-        var httpContext = context.GetHttpContext();
-        var decision = await _authEvaluator.EvaluateAsync(httpContext.User, new OperatorAuthorizationRequest
-        {
-            ResourceType = resourceType,
-            Operation = operation
-        }, context.CancellationToken).ConfigureAwait(false);
-
-        if (decision.IsAllowed)
-        {
-            return;
-        }
-
-        GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
-
-        throw new RpcException(new Status(
-            decision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
-            decision.RequiresAuthentication
-                ? "Authentication is required for this operation."
-                : "You do not have permission to perform this operation."));
-    }
-
-    private void EnsureApproved(ServerCallContext context)
-    {
-        var approval = _approvalEvaluator.Evaluate(
-            context.GetHttpContext().User,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Process,
-                Operation = OperatorOperation.Execute
-            });
-
-        if (!approval.IsRequired)
-        {
-            return;
-        }
-
-        GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
-
-        throw new RpcException(new Status(
-            StatusCode.FailedPrecondition,
-            $"This operation requires approval (policy: {approval.PolicyRef}). " +
-            "Use ValidatePlan to check approval requirements before submission."));
-    }
-
-    private IExecutionJobStore RequireJobStore()
-        => _jobStore ?? throw new RpcException(new Status(
-            StatusCode.Unavailable,
-            "Job operations require Redis-backed durable storage. Ensure a valid Redis connection is configured."));
-
-    private static void EnsurePlanExecutable(Proto.AnalysisPlan plan)
-    {
-        if (string.IsNullOrWhiteSpace(plan.PlanId))
-        {
-            throw new RpcException(new Status(StatusCode.InvalidArgument,
-                "Plan identifier is required for job submission."));
-        }
-
-        if (plan.Steps.Count == 0)
-        {
-            throw new RpcException(new Status(StatusCode.InvalidArgument,
-                "Plan must contain at least one step for job submission."));
-        }
-    }
-
-    private static void ValidatePlanStructure(Proto.AnalysisPlan? plan)
+    private static void ValidateProtoStructure(Proto.AnalysisPlan? plan)
     {
         if (plan == null)
         {
@@ -451,80 +210,51 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         }
     }
 
-    private static string CreateJobId(string? idempotencyKey)
+    private static RpcException MapToRpcException(Exception ex) => ex switch
     {
-        if (string.IsNullOrWhiteSpace(idempotencyKey))
-        {
-            return $"gp-{Guid.NewGuid():N}";
-        }
+        OperationCanceledException => new RpcException(new Status(StatusCode.Cancelled, "The operation was cancelled.")),
 
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim()));
-        return $"gp-{Convert.ToHexString(hashBytes.AsSpan(0, 12)).ToLowerInvariant()}";
-    }
+        TimeoutException timeoutEx => new RpcException(new Status(
+            StatusCode.DeadlineExceeded,
+            timeoutEx.Message)),
 
-    private static string CreateRequestFingerprint(AnalysisPlan plan)
-    {
-        using var buffer = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("planId", plan.PlanId);
-            writer.WriteString("intentId", plan.IntentId);
+        GeoprocessingAuthorizationException authEx => new RpcException(new Status(
+            authEx.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
+            authEx.Message)),
 
-            writer.WriteStartArray("steps");
-            foreach (var step in plan.Steps)
+        GeoprocessingApprovalRequiredException approvalEx => new RpcException(new Status(
+            StatusCode.FailedPrecondition, approvalEx.Message)),
+
+        GeoprocessingNotFoundException notFoundEx => new RpcException(new Status(
+            StatusCode.NotFound, notFoundEx.Message)),
+
+        GeoprocessingPreconditionFailedException preconditionEx => new RpcException(new Status(
+            StatusCode.FailedPrecondition, preconditionEx.Message)),
+
+        GeoprocessingValidationException validationEx => new RpcException(new Status(
+            StatusCode.InvalidArgument, validationEx.Message)),
+
+        GeoprocessingStoreUnavailableException storeEx => new RpcException(new Status(
+            StatusCode.Unavailable, storeEx.Message)),
+
+        GeoprocessingIdempotencyConflictException conflictEx => new RpcException(new Status(
+            StatusCode.AlreadyExists, conflictEx.Message)),
+
+        GeoprocessingAdmissionException admissionEx => new RpcException(
+            new Status(StatusCode.ResourceExhausted, admissionEx.Message),
+            new Metadata
             {
-                writer.WriteStartObject();
-                writer.WriteString("stepId", step.StepId);
-                writer.WriteString("kind", step.Kind.ToString());
-                writer.WriteString("processId", step.ProcessId ?? "");
+                { "honua-admission-outcome", admissionEx.Outcome.ToString() },
+                { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },
+                { "honua-admission-policy-ref", admissionEx.PolicyRef },
+                { "retry-after", admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+            }),
 
-                writer.WriteStartArray("inputs");
-                foreach (var kv in step.Inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("Key", kv.Key);
-                    writer.WriteString("Value", kv.Value);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndArray();
+        InvalidOperationException opEx => new RpcException(new Status(
+            StatusCode.Internal, opEx.Message)),
 
-                writer.WriteStartArray("dependsOn");
-                foreach (var d in step.DependsOn.OrderBy(d => d, StringComparer.Ordinal))
-                {
-                    writer.WriteStringValue(d);
-                }
-                writer.WriteEndArray();
-
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
-
-            writer.WriteStartArray("outputs");
-            foreach (var o in plan.Outputs.Select(o => o.ToString()).OrderBy(o => o, StringComparer.Ordinal))
-            {
-                writer.WriteStringValue(o);
-            }
-            writer.WriteEndArray();
-
-            writer.WriteEndObject();
-        }
-
-        return Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant();
-    }
-
-    private static void EnsureMatchingIdempotentRequest(ExecutionJobRecord existing, string requestFingerprint)
-    {
-        var existingFingerprint = existing.Audit.RequestFingerprint;
-        if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
-            string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        throw new RpcException(new Status(StatusCode.AlreadyExists,
-            "Idempotency key is already associated with a different request."));
-    }
+        _ => new RpcException(new Status(StatusCode.Internal, "An unexpected error occurred."))
+    };
 
     private static void EnrichActivity(string operation)
     {
@@ -537,9 +267,4 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
         activity.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
     }
-
-    private static bool IsTerminal(ExecutionJobStatus status)
-        => status is ExecutionJobStatus.Succeeded
-            or ExecutionJobStatus.Failed
-            or ExecutionJobStatus.Cancelled;
 }

@@ -161,8 +161,8 @@ public class OgcMapsConformanceTests : IAsyncLifetime
 
         classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
             "must declare CRS conformance");
-        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
-            "must declare spatial subsetting conformance");
+        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox",
+            "must declare bbox conformance (narrower than spatial-subsetting, which would also require the `subset` dimension parameter)");
     }
 
     [IntegrationTest]

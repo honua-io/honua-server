@@ -45,7 +45,14 @@
         "summary": "Get OGC API Maps OpenAPI document",
         "responses": {
           "200": {
-            "description": "OpenAPI document"
+            "description": "OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           }
         }
       }
@@ -55,7 +62,67 @@
         "summary": "Render a dataset map",
         "responses": {
           "200": {
-            "description": "Rendered map image"
+            "description": "Rendered map image",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/tiff": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid map request parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for at least one requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collections are not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No renderable collections were found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -69,13 +136,74 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 0
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Rendered map image"
+            "description": "Rendered map image",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/tiff": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid collection identifier or map request parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found or has no renderable map data",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -89,13 +217,97 @@
             "in": "path",
             "required": true,
             "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tileset metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TileSetsList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid collection identifier",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}": {
+      "get": {
+        "summary": "Get collection map tileset",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "tileMatrixSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Tileset metadata"
+            "description": "Tileset metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TileSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid collection identifier",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection or tile matrix set not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       }
@@ -183,6 +395,176 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        }
+      },
+      "TileSetsList": {
+        "type": "object",
+        "required": [
+          "tilesets"
+        ],
+        "properties": {
+          "tilesets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TileSetItem"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
+        }
+      },
+      "TileSetItem": {
+        "type": "object",
+        "required": [
+          "dataType",
+          "crs",
+          "tileMatrixSetId",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "crs": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tileMatrixSetId": {
+            "type": "string"
+          },
+          "tileMatrixSetURI": {
+            "type": "string"
+          },
+          "tileMatrixSetLimits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TileMatrixSetLimit"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
+        }
+      },
+      "TileSet": {
+        "type": "object",
+        "required": [
+          "dataType",
+          "crs",
+          "tileMatrixSetId",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "crs": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tileMatrixSetId": {
+            "type": "string"
+          },
+          "tileMatrixSetURI": {
+            "type": "string"
+          },
+          "tileMatrixSetLimits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TileMatrixSetLimit"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          },
+          "mediaTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TileMatrixSetLimit": {
+        "type": "object",
+        "required": [
+          "tileMatrix",
+          "minTileRow",
+          "maxTileRow",
+          "minTileCol",
+          "maxTileCol"
+        ],
+        "properties": {
+          "tileMatrix": {
+            "type": "string"
+          },
+          "minTileRow": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxTileRow": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minTileCol": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxTileCol": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

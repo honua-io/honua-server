@@ -8,11 +8,11 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service), STAC API, OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, and vector tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads.
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service), STAC API, OGC API Features/Maps/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -41,10 +41,10 @@ docker run -p 8080:8080 \
 **Kubernetes**:
 
 ```bash
-helm dependency update infrastructure/helm/honua
-helm install honua infrastructure/helm/honua \
-  --set secret.env.ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=honua;Password=honua" \
-  --set secret.env.HONUA_ADMIN_PASSWORD="change-me"
+# Helm charts live in the separate honua-helm repository:
+# https://github.com/honua-io/honua-helm
+#
+# Follow that repository's chart README for the current chart path and values.
 ```
 
 **.NET Aspire** (local dev with dashboard for traces, logs, metrics):
@@ -71,10 +71,13 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri Leaflet, Esri map clients |
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
+| GeoServices REST GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, Esri geoprocessing SDKs (async submit, job status, cancel; synchronous execute pending) |
+| MCP Operator JSON-RPC | `/mcp` | AI agents, operator automation, MCP clients |
 | STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |
 | OGC API Features | `/ogc/features` | QGIS, OpenLayers, MapLibre, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients, custom web apps |
 | OGC API Tiles | `/ogc/tiles` | QGIS, OpenLayers, MapLibre |
+| OGC API Processes | `/ogc/processes` | OGC-compliant process clients |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
 | Vector Tiles (MVT) | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, OpenLayers, Leaflet, Mapbox GL |
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
@@ -83,6 +86,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
+| OpenAPI (OGC Processes) | `/ogc/processes/openapi.json` | Any HTTP client |
 | API Explorer (Scalar) | `/docs` | Browser *(dev mode or `HONUA_SERVE_API_DOCS=true`)* |
 | Health | `/healthz/live`, `/healthz/ready` | Load balancers, orchestrators |
 
@@ -93,6 +97,12 @@ Please use these forms instead of blank issues so reports include enough detail 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
+
+**Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, dismiss, and job results over the canonical geoprocessing runtime. `/ogc/processes/jobs/{jobId}/results` returns `200 OK` with a document-mode JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is wired).
+
+**AI operator workflows** — MCP JSON-RPC on `/mcp` exposes plan validation, dry runs, execution submission, cancellation, and job/result resource reads over the same canonical geoprocessing runtime used by gRPC and GPServer. Natural-language grounding and clarification (`honua_ground_candidates`, `honua_clarify_intent`) are functional over the built-in process and layer catalogs; remaining planning, workspace, and catalog contracts are discoverable as authenticated `not_implemented` placeholders so clients can bind before the upstream services land.
+
+**Workflow orchestration** — Declarative multi-step DAG workflows compose canonical analysis plans into chained, scheduled, and dependency-aware runs. Steps wire upstream artifacts to downstream inputs, support per-step retry policies and failure propagation, and execute over the durable job orchestration substrate. A cron scheduler fires time-triggered workflows with replica-safe deduplication. Requires Redis.
 
 **Catalog discovery** — STAC catalog, collections, items, and item-search with extension-aware metadata, collection license defaults, cross-protocol links to OGC API Features, and conditional GET support on catalog metadata routes.
 
