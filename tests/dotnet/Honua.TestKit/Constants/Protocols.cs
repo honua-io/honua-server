@@ -150,4 +150,9 @@ public static class Protocols
     /// result packages, map/app outputs).
     /// </summary>
     public const string OperatorEval = "OperatorEval";
+
+    /// <summary>
+    /// Declarative spec plan/apply engine (HTTP /v1/spec/* and gRPC SpecService).
+    /// </summary>
+    public const string Spec = "Spec";
 }

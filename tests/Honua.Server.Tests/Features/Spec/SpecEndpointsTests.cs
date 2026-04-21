@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Spec;
 
@@ -13,9 +15,12 @@ namespace Honua.Server.Tests.Features.Spec;
 /// event shape, plan structure, artifact retrieval, and error envelopes — the
 /// operator-facing evidence for ticket #789's acceptance criteria.
 /// </summary>
+[Protocol(Protocols.Spec)]
 public sealed class SpecEndpointsTests
 {
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_LinearChain_ReturnsDagWithContentHashesInTopologicalOrder()
     {
         using var factory = new TestWebApplicationFactory();
@@ -44,7 +49,9 @@ public sealed class SpecEndpointsTests
         Assert.Equal("a", nodes[1].GetProperty("dependsOn")[0].GetString());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()
     {
         using var factory = new TestWebApplicationFactory();
@@ -61,7 +68,9 @@ public sealed class SpecEndpointsTests
         Assert.Equal("dag-cycle", payload.RootElement.GetProperty("code").GetString());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_WithoutEventStreamAccept_Returns400()
     {
         using var factory = new TestWebApplicationFactory();
@@ -75,7 +84,9 @@ public sealed class SpecEndpointsTests
         Assert.Equal("accept-required", payload.RootElement.GetProperty("code").GetString());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_LinearChain_StreamsSseEvents_AndSucceeds()
     {
         using var factory = new TestWebApplicationFactory();
@@ -100,7 +111,9 @@ public sealed class SpecEndpointsTests
         Assert.False(summary.GetProperty("cancelled").GetBoolean());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_RerunSameDocument_YieldsCachedEventsForEveryNode()
     {
         using var factory = new TestWebApplicationFactory();
@@ -127,7 +140,9 @@ public sealed class SpecEndpointsTests
         Assert.Contains("b", cachedKinds);
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("POST /v1/spec/cancel")]
     public async Task Cancel_UnknownToken_Returns404WithApplyTokenUnknown()
     {
         using var factory = new TestWebApplicationFactory();
@@ -142,7 +157,9 @@ public sealed class SpecEndpointsTests
         Assert.Equal("apply-token-unknown", payload.RootElement.GetProperty("code").GetString());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.JobDismiss)]
+    [Endpoint("POST /v1/spec/cancel")]
     public async Task Cancel_MissingToken_Returns400()
     {
         using var factory = new TestWebApplicationFactory();
@@ -157,7 +174,9 @@ public sealed class SpecEndpointsTests
         Assert.Equal("apply-token-missing", payload.RootElement.GetProperty("code").GetString());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /v1/spec/artifact/{hash}")]
     public async Task Artifact_UnknownHash_Returns404WithArtifactNotFound()
     {
         using var factory = new TestWebApplicationFactory();
@@ -170,7 +189,9 @@ public sealed class SpecEndpointsTests
         Assert.Equal("artifact-not-found", payload.RootElement.GetProperty("code").GetString());
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /v1/spec/artifact/{hash}")]
     public async Task Artifact_AfterApply_ReturnsStoredBytes()
     {
         using var factory = new TestWebApplicationFactory();

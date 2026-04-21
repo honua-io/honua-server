@@ -1411,6 +1411,67 @@
           "versionCaptureRule": "Pin MCP_SDK_REF to an immutable tag or commit SHA and capture the checked-out honua-sdk-js/mcp package version plus mcp-llm-smoke-transcripts artifact names."
         }
       ]
+    },
+    {
+      "surfaceId": "spec-engine",
+      "displayName": "Spec plan/apply engine",
+      "surfaceKind": "mixed-surface",
+      "protocol": "HTTP+gRPC",
+      "canonicalIdentifier": "/v1/spec/* + geospatial.v1.SpecService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/v1/spec/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.SpecService/PlanSpec",
+        "Grpc::geospatial.v1.SpecService/ApplySpec",
+        "Grpc::geospatial.v1.SpecService/CancelApply"
+      ],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus Spec HTTP endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/Spec/SpecEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#789",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage plus SpecService gRPC integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/Spec/GrpcSpecServiceIntegrationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#789",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "ci:proto-wire-governance",
+          "evidenceLocations": [
+            ".github/workflows/proto-wire-governance.yml",
+            "src/Honua.Core/Transport/Proto/geospatial/v1/spec_service.proto"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#789",
+          "versionCaptureRule": null
+        }
+      ]
     }
   ]
 }
