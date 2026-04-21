@@ -130,9 +130,16 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
                 $"{primary.Code}: {primary.Message}"));
         }
 
-        // Surface the apply token via trailers so clients can correlate
-        // with /v1/spec/cancel (REST) or CancelApply (gRPC).
-        context.ResponseTrailers.Add("x-spec-apply-token", handle.ApplyToken);
+        // Surface the apply token as initial response metadata so clients can
+        // correlate with CancelApply (gRPC) or /v1/spec/cancel (REST) while the
+        // stream is still active. gRPC trailers are only delivered when the
+        // RPC closes, so a client that keyed off trailers could not cancel an
+        // in-flight run — initial metadata is flushed before the first event.
+        var initialMetadata = new Metadata
+        {
+            { "x-spec-apply-token", handle.ApplyToken }
+        };
+        await context.WriteResponseHeadersAsync(initialMetadata).ConfigureAwait(false);
 
         // context.CancellationToken is cancelled when the client disconnects
         // from the stream; this only stops our outbound writes. The apply run

@@ -9,11 +9,16 @@ namespace Honua.Core.Features.Spec.Abstractions;
 /// Content-hash-keyed artifact cache for spec compute outputs.
 /// </summary>
 /// <remarks>
-/// The cache is keyed by <c>sha256(grammar_version || process_family_version
-/// || canonical_spec_fragment || sorted(input_hashes))</c>. Entries are
-/// addressable via <see cref="CachedArtifactRef.Uri"/>. Mutable sources
-/// without pinned versions receive TTL-backed entries; all other entries live
-/// until the content hash changes.
+/// Keys are produced by <c>SpecContentHashCalculator</c>:
+/// <c>sha256(grammar_version || process_family_version || node_id || node_kind
+/// || node_op || canonical_fragment OR sorted(parameters + source_pins)
+/// || sorted(input_hashes))</c>. The canonical-fragment branch is used when
+/// the upstream has emitted a canonicalised JSON fragment; otherwise the
+/// calculator falls back to a deterministic serialisation of the node's
+/// parameter and source-pin bags. Entries are addressable via
+/// <see cref="CachedArtifactRef.Uri"/>. Mutable sources without pinned
+/// versions receive TTL-backed entries; all other entries live until the
+/// content hash changes.
 /// </remarks>
 public interface IContentHashArtifactCache
 {

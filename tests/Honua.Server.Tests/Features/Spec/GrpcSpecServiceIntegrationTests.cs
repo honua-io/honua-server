@@ -86,6 +86,37 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_ApplyToken_ExposedInInitialMetadataBeforeStreamCompletes()
+    {
+        // Apply token correlation for CancelApply must be discoverable while
+        // the stream is still active. gRPC trailers are only flushed on RPC
+        // close, so the service must deliver the token via initial response
+        // metadata (ResponseHeadersAsync) before the first event frame.
+        var request = new Proto.ApplySpecRequest
+        {
+            Document = BuildDocument("node-a"),
+            CacheMode = Proto.SpecCacheMode.ReadWrite,
+            MaxConcurrency = 1
+        };
+
+        using var call = _client.ApplySpec(request);
+
+        var headers = await call.ResponseHeadersAsync;
+        headers.Should().NotBeNull();
+        var tokenEntry = headers.GetValue("x-spec-apply-token");
+        tokenEntry.Should().NotBeNullOrEmpty();
+
+        await foreach (var evt in call.ResponseStream.ReadAllAsync())
+        {
+            // The token on each event must match the one surfaced in initial
+            // metadata so REST/gRPC clients can correlate interchangeably.
+            evt.ApplyToken.Should().Be(tokenEntry);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
     public async Task ApplySpec_FatalDocumentError_RaisesInvalidArgumentBeforeStream()
     {
         // Cycles / duplicate ids / unresolved refs must surface as

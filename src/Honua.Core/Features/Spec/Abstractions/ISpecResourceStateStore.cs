@@ -11,9 +11,15 @@ namespace Honua.Core.Features.Spec.Abstractions;
 /// </summary>
 /// <remarks>
 /// The slot is reserved for S2. The S1 implementation throws
-/// <see cref="SpecExecutionException"/> with <see cref="SpecDiagnosticCodes.SpecKindNotInS1"/>
-/// on write calls; <see cref="ReadCurrentAsync"/> returns <c>null</c> so the
-/// planner can report the missing resource as <c>unknown-service</c>.
+/// <see cref="SpecExecutionException"/> with
+/// <see cref="SpecDiagnosticCodes.SpecKindNotInS1"/> on write calls;
+/// <see cref="ReadCurrentAsync"/> returns <c>null</c> because no entries have
+/// been written. The S1 plan / apply surface does not consult this store —
+/// planner rejects <c>dataset</c> / <c>service</c> / <c>app</c> nodes with
+/// <c>spec-kind-not-in-s1</c> purely from the declared kind, and the
+/// orchestrator hard-fails the same kinds before dispatching. The
+/// <c>unknown-service</c> / <c>unknown-reference</c> diagnostics stay with
+/// the planner's unresolved <c>@</c> reference handling in S1.
 /// </remarks>
 public interface ISpecResourceStateStore
 {

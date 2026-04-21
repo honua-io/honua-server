@@ -24,7 +24,7 @@ the grammar / validator pipeline. Top-level fields:
 |---|---|---|
 | `grammarVersion` | yes | Participates in the content-hash cache key. Missing values hard-fail with `version-skew`. |
 | `processFamilyVersion` | yes | Participates in the cache key. |
-| `specId` | no | Captured on the canonical document for downstream use; S1 does not surface it in telemetry. Apply-event correlation flows through the apply token (`X-Spec-Apply-Token` / `x-spec-apply-token` trailer). Never part of the cache key. |
+| `specId` | no | Captured on the canonical document for downstream use; S1 does not surface it in telemetry. Apply-event correlation flows through the apply token (`X-Spec-Apply-Token` response header on REST, `x-spec-apply-token` initial metadata on gRPC). Never part of the cache key. |
 | `nodes` | yes | Author-order node list. Cycles and duplicate ids hard-fail. |
 
 Each `nodes[*]` entry:
@@ -115,7 +115,10 @@ curl -N -X POST http://localhost:8080/v1/spec/apply \
 ```
 
 The apply token is returned via the `X-Spec-Apply-Token` response header
-(REST) or the `x-spec-apply-token` trailer (gRPC).
+(REST) or the `x-spec-apply-token` initial metadata entry (gRPC,
+`ServerCallContext.WriteResponseHeadersAsync`). Initial metadata is flushed
+before the first event frame so clients can issue `CancelApply` /
+`/v1/spec/cancel` while the stream is still active.
 
 Structural errors in the document (cycles, duplicate ids, unresolved `@`
 references) are surfaced as `400 Bad Request` / `InvalidArgument` **before**
@@ -249,6 +252,7 @@ Admin tooling keys off these strings:
 | `apply-cancelled` | warning | A deferred node was skipped because the apply was cancelled cooperatively. The terminal `ApplyCancelled` frame itself carries only the aggregate `summary` (with `cancelled: true`); clients key off the summary rather than a repeated diagnostic. |
 | `read-only-cache-miss` | error | `ReadOnly` apply encountered a cache miss. The executor is intentionally not invoked and no synthetic hash is written. |
 | `unknown-kind` | error | Node omits the `kind` field (REST) or sends `SPEC_RESOURCE_KIND_UNSPECIFIED` (gRPC). Rejected at the transport boundary so operator typos do not silently dispatch through the compute executor. |
+| `unknown-cache-mode` | error | Request declared a `cacheMode` that is not one of `ReadWrite`, `ReadOnly`, or `Bypass`. Rejected at the transport boundary so forward-rolled clients or numeric enum values do not silently coerce to `ReadWrite`. |
 
 ## Telemetry
 

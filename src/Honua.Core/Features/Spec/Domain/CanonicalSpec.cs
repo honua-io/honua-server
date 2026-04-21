@@ -28,8 +28,12 @@ public sealed record CanonicalSpecDocument
     public required string ProcessFamilyVersion { get; init; }
 
     /// <summary>
-    /// Optional stable identifier for the spec document; not part of the cache
-    /// key but surfaced in telemetry and apply-event correlation.
+    /// Optional stable identifier for the spec document. Captured on the
+    /// canonical document for downstream use and never participates in the
+    /// content-hash cache key. In S1 it is not surfaced in telemetry tags or
+    /// apply-event fields — apply-event correlation flows through the apply
+    /// token (<c>X-Spec-Apply-Token</c> header on REST, <c>x-spec-apply-token</c>
+    /// initial metadata on gRPC).
     /// </summary>
     public string? SpecId { get; init; }
 
