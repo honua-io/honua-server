@@ -330,6 +330,50 @@ public sealed class SpecEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /v1/spec/plan")]
+    public async Task Plan_BlankNodeId_Returns400WithInvalidNodeId()
+    {
+        // Blank ids previously planned and applied, emitting blank `nodeId`
+        // values in the event stream. The resolver now rejects them with a
+        // stable `invalid-node-id` diagnostic that surfaces at the REST
+        // boundary.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(ComputeNode(""));
+
+        using var response = await client.PostAsync("/v1/spec/plan", JsonContent(document));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-node-id", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_BlankNodeId_Returns400WithoutOpeningStream()
+    {
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = BuildDocument(ComputeNode("   "));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("invalid-node-id", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /v1/spec/apply")]
     public async Task Apply_Cycle_Returns400WithoutOpeningStream()

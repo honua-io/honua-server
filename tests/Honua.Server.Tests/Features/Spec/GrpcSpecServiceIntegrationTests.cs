@@ -265,6 +265,68 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    public async Task PlanSpec_BlankNodeId_RaisesInvalidArgument()
+    {
+        // Proto3 scalar `string` defaults to empty, so an unset `id` field
+        // serializes the same as an explicit blank. The resolver must reject
+        // with the stable `invalid-node-id` diagnostic so the gRPC adapter
+        // surfaces InvalidArgument before any plan is built.
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = string.Empty,
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.PlanSpecRequest { Document = document };
+
+        var act = async () => await _client.PlanSpecAsync(request);
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("invalid-node-id");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_BlankNodeId_RaisesInvalidArgumentBeforeStream()
+    {
+        var document = new Proto.CanonicalSpecDocument
+        {
+            GrammarVersion = "grammar/1.0",
+            ProcessFamilyVersion = "family/1.0"
+        };
+        document.Nodes.Add(new Proto.CanonicalSpecNode
+        {
+            Id = "   ",
+            Kind = Proto.SpecResourceKind.Compute,
+            Op = "compute.noop"
+        });
+
+        var request = new Proto.ApplySpecRequest { Document = document };
+
+        var act = async () =>
+        {
+            using var call = _client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("invalid-node-id");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
     public async Task PlanSpec_VersionSkew_RaisesInvalidArgument()
     {
         var document = new Proto.CanonicalSpecDocument

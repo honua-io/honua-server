@@ -322,6 +322,93 @@ public class SpecApplyOrchestratorTests
     }
 
     [Fact]
+    public async Task Apply_EnumeratorCancellationDuringQuietPeriod_DetachesStreamImmediately()
+    {
+        // Regression for the review finding: ReadEventsAsync used to await
+        // WaitToReadAsync without honouring the enumerator token, so a caller
+        // that cancelled during a long quiet period stayed attached until the
+        // next event or the terminal frame fired. The iterator now threads the
+        // [EnumeratorCancellation] token through WaitToReadAsync, so
+        // `WithCancellation(...)` on both REST (RequestAborted) and gRPC
+        // (context.CancellationToken) detaches immediately. The orchestrator
+        // CTS is not touched — the background run must continue.
+        var fixture = new OrchestratorFixture();
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        fixture.Executor.HookBeforeExecute("slow", async ct =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(ct).ConfigureAwait(false);
+        });
+
+        var handle = await fixture.Engine.StartAsync(
+            Document(ComputeNode("slow")),
+            new SpecApplyOptions(),
+            CancellationToken.None);
+
+        using var enumeratorCts = new CancellationTokenSource();
+
+        await started.Task;
+
+        // Drive the enumerator until it blocks: drain any frames already in
+        // the channel, then race MoveNextAsync against a small delay. The node
+        // is parked in its hook, so once the initial frames (ApplyStarted,
+        // Queued, Running) drain, the iterator awaits WaitToReadAsync. If the
+        // enumerator token is not honoured, MoveNextAsync hangs past the delay
+        // and the assertion below fails; with the fix in place, cancelling
+        // trips WaitToReadAsync and MoveNextAsync throws OCE promptly.
+        var enumerator = handle.Events.GetAsyncEnumerator(enumeratorCts.Token);
+        var observed = new List<SpecApplyEvent>();
+        try
+        {
+            while (true)
+            {
+                var moveTask = enumerator.MoveNextAsync().AsTask();
+                var drainTimeout = Task.Delay(200);
+                var winner = await Task.WhenAny(moveTask, drainTimeout);
+                if (winner == drainTimeout)
+                {
+                    // Iterator is parked on WaitToReadAsync. Cancel and verify
+                    // detachment is prompt rather than waiting for the next
+                    // event. A 2s budget is generous for a local WaitToReadAsync
+                    // trip; without the fix the task would hang indefinitely.
+                    enumeratorCts.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                        async () => await moveTask.WaitAsync(TimeSpan.FromSeconds(2)));
+                    break;
+                }
+
+                if (!await moveTask)
+                {
+                    Assert.Fail("Stream terminated before enumerator could be quiesced.");
+                }
+
+                observed.Add(enumerator.Current);
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+
+        Assert.Contains(observed, e => e.Kind == SpecApplyEventKind.ApplyStarted);
+
+        // The background run is intentionally decoupled from the caller — it
+        // must still reach a terminal state after we let the hook finish. We
+        // wait on the token registry because TryCancel/completion both release
+        // the token; neither depends on the enumerator being alive.
+        release.TrySetResult();
+
+        using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (fixture.Tokens.Contains(handle.ApplyToken))
+        {
+            await Task.Delay(20, drainCts.Token);
+        }
+
+        Assert.Equal(1, fixture.Executor.InvocationCount);
+    }
+
+    [Fact]
     public async Task Apply_CallerCancellation_DoesNotStopRun()
     {
         // Regression test for the review finding: SSE/gRPC stream disconnects

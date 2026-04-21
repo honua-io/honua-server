@@ -68,4 +68,7 @@ public static class SpecDiagnosticCodes
 
     /// <summary>Request declared a cache mode that is not one of <c>ReadWrite</c>, <c>ReadOnly</c>, or <c>Bypass</c>.</summary>
     public const string UnknownCacheMode = "unknown-cache-mode";
+
+    /// <summary>Node declared without a usable identifier — null, empty, or whitespace.</summary>
+    public const string InvalidNodeId = "invalid-node-id";
 }

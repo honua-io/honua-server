@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
@@ -762,10 +763,16 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
     private static async IAsyncEnumerable<SpecApplyEvent> ReadEventsAsync(
         ChannelReader<SpecApplyEvent> reader,
-        string applyToken)
+        string applyToken,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         _ = applyToken; // reserved for future filtering; keeps call-site self-documenting
-        while (await reader.WaitToReadAsync().ConfigureAwait(false))
+        // Both transports feed their disconnect token through `WithCancellation`
+        // on the enumerator; honour it at the wait so a client drop during a
+        // long quiet period detaches immediately instead of waiting for the next
+        // event or the terminal frame. The background apply run is unaffected —
+        // its lifetime is owned by the orchestrator CTS, not this iterator.
+        while (await reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
         {
             while (reader.TryRead(out var evt))
             {

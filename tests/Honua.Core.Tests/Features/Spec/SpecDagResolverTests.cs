@@ -158,6 +158,52 @@ public class SpecDagResolverTests
         Assert.Equal(new[] { "src" }, resolution.Dependencies["a"]);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    public void Resolve_BlankNodeId_EmitsInvalidNodeIdAndBlocks(string blankId)
+    {
+        // Regression for the review finding: the public contract documents
+        // node ids as "stable node identifiers", but the resolver only guarded
+        // duplicates, cycles, and unresolved references. A document with
+        // `id: ""` therefore planned and applied successfully and emitted blank
+        // `nodeId` values in the event stream. Reject at the resolver so both
+        // REST and gRPC surface a stable diagnostic without reaching the
+        // executor.
+        var document = Document(
+            Node(blankId),
+            Node("b"));
+
+        var resolution = SpecDagResolver.Resolve(document);
+
+        Assert.True(resolution.HasFatalErrors);
+        Assert.Empty(resolution.Order);
+        var diag = Assert.Single(resolution.Diagnostics, d => d.Code == SpecDiagnosticCodes.InvalidNodeId);
+        Assert.Equal(SpecDiagnosticSeverity.Error, diag.Severity);
+    }
+
+    [Fact]
+    public void Resolve_MultipleBlankIds_EmitOnePerOffendingNode()
+    {
+        // Distinct blank-id nodes are all surfaced so an operator fixing a
+        // large document sees the full list in one round-trip rather than
+        // playing whack-a-mole through repeat plan attempts. Blank ids must not
+        // collapse into `duplicate-node-id`, which would mislead operators
+        // hunting for two nodes that share a valid identifier.
+        var document = Document(
+            Node(""),
+            Node(" "),
+            Node("c"));
+
+        var resolution = SpecDagResolver.Resolve(document);
+
+        Assert.True(resolution.HasFatalErrors);
+        var invalidIds = resolution.Diagnostics.Where(d => d.Code == SpecDiagnosticCodes.InvalidNodeId).ToList();
+        Assert.Equal(2, invalidIds.Count);
+        Assert.DoesNotContain(resolution.Diagnostics, d => d.Code == SpecDiagnosticCodes.DuplicateNodeId);
+    }
+
     private static CanonicalSpecDocument Document(params CanonicalSpecNode[] nodes) => new()
     {
         GrammarVersion = "grammar/1.0",

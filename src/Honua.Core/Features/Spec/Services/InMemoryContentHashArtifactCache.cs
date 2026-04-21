@@ -84,12 +84,38 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
 
         var entry = new CacheEntry(reference, bytes);
         _entries[payload.ContentHash] = entry;
+
+        // Opportunistically reclaim TTL-expired entries on write. Without this
+        // sweep, a workload that keeps producing unique mutable-source hashes
+        // leaves expired byte arrays resident until the same hash is read again
+        // — which may never happen, because the same mutable source is unlikely
+        // to rehash to a previously-cached key. The sweep is O(n) in the number
+        // of entries, but only inspects TTL-backed ones and uses a conditional
+        // TryRemove, so it is safe against concurrent reads on the live entries.
+        SweepExpired(producedAt);
+
         return Task.FromResult(reference);
     }
 
     private bool IsExpired(CacheEntry entry)
     {
         return entry.Reference.ExpiresAt is DateTimeOffset expiry && expiry <= _timeProvider.GetUtcNow();
+    }
+
+    private void SweepExpired(DateTimeOffset asOf)
+    {
+        foreach (var kvp in _entries)
+        {
+            if (kvp.Value.Reference.ExpiresAt is DateTimeOffset expiry && expiry <= asOf)
+            {
+                // Conditional TryRemove: atomically removes only when the slot
+                // still holds the exact CacheEntry we observed. Concurrent
+                // writers that replaced the slot with a fresh entry keep it
+                // untouched, because the record equality over a new byte[] and
+                // fresh CachedArtifactRef will not match the captured one.
+                _entries.TryRemove(kvp);
+            }
+        }
     }
 
     private sealed record CacheEntry(CachedArtifactRef Reference, byte[] Bytes);

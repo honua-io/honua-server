@@ -245,6 +245,7 @@ Admin tooling keys off these strings:
 | `dag-cycle` | error | Spec declares a cycle. |
 | `duplicate-node-id` | error | Two nodes share an id. |
 | `unresolved-reference` | error | `@` reference points to a missing id. |
+| `invalid-node-id` | error | Node declared without a usable `id` (null, empty, or whitespace). Rejected by the resolver before duplicate / dependency analysis so the diagnostic surface is unambiguous. |
 | `invalid-request-body` | error | Request body could not be parsed as a canonical spec document. |
 | `apply-token-unknown` | error | Cancel targets a token the in-process registry does not know (usually after a restart). |
 | `artifact-not-found` | error | Requested artifact hash is unknown or evicted. |

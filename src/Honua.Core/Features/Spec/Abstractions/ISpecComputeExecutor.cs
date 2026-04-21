@@ -22,8 +22,12 @@ public interface ISpecComputeExecutor
     /// <param name="contentHash">Cache key the orchestrator reserved.</param>
     /// <param name="inputs">Resolved upstream artifact references keyed by
     /// node id.</param>
-    /// <param name="cancellationToken">Cancellation token that is tripped by
-    /// both client cancellation and <c>POST /v1/spec/cancel</c>.</param>
+    /// <param name="cancellationToken">Orchestrator-owned apply token. Tripped
+    /// by explicit cooperative cancellation (<c>POST /v1/spec/cancel</c> /
+    /// <c>SpecService.CancelApply</c>) only. The apply run is deliberately
+    /// decoupled from the originating HTTP/gRPC request — SSE or gRPC stream
+    /// disconnects do <b>not</b> propagate here, so executors should not treat
+    /// this token as a client-liveness signal.</param>
     Task<SpecComputeResult> ExecuteAsync(
         CanonicalSpecNode node,
         string contentHash,

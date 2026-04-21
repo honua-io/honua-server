@@ -24,9 +24,28 @@ internal static class SpecDagResolver
         var diagnostics = new List<SpecWarning>();
         var nodes = new Dictionary<string, CanonicalSpecNode>(StringComparer.Ordinal);
         var duplicates = new HashSet<string>(StringComparer.Ordinal);
+        var hasInvalidId = false;
 
         foreach (var node in document.Nodes)
         {
+            // Blank node ids silently produce blank `nodeId` values in plan and
+            // apply output, violating the documented "stable node identifier"
+            // contract. Reject before duplicate/dependency analysis so the
+            // diagnostic surface is unambiguous — otherwise two blank-id nodes
+            // would also trip `duplicate-node-id`, masking the real cause.
+            if (string.IsNullOrWhiteSpace(node.Id))
+            {
+                hasInvalidId = true;
+                diagnostics.Add(new SpecWarning
+                {
+                    Code = SpecDiagnosticCodes.InvalidNodeId,
+                    Message = "Node declared without a usable id (null, empty, or whitespace).",
+                    Severity = SpecDiagnosticSeverity.Error,
+                    Remedy = "Set 'id' to a stable, non-blank identifier unique within the document."
+                });
+                continue;
+            }
+
             if (!nodes.TryAdd(node.Id, node))
             {
                 if (duplicates.Add(node.Id))
@@ -41,6 +60,18 @@ internal static class SpecDagResolver
                     });
                 }
             }
+        }
+
+        // Short-circuit if any node id is invalid — downstream reference
+        // resolution would otherwise walk the partial `nodes` map with the
+        // survivors and surface misleading unresolved-reference errors.
+        if (hasInvalidId)
+        {
+            return new SpecDagResolution(
+                Order: [],
+                Dependencies: new Dictionary<string, List<string>>(StringComparer.Ordinal),
+                Diagnostics: diagnostics,
+                HasFatalErrors: true);
         }
 
         var dependencies = new Dictionary<string, List<string>>(StringComparer.Ordinal);
