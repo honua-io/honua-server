@@ -65,4 +65,7 @@ public static class SpecDiagnosticCodes
 
     /// <summary>Node declared without a resource kind (REST omitted field, gRPC <c>SPEC_RESOURCE_KIND_UNSPECIFIED</c>).</summary>
     public const string UnknownKind = "unknown-kind";
+
+    /// <summary>Request declared a cache mode that is not one of <c>ReadWrite</c>, <c>ReadOnly</c>, or <c>Bypass</c>.</summary>
+    public const string UnknownCacheMode = "unknown-cache-mode";
 }

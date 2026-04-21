@@ -155,9 +155,26 @@ internal static class SpecProtoMapping
 
     public static SpecCacheMode FromProto(Proto.SpecCacheMode mode) => mode switch
     {
+        // Unspecified is the wire default and mirrors "omitted" on the REST
+        // side; both paths coerce to ReadWrite per the published contract.
+        Proto.SpecCacheMode.Unspecified => SpecCacheMode.ReadWrite,
+        Proto.SpecCacheMode.ReadWrite => SpecCacheMode.ReadWrite,
         Proto.SpecCacheMode.ReadOnly => SpecCacheMode.ReadOnly,
         Proto.SpecCacheMode.Bypass => SpecCacheMode.Bypass,
-        _ => SpecCacheMode.ReadWrite
+        // Invariant: HonuaSpecService.ApplySpec rejects undefined numeric
+        // values with unknown-cache-mode before this mapping runs, so reaching
+        // the default arm means the caller bypassed the boundary check. Throw
+        // rather than silently coerce to ReadWrite.
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "SpecCacheMode must be validated before mapping.")
+    };
+
+    public static bool IsDefinedCacheMode(Proto.SpecCacheMode mode) => mode switch
+    {
+        Proto.SpecCacheMode.Unspecified => true,
+        Proto.SpecCacheMode.ReadWrite => true,
+        Proto.SpecCacheMode.ReadOnly => true,
+        Proto.SpecCacheMode.Bypass => true,
+        _ => false
     };
 
     public static Proto.SpecResourceKind ToProto(SpecResourceKind kind) => kind switch

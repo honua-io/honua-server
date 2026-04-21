@@ -232,6 +232,40 @@ public sealed class SpecEndpointsTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /v1/spec/apply")]
+    public async Task Apply_NumericCacheModeOutOfRange_Returns400WithoutOpeningStream()
+    {
+        // JsonStringEnumConverter still accepts numeric enum values, so a
+        // client sending "cacheMode": 999 would otherwise land in the gRPC
+        // mapping's catch-all arm and silently flow through as ReadWrite. The
+        // transport boundary must reject with the stable `unknown-cache-mode`
+        // code before the apply starts.
+        using var factory = new TestWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var document = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["grammarVersion"] = "grammar/1.0",
+            ["processFamilyVersion"] = "family/1.0",
+            ["nodes"] = new[] { ComputeNode("a") },
+            ["cacheMode"] = 999
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/spec/apply")
+        {
+            Content = JsonContent(document)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("unknown-cache-mode", payload.RootElement.GetProperty("code").GetString());
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_Cycle_Returns400WithDagCycleCode()

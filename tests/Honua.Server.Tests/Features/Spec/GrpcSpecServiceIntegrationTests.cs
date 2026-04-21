@@ -381,6 +381,36 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    public async Task ApplySpec_UnknownNumericCacheMode_RaisesInvalidArgumentBeforeStream()
+    {
+        // Protobuf does not constrain enum values on the wire, so a forward-
+        // rolled client (or a malicious one) can send any int32 for
+        // cache_mode. The transport mapping must whitelist defined values
+        // rather than silently coerce an undefined one to ReadWrite via the
+        // default arm.
+        var request = new Proto.ApplySpecRequest
+        {
+            Document = BuildDocument("node-a"),
+            CacheMode = (Proto.SpecCacheMode)999,
+            MaxConcurrency = 1
+        };
+
+        var act = async () =>
+        {
+            using var call = _client.ApplySpec(request);
+            await foreach (var _ in call.ResponseStream.ReadAllAsync())
+            {
+            }
+        };
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("unknown-cache-mode");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobDismiss)]
     [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     [InterfaceOperation(Protocols.Grpc, "geospatial.v1.SpecService/CancelApply")]

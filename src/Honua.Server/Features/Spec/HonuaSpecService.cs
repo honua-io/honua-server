@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Grpc.Core;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
@@ -96,6 +97,18 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
                 $"{primary.Code}: {primary.Message}"));
+        }
+
+        // Proto enums are wire-compatible with any int32, so a forward-rolled
+        // client could send (SpecCacheMode)999 that would otherwise hit the
+        // default arm in FromProto and silently flow through as ReadWrite.
+        // Mirror the kind whitelist and reject with InvalidArgument before
+        // building options.
+        if (!SpecProtoMapping.IsDefinedCacheMode(request.CacheMode))
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{SpecDiagnosticCodes.UnknownCacheMode}: cache_mode '{((int)request.CacheMode).ToString(CultureInfo.InvariantCulture)}' is not a defined SpecCacheMode value."));
         }
 
         var options = new SpecApplyOptions

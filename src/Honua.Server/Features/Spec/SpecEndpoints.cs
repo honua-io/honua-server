@@ -140,6 +140,19 @@ internal static class SpecEndpoints
             return ProblemFromInvalid(invalid);
         }
 
+        // Mirror the `kind` whitelist: null means "omitted" (default ReadWrite),
+        // but JsonStringEnumConverter with UseStringEnumConverter still accepts
+        // numeric values, so `"cacheMode": 999` would otherwise flow through as
+        // an undefined enum and silently default to ReadWrite via the gRPC-side
+        // mapping's catch-all arm. Reject invalid enums at the boundary with a
+        // stable diagnostic code.
+        if (request.CacheMode is SpecCacheMode cacheMode && !IsDefinedCacheMode(cacheMode))
+        {
+            return BuildProblem(StatusCodes.Status400BadRequest,
+                SpecDiagnosticCodes.UnknownCacheMode,
+                "Request 'cacheMode' must be one of: ReadWrite, ReadOnly, Bypass.");
+        }
+
         var options = new SpecApplyOptions
         {
             CacheMode = request.CacheMode ?? SpecCacheMode.ReadWrite,
@@ -422,6 +435,14 @@ internal static class SpecEndpoints
         SpecResourceKind.Dataset => true,
         SpecResourceKind.Service => true,
         SpecResourceKind.App => true,
+        _ => false
+    };
+
+    private static bool IsDefinedCacheMode(SpecCacheMode mode) => mode switch
+    {
+        SpecCacheMode.ReadWrite => true,
+        SpecCacheMode.ReadOnly => true,
+        SpecCacheMode.Bypass => true,
         _ => false
     };
 

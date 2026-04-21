@@ -143,6 +143,12 @@ closing the socket alone has no effect.
 | `ReadOnly` | Reads from cache but never writes new entries. Useful for dry runs against warm caches. **A miss is a terminal `Failed` event with `read-only-cache-miss` — the executor is not invoked and no synthetic hash is emitted.** |
 | `Bypass` | Ignores the cache entirely and recomputes every node. Outputs are still hashed and written so downstream reads remain stable. |
 
+Omitting `cacheMode` (REST) or sending `SPEC_CACHE_MODE_UNSPECIFIED` (gRPC)
+defaults to `ReadWrite`. Any other value — including a numeric value the
+JSON serializer would otherwise accept — is rejected at the transport
+boundary with `400 Bad Request` / `InvalidArgument` and the stable
+`unknown-cache-mode` diagnostic code.
+
 ### Event buffer policy
 
 The event channel is bounded (256 frames, `DropOldest`). Apply runs outlive

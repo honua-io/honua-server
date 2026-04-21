@@ -86,6 +86,12 @@ public sealed class SpecApplyHandle
     /// <summary>The plan that is being applied.</summary>
     public SpecPlan Plan { get; }
 
-    /// <summary>Stream of apply events. Cold stream — enumeration drives the run.</summary>
+    /// <summary>
+    /// Stream of apply events. Hot, single-consumer stream backed by a bounded
+    /// channel: the run is already executing when the handle is returned, so
+    /// events may have been produced before enumeration begins. Only one
+    /// consumer may read the stream — a second enumeration will observe the
+    /// tail of the first reader or an empty completed channel.
+    /// </summary>
     public IAsyncEnumerable<SpecApplyEvent> Events { get; }
 }
