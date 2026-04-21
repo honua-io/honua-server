@@ -16,7 +16,7 @@ namespace Honua.Core.Features.Spec.Services;
 /// <see cref="SpecApplyEvent"/>s. Events are emitted in the order they occur
 /// and are consumed exactly once by a single reader (SSE or gRPC).
 /// </summary>
-internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
+internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 {
     private readonly ISpecPlanner _planner;
     private readonly ISpecComputeExecutor _executor;
@@ -159,7 +159,7 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SpecTelemetry.RecordException(activity, ex);
-            _logger.LogError(ex, "Apply run {ApplyToken} terminated with an unhandled exception.", ctx.ApplyToken);
+            LogApplyTerminatedWithException(_logger, ctx.ApplyToken, ex);
             try
             {
                 await ctx.Writer.WriteAsync(new SpecApplyEvent
@@ -505,7 +505,7 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
                 nodeState[plannedNode.NodeId] = NodeRunState.Failed;
                 Interlocked.Increment(ref counters.FailedRef);
                 SpecTelemetry.RecordException(nodeActivity, ex);
-                _logger.LogError(ex, "Node {NodeId} failed during apply {ApplyToken}.", plannedNode.NodeId, ctx.ApplyToken);
+                LogNodeFailed(_logger, plannedNode.NodeId, ctx.ApplyToken, ex);
                 await EmitFailedAsync(ctx, sequenceRef, plannedNode.NodeId, new SpecWarning
                 {
                     Code = "spec-node-failed",
@@ -613,4 +613,18 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
         IEnumerable<ISpecResourceStateStore> StateStores,
         TimeProvider TimeProvider,
         ILogger Logger);
+
+    [LoggerMessage(
+        EventId = 11001,
+        Level = LogLevel.Error,
+        Message = "Apply run {ApplyToken} terminated with an unhandled exception.")]
+    private static partial void LogApplyTerminatedWithException(
+        ILogger logger, string applyToken, Exception exception);
+
+    [LoggerMessage(
+        EventId = 11002,
+        Level = LogLevel.Error,
+        Message = "Node {NodeId} failed during apply {ApplyToken}.")]
+    private static partial void LogNodeFailed(
+        ILogger logger, string nodeId, string applyToken, Exception exception);
 }
