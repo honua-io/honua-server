@@ -16,8 +16,8 @@ namespace Honua.Core.Features.Spec.Services;
 /// </summary>
 internal static class SpecContentHashCalculator
 {
-    private const string Separator = ""; // ASCII unit separator
-    private const string ItemSeparator = ""; // ASCII record separator
+    private const char Separator = ''; // ASCII unit separator
+    private const char ItemSeparator = ''; // ASCII record separator
 
     /// <summary>
     /// Computes the content hash for <paramref name="node"/> given its input

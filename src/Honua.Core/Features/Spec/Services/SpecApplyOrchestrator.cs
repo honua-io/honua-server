@@ -242,7 +242,7 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
         }
     }
 
-    private async Task EmitSkippedAsync(
+    private static async Task EmitSkippedAsync(
         ApplyRunContext ctx,
         Func<long> sequenceRef,
         string nodeId,
@@ -270,7 +270,7 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
 
     private static bool IsReady(
         string nodeId,
-        IReadOnlyDictionary<string, SpecPlanNode> nodesById,
+        Dictionary<string, SpecPlanNode> nodesById,
         IReadOnlyDictionary<string, NodeRunState> nodeState)
     {
         var plannedNode = nodesById[nodeId];
@@ -521,7 +521,7 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
         }
     }
 
-    private static IReadOnlyDictionary<string, CachedArtifactRef> BuildInputs(
+    private static Dictionary<string, CachedArtifactRef> BuildInputs(
         SpecPlanNode plannedNode,
         ConcurrentDictionary<string, CachedArtifactRef> cachedInputs)
     {
@@ -542,7 +542,7 @@ internal sealed class SpecApplyOrchestrator : ISpecApplyEngine
         return result;
     }
 
-    private async Task EmitFailedAsync(
+    private static async Task EmitFailedAsync(
         ApplyRunContext ctx,
         Func<long> sequenceRef,
         string nodeId,

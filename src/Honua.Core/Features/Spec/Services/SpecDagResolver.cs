@@ -84,7 +84,7 @@ internal static class SpecDagResolver
 
     private static List<string> ExtractDependencies(
         CanonicalSpecNode node,
-        IReadOnlyDictionary<string, CanonicalSpecNode> nodes,
+        Dictionary<string, CanonicalSpecNode> nodes,
         List<SpecWarning> diagnostics)
     {
         var deps = new List<string>();
@@ -191,10 +191,10 @@ internal static class SpecDagResolver
         return true;
     }
 
-    private static IReadOnlyList<string> FindCycle(
+    private static List<string> FindCycle(
         IReadOnlyDictionary<string, CanonicalSpecNode> nodes,
         IReadOnlyDictionary<string, List<string>> dependencies,
-        IReadOnlyDictionary<string, int> inDegree)
+        Dictionary<string, int> inDegree)
     {
         var remaining = nodes.Keys.Where(id => inDegree[id] > 0).ToHashSet(StringComparer.Ordinal);
         var visited = new HashSet<string>(StringComparer.Ordinal);
