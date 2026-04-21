@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/spec/grammar/v1.0/spec.json",
+  "title": "Honua Spec Grammar v1.0 (S1)",
+  "description": "Canonical JSON representation of the Honua declarative geospatial spec language, S1 resource set: source, scope, compute, map, output.",
+  "type": "object",
+  "required": ["$schema", "capabilities", "grammar", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://honua.io/spec/grammar/v1.0/spec.json"
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["operators"],
+      "additionalProperties": false,
+      "properties": {
+        "operators": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "grammar": {
+      "type": "string",
+      "pattern": "^v[0-9]+\\.[0-9]+$",
+      "description": "Grammar version of the form vMAJOR.MINOR. Server accepts versions within the current major."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["analysis", "map", "app"],
+      "description": "High-level kind of document. 'map' and 'app' are reserved for S2/S3 and emit warnings at S1."
+    },
+    "title": { "type": "string" },
+    "sources": {
+      "type": "array",
+      "description": "External data bindings in declaration order.",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "scope": {
+      "type": "array",
+      "description": "Scope clauses in declaration order.",
+      "items": { "$ref": "#/$defs/scope" }
+    },
+    "compute": {
+      "type": "array",
+      "description": "Ordered compute steps. Emitted as an array rather than a keyed object to keep canonical form deterministic without alphabetizing user-chosen ids.",
+      "items": { "$ref": "#/$defs/compute" }
+    },
+    "map": { "$ref": "#/$defs/map" },
+    "outputs": {
+      "type": "array",
+      "description": "Declared outputs in declaration order.",
+      "items": { "$ref": "#/$defs/output" }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sidecar metadata preserved across text ↔ JSON round-trips.",
+      "properties": {
+        "comments": {
+          "type": "object",
+          "description": "Block-level comments keyed by JSON-Pointer path (with a trailing '#<index>' to disambiguate multiple comments on the same target).",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "reference": {
+      "type": "string",
+      "pattern": "^@[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*(\\(\\))?$",
+      "description": "Reference token. Root and segments are bareword identifiers; optional trailing '()' denotes a call form (e.g. @compute.foo.count())."
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "type", "ref"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "type": {
+          "type": "string",
+          "enum": ["layer", "service", "stac", "cog", "parquet", "raster"]
+        },
+        "ref": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "scope": {
+      "type": "object",
+      "required": ["target"],
+      "additionalProperties": false,
+      "properties": {
+        "target": { "$ref": "#/$defs/reference" },
+        "where": { "$ref": "#/$defs/filterExpression" }
+      }
+    },
+    "filterExpression": {
+      "type": "object",
+      "required": ["cql2"],
+      "additionalProperties": false,
+      "properties": {
+        "cql2": {
+          "type": "string",
+          "description": "Embedded CQL2 filter expression. Validated by the CQL2 parser at plan/apply time."
+        }
+      }
+    },
+    "compute": {
+      "type": "object",
+      "required": ["id", "op"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "op": {
+          "type": "string",
+          "enum": ["filter", "spatial_join", "buffer", "reproject", "zonal_stats", "slope"]
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              { "$ref": "#/$defs/reference" },
+              { "type": "object" }
+            ]
+          }
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "map": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layers": { "type": "array", "items": { "type": "object" } },
+        "viewport": { "type": "object" },
+        "legend": { "type": "object" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["id", "expr"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "expr": {
+          "oneOf": [
+            { "$ref": "#/$defs/reference" },
+            { "type": "object" },
+            { "type": "string" }
+          ]
+        }
+      }
+    },
+    "unitLiteral": {
+      "type": "object",
+      "required": ["kind", "unit", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["distance", "duration", "area"] },
+        "unit": { "type": "string" },
+        "value": { "type": "number" }
+      }
+    },
+    "geometryLiteral": {
+      "type": "object",
+      "required": ["type", "wkt"],
+      "additionalProperties": false,
+      "properties": {
+        "crs": { "type": "string" },
+        "type": { "type": "string", "const": "geometry" },
+        "wkt": { "type": "string" }
+      }
+    }
+  }
+}
