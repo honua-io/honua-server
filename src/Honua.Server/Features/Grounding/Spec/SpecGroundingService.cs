@@ -258,6 +258,13 @@ internal sealed partial class SpecGroundingService
 
         if (TryParseRename(lower, out var rename))
         {
+            if (!HasLocal(document, rename.FromId))
+            {
+                return ClausePlanResult.Error(
+                    SpecGroundingErrorKind.Unresolvable,
+                    $"Rename target '{rename.FromId}' does not exist.");
+            }
+
             return ClausePlanResult.FromMutation(new RenameReferenceMutation(rename.FromId, rename.ToId));
         }
 

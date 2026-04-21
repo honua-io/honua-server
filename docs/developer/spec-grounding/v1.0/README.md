@@ -8,7 +8,7 @@
 
 ## Endpoints
 
-Both endpoints accept and return `application/json` and currently allow anonymous access (the same surface is also intended for admin workspace use). All request and response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility.
+Both endpoints accept and return `application/json` and currently allow anonymous access (the same surface is also intended for admin workspace use). All request and response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility. Inactive nullable branch properties (`mutation`, `error`) are omitted from the JSON payload rather than serialized as `null`; `clarifications` and `warnings` are always emitted as arrays.
 
 ### `POST /v1/grounding/spec/mutate`
 
@@ -42,7 +42,7 @@ Request body:
 | `context` | no | Disambiguation hints: default `target_id` for scope clauses, `default_crs`, `default_unit`, and freeform `hints`. When the turn omits a unit or CRS and `context` supplies one, the clarification is skipped. |
 | `clarification_answer` | no | Echoes `intent_id` + `answers` from a prior clarification turn. Each `answers[questionId]` must contain at least one non-blank value. |
 
-Response body (always 200 on a well-formed request; `400` with a Problem Details envelope for malformed JSON or missing `turn`/`spec`):
+Response body (`200 OK` for any well-formed request; `400` Problem Details only for malformed JSON or invalid/missing `turn` / `spec`):
 
 ```json
 {
@@ -53,18 +53,17 @@ Response body (always 200 on a well-formed request; `400` with a Problem Details
     "sections_preserved": ["sources", "scope", "map", "outputs"]
   },
   "clarifications": [],
-  "warnings": [ { "code": "UnknownOperator", "severity": "warning", "message": "..." } ],
-  "error": null
+  "warnings": [ { "code": "UnknownOperator", "severity": "warning", "message": "..." } ]
 }
 ```
 
-Exactly one of `mutation`, `clarifications[]`, or `error` is populated on any non-`400` response:
+Each non-`400` response activates one branch: success includes `mutation`, ambiguous turns include a non-empty `clarifications[]`, and structured rejections include `error`. Inactive nullable fields are omitted from the payload.
 
 - `mutation.next_spec` is the canonical JSON emitted by `SpecCanonicalizer.ToJson(nextDocument)` after `ISpecValidator.Validate` reported no error-severity diagnostics.
 - `mutation.sections_touched` / `sections_preserved` partition the canonical top-level section names (`sources`, `scope`, `compute`, `map`, `outputs`) based on which canonical sections changed after the applied mutations. Sections in `sections_preserved` round-trip byte-for-byte through the canonical emitter.
-- `clarifications[]` is one entry per `ClarificationQuestion`. Each entry carries `intent_id`, `kind` (one of `pick-dataset`, `pick-column`, `pick-value`, `specify-unit`, `specify-crs`, `choose-op`, `confirm-heavy-op`), `reason_codes[]`, `question_id`, `question_kind`, `prompt`, and typed `candidates[]`.
+- `clarifications[]` is one entry per `ClarificationQuestion`. Each entry carries `intent_id`, `kind` (one of `pick-dataset`, `pick-column`, `pick-value`, `specify-unit`, `specify-crs`, `choose-op`, `confirm-heavy-op`), `reason_codes[]`, `question_id`, `question_kind`, `prompt`, and typed `candidates[]`. `reason_codes[]` are deduplicated per clarification envelope, then copied onto each entry so card-by-card renderers still see the full ambiguity context.
 - `warnings[]` echoes non-error `SpecDiagnostic`s surfaced during validation or catalog lookup.
-- `error.kind` ∈ `unresolvable`, `invalid_mutation`, `out_of_scope`. Ambiguous turns return `clarifications[]` and leave `error` null. The response never includes a partially applied spec on error.
+- `error.kind` ∈ `unresolvable`, `invalid_mutation`, `out_of_scope`. Ambiguous turns return `clarifications[]` and omit `error`. The response never includes a partially applied spec on error.
 
 ### `POST /v1/grounding/spec/summarize`
 
@@ -86,7 +85,7 @@ Response body:
 }
 ```
 
-Summaries are a pure deterministic function of the canonical AST: no LLM is called. Section ids align with the canonical section names so callers can pair a summary with the `sections_touched` / `sections_preserved` list from a mutation response.
+Summaries are a pure deterministic function of the canonical AST: no LLM is called. Section ids align with the canonical section names so callers can pair a summary with the `sections_touched` / `sections_preserved` list from a mutation response. Invalid or missing `spec` yields the same `400` Problem Details envelope as `mutate`.
 
 ## Closed mutation catalog
 
@@ -102,7 +101,7 @@ The S1 scope enumerates exactly nine mutation kinds. Any request that would requ
 | `set-map-layer` | `layer_ids[]` | Overwrites `map.layers` with the given id list. |
 | `set-viewport` | `viewport{}` (e.g. `center`, `zoom`) | Overwrites `map.viewport` fields. |
 | `set-output` | `output_id`, `expression` | Inserts or replaces the output at `output_id`. |
-| `rename-reference` | `from_id`, `to_id` | Walks sources, scope targets, compute inputs/parameters, map layers/viewport/legend, and outputs — every `@from_id` or bare `from_id` reference is rewritten. Catalog URIs (`source.ref`) are not renamed. |
+| `rename-reference` | `from_id`, `to_id` | Renames ids plus AST reference nodes in `scope`, `compute`, and `outputs`, and rewrites bare string ids in `map.layers`. Literal strings elsewhere (for example `legend.title`, quoted output strings, or `where = "rivers"`) are preserved. Catalog URIs (`source.ref`) are not renamed. |
 
 The canonical JSON returned in `mutation.next_spec` is always the output of `SpecCanonicalizer.ToJson`, so byte-for-byte preservation of untouched sections is a property of the canonicalizer's deterministic emitter plus the applier's pure AST rewrite.
 

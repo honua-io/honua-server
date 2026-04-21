@@ -322,6 +322,30 @@ public sealed class SpecGroundingServiceTests
     }
 
     [Fact]
+    public async Task Mutate_RenameReference_WithMissingSourceId_ReturnsUnresolvableError()
+    {
+        using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source rivers { type = "layer", ref = "catalog:layer:1" }
+            """);
+
+        var result = await harness.Service.MutateAsync(
+            currentSpec,
+            "rename streams to channels",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().Be(SpecGroundingErrorKind.Unresolvable);
+        result.ErrorMessage.Should().Contain("Rename target 'streams' does not exist.");
+        result.Mutation.Should().BeNull();
+        result.Clarification.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Mutate_Summarize_Mutate_RoundTripsToSemanticallyEquivalentSpec()
     {
         using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
