@@ -48,7 +48,7 @@ def get_honua_rules() -> str:
     except Exception as e:
         return f"# Architecture Rules (Error reading CLAUDE.md: {e})\n\nFallback to basic checks..."
 
-def get_changed_files(base_ref: str = "main") -> List[str]:
+def get_changed_files(base_ref: str = "trunk") -> List[str]:
     """Get list of changed C# files since base ref"""
     try:
         # Get changed files
@@ -62,7 +62,7 @@ def get_changed_files(base_ref: str = "main") -> List[str]:
     except subprocess.CalledProcessError:
         return []
 
-def get_file_content_and_diff(file_path: str, base_ref: str = "main") -> Dict[str, str]:
+def get_file_content_and_diff(file_path: str, base_ref: str = "trunk") -> Dict[str, str]:
     """Get file content and diff for review"""
     content = ""
     diff = ""
