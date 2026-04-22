@@ -1406,6 +1406,8 @@
           "evidenceLocations": [
             "tests/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingEndpointTests.cs",
             "tests/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Spec/SpecContractRegressionTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecMutationApplierTests.cs",
             "docs/developer/spec-grounding/v1.0/README.md"
           ],
           "ownerRepo": "honua-server",

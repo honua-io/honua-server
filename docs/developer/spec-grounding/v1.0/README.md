@@ -60,6 +60,7 @@ Response body (`200 OK` + `application/json` for any well-formed request; `400` 
 Each non-`400` response activates one branch: success includes `mutation`, ambiguous turns include a non-empty `clarifications[]`, and structured rejections include `error`. Inactive nullable fields are omitted from the payload.
 
 - `mutation.next_spec` is the canonical JSON emitted by `SpecCanonicalizer.ToJson(nextDocument)` after `ISpecValidator.Validate` reported no error-severity diagnostics.
+- Planner-emitted expression tokens are canonicalized before they land in `mutation.next_spec`: parseable references stay `@id` references, booleans and numbers stay typed, supported distance/duration/area suffixes (`km`, `m`, `mi`, `ft`, `nm`, `ms`, `s`, `min`, `h`, `d`, `m2`, `km2`, `ha`, `ac`) become structured literals, and `map.layers` remains a bare string-id array rather than an `@`-prefixed reference list.
 - `mutation.sections_touched` / `sections_preserved` partition the canonical top-level section names (`sources`, `scope`, `compute`, `map`, `outputs`) based on which canonical sections changed after the applied mutations. Sections in `sections_preserved` round-trip byte-for-byte through the canonical emitter.
 - `clarifications[]` is one entry per `ClarificationQuestion`. Each entry carries `intent_id`, `kind` (one of `pick-dataset`, `pick-column`, `pick-value`, `specify-unit`, `specify-crs`, `choose-op`, `confirm-heavy-op`), `reason_codes[]`, `question_id`, `question_kind`, `prompt`, and typed `candidates[]`. `reason_codes[]` are deduplicated per clarification envelope, then copied onto each entry so card-by-card renderers still see the full ambiguity context.
 - Current S1 flows emit one clarification card/question at a time even though the retry payload remains `clarification_answer.answers{}` keyed by `question_id` to stay aligned with ADR-0027. The service owns `intent_id`: it fingerprints the outstanding clarification envelope, so stale or mismatched ids are ignored and the current clarification is re-issued. Stale answers for questions that are no longer relevant are ignored; answers that do not match the current candidate set also cause the service to re-emit the current clarification.
@@ -98,14 +99,14 @@ The S1 scope enumerates exactly nine mutation kinds. Explicit roadmap keywords (
 | `add-source` | `source_id`, `source_type`, `source_ref` (`catalog:layer:<id>`) | Adds a `source` binding. Ignored (idempotent) when `source_id` is already present. |
 | `remove-source` | `source_id` | Removes the binding. Errors with `invalid_mutation` when the id does not exist. |
 | `add-scope-clause` | `target_id`, `predicate` (CQL2 string) | Adds a scope clause over `@target_id`. Duplicate predicate+target pairs are deduplicated. |
-| `add-compute` | `compute_id`, `operator`, `inputs{}`, optional `parameters{}` | Appends a `ComputeStep`. Idempotent on `compute_id`. |
+| `add-compute` | `compute_id`, `operator`, `inputs{}`, optional `parameters{}` | Appends a `ComputeStep`. Idempotent on `compute_id`. Supported unit-suffixed parameter values materialize as typed canonical literals in `next_spec`. |
 | `remove-compute` | `compute_id` | Removes the step. Errors with `invalid_mutation` when missing. |
 | `set-map-layer` | `layer_ids[]` | Overwrites `map.layers` with the given id list. |
 | `set-viewport` | `viewport{}` (e.g. `center`, `zoom`) | Overwrites `map.viewport` fields. |
 | `set-output` | `output_id`, `expression` | Inserts or replaces the output at `output_id`. |
 | `rename-reference` | `from_id`, `to_id` | Renames ids plus AST reference nodes in `scope`, `compute`, and `outputs`, and rewrites bare string ids in `map.layers`. Literal strings elsewhere (for example `legend.title`, quoted output strings, or `where = "rivers"`) are preserved. Catalog URIs (`source.ref`) are not renamed. |
 
-The canonical JSON returned in `mutation.next_spec` is always the output of `SpecCanonicalizer.ToJson`, so byte-for-byte preservation of untouched sections is a property of the canonicalizer's deterministic emitter plus the applier's pure AST rewrite.
+The canonical JSON returned in `mutation.next_spec` is always the output of `SpecCanonicalizer.ToJson`, so byte-for-byte preservation of untouched sections is a property of the canonicalizer's deterministic emitter plus the applier's pure AST rewrite. This is also why `rename-reference` updates bare `map.layers` ids while preserving unrelated string literals, and why supported unit-suffixed planner values round-trip as typed literals instead of opaque strings.
 
 ## Deterministic clause grammar
 
@@ -120,7 +121,7 @@ The service's clause planner (`SpecGroundingService.PlanClauseAsync`) recognises
 | `buffer <target> by <n><unit> [in epsg:<code>] [as <id>]` | `buffer flood by 500.m in epsg:3857` | `add-compute` with operator `buffer`. Missing unit or CRS surfaces `specify-unit` or `specify-crs`. |
 | `<left> within <n><unit> of <right> [in epsg:<code>]` | `hospitals within 500.m of flood` | Resolves both sides (adding `add-source` when needed), then emits an `add-compute(buffer)` + `add-compute(spatial_join)` pair. |
 | `reproject <target> [to epsg:<code>] [as <id>]` | `reproject flood to epsg:3857` | `add-compute(reproject)`. |
-| `runs <op> as <id> [on <inputs>] [using <params>]` | `runs buffer as flood_buffer on input=@flood using distance=500.m and crs=EPSG:3857` | `add-compute` with the literal operator, inputs, and params. |
+| `runs <op> as <id> [on <inputs>] [using <params>]` | `runs buffer as flood_buffer on input=@flood using distance=500.m and crs=EPSG:3857` | `add-compute` with the literal operator, inputs, and params. The mutation payload stays string-based, but `next_spec` canonicalizes parseable refs/bools/numbers/unit literals. |
 | `rename <from> to <to>` | `rename hospitals to er` | `rename-reference`. |
 | `remove source <id>` / `remove compute <id>` | `remove source flood` | `remove-source` / `remove-compute`. |
 | `show <ids> on the map` | `show hospitals, flood_buffer on the map` | `set-map-layer` after validating each id against sources/compute/outputs. |

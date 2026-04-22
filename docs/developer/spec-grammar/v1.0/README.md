@@ -112,7 +112,9 @@ rather than `@`-prefixed reference tokens.
 
 Unit-carrying numeric literals (`500.m`, `15.min`, `2.ha`) are emitted as
 structured objects, not strings, so downstream consumers don't have to
-re-parse them:
+re-parse them. v1.0 currently recognizes distance suffixes `km`, `m`, `mi`,
+`ft`, `nm`; duration suffixes `ms`, `s`, `min`, `h`, `d`; and area suffixes
+`m2`, `km2`, `ha`, `ac`:
 
 ```json
 { "kind": "distance", "unit": "m", "value": 500 }

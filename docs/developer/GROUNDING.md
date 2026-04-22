@@ -250,7 +250,9 @@ document from natural language is a separate surface:
   over a closed set of mutation kinds, with one active `mutation` /
   `clarifications[]` / `error` branch per `200 application/json`
   response and `sections_touched` / `sections_preserved` for workspace
-  diff rendering. Malformed or invalid wire payloads return
+  diff rendering. The returned `next_spec` stays in canonical spec JSON
+  form, including bare string `map.layers` ids and typed unit literals
+  for recognized suffixes. Malformed or invalid wire payloads return
   `400 application/problem+json`.
 - `POST /v1/grounding/spec/summarize` — canonical spec → deterministic
   per-section English summaries; empty `{}` yields the empty-analysis
