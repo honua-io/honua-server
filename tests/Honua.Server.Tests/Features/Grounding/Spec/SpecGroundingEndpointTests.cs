@@ -126,6 +126,34 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_MissingUnitClarification_ExposesNauticalMilesCandidate()
+    {
+        using var harness = new SpecGroundingHarness(SpecGroundingTestSupport.CreateLayer(4, "Zones"));
+        var currentSpec = harness.ToCanonicalJson(harness.Parse(
+            """
+            grammar "v1.0"
+            source zones { type = "layer", ref = "catalog:layer:4" }
+            """));
+
+        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement(currentSpec),
+            turn = "buffer zones by 500 in EPSG:3857 as zone_buffer"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var clarification = payload.RootElement.GetProperty("clarifications")[0];
+        clarification.GetProperty("kind").GetString().Should().Be("specify-unit");
+        clarification.GetProperty("candidates").EnumerateArray()
+            .Select(candidate => candidate.GetProperty("unit").GetString())
+            .Should().Equal("km", "m", "mi", "ft", "nm");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GroundingSummarize)]
     [Endpoint("POST /v1/grounding/spec/summarize")]
     public async Task Summarize_CanonicalSpec_ReturnsSectionSummariesWithShortText()

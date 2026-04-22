@@ -136,7 +136,7 @@ Structured clarification kinds reuse the ADR-0027 `ClarificationRequest` / `Clar
 | `pick-dataset` | `dataset.selection` | `single-select` | `ambiguous_dataset` | `candidate_type=dataset`, `catalog_ref`, `schema_preview[]` |
 | `pick-column` | `column.selection` | `single-select` | `ambiguous_column` | `candidate_type=column`, `column_name`, `type_ref`, `nullable`, `sample` |
 | `pick-value` | `value.selection` | `single-select` | `ambiguous_filter_value` | `candidate_type=value`, `value` |
-| `specify-unit` | `unit.selection` | `single-select` | `ambiguous_unit` | `candidate_type=unit`, `unit` — fixed set: `km`, `m`, `mi`, `ft` |
+| `specify-unit` | `unit.selection` | `single-select` | `ambiguous_unit` | `candidate_type=unit`, `unit` — fixed set: `km`, `m`, `mi`, `ft`, `nm` |
 | `specify-crs` | `crs.selection` | `single-select` | `ambiguous_crs` | `candidate_type=crs`, `crs` — current defaults: `EPSG:3857`, `EPSG:32604`, `EPSG:26910` |
 | `choose-op` | `operator.selection` | `single-select` | `ambiguous_process` | `candidate_type=operator`, `operator_name` |
 | `confirm-heavy-op` | `heavy.confirm` | `confirmation` | `heavy_operation_confirmation` | *(no candidates)* — any of `yes`, `true`, `confirm` in the answer counts as acknowledgement |

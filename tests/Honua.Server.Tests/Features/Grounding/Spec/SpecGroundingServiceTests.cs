@@ -297,6 +297,9 @@ public sealed class SpecGroundingServiceTests
         result.Clarification.Request.Questions[0].QuestionId.Should().Be("unit.selection");
         result.Clarification.CandidatesByQuestionId["unit.selection"]
             .Should().OnlyContain(candidate => candidate.CandidateType == "unit");
+        result.Clarification.CandidatesByQuestionId["unit.selection"]
+            .Select(candidate => candidate.Unit)
+            .Should().Equal("km", "m", "mi", "ft", "nm");
     }
 
     [Fact]
