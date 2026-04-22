@@ -3,11 +3,14 @@
 // and waits for the `idle` event (all tiles rendered).
 
 import type { Page } from '@playwright/test';
+import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 
 // Resolve the local maplibre-gl distribution for injection.
 const maplibreDistDir = resolve(import.meta.dirname, '..', '..', 'node_modules', 'maplibre-gl', 'dist');
+const API_PROXY_PREFIXES = ['/api/', '/tiles/', '/ogc/'];
+const proxyOrigins = new Map<string, Promise<string>>();
 
 /** Options for creating a map. */
 export interface MapOptions {
@@ -44,36 +47,100 @@ export interface MapHandle {
   screenshot: () => Promise<Buffer>;
 }
 
+async function getProxyOrigin(upstreamOrigin: string): Promise<string> {
+  let proxyOriginPromise = proxyOrigins.get(upstreamOrigin);
+  if (proxyOriginPromise) {
+    return proxyOriginPromise;
+  }
+
+  proxyOriginPromise = (async () => {
+    const server = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+
+      if (API_PROXY_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
+        void (async () => {
+          try {
+            const upstreamUrl = new URL(`${url.pathname}${url.search}`, upstreamOrigin);
+            const upstreamResponse = await fetch(upstreamUrl, { method: req.method });
+            const contentType = upstreamResponse.headers.get('content-type');
+            if (contentType) {
+              res.setHeader('Content-Type', contentType);
+            }
+
+            res.writeHead(upstreamResponse.status);
+            if (contentType?.includes('json')) {
+              const proxyOrigin = `http://127.0.0.1:${port}`;
+              const body = await upstreamResponse.text();
+              res.end(body.replaceAll(upstreamOrigin, proxyOrigin));
+              return;
+            }
+
+            const body = Buffer.from(await upstreamResponse.arrayBuffer());
+            res.end(body);
+          } catch {
+            res.writeHead(502);
+            res.end('Upstream proxy request failed');
+          }
+        })();
+        return;
+      }
+
+      if (url.pathname === '/' || url.pathname === '/index.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              * { margin: 0; padding: 0; }
+              #map { width: 512px; height: 512px; }
+            </style>
+          </head>
+          <body><div id="map"></div></body>
+          </html>
+        `);
+        return;
+      }
+
+      res.writeHead(404);
+      res.end('Not found');
+    });
+
+    const port = await new Promise<number>((resolvePort) => {
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (address && typeof address === 'object') {
+          resolvePort(address.port);
+        }
+      });
+    });
+
+    process.once('exit', () => {
+      server.close();
+    });
+
+    return `http://127.0.0.1:${port}`;
+  })();
+
+  proxyOrigins.set(upstreamOrigin, proxyOriginPromise);
+  return proxyOriginPromise;
+}
+
 /**
  * Creates a MapLibre GL JS map inside `page`, injects the library from the
  * local node_modules, and waits for the initial `idle` event.
  */
 export async function createMap(page: Page, options: MapOptions): Promise<MapHandle> {
   const { styleUrl, center = [-122.42, 37.77], zoom = 14, idleTimeout = 25_000 } = options;
+  const upstreamStyleUrl = new URL(styleUrl);
+  const upstreamOrigin = upstreamStyleUrl.origin;
+  const proxyOrigin = await getProxyOrigin(upstreamOrigin);
+  const proxiedStyleUrl = new URL(`${upstreamStyleUrl.pathname}${upstreamStyleUrl.search}`, proxyOrigin).toString();
 
-  // Derive the server origin from the style URL so that relative tile URLs
-  // (e.g. /tiles/2000/{z}/{x}/{y}.mvt) returned in the style JSON can be
-  // absolutized via MapLibre's transformRequest before requests are dispatched
-  // to the worker. The page is loaded via setContent (about:blank origin),
-  // so neither a <base> tag nor a blob-URL worker can resolve a leading-slash
-  // path. transformRequest runs on the main thread, so prefixing with the
-  // origin here lets the worker receive a fully-qualified URL it can parse.
-  const origin = new URL(styleUrl).origin;
-
-  // Navigate to a minimal HTML page with a map container.
-  await page.setContent(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        * { margin: 0; padding: 0; }
-        #map { width: 512px; height: 512px; }
-      </style>
-    </head>
-    <body><div id="map"></div></body>
-    </html>
-  `);
+  // Navigate to a same-origin test page so MapLibre can fetch styles and tiles
+  // through the local proxy without relying on permissive CORS from Honua.
+  await page.goto(proxyOrigin);
 
   // Inject maplibre-gl CSS and JS from local node_modules.
   const cssContent = readFileSync(resolve(maplibreDistDir, 'maplibre-gl.css'), 'utf-8');
@@ -83,7 +150,7 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
 
   // Create the map and wait for idle.
   await page.evaluate(
-    ({ styleUrl, center, zoom, idleTimeout, origin }) => {
+    ({ styleUrl, center, zoom, idleTimeout, proxyOrigin, upstreamOrigin }) => {
       return new Promise<void>((resolve, reject) => {
         const timeoutId = setTimeout(() => reject(new Error('Map idle timeout')), idleTimeout);
         const map = new (window as any).maplibregl.Map({
@@ -96,11 +163,14 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
           // Preserve the WebGL drawing buffer so gl.readPixels() can read
           // rendered pixels after the frame is presented.
           preserveDrawingBuffer: true,
-          // Absolutize server-relative URLs so request parsing works inside
-          // MapLibre's worker when the page itself is about:blank.
+          // Keep all Honua fetches on the local proxy origin so browser tests
+          // do not depend on cross-origin headers from the API server.
           transformRequest: (url: string) => {
             if (url.startsWith('/')) {
-              return { url: origin + url };
+              return { url: proxyOrigin + url };
+            }
+            if (url.startsWith(upstreamOrigin)) {
+              return { url: proxyOrigin + url.slice(upstreamOrigin.length) };
             }
             return { url };
           },
@@ -116,7 +186,7 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
         });
       });
     },
-    { styleUrl, center, zoom, idleTimeout, origin },
+    { styleUrl: proxiedStyleUrl, center, zoom, idleTimeout, proxyOrigin, upstreamOrigin },
   );
 
   // Wait an additional page-level timeout for idle to propagate.
