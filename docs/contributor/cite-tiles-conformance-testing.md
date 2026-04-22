@@ -154,7 +154,7 @@ Timeout waiting for Honua Server to become healthy
 ```
 
 **Solutions**:
-- Check Docker container logs: `docker-compose -f docker/cite-tiles-compose.yml logs honua-server`
+- Check Docker container logs: `docker compose -f docker/cite-tiles-compose.yml logs honua-server`
 - Verify database connectivity
 - Ensure ports 8080, 8082, 5434 are available
 - Check disk space and memory availability

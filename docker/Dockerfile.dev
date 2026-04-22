@@ -1,5 +1,6 @@
 # Development Dockerfile for Honua Server
-# Optimized for development workflow with hot reload and debugging
+# Auxiliary developer image; the canonical runtime web image lives at /Dockerfile.
+# Optimized for development workflow with hot reload and debugging.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0
 

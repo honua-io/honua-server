@@ -57,7 +57,7 @@ A complete, production-capable feature server for a single-process deployment.
 | **Admin UI** | Connections, layer publishing, style editor (Maputnik), map preview, import wizard, spatial SQL playground (query editor with autocomplete, inline map preview, EXPLAIN visualization) |
 | **Rendering** | MVT + TileJSON + auto MapLibre styles, MapServer export/identify, WMS GetMap |
 | **Caching** | In-memory cache (single process) |
-| **Deployment** | Docker, docker-compose, Helm, Terraform (all cloud modules), serverless (Lambda, Azure Functions), .NET Aspire |
+| **Deployment** | Docker, Docker Compose, Helm, Terraform (all cloud modules), serverless (Lambda, Azure Functions), .NET Aspire |
 | **Migration** | `honua-migrate` scan, codemod, reconcile CLI |
 | **Auth** | API key authentication, CORS |
 | **Observability** | Health endpoints, structured logging, Prometheus metrics, OpenTelemetry traces |
