@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Tests;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -36,7 +37,6 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 public class OidcAuthenticationTests : IAsyncLifetime
 {
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
-    private const string TestPostgresConnectionString = "Host=localhost;Database=test;Username=test;Password=test";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private readonly ITestOutputHelper _output;
     private readonly WebAppFixture _fixture = new();
@@ -149,6 +149,8 @@ public class OidcAuthenticationTests : IAsyncLifetime
                 });
             });
     }
+
+    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
 
     private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
     {

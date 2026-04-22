@@ -11,6 +11,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.Server.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -31,7 +32,6 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 public class ApiKeyAuthenticationTests : IAsyncLifetime
 {
     private const string TestConnectionEncryptionMasterKey = "AuthTestsConnectionMasterKey-123456";
-    private const string TestPostgresConnectionString = "Host=localhost;Database=test;Username=test;Password=test";
     private const string TestAdminPassword = "TestAdminPassword123!";
     private const string CorrectAdminPassword = "CorrectAdminPassword123!";
     private const string TestBasicPassword = "TestBasicPassword123!";
@@ -97,6 +97,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 });
             });
     }
+
+    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
 
     private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
     {

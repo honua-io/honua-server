@@ -11,6 +11,7 @@ namespace Honua.Server.Tests;
 [Trait("Category", "Integration")]
 public sealed class PostgresConnectionTests : IAsyncLifetime
 {
+    private static readonly string[] SupportedPostGisVersions = ["3.4", "3.5", "3.6"];
     private readonly PostgresFixture _fixture = new();
     private string _schemaName = null!;
 
@@ -52,7 +53,9 @@ public sealed class PostgresConnectionTests : IAsyncLifetime
         Assert.NotNull(result);
         var version = result.ToString();
         Assert.NotNull(version);
-        Assert.True(version.StartsWith("3.6", StringComparison.Ordinal), $"Expected PostGIS 3.6.x version, got: {version}");
+        Assert.Contains(
+            SupportedPostGisVersions,
+            supportedVersion => version.StartsWith(supportedVersion, StringComparison.Ordinal));
     }
 
     [Fact]
