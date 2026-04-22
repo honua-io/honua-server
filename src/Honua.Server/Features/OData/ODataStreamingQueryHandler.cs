@@ -304,9 +304,18 @@ internal sealed partial class ODataStreamingQueryHandler(
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
 
             // Build feature query using query service
-            var featureQuery = _querySearchService.BuildFeatureQuery(
-                filter, orderby, pagination.Limit,
-                pagination.Offset, layer, out var queryError);
+            var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
+                filter,
+                orderby,
+                pagination.Limit,
+                pagination.Offset,
+                layer,
+                select,
+                expand,
+                countValue,
+                compute,
+                format,
+                effectiveToken);
 
             if (queryError != null)
             {
@@ -771,8 +780,13 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId.Value.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
-            var featureQuery = _querySearchService.BuildFeatureQuery(
-                filter, null, null, null, layer, out var queryError);
+            var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
+                filter,
+                null,
+                null,
+                null,
+                layer,
+                cancellationToken: effectiveToken);
             if (queryError != null)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);

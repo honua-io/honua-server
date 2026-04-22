@@ -44,11 +44,6 @@ using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Streaming;
-// Disabled unified services due to compilation issues
-// using Honua.Server.Features.Query;
-// using Honua.Server.Features.Metadata;
-// using Honua.Server.Features.Infrastructure.Response;
-// using Honua.Server.Features.Edit;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
@@ -124,8 +119,6 @@ if (useAspire)
     else
     {
         builder.Services.AddDistributedMemoryCache();
-        // Register null IConnectionMultiplexer for services that expect it (like rate limiting middleware)
-        builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider => null!);
     }
 }
 else
@@ -150,8 +143,6 @@ else
     else
     {
         builder.Services.AddDistributedMemoryCache();
-        // Register null IConnectionMultiplexer for services that expect it (like rate limiting middleware)
-        builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider => null!);
     }
 }
 
@@ -177,8 +168,7 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
             }
 
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-            startupLogger.LogWarning(
-                "Redis multiplexer initialized without an active connection. The client will continue retrying in the background.");
+            ProgramLog.RedisStartupConnectionInactive(startupLogger);
         }
     }
     catch (Exception ex)
@@ -191,14 +181,9 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
         }
 
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
-        startupLogger.LogWarning(ex, "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.");
+        ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
     }
-}
-else
-{
-    // Register null IConnectionMultiplexer when Redis is not configured
-    builder.Services.TryAddSingleton<IConnectionMultiplexer>(serviceProvider => null!);
 }
 
 // Configure Serilog for structured logging with AOT compatibility

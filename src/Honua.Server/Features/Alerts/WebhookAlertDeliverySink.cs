@@ -9,7 +9,6 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -60,7 +59,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 
         try
         {
-            var destinationValidation = await OutboundHttpUrlValidator
+            var destinationValidation = await Honua.Core.Features.Infrastructure.Validation.OutboundHttpUrlValidator
                 .ValidateAsync(destination, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 

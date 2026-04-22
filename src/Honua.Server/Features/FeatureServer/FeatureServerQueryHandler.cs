@@ -13,6 +13,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
@@ -48,6 +49,8 @@ internal sealed class FeatureServerQueryHandler(
     private readonly IFeatureServerQueryServices _queryServices = dependencies.QueryServices;
     private readonly IFilterExpressionService _filterExpressionService = dependencies.FilterExpressionService;
     private readonly FeatureServerQueryExecutor _queryExecutor = dependencies.QueryExecutor;
+    private readonly IQueryParameterAdapter<GeoServicesQueryRequest> _queryParameterAdapter = dependencies.QueryParameterAdapter;
+    private readonly IQueryProcessor _queryProcessor = dependencies.QueryProcessor;
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
     private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
@@ -148,7 +151,7 @@ internal sealed class FeatureServerQueryHandler(
             var queryLimits = queryValidator.QueryLimits;
 
             // Apply limits enforcement
-            QueryValidationResult queryValidationResult = _queryServices.ValidateQueryLimits(queryParams);
+            var queryValidationResult = _queryServices.ValidateQueryLimits(queryParams);
             if (!queryValidationResult.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -401,8 +404,38 @@ internal sealed class FeatureServerQueryHandler(
                 sqlFilter = translationResult.SqlFilter;
             }
 
-            // Build query from validated parameters
-            FeatureQuery query = BuildFeatureQuery(validatedParams, layer, parsedGeometry, inputSrid, outputSrid, sqlFilter, queryLimits);
+            var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+                new GeoServicesQueryRequest
+                {
+                    Parameters = validatedParams,
+                    ParsedGeometry = parsedGeometry,
+                    InputSrid = inputSrid,
+                    OutputSrid = outputSrid,
+                    QueryLimits = queryLimits,
+                    SqlFilter = sqlFilter
+                },
+                layer,
+                cancellationToken);
+            if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [queryAdapterResult.ErrorMessage ?? "Invalid query parameters."]);
+            }
+
+            var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+            var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+            if (!unifiedQueryValidation.IsValid)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [unifiedQueryValidation.ErrorMessage ?? "Invalid query parameters."]);
+            }
+
+            FeatureQuery query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer) with
+            {
+                Where = validatedParams.Where
+            };
 
             // Handle statistics queries (outStatistics)
             if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
@@ -777,86 +810,6 @@ internal sealed class FeatureServerQueryHandler(
     private sealed class StreamingResult : IResult
     {
         public Task ExecuteAsync(HttpContext httpContext) => Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Builds a FeatureQuery from query parameters
-    /// </summary>
-    private static FeatureQuery BuildFeatureQuery(
-        QueryParameters queryParams,
-        LayerDefinition layer,
-        GeoServicesGeometry? parsedGeometry,
-        int? inputSrid,
-        int? outputSrid,
-        SqlFragment? sqlFilter,
-        QueryLimits queryLimits)
-    {
-        var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
-
-        var query = new FeatureQuery
-        {
-            // ArcGIS semantics apply objectIds and where as an intersection filter.
-            Where = queryParams.Where,
-            SqlFilter = sqlFilter,
-            ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
-            Offset = queryParams.ResultOffset,
-            Limit = hasObjectIds
-                ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
-                : queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutputSrid = outputSrid,
-            Distinct = queryParams.ReturnDistinctValues,
-            OrderBy = OrderByParsing.ParseFeatureServerOrderBy(
-                queryParams.OrderByFields,
-                layer,
-                FeatureServerOrderByFields.AllowedCoreOrderByFields)
-        };
-
-        // Parse outFields if specified
-        if (!string.IsNullOrEmpty(queryParams.OutFields))
-        {
-            if (queryParams.OutFields == "*")
-            {
-                // Return all fields - let the query run without field filtering
-                query = query with { OutFields = null };
-            }
-            else
-            {
-                var fields = queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(f => f.Trim())
-                    .ToImmutableArray();
-                query = query with { OutFields = fields };
-            }
-        }
-
-        // Parse spatial filter if specified (geometry or NearestCount)
-        if (parsedGeometry != null || queryParams.NearestCount.HasValue)
-        {
-            try
-            {
-                // For KNN queries without explicit geometry, we need a geometry - use a default point if not provided
-                if (queryParams.NearestCount.HasValue && parsedGeometry == null)
-                {
-                    throw new InvalidOperationException("Geometry is required for nearest neighbor queries");
-                }
-
-                SpatialFilter spatialFilter = FeatureServerSpatialFilterBuilder.BuildSpatialFilter(
-                    queryParams,
-                    parsedGeometry!,
-                    inputSrid);
-                query = query with { SpatialFilter = spatialFilter };
-            }
-            catch (ArgumentException ex)
-            {
-                throw new InvalidOperationException($"Invalid spatial parameters: {ex.Message}");
-            }
-            catch (Exception ex) when (ex is not InvalidOperationException)
-            {
-                throw new InvalidOperationException($"Invalid geometry: {ex.Message}");
-            }
-        }
-
-        return query;
     }
 
     internal static async ValueTask<FeatureExtent?> ResolveExtentFallbackAsync(

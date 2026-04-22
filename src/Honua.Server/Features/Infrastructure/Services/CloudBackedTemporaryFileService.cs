@@ -136,11 +136,12 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                 var publicFileName = $"{publicToken}{extension}";
                 var baseUrl = _options.BaseUrl ?? "/temp";
                 var publicUrl = $"{baseUrl.TrimEnd('/')}/{publicFileName}";
+                var provider = _cloudFileStorage.Provider;
 
-                _logger.LogInformation(
-                    "Stored temporary file {FileId} in shared {Provider} storage ({Size} bytes, expires {ExpiresAt})",
+                CloudBackedTemporaryFileLog.SharedStorageWriteCompleted(
+                    _logger,
                     uploadResult.File.FileId,
-                    _cloudFileStorage.Provider,
+                    provider,
                     uploadResult.File.SizeBytes,
                     uploadResult.File.ExpiresAt);
 
@@ -228,7 +229,8 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve temporary file {FileId} from shared {Provider} storage", fileId, _cloudFileStorage.Provider);
+            var provider = _cloudFileStorage.Provider;
+            CloudBackedTemporaryFileLog.SharedStorageReadFailed(_logger, fileId, provider, ex);
             return null;
         }
     }
@@ -270,12 +272,13 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         var files = await _cloudFileStorage.ListFilesAsync(TemporaryFolder, maxResults, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var activeFiles = files.Where(file => !file.ExpiresAt.HasValue || file.ExpiresAt.Value > now).ToArray();
+        var provider = _cloudFileStorage.Provider;
 
         if (_options.MaxFileCount > 0 && activeFiles.Length >= _options.MaxFileCount)
         {
-            _logger.LogWarning(
-                "Temporary file storage file-count limit reached in shared {Provider} storage: {CurrentFileCount} >= {MaxFileCount}",
-                _cloudFileStorage.Provider,
+            CloudBackedTemporaryFileLog.SharedStorageFileCountLimitReached(
+                _logger,
+                provider,
                 activeFiles.Length,
                 _options.MaxFileCount);
             throw new TemporaryStorageLimitExceededException(
@@ -286,9 +289,9 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         var projectedTotalBytes = activeFiles.Sum(static file => file.SizeBytes) + incomingDataSizeBytes + MetadataOverheadBytes;
         if (_options.MaxTotalStorageBytes > 0 && projectedTotalBytes > _options.MaxTotalStorageBytes)
         {
-            _logger.LogWarning(
-                "Temporary file storage capacity exceeded in shared {Provider} storage: {ProjectedBytes} > {MaxBytes}",
-                _cloudFileStorage.Provider,
+            CloudBackedTemporaryFileLog.SharedStorageCapacityExceeded(
+                _logger,
+                provider,
                 projectedTotalBytes,
                 _options.MaxTotalStorageBytes);
             throw new TemporaryStorageLimitExceededException(
@@ -409,8 +412,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
     {
         if (_redis == null)
         {
-            _logger.LogWarning(
-                "Rejecting shared temporary file write because Redis coordination is required for cloud-backed storage quotas.");
+            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisRequired(_logger);
             throw new TemporaryStorageLimitExceededException(
                 "Temporary file coordination requires Redis when using shared cloud storage. Please configure Redis and retry.",
                 _options.StorageFullRetryAfterSeconds);
@@ -418,8 +420,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
         if (!_redis.IsConnected)
         {
-            _logger.LogWarning(
-                "Rejecting shared temporary file write because Redis coordination is unavailable for cloud-backed storage.");
+            CloudBackedTemporaryFileLog.SharedWriteRejectedRedisUnavailable(_logger);
             throw new TemporaryStorageLimitExceededException(
                 "Temporary file coordination is currently unavailable. Please retry shortly.",
                 _options.StorageFullRetryAfterSeconds);
@@ -438,8 +439,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
             leaseCoordinator.Dispose();
             if (!_redis.IsConnected)
             {
-                _logger.LogWarning(
-                    "Rejecting shared temporary file write because Redis coordination was lost while enforcing cloud-backed storage quotas.");
+                CloudBackedTemporaryFileLog.SharedWriteRejectedRedisLost(_logger);
                 throw new TemporaryStorageLimitExceededException(
                     "Temporary file coordination is currently unavailable. Please retry shortly.",
                     _options.StorageFullRetryAfterSeconds);

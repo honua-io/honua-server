@@ -120,7 +120,7 @@ internal static partial class UserManagementEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to list users");
+            UserManagementLog.ListUsersFailed(logger, ex);
             return TypedResults.Problem(
                 title: "User listing failed",
                 detail: "An internal error occurred while listing users.",
@@ -147,7 +147,7 @@ internal static partial class UserManagementEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get user {UserId}", id);
+            UserManagementLog.GetUserFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "User retrieval failed",
                 detail: "An internal error occurred while retrieving the user.",
@@ -176,7 +176,7 @@ internal static partial class UserManagementEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to update roles for user {UserId}", id);
+            UserManagementLog.UpdateUserRolesFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "User role update failed",
                 detail: "An internal error occurred while updating user roles.",
@@ -204,7 +204,7 @@ internal static partial class UserManagementEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to deprovision user {UserId}", id);
+            UserManagementLog.DeprovisionUserFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "User deprovisioning failed",
                 detail: "An internal error occurred while deprovisioning the user.",
@@ -248,7 +248,7 @@ internal static partial class UserManagementEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to resolve effective permissions for user {UserId}", id);
+            UserManagementLog.ResolveEffectivePermissionsFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Effective permissions resolution failed",
                 detail: "An internal error occurred while resolving effective permissions.",

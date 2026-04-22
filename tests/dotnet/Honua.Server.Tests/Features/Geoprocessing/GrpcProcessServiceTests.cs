@@ -38,8 +38,8 @@ public sealed class GrpcProcessServiceTests
     public GrpcProcessServiceTests()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Allowed());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
 
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
@@ -240,8 +240,8 @@ public sealed class GrpcProcessServiceTests
         // so that unauthorized callers get 403 rather than an implementation-detail
         // 501 (consistent with the contract: auth on all mutating RPCs).
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Forbidden());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
 
         var request = new Proto.ExecutePlanRequest { Plan = CreateValidPlan() };
 
@@ -760,8 +760,8 @@ public sealed class GrpcProcessServiceTests
     public async Task ValidatePlan_Unauthenticated_ThrowsUnauthenticated()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var request = new Proto.ValidatePlanRequest { Plan = CreateValidPlan() };
 
@@ -799,8 +799,8 @@ public sealed class GrpcProcessServiceTests
     public async Task SubmitPlanJob_Unauthorized_ThrowsPermissionDenied()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Forbidden());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
 
         var request = new Proto.SubmitPlanJobRequest { Plan = CreateValidPlan() };
 
@@ -820,8 +820,8 @@ public sealed class GrpcProcessServiceTests
     public async Task ValidatePlan_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var request = new Proto.ValidatePlanRequest
         {
@@ -850,8 +850,8 @@ public sealed class GrpcProcessServiceTests
     public async Task SubmitPlanJob_UnauthenticatedWithInvalidPlan_ThrowsUnauthenticatedNotInvalidArgument()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var request = new Proto.SubmitPlanJobRequest
         {

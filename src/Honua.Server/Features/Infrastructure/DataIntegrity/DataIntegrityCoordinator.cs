@@ -107,11 +107,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
     {
         if (string.IsNullOrEmpty(operationId))
             throw new ArgumentException("Operation ID is required", nameof(operationId));
-        if (operation == null)
-            throw new ArgumentNullException(nameof(operation));
+        ArgumentNullException.ThrowIfNull(operation);
 
-        _logger.LogDebug("Starting coordinated transaction {OperationId} with isolation level {IsolationLevel}",
-            operationId, isolationLevel);
+        DataIntegrityCoordinatorLog.StartingCoordinatedTransaction(_logger, operationId, isolationLevel);
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
@@ -134,12 +132,12 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // Commit the coordinated transaction (database, files, cache)
             await transaction.CommitAsync(cancellationToken);
 
-            _logger.LogDebug("Successfully completed coordinated transaction {OperationId}", operationId);
+            DataIntegrityCoordinatorLog.CompletedCoordinatedTransaction(_logger, operationId);
             return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Coordinated transaction {OperationId} failed, initiating rollback", operationId);
+            DataIntegrityCoordinatorLog.CoordinatedTransactionFailed(_logger, operationId, ex);
 
             try
             {
@@ -147,7 +145,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             }
             catch (Exception rollbackEx)
             {
-                _logger.LogError(rollbackEx, "Failed to rollback coordinated transaction {OperationId}", operationId);
+                DataIntegrityCoordinatorLog.CoordinatedTransactionRollbackFailed(_logger, operationId, rollbackEx);
             }
 
             throw;
@@ -165,8 +163,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         var semaphore = _globalLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
         var operationId = Guid.NewGuid().ToString("N")[..8];
 
-        _logger.LogDebug("Attempting to acquire distributed lock {LockKey} (operation {OperationId})",
-            lockKey, operationId);
+        DataIntegrityCoordinatorLog.AttemptingDistributedLock(_logger, lockKey, operationId);
 
         var acquired = await semaphore.WaitAsync(timeout, cancellationToken);
         if (!acquired)
@@ -176,8 +173,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 
         _lockOwnership.TryAdd(lockKey, (DateTimeOffset.UtcNow, operationId));
 
-        _logger.LogDebug("Acquired distributed lock {LockKey} (operation {OperationId})",
-            lockKey, operationId);
+        DataIntegrityCoordinatorLog.DistributedLockAcquired(_logger, lockKey, operationId);
 
         return new DistributedLock(lockKey, operationId, semaphore, _logger);
     }
@@ -210,11 +206,10 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             Func<CancellationToken, Task> commitAction,
             Func<CancellationToken, Task> rollbackAction)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(DataIntegrityTransaction));
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
             _operations.Add(($"file:{operationType}", filePath, commitAction, rollbackAction));
-            _logger.LogDebug("Registered file operation {OperationType} for {FilePath} in transaction {OperationId}",
-                operationType, filePath, _operationId);
+            DataIntegrityCoordinatorLog.FileOperationRegistered(_logger, operationType, filePath, _operationId);
         }
 
         public void RegisterCacheOperation(
@@ -222,19 +217,17 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             Func<CancellationToken, Task> commitAction,
             Func<CancellationToken, Task> rollbackAction)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(DataIntegrityTransaction));
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
             _operations.Add(("cache", cacheKey, commitAction, rollbackAction));
-            _logger.LogDebug("Registered cache operation for {CacheKey} in transaction {OperationId}",
-                cacheKey, _operationId);
+            DataIntegrityCoordinatorLog.CacheOperationRegistered(_logger, cacheKey, _operationId);
         }
 
         public async Task CommitAsync(CancellationToken cancellationToken = default)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(DataIntegrityTransaction));
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
-            _logger.LogDebug("Committing coordinated transaction {OperationId} with {OperationCount} operations",
-                _operationId, _operations.Count);
+            DataIntegrityCoordinatorLog.CommittingCoordinatedTransaction(_logger, _operationId, _operations.Count);
 
             // First commit the database transaction
             await DatabaseTransaction.CommitAsync(cancellationToken);
@@ -247,13 +240,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 try
                 {
                     await commit(cancellationToken);
-                    _logger.LogDebug("Committed {Type} operation for {Key} in transaction {OperationId}",
-                        type, key, _operationId);
+                    DataIntegrityCoordinatorLog.OperationCommitted(_logger, type, key, _operationId);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to commit {Type} operation for {Key} in transaction {OperationId}",
-                        type, key, _operationId);
+                    DataIntegrityCoordinatorLog.OperationCommitFailed(_logger, type, key, _operationId, ex);
                     exceptions.Add(ex);
                 }
             }
@@ -268,8 +259,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         {
             if (_disposed) return;
 
-            _logger.LogDebug("Rolling back coordinated transaction {OperationId} with {OperationCount} operations",
-                _operationId, _operations.Count);
+            DataIntegrityCoordinatorLog.RollingBackCoordinatedTransaction(_logger, _operationId, _operations.Count);
 
             var exceptions = new List<Exception>();
 
@@ -280,13 +270,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 try
                 {
                     await rollback(cancellationToken);
-                    _logger.LogDebug("Rolled back {Type} operation for {Key} in transaction {OperationId}",
-                        type, key, _operationId);
+                    DataIntegrityCoordinatorLog.OperationRolledBack(_logger, type, key, _operationId);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to rollback {Type} operation for {Key} in transaction {OperationId}",
-                        type, key, _operationId);
+                    DataIntegrityCoordinatorLog.OperationRollbackFailed(_logger, type, key, _operationId, ex);
                     exceptions.Add(ex);
                 }
             }
@@ -303,8 +291,8 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 
             if (exceptions.Count > 0)
             {
-                _logger.LogWarning("Some rollback operations failed in transaction {OperationId}: {Exceptions}",
-                    _operationId, string.Join("; ", exceptions.Select(e => e.Message)));
+                var messages = string.Join("; ", exceptions.Select(static e => e.Message));
+                DataIntegrityCoordinatorLog.RollbackOperationsFailed(_logger, _operationId, messages);
             }
         }
 
@@ -321,7 +309,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error during transaction disposal for {OperationId}", _operationId);
+                    DataIntegrityCoordinatorLog.TransactionDisposalFailed(_logger, _operationId, ex);
                 }
                 finally
                 {
@@ -357,13 +345,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                     _lockOwnership.TryRemove(_lockKey, out _);
                     _semaphore.Release();
 
-                    _logger.LogDebug("Released distributed lock {LockKey} (operation {OperationId})",
-                        _lockKey, _operationId);
+                    DataIntegrityCoordinatorLog.DistributedLockReleased(_logger, _lockKey, _operationId);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error releasing distributed lock {LockKey} (operation {OperationId})",
-                        _lockKey, _operationId);
+                    DataIntegrityCoordinatorLog.DistributedLockReleaseFailed(_logger, _lockKey, _operationId, ex);
                 }
                 finally
                 {
@@ -390,8 +376,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             try
             {
                 var logger = new LoggerFactory().CreateLogger<DataIntegrityCoordinator>();
-                logger.LogWarning("Distributed lock cleanup blocked for 30+ seconds. Current lock count: {LockCount}, Ownership count: {OwnershipCount}",
-                    _globalLocks.Count, _lockOwnership.Count);
+                DataIntegrityCoordinatorLog.CleanupBlocked(logger, _globalLocks.Count, _lockOwnership.Count);
             }
             catch
             {
@@ -452,8 +437,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                     try
                     {
                         var logger = new LoggerFactory().CreateLogger<DataIntegrityCoordinator>();
-                        logger.LogInformation("Cleaned up {OrphanedCount} orphaned distributed locks during memory pressure cleanup",
-                            orphanedLocks.Count);
+                        DataIntegrityCoordinatorLog.OrphanedLocksCleanedUp(logger, orphanedLocks.Count);
                     }
                     catch
                     {
@@ -484,8 +468,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 try
                 {
                     var logger = new LoggerFactory().CreateLogger<DataIntegrityCoordinator>();
-                    logger.LogDebug("Cleaned up {ExpiredCount} expired locks, {ActiveCount} active locks remaining",
-                        expiredKeys.Count, _globalLocks.Count);
+                    DataIntegrityCoordinatorLog.ExpiredLocksCleanedUp(logger, expiredKeys.Count, _globalLocks.Count);
                 }
                 catch
                 {

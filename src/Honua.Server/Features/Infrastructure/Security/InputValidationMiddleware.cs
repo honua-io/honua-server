@@ -82,7 +82,7 @@ internal sealed class InputValidationMiddleware
         var validationResult = ValidateRequest(context.Request);
         if (!validationResult.IsValid)
         {
-            _logger.LogWarning("Malicious input detected: {Error} from {IP}",
+            InputValidationLog.MaliciousInputDetected(_logger,
                 validationResult.ErrorMessage,
                 context.Connection.RemoteIpAddress?.ToString());
 
@@ -215,7 +215,7 @@ internal sealed class InputValidationMiddleware
         return InputValidationResult.Valid();
     }
 
-    private InputValidationResult ValidateHeaderValue(string headerName, Microsoft.Extensions.Primitives.StringValues values)
+    private static InputValidationResult ValidateHeaderValue(string headerName, Microsoft.Extensions.Primitives.StringValues values)
     {
         foreach (var value in values)
         {

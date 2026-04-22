@@ -34,7 +34,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get cached result for key: {CacheKey}", cacheKey);
+            SimpleQueryResultCacheLog.GetFailed(_logger, cacheKey, ex);
             return default;
         }
     }
@@ -54,7 +54,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to set cache key: {CacheKey}", cacheKey);
+            SimpleQueryResultCacheLog.SetFailed(_logger, cacheKey, ex);
             throw;
         }
     }
@@ -68,7 +68,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to remove cache key: {CacheKey}", cacheKey);
+            SimpleQueryResultCacheLog.RemoveFailed(_logger, cacheKey, ex);
             return false;
         }
     }
@@ -81,7 +81,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to invalidate cache entries with pattern: {Pattern}", pattern);
+            SimpleQueryResultCacheLog.InvalidateFailed(_logger, pattern, ex);
             return 0;
         }
     }

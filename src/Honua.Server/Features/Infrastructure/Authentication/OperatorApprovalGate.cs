@@ -118,7 +118,7 @@ internal sealed class OperatorApprovalGate(
     /// </summary>
     public AccessDecision CheckAuthorization(ClaimsPrincipal principal, OperatorAuthorizationRequest request)
     {
-        var decision = authEvaluator.Evaluate(principal, request);
+        var decision = authEvaluator.EvaluateAsync(principal, request).ConfigureAwait(false).GetAwaiter().GetResult();
         EnrichAuthorizationActivity(request, decision.IsAllowed ? "allowed" : "denied");
         return decision;
     }

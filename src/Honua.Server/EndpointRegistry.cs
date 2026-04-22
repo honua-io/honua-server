@@ -290,7 +290,17 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/observability/migrations"),
 
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
+        new("GET", "/api/v1/admin/performance/enhanced/database/query-performance"),
+        new("GET", "/api/v1/admin/performance/enhanced/database/slow-queries"),
+        new("GET", "/api/v1/admin/performance/enhanced/resources/tracking"),
+        new("GET", "/api/v1/admin/performance/enhanced/resources/potential-leaks"),
+        new("POST", "/api/v1/admin/performance/enhanced/resources/scan-leaks"),
+        new("GET", "/api/v1/admin/performance/enhanced/exceptions/statistics"),
+        new("GET", "/api/v1/admin/performance/enhanced/exceptions/recent"),
+        new("GET", "/api/v1/admin/performance/enhanced/cache/statistics"),
+        new("GET", "/api/v1/admin/performance/enhanced/cache/effectiveness"),
         new("DELETE", "/api/v1/admin/performance/enhanced/cache/invalidate"),
+        new("GET", "/api/v1/admin/performance/enhanced/summary"),
 
         new("GET", "/api/v1/metrics/health"),
         new("GET", "/api/v1/metrics/performance"),

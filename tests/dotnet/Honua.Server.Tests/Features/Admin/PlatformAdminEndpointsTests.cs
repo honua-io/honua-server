@@ -85,6 +85,68 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
         firstFeature.TryGetProperty("upgradeRequired", out _).Should().BeTrue();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("DELETE /api/v1/admin/performance/enhanced/cache/invalidate")]
+    public async Task InvalidateEnhancedPerformanceCache_WithoutPattern_Returns400()
+    {
+        var response = await _client.DeleteAsync("/api/v1/admin/performance/enhanced/cache/invalidate");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Performance)]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/database/query-performance")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/database/slow-queries")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/resources/tracking")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/resources/potential-leaks")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/exceptions/statistics")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/exceptions/recent")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/cache/statistics")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/cache/effectiveness")]
+    [Endpoint("GET /api/v1/admin/performance/enhanced/summary")]
+    public async Task GetEnhancedPerformanceEndpoints_ReturnOk()
+    {
+        var endpoints = new[]
+        {
+            "/api/v1/admin/performance/enhanced/database/query-performance",
+            "/api/v1/admin/performance/enhanced/database/slow-queries",
+            "/api/v1/admin/performance/enhanced/resources/tracking",
+            "/api/v1/admin/performance/enhanced/resources/potential-leaks",
+            "/api/v1/admin/performance/enhanced/exceptions/statistics",
+            "/api/v1/admin/performance/enhanced/exceptions/recent",
+            "/api/v1/admin/performance/enhanced/cache/statistics",
+            "/api/v1/admin/performance/enhanced/cache/effectiveness",
+            "/api/v1/admin/performance/enhanced/summary"
+        };
+
+        foreach (var endpoint in endpoints)
+        {
+            var response = await _client.GetAsync(endpoint);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            var allowedMethods = response.Headers.TryGetValues("Allow", out var headerValues)
+                ? string.Join(',', headerValues)
+                : "<none>";
+            response.StatusCode.Should().Be(
+                HttpStatusCode.OK,
+                "enhanced performance endpoint {0} should support GET (Allow: {1}, Body: {2})",
+                endpoint,
+                allowedMethods,
+                responseBody);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Performance)]
+    [Endpoint("POST /api/v1/admin/performance/enhanced/resources/scan-leaks")]
+    public async Task ScanEnhancedPerformanceResourceLeaks_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/api/v1/admin/performance/enhanced/resources/scan-leaks", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // --- License Upload ---
 
     [IntegrationTest]

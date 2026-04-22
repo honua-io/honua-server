@@ -121,8 +121,6 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-<<<<<<< HEAD
-=======
     public void TryEnqueueRefresh_FallbackMode_DifferentKeys_BothSucceed()
     {
         var first = _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
@@ -134,7 +132,6 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
->>>>>>> origin/trunk
     public void NotifyInvalidation_FallbackMode_MarksKeyInvalidated()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
@@ -169,8 +166,6 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
-<<<<<<< HEAD
-=======
     public void NotifyInvalidation_FallbackMode_WithoutPendingRefresh_IsIgnored()
     {
         // No pending refresh → invalidation flag must not be tracked (avoids stale markers
@@ -194,7 +189,6 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
->>>>>>> origin/trunk
     public async Task NotifyInvalidationClusterWideAsync_WithoutRedis_FallsBackToLocal()
     {
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask);
@@ -376,8 +370,6 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
         coordinator.Dispose();
     }
-<<<<<<< HEAD
-=======
 
     [UnitTest]
     [Operation(Operations.Cache)]
@@ -461,5 +453,4 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         _coordinator.FailureCount.Should().Be(0);
         _coordinator.SkippedCount.Should().Be(0);
     }
->>>>>>> origin/trunk
 }

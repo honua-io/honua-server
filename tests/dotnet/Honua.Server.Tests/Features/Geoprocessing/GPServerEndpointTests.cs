@@ -480,8 +480,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // (see IGeoprocessingJobService contract: adapters must pre-authorize).
         var authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
         authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.RequiresAuth());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.RequiresAuth()));
 
         var authFixture = new WebAppFixture()
             .ConfigureServices(services =>

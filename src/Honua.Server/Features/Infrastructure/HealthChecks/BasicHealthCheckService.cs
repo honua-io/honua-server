@@ -27,7 +27,7 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
         var stopwatch = Stopwatch.StartNew();
         var components = new Dictionary<string, ComponentHealthResult>();
 
-        _logger.LogDebug("Starting health check");
+        BasicHealthCheckServiceLog.HealthCheckStarted(_logger);
 
         try
         {
@@ -48,15 +48,14 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
                 Description = $"{healthyCount}/{components.Count} components healthy"
             };
 
-            _logger.LogInformation("Health check completed with status {Status} in {DurationMs}ms",
-                overallStatus, stopwatch.ElapsedMilliseconds);
+            BasicHealthCheckServiceLog.HealthCheckCompleted(_logger, overallStatus, stopwatch.ElapsedMilliseconds);
 
             return result;
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            _logger.LogError(ex, "Health check failed");
+            BasicHealthCheckServiceLog.HealthCheckFailed(_logger, ex);
 
             return new HealthCheckResult
             {
@@ -85,7 +84,7 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
 
     public IReadOnlyList<string> GetRegisteredComponents() => new[] { "database", "cache" };
 
-    private async Task<ComponentHealthResult> CheckDatabaseAsync(CancellationToken cancellationToken)
+    private static async Task<ComponentHealthResult> CheckDatabaseAsync(CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -121,7 +120,7 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
         }
     }
 
-    private async Task<ComponentHealthResult> CheckCacheAsync(CancellationToken cancellationToken)
+    private static async Task<ComponentHealthResult> CheckCacheAsync(CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
 

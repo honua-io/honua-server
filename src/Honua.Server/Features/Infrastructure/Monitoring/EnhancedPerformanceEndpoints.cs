@@ -122,11 +122,11 @@ internal static partial class EnhancedPerformanceEndpoints
             var monitor = httpContext.RequestServices.GetService<IDatabaseQueryPerformanceMonitor>();
             if (monitor == null)
             {
-                return Results.Ok(new QueryPerformanceStatistics());
+                return Results.Json(new QueryPerformanceStatistics(), MetricsJsonContext.Default.QueryPerformanceStatistics);
             }
 
             var statistics = monitor.GetStatistics();
-            return Results.Ok(statistics);
+            return Results.Json(statistics, MetricsJsonContext.Default.QueryPerformanceStatistics);
         }
         catch (Exception ex)
         {
@@ -146,7 +146,9 @@ internal static partial class EnhancedPerformanceEndpoints
             var monitor = httpContext.RequestServices.GetService<IDatabaseQueryPerformanceMonitor>();
             if (monitor == null)
             {
-                return Results.Ok(new SlowQueryResponse { SlowQueries = Array.Empty<SlowQueryRecord>() });
+                return Results.Json(
+                    new SlowQueryResponse { SlowQueries = Array.Empty<SlowQueryRecord>() },
+                    MetricsJsonContext.Default.SlowQueryResponse);
             }
 
             var slowQueries = monitor.GetRecentSlowQueries(Math.Min(maxCount, 200));
@@ -157,7 +159,7 @@ internal static partial class EnhancedPerformanceEndpoints
                 CollectedAt = DateTime.UtcNow
             };
 
-            return Results.Ok(response);
+            return Results.Json(response, MetricsJsonContext.Default.SlowQueryResponse);
         }
         catch (Exception ex)
         {
@@ -177,11 +179,11 @@ internal static partial class EnhancedPerformanceEndpoints
             var detector = httpContext.RequestServices.GetService<IResourceLeakDetector>();
             if (detector == null)
             {
-                return Results.Ok(new ResourceTrackingStatistics());
+                return Results.Json(new ResourceTrackingStatistics(), MetricsJsonContext.Default.ResourceTrackingStatistics);
             }
 
             var statistics = detector.GetStatistics();
-            return Results.Ok(statistics);
+            return Results.Json(statistics, MetricsJsonContext.Default.ResourceTrackingStatistics);
         }
         catch (Exception ex)
         {
@@ -201,7 +203,9 @@ internal static partial class EnhancedPerformanceEndpoints
             var detector = httpContext.RequestServices.GetService<IResourceLeakDetector>();
             if (detector == null)
             {
-                return Results.Ok(new ResourceLeakResponse { PotentialLeaks = Array.Empty<ResourceLeakInfo>() });
+                return Results.Json(
+                    new ResourceLeakResponse { PotentialLeaks = Array.Empty<ResourceLeakInfo>() },
+                    MetricsJsonContext.Default.ResourceLeakResponse);
             }
 
             var leaks = detector.GetPotentialLeaks();
@@ -212,7 +216,7 @@ internal static partial class EnhancedPerformanceEndpoints
                 CollectedAt = DateTime.UtcNow
             };
 
-            return Results.Ok(response);
+            return Results.Json(response, MetricsJsonContext.Default.ResourceLeakResponse);
         }
         catch (Exception ex)
         {
@@ -232,11 +236,11 @@ internal static partial class EnhancedPerformanceEndpoints
             var detector = httpContext.RequestServices.GetService<IResourceLeakDetector>();
             if (detector == null)
             {
-                return Results.Ok(new ResourceLeakScanResult());
+                return Results.Json(new ResourceLeakScanResult(), MetricsJsonContext.Default.ResourceLeakScanResult);
             }
 
             var result = await detector.ScanForLeaksAsync();
-            return Results.Ok(result);
+            return Results.Json(result, MetricsJsonContext.Default.ResourceLeakScanResult);
         }
         catch (Exception ex)
         {
@@ -256,11 +260,11 @@ internal static partial class EnhancedPerformanceEndpoints
             var telemetry = httpContext.RequestServices.GetService<IEnhancedExceptionTelemetry>();
             if (telemetry == null)
             {
-                return Results.Ok(new ExceptionStatistics());
+                return Results.Json(new ExceptionStatistics(), MetricsJsonContext.Default.ExceptionStatistics);
             }
 
             var statistics = telemetry.GetStatistics();
-            return Results.Ok(statistics);
+            return Results.Json(statistics, MetricsJsonContext.Default.ExceptionStatistics);
         }
         catch (Exception ex)
         {
@@ -282,7 +286,9 @@ internal static partial class EnhancedPerformanceEndpoints
             var telemetry = httpContext.RequestServices.GetService<IEnhancedExceptionTelemetry>();
             if (telemetry == null)
             {
-                return Results.Ok(new ExceptionHistoryResponse { Exceptions = Array.Empty<ExceptionRecord>() });
+                return Results.Json(
+                    new ExceptionHistoryResponse { Exceptions = Array.Empty<ExceptionRecord>() },
+                    MetricsJsonContext.Default.ExceptionHistoryResponse);
             }
 
             ExceptionSeverity? minSeverity = null;
@@ -299,7 +305,7 @@ internal static partial class EnhancedPerformanceEndpoints
                 CollectedAt = DateTime.UtcNow
             };
 
-            return Results.Ok(response);
+            return Results.Json(response, MetricsJsonContext.Default.ExceptionHistoryResponse);
         }
         catch (Exception ex)
         {
@@ -319,11 +325,11 @@ internal static partial class EnhancedPerformanceEndpoints
             var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
             if (cacheManager == null)
             {
-                return Results.Ok(new QueryCacheStatistics());
+                return Results.Json(new QueryCacheStatistics(), MetricsJsonContext.Default.QueryCacheStatistics);
             }
 
             var statistics = cacheManager.GetStatistics();
-            return Results.Ok(statistics);
+            return Results.Json(statistics, MetricsJsonContext.Default.QueryCacheStatistics);
         }
         catch (Exception ex)
         {
@@ -343,11 +349,11 @@ internal static partial class EnhancedPerformanceEndpoints
             var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
             if (cacheManager == null)
             {
-                return Results.Ok(new CacheEffectivenessMetrics());
+                return Results.Json(new CacheEffectivenessMetrics(), MetricsJsonContext.Default.CacheEffectivenessMetrics);
             }
 
             var metrics = cacheManager.GetEffectivenessMetrics();
-            return Results.Ok(metrics);
+            return Results.Json(metrics, MetricsJsonContext.Default.CacheEffectivenessMetrics);
         }
         catch (Exception ex)
         {
@@ -372,7 +378,9 @@ internal static partial class EnhancedPerformanceEndpoints
             var cacheManager = httpContext.RequestServices.GetService<IQueryResultCacheManager>();
             if (cacheManager == null)
             {
-                return Results.Ok(new CacheInvalidationResponse { EntriesInvalidated = 0 });
+                return Results.Json(
+                    new CacheInvalidationResponse { EntriesInvalidated = 0 },
+                    MetricsJsonContext.Default.CacheInvalidationResponse);
             }
 
             var invalidatedCount = await cacheManager.InvalidateAsync(pattern);
@@ -383,7 +391,7 @@ internal static partial class EnhancedPerformanceEndpoints
                 InvalidatedAt = DateTime.UtcNow
             };
 
-            return Results.Ok(response);
+            return Results.Json(response, MetricsJsonContext.Default.CacheInvalidationResponse);
         }
         catch (Exception ex)
         {
@@ -436,7 +444,7 @@ internal static partial class EnhancedPerformanceEndpoints
             // Calculate overall health score
             summary.OverallHealthScore = CalculateHealthScore(summary);
 
-            return Results.Ok(summary);
+            return Results.Json(summary, MetricsJsonContext.Default.PerformanceSummaryResponse);
         }
         catch (Exception ex)
         {

@@ -758,21 +758,33 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         // WEEK 5 FIX: Early caching for high-complexity queries with lower execution threshold
         if (complexityScore >= 10 && metrics.ExecutionCount >= Math.Max(1, _options.MinExecutionsForCaching / 2))
         {
-            PreparedStatementCacheLog.EarlyCachingTriggered(_logger, GetStatementHash(sql), complexityScore);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                var statementHash = GetStatementHash(sql);
+                PreparedStatementCacheLog.EarlyCachingTriggered(_logger, statementHash, complexityScore);
+            }
             return true;
         }
 
         // WEEK 5 FIX: Cache geospatial queries earlier due to high cost
         if (metrics.ComplexityScore.HasGeospatialOperations && metrics.ExecutionCount >= 2)
         {
-            PreparedStatementCacheLog.GeospatialCachingTriggered(_logger, GetStatementHash(sql));
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                var statementHash = GetStatementHash(sql);
+                PreparedStatementCacheLog.GeospatialCachingTriggered(_logger, statementHash);
+            }
             return true;
         }
 
         // WEEK 5 FIX: Predictive caching for queries with consistent performance patterns
         if (metrics.ExecutionCount >= 3 && metrics.AverageExecutionTimeMs > 50 && IsConsistentPerformance(metrics))
         {
-            PreparedStatementCacheLog.PredictiveCachingTriggered(_logger, GetStatementHash(sql), metrics.AverageExecutionTimeMs);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                var statementHash = GetStatementHash(sql);
+                PreparedStatementCacheLog.PredictiveCachingTriggered(_logger, statementHash, metrics.AverageExecutionTimeMs);
+            }
             return true;
         }
 

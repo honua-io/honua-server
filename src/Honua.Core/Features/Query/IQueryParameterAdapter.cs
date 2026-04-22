@@ -117,7 +117,7 @@ public sealed record ProtocolLimits
     /// <summary>
     /// Whether aggregation is supported.
     /// </summary>
-    public bool SupportsAggregation { get; init; } = false;
+    public bool SupportsAggregation { get; init; }
 
     /// <summary>
     /// Standard limits for OGC API Features.

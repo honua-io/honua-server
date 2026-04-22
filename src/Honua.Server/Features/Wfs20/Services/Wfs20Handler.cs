@@ -14,9 +14,11 @@ using System.Xml.Linq;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -58,6 +60,10 @@ internal sealed partial class Wfs20Handler
     private readonly IFeatureWriter _featureWriter;
     private readonly IGmlFeatureStore _gmlFeatureStore;
     private readonly IFilterExpressionService _filterExpressionService;
+    private readonly IQueryParameterAdapter<Wfs20QueryRequest> _queryParameterAdapter;
+    private readonly IQueryProcessor _queryProcessor;
+    private readonly IEditParameterAdapter<Wfs20EditRequest> _editParameterAdapter;
+    private readonly IEditProcessor _editProcessor;
     private readonly OgcFeaturesGeometryServices _geometryServices;
     private readonly Wfs20Options _wfs20Options;
     private readonly ICoordinateTransformService _coordinateTransformService;
@@ -76,6 +82,10 @@ internal sealed partial class Wfs20Handler
         _featureWriter = queryServices.FeatureWriter;
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _filterExpressionService = queryServices.FilterExpressionService;
+        _queryParameterAdapter = queryServices.QueryParameterAdapter;
+        _queryProcessor = queryServices.QueryProcessor;
+        _editParameterAdapter = queryServices.EditParameterAdapter;
+        _editProcessor = queryServices.EditProcessor;
         _geometryServices = queryServices.GeometryServices;
         _coordinateTransformService = queryServices.CoordinateTransformService;
         _crsRegistry = queryServices.CrsRegistry;
@@ -659,18 +669,31 @@ internal sealed partial class Wfs20Handler
         var orderBy = ParseSortBy(layer, sortBy);
         var outputSrid = await ResolveRequestedOutputSridAsync(layer, srsName, cancellationToken).ConfigureAwait(false);
         var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
-
-        return new FeatureQuery
+        var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+            new Wfs20QueryRequest
+            {
+                SqlFilter = sqlFilter,
+                ObjectIds = resourceIds.ObjectIds,
+                OutFields = projectedFields,
+                SpatialFilter = spatialFilter,
+                OutputCrs = QueryCrs.Create(outputSrid, outputAxisOrder),
+                OrderBy = orderBy
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
+        if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
         {
-            SqlFilter = sqlFilter,
-            ObjectIds = resourceIds.ObjectIds,
-            OutFields = projectedFields,
-            SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutputSrid = outputSrid,
-            OutputAxisOrder = outputAxisOrder,
-            OrderBy = orderBy
-        };
+            throw new ArgumentException(queryAdapterResult.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        if (!validation.IsValid)
+        {
+            throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
     }
 
     private async ValueTask<FeatureQuery> BuildValueQueryAsync(
@@ -697,17 +720,30 @@ internal sealed partial class Wfs20Handler
             : sqlFilter;
         var outputSrid = await ResolveRequestedOutputSridAsync(layer, srsName, cancellationToken).ConfigureAwait(false);
         var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
-
-        return new FeatureQuery
+        var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+            new Wfs20QueryRequest
+            {
+                SqlFilter = sqlFilter,
+                ObjectIds = resourceIds.ObjectIds,
+                OutFields = outFields,
+                SpatialFilter = spatialFilter,
+                OutputCrs = QueryCrs.Create(outputSrid, outputAxisOrder)
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
+        if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
         {
-            SqlFilter = sqlFilter,
-            ObjectIds = resourceIds.ObjectIds,
-            OutFields = outFields,
-            SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutputSrid = outputSrid,
-            OutputAxisOrder = outputAxisOrder
-        };
+            throw new ArgumentException(queryAdapterResult.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        if (!validation.IsValid)
+        {
+            throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
+        }
+
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
     }
 
     private SqlFragment? TranslateFesFilter(LayerDefinition layer, string? filter)

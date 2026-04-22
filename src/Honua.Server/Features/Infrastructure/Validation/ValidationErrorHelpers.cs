@@ -160,23 +160,6 @@ public static class ValidationErrorHelpers
             cancellationToken);
     }
 
-    private sealed class MethodNotAllowedWithAllowHeaderResult(ISet<string> allowedMethods) : IResult
-    {
-        private readonly string _allowHeader = string.Join(", ", allowedMethods);
-
-        public Task ExecuteAsync(HttpContext httpContext)
-        {
-            ArgumentNullException.ThrowIfNull(httpContext);
-
-            httpContext.Response.Headers.Allow = _allowHeader;
-            return Results.Problem(
-                title: "Method Not Allowed",
-                detail: $"Allowed methods: {_allowHeader}",
-                statusCode: StatusCodes.Status405MethodNotAllowed)
-                .ExecuteAsync(httpContext);
-        }
-    }
-
     /// <summary>
     /// Creates a unsupported media type response for content type validation failures.
     /// </summary>

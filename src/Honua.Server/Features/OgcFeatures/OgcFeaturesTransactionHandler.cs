@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -34,6 +35,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IEditParameterAdapter<OgcFeaturesEditRequest> _editParameterAdapter = dependencies.EditParameterAdapter;
+    private readonly IEditProcessor _editProcessor = dependencies.EditProcessor;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -109,9 +112,28 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             else
             {
-                var editResult = await _featureWriter.ApplyEditsAsync(
+                var editResult = await ExecuteEditAsync(
                     layerId,
-                    preparedBatch.EditBatch,
+                    layer,
+                    new OgcFeaturesEditRequest
+                    {
+                        Operation = OgcFeaturesEditOperation.Batch,
+                        RollbackOnFailure = true,
+                        BatchOperations = preparedBatch.PreparedOperations
+                            .Select(static operation => new OgcFeaturesBatchEditOperation
+                            {
+                                Operation = operation.OperationKind switch
+                                {
+                                    BatchOperationKind.Create => OgcFeaturesEditOperation.Create,
+                                    BatchOperationKind.Update => OgcFeaturesEditOperation.Replace,
+                                    BatchOperationKind.Delete => OgcFeaturesEditOperation.Delete,
+                                    _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
+                                },
+                                Feature = operation.Feature,
+                                ObjectId = operation.ObjectId
+                            })
+                            .ToImmutableArray()
+                    },
                     cancellationToken).ConfigureAwait(false);
 
                 results = MapBatchEditResults(batchRequest.Operations.Count, preparedBatch.PreparedOperations, editResult);
@@ -263,28 +285,56 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
-                var updated = await _featureWriter.UpdateAsync(layerId, feature, cancellationToken);
-                var newETag = GenerateETag(updated);
+                var editResult = await ExecuteEditAsync(
+                    layerId,
+                    layer,
+                    new OgcFeaturesEditRequest
+                    {
+                        Operation = OgcFeaturesEditOperation.Replace,
+                        Feature = feature,
+                        ObjectId = objectId,
+                        IfMatch = ifMatch
+                    },
+                    cancellationToken);
+                var updateResult = editResult.UpdateResults.FirstOrDefault();
+                if (!updateResult.IsSuccess)
+                {
+                    if (IsNotFound(updateResult))
+                    {
+                        Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
+                        return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                    }
+
+                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while replacing the feature.");
+                }
+
+                var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+                if (!updated.HasValue)
+                {
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Updated feature could not be reloaded.");
+                }
+
+                var newETag = GenerateETag(updated.Value);
 
                 context.Response.Headers.ETag = $"\"{newETag}\"";
 
                 var updateLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
                     collectionId,
-                    FormattableString.Invariant($"{updated.Id}"),
+                    FormattableString.Invariant($"{updated.Value.Id}"),
                     MediaTypes.GeoJson);
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-                var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+                var response = ToOgcFeature(updated.Value, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
-                    updated.Id,
+                    updated.Value.Id,
                     "update",
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
-                    mutationFeature: updated,
+                    mutationFeature: updated.Value,
                     serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -473,27 +523,55 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             try
             {
-                var updated = await _featureWriter.UpdateAsync(layerId, feature, cancellationToken);
-                var newETag = GenerateETag(updated);
+                var editResult = await ExecuteEditAsync(
+                    layerId,
+                    layer,
+                    new OgcFeaturesEditRequest
+                    {
+                        Operation = OgcFeaturesEditOperation.Patch,
+                        Feature = feature,
+                        ObjectId = objectId,
+                        IfMatch = ifMatch
+                    },
+                    cancellationToken);
+                var updateResult = editResult.UpdateResults.FirstOrDefault();
+                if (!updateResult.IsSuccess)
+                {
+                    if (IsNotFound(updateResult))
+                    {
+                        Log.PatchFeatureNotFound(_logger, collectionId, featureId);
+                        return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                    }
+
+                    return StandardErrorHelpers.CreateInternalServerError(context, updateResult.ErrorMessage ?? "An error occurred while patching the feature.");
+                }
+
+                var updated = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+                if (!updated.HasValue)
+                {
+                    return StandardErrorHelpers.CreateInternalServerError(context, "Updated feature could not be reloaded.");
+                }
+
+                var newETag = GenerateETag(updated.Value);
                 context.Response.Headers.ETag = $"\"{newETag}\"";
 
                 var updateLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
                     collectionId,
-                    FormattableString.Invariant($"{updated.Id}"),
+                    FormattableString.Invariant($"{updated.Value.Id}"),
                     MediaTypes.GeoJson);
                 context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-                var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
+                var response = ToOgcFeature(updated.Value, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
                 await _mutationEventService.PublishAsync(
                     context,
                     layerId,
-                    updated.Id,
+                    updated.Value.Id,
                     "update",
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
-                    mutationFeature: updated,
+                    mutationFeature: updated.Value,
                     serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -533,6 +611,33 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while patching the feature.");
         }
     }
+
+    private async Task<FeatureEditResult> ExecuteEditAsync(
+        int layerId,
+        LayerDefinition layer,
+        OgcFeaturesEditRequest request,
+        CancellationToken cancellationToken)
+    {
+        var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
+        {
+            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        if (!editValidation.IsValid)
+        {
+            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsNotFound(EditOperationResult result)
+        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+           result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     private async Task<PreparedBatchValidationResult> PrepareBatchOperationAsync(
         int layerId,

@@ -11,6 +11,13 @@ namespace Honua.Server.Features.Infrastructure.Security;
 /// </summary>
 public static class CorsConfiguration
 {
+    private static readonly string[] DefaultDevelopmentOrigins =
+    [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8080"
+    ];
+
     public const string DevelopmentPolicy = "DevelopmentCors";
     public const string ProductionPolicy = "ProductionCors";
     public const string RestrictedPolicy = "RestrictedCors";
@@ -45,7 +52,7 @@ public static class CorsConfiguration
                 {
                     // Get development-specific allowed origins from configuration
                     var devOrigins = configuration.GetSection("Cors:DevelopmentOrigins").Get<string[]>()
-                        ?? new[] { "http://localhost:3000", "http://localhost:5173", "http://localhost:8080" };
+                        ?? DefaultDevelopmentOrigins;
 
                     if (devOrigins.Length > 0)
                     {

@@ -194,14 +194,13 @@ public sealed class QueryProcessor : IQueryProcessor
         var limit = query.Limit;
         if (limit.HasValue && limit.Value > MaxReasonableLimit)
         {
-            _logger.LogWarning("Large limit optimized from {OriginalLimit} to {OptimizedLimit}",
-                limit.Value, MaxReasonableLimit);
+            QueryLog.LargeLimitOptimized(_logger, limit.Value, MaxReasonableLimit);
             limit = MaxReasonableLimit;
         }
 
         // Apply optimizations if any changes were made
-        if (!ReferenceEquals(orderBy, query.OrderBy) ||
-            !ReferenceEquals(outFields, query.OutFields) ||
+        if (!Nullable.Equals(orderBy, query.OrderBy) ||
+            !Nullable.Equals(outFields, query.OutFields) ||
             limit != query.Limit)
         {
             return query with
@@ -228,7 +227,7 @@ public sealed class QueryProcessor : IQueryProcessor
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to translate filter expression, falling back to SQL fragment");
+                QueryLog.FilterTranslationFailed(_logger, ex);
                 sqlFilter = query.Filter?.GetSqlFragment();
             }
         }
@@ -351,7 +350,7 @@ public sealed class QueryProcessor : IQueryProcessor
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to estimate result count for layer {LayerId}", layer.Id);
+            QueryLog.EstimateResultCountFailed(_logger, layer.Id, ex);
 
             // Return a conservative estimate based on query characteristics
             if (query.ObjectIds?.IsDefaultOrEmpty == false)

@@ -153,7 +153,7 @@ internal sealed class McpOperatorSurface
         }
     }
 
-    private McpJsonRpcResponse HandleInitialize(McpJsonRpcRequest request)
+    private static McpJsonRpcResponse HandleInitialize(McpJsonRpcRequest request)
     {
         var parameters = ParseParams(request.Params, McpJsonContext.Default.McpInitializeParams);
         if (parameters is null)

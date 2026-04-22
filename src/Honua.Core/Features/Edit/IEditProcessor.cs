@@ -170,7 +170,7 @@ public sealed record EditExecutionStrategy
     /// <summary>
     /// Whether to enable parallel processing for independent operations.
     /// </summary>
-    public bool EnableParallelProcessing { get; init; } = false;
+    public bool EnableParallelProcessing { get; init; }
 
     /// <summary>
     /// Recommended batch size for large edit operations.

@@ -3,6 +3,7 @@
 
 using System.Data.Common;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.AnomalyDetection.Abstractions;
 using Honua.Core.Features.AnomalyDetection.Domain;
@@ -77,7 +78,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
             ? $"SELECT COUNT(*) FROM (SELECT 1 FROM {table} ORDER BY {oidCol} LIMIT {request.ScanLimit}) t"
             : $"SELECT COUNT(*) FROM {table}";
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt64(result);
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private static async Task<List<GeometryAnomaly>> DetectGeometryAnomaliesAsync(
@@ -142,7 +143,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
             WHERE {geomCol} IS NOT NULL AND NOT ST_IsValid({geomCol})
             """;
 
-        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (count > 0)
         {
             await using var sampleCmd = connection.CreateCommand();
@@ -180,7 +181,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
             WHERE {geomCol} IS NULL OR ST_IsEmpty({geomCol})
             """;
 
-        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (count > 0)
         {
             await using var sampleCmd = connection.CreateCommand();
@@ -219,7 +220,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
             """;
         cmd.Parameters.Add(new NpgsqlParameter("@srid", declaredSrid));
 
-        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (count > 0)
         {
             await using var sampleCmd = connection.CreateCommand();
@@ -273,7 +274,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
         cmd.Parameters.Add(new NpgsqlParameter("@srid", declaredSrid));
         cmd.Parameters.Add(new NpgsqlParameter("@ratio", SuspiciousAreaPerimeterRatio));
 
-        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (count > 0)
         {
             await using var sampleCmd = connection.CreateCommand();
@@ -318,7 +319,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
               AND ST_NPoints({geomCol}) != ST_NPoints(ST_RemoveRepeatedPoints({geomCol}))
             """;
 
-        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (count > 0)
         {
             await using var sampleCmd = connection.CreateCommand();
@@ -397,7 +398,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
             SELECT COUNT(*) FROM scanned WHERE {col} IS NULL
             """;
 
-        var nullCount = Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken));
+        var nullCount = Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         var effectiveTotal = totalCount > 0 ? totalCount : 1;
         var nullPercent = (int)(nullCount * 100 / effectiveTotal);
 
@@ -509,7 +510,7 @@ internal sealed partial class PostgresAnomalyAnalyzer(
         outlierCmd.Parameters.Add(new NpgsqlParameter("@lower", lowerBound));
         outlierCmd.Parameters.Add(new NpgsqlParameter("@upper", upperBound));
 
-        var outlierCount = Convert.ToInt32(await outlierCmd.ExecuteScalarAsync(cancellationToken));
+        var outlierCount = Convert.ToInt32(await outlierCmd.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (outlierCount > 0)
         {
             await using var sampleCmd = connection.CreateCommand();

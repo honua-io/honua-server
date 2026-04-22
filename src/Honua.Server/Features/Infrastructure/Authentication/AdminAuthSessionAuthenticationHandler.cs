@@ -38,7 +38,7 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
         }
         catch (ArgumentException ex)
         {
-            Logger.LogWarning(ex, "Failed to project the server-managed admin session into an authenticated principal.");
+            AdminAuthSessionLog.ClaimsProjectionFailed(Logger, ex);
             await _sessionStore.RemoveAuthenticatedSessionAsync(sessionId, Context.RequestAborted).ConfigureAwait(false);
             DeleteSessionCookie();
             return AuthenticateResult.Fail("The admin session is invalid or expired.");

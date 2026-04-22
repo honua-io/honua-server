@@ -27,6 +27,12 @@ public static partial class Extensions
     private const double DefaultSlowRequestThresholdMs = 1000.0;
     private const int DefaultMemorySamplingIntervalMs = 100;
     private const int DefaultHttpErrorStatusCode = 400;
+
+    /// <summary>
+    /// Adds the standard Honua service defaults for telemetry, health checks, and service discovery.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
     {
         // Adaptive sampling configuration
@@ -51,6 +57,11 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Adds the standard telemetry defaults without applying the full service-default stack.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddTelemetryDefaults(this IHostApplicationBuilder builder)
     {
         builder.AddAdaptiveSampling();
@@ -58,6 +69,11 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Configures OpenTelemetry tracing, metrics, and logging exporters for the current application.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
     {
         // Bind tracing options from configuration
@@ -487,6 +503,11 @@ public static partial class Extensions
         public static partial void MemoryMonitoringServiceFailed(ILogger logger, Exception exception);
     }
 
+    /// <summary>
+    /// Adds the baseline health checks used by all Honua-hosted services.
+    /// </summary>
+    /// <param name="builder">The application builder being configured.</param>
+    /// <returns>The application builder for chaining.</returns>
     public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
     {
         builder.Services.AddHealthChecks()
@@ -495,6 +516,11 @@ public static partial class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Maps the default infrastructure endpoints exposed by Honua services.
+    /// </summary>
+    /// <param name="app">The web application being configured.</param>
+    /// <returns>The web application for chaining.</returns>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
         // Map health endpoints for Aspire dashboard

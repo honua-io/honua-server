@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.Query;
 using Honua.Server.Features.OgcFeatures.Services;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.OgcFeatures;
 
@@ -17,6 +20,10 @@ internal static class OgcFeaturesServiceCollectionExtensions
 
         services.AddScoped<OgcFeaturesGeometryServices>();
         services.AddScoped<OgcFilterProcessor>();
+        services.TryAddScoped<IQueryProcessor, QueryProcessor>();
+        services.TryAddScoped<IEditProcessor, EditProcessor>();
+        services.TryAddScoped<IQueryParameterAdapter<OgcFeaturesQueryParameters>, OgcFeaturesQueryParameterAdapter>();
+        services.TryAddScoped<IEditParameterAdapter<OgcFeaturesEditRequest>, OgcFeaturesEditParameterAdapter>();
         services.AddScoped<OgcFeaturesQueryDependencies>();
         services.AddScoped<OgcFeaturesQueryHandler>();
         services.AddScoped<OgcFeaturesCrudDependencies>();

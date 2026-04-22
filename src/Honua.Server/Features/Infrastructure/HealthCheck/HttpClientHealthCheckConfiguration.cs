@@ -13,6 +13,15 @@ namespace Honua.Server.Features.Infrastructure.HealthCheck;
 /// </summary>
 public static class HttpClientHealthCheckConfiguration
 {
+    private static readonly string[] ArcGisRestTags = ["external", "arcgis", "import"];
+    private static readonly string[] GeoServerRestTags = ["external", "geoserver", "import"];
+    private static readonly string[] AwsSecretsManagerTags = ["external", "aws", "secrets"];
+    private static readonly string[] AzureKeyVaultTags = ["external", "azure", "secrets"];
+    private static readonly string[] NominatimTags = ["external", "geocoding"];
+    private static readonly string[] AzureMapsTags = ["external", "azure", "geocoding"];
+    private static readonly string[] NlQueryTags = ["external", "ai", "nlquery"];
+    private static readonly string[] CircuitBreakerTags = ["circuit-breaker", "resilience"];
+
     /// <summary>
     /// Adds health checks for all configured HTTP clients with circuit breaker monitoring.
     /// </summary>
@@ -28,49 +37,49 @@ public static class HttpClientHealthCheckConfiguration
             "arcgis-rest",
             "https://services.arcgis.com/health", // Placeholder - replace with actual health endpoint
             timeout: TimeSpan.FromSeconds(15),
-            tags: new[] { "external", "arcgis", "import" });
+            tags: ArcGisRestTags);
 
         // GeoServer REST services
         builder.AddHttpClientHealthCheck(
             "geoserver-rest",
             "https://geoserver.example.com/geoserver/rest/about/version", // Placeholder
             timeout: TimeSpan.FromSeconds(10),
-            tags: new[] { "external", "geoserver", "import" });
+            tags: GeoServerRestTags);
 
         // AWS Secrets Manager
         builder.AddHttpClientHealthCheck(
             "aws-secrets-manager",
             "https://secretsmanager.us-east-1.amazonaws.com/", // Regional endpoint
             timeout: TimeSpan.FromSeconds(5),
-            tags: new[] { "external", "aws", "secrets" });
+            tags: AwsSecretsManagerTags);
 
         // Azure Key Vault
         builder.AddHttpClientHealthCheck(
             "azure-key-vault",
             "https://vault.azure.net/", // Placeholder - replace with actual vault
             timeout: TimeSpan.FromSeconds(5),
-            tags: new[] { "external", "azure", "secrets" });
+            tags: AzureKeyVaultTags);
 
         // Nominatim geocoding
         builder.AddHttpClientHealthCheck(
             "nominatim-geocoding",
             "https://nominatim.openstreetmap.org/status.php",
             timeout: TimeSpan.FromSeconds(10),
-            tags: new[] { "external", "geocoding" });
+            tags: NominatimTags);
 
         // Azure Maps geocoding
         builder.AddHttpClientHealthCheck(
             "azure-maps-geocoding",
             "https://atlas.microsoft.com/", // Base endpoint
             timeout: TimeSpan.FromSeconds(10),
-            tags: new[] { "external", "azure", "geocoding" });
+            tags: AzureMapsTags);
 
         // NL Query service (if configured)
         builder.AddHttpClientHealthCheck(
             "nl-query",
             "https://api.openai.com/v1/models", // OpenAI API health
             timeout: TimeSpan.FromSeconds(10),
-            tags: new[] { "external", "ai", "nlquery" });
+            tags: NlQueryTags);
 
         return builder;
     }
@@ -115,7 +124,7 @@ public static class HttpClientHealthCheckConfiguration
             "circuit-breakers",
             sp => new CircuitBreakerHealthCheck(),
             HealthStatus.Degraded, // Circuit breaker issues are degraded, not unhealthy
-            new[] { "circuit-breaker", "resilience" }));
+            CircuitBreakerTags));
     }
 }
 

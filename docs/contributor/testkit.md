@@ -132,6 +132,7 @@ public class MyTests
 #### External Database (opt-in)
 
 Set `HONUA_TEST_DB_URL` to use an existing PostGIS database instead of Testcontainers.
+A reusable local PostGIS instance is available via `docker compose -f docker/docker-compose.test-db.yml up -d`.
 
 ```bash
 export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"

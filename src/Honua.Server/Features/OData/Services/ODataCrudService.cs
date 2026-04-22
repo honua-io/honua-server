@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -29,7 +30,9 @@ internal sealed record ODataCrudDependencies(
     IGeometryService GeometryService,
     ICrsRegistry CrsRegistry,
     IETagService ETagService,
-    FeatureMutationValidator MutationValidator);
+    FeatureMutationValidator MutationValidator,
+    IEditParameterAdapter<ODataEditRequest> EditParameterAdapter,
+    IEditProcessor EditProcessor);
 
 /// <summary>
 /// Service for handling OData CRUD operations (Create, Read, Update, Delete) on features.
@@ -44,6 +47,8 @@ internal sealed partial class ODataCrudService
     private readonly ICrsRegistry _crsRegistry;
     private readonly IETagService _etagService;
     private readonly FeatureMutationValidator _mutationValidator;
+    private readonly IEditParameterAdapter<ODataEditRequest> _editParameterAdapter;
+    private readonly IEditProcessor _editProcessor;
     private readonly ILogger<ODataCrudLog> _logger;
 
     /// <summary>
@@ -62,6 +67,8 @@ internal sealed partial class ODataCrudService
         _crsRegistry = dependencies.CrsRegistry ?? throw new ArgumentNullException(nameof(dependencies), "CrsRegistry is required.");
         _etagService = dependencies.ETagService ?? throw new ArgumentNullException(nameof(dependencies), "ETagService is required.");
         _mutationValidator = dependencies.MutationValidator ?? throw new ArgumentNullException(nameof(dependencies), "MutationValidator is required.");
+        _editParameterAdapter = dependencies.EditParameterAdapter ?? throw new ArgumentNullException(nameof(dependencies), "EditParameterAdapter is required.");
+        _editProcessor = dependencies.EditProcessor ?? throw new ArgumentNullException(nameof(dependencies), "EditProcessor is required.");
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -153,9 +160,35 @@ internal sealed partial class ODataCrudService
 
             var validatedAttributes = attributesResult.Value!;
 
-            // Create the feature
-            var newFeature = Feature.Create(0, geometryResult.Geometry, validatedAttributes);
-            var createdFeature = await _featureWriter.CreateAsync(layerId, newFeature, cancellationToken);
+            var editResult = await ExecuteEditAsync(
+                layer,
+                new ODataEditRequest
+                {
+                    Operation = ODataOperation.Create,
+                    GeometryWkb = geometryResult.Geometry,
+                    Payload = new ParsedFeaturePayload
+                    {
+                        Geometry = payload.Geometry,
+                        Attributes = new Dictionary<string, object?>(validatedAttributes, StringComparer.OrdinalIgnoreCase)
+                    }
+                },
+                cancellationToken);
+            if (!editResult.IsSuccess)
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+            }
+
+            var createdId = editResult.Result?.CreateResults.FirstOrDefault(result => result.IsSuccess).ObjectId;
+            if (!createdId.HasValue)
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred creating the feature");
+            }
+
+            var createdFeature = await _featureReader.GetAsync(layerId, createdId.Value, cancellationToken);
+            if (!createdFeature.HasValue)
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.Error("Created feature could not be reloaded.");
+            }
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
@@ -163,15 +196,15 @@ internal sealed partial class ODataCrudService
                 cancellationToken);
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
-                createdFeature.Geometry,
+                createdFeature.Value.Geometry,
                 layer.SpatialReference.ToSrid(),
                 axisOrder);
-            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
+            var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Value.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
+            var etag = ComputeFeatureEtag(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
 
-            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Id})";
-            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);
+            var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Value.Id})";
+            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature.Value);
         }
         catch (ResourceConflictException ex)
         {
@@ -281,23 +314,43 @@ internal sealed partial class ODataCrudService
                 }
             }
 
-            // Update the feature
-            var updatedFeature = Feature.Create(
-                objectId,
-                geometryBytes,
-                mergedAttributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
-            var result = await _featureWriter.UpdateAsync(layerId, updatedFeature, cancellationToken);
+            var editResult = await ExecuteEditAsync(
+                layer,
+                new ODataEditRequest
+                {
+                    Operation = ODataOperation.Patch,
+                    ObjectId = objectId,
+                    IfMatch = ifMatch,
+                    IfNoneMatch = ifNoneMatch,
+                    GeometryWkb = geometryBytes,
+                    Payload = new ParsedFeaturePayload
+                    {
+                        Geometry = payload.Geometry,
+                        Attributes = mergedAttributes
+                    }
+                },
+                cancellationToken);
+            if (!editResult.IsSuccess)
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+            }
+
+            var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+            if (!result.HasValue)
+            {
+                return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
+            }
 
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
-                result.Geometry,
+                result.Value.Geometry,
                 layer.SpatialReference.ToSrid(),
                 axisOrder);
-            var serializedAttributes = ODataAttributeSerializer.Serialize(result.Attributes);
-            var response = ODataUtilityService.BuildFeaturePayload(layerId, result, responseGeometry, serializedAttributes);
-            var etag = ComputeFeatureEtag(layerId, result, responseGeometry, serializedAttributes);
+            var serializedAttributes = ODataAttributeSerializer.Serialize(result.Value.Attributes);
+            var response = ODataUtilityService.BuildFeaturePayload(layerId, result.Value, responseGeometry, serializedAttributes);
+            var etag = ComputeFeatureEtag(layerId, result.Value, responseGeometry, serializedAttributes);
 
-            return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag, result);
+            return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag, result.Value);
         }
         catch (ResourceNotFoundException ex)
         {
@@ -370,8 +423,23 @@ internal sealed partial class ODataCrudService
                 return ODataCrudResult<object>.PreconditionFailed("Resource has not changed.");
             }
 
-            // Delete the feature
-            var deleted = await _featureWriter.DeleteAsync(layerId, objectId, cancellationToken);
+            var editResult = await ExecuteEditAsync(
+                layerResult.Resource!,
+                new ODataEditRequest
+                {
+                    Operation = ODataOperation.Delete,
+                    ObjectId = objectId,
+                    IfMatch = ifMatch,
+                    IfNoneMatch = ifNoneMatch,
+                    Payload = new ParsedFeaturePayload()
+                },
+                cancellationToken);
+            if (!editResult.IsSuccess)
+            {
+                return ODataCrudResult<object>.BadRequest(editResult.ErrorMessage ?? "Invalid request data.");
+            }
+
+            var deleted = editResult.Result?.DeleteResults.Any(result => result.IsSuccess) == true;
             if (!deleted)
             {
                 return ODataCrudResult<object>.NotFound($"Feature {objectId} not found in layer {layerId}");
@@ -436,6 +504,41 @@ internal sealed partial class ODataCrudService
         }
 
         return GeometryProcessingResult.Valid(geometryValidation.Geometry);
+    }
+
+    private async Task<UnifiedEditResult> ExecuteEditAsync(
+        LayerDefinition layer,
+        ODataEditRequest request,
+        CancellationToken cancellationToken)
+    {
+        var conversion = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        if (!conversion.IsSuccess || conversion.EditRequest == null || conversion.Transaction == null)
+        {
+            return UnifiedEditResult.Failure(conversion.ErrorMessage ?? "Invalid OData edit request.");
+        }
+
+        var validation = _editProcessor.ValidateEdit(conversion.EditRequest.Value, layer);
+        if (!validation.IsValid)
+        {
+            return UnifiedEditResult.Failure(validation.ErrorMessage ?? "Invalid OData edit request.");
+        }
+
+        var transactionValidation = _editProcessor.ValidateTransaction(conversion.Transaction.Value, layer);
+        if (!transactionValidation.IsValid)
+        {
+            return UnifiedEditResult.Failure(transactionValidation.ErrorMessage ?? "Invalid OData edit request.");
+        }
+
+        var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, layer);
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, layer);
+        var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
+
+        return UnifiedEditResult.Success(
+            editResult,
+            optimizedRequest,
+            conversion.Transaction.Value,
+            _editParameterAdapter.ProtocolName,
+            conversion.Metadata);
     }
 
     private string ComputeFeatureEtag(

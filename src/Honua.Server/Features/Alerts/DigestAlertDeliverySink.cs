@@ -9,7 +9,6 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -103,7 +102,7 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
         LogFlushing(_logger, batchItems.Count);
 
         var webhookUrl = _options.Dispatch.Digest.WebhookUrl!;
-        var destinationValidation = await OutboundHttpUrlValidator
+        var destinationValidation = await Honua.Core.Features.Infrastructure.Validation.OutboundHttpUrlValidator
             .ValidateAsync(webhookUrl, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
@@ -119,7 +118,8 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookSecret))
+        var webhookSecret = _options.Dispatch.Digest.WebhookSecret;
+        if (string.IsNullOrWhiteSpace(webhookSecret))
         {
             await MarkBatchFailedAsync(
                 batchItems,
@@ -157,7 +157,7 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             };
             request.Content.Headers.ContentType = new("application/json");
             var timestamp = now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-            var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.Digest.WebhookSecret, timestamp, payload);
+            var signature = WebhookDeliveryHelper.ComputeSignature(webhookSecret, timestamp, payload);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Digest-Count", batchItems.Count.ToString(CultureInfo.InvariantCulture));
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Timestamp", timestamp);
             WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Signature", $"sha256={signature}");

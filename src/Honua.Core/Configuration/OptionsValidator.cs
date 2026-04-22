@@ -25,16 +25,12 @@ public abstract class OptionsValidator<
     /// <summary>
     /// Validates a nested object using its data annotation attributes.
     /// </summary>
-<<<<<<< HEAD
-    protected static void ValidateDataAnnotations(object? value, List<string> failures, string propertyName)
-=======
     protected static void ValidateDataAnnotations<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TValue>(
         TValue? value,
         List<string> failures,
         string propertyName)
         where TValue : class
->>>>>>> origin/trunk
     {
         if (value is null)
         {
@@ -42,15 +38,9 @@ public abstract class OptionsValidator<
         }
 
         var validationResults = new List<ValidationResult>();
-<<<<<<< HEAD
-        var validationContext = new ValidationContext(value, serviceProvider: null, items: null);
-
-        if (!Validator.TryValidateObject(value, validationContext, validationResults, validateAllProperties: true))
-=======
         var validationContext = CreateValidationContext(value, propertyName);
 
         if (!TryValidateObject(value, validationContext, validationResults))
->>>>>>> origin/trunk
         {
             foreach (var result in validationResults)
             {
@@ -60,13 +50,9 @@ public abstract class OptionsValidator<
     }
 
     /// <summary>
-<<<<<<< HEAD
-    /// Validates an outbound HTTP or HTTPS URL.
-=======
     /// Validates an outbound HTTPS URL via <see cref="OutboundHttpUrlValidator.ValidateConfiguration(string)"/>,
     /// which performs the same DNS-aware reservation checks as the runtime path so configuration-time
     /// validation does not silently accept hostnames that the runtime would later reject.
->>>>>>> origin/trunk
     /// </summary>
     protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> failures)
     {
@@ -79,17 +65,7 @@ public abstract class OptionsValidator<
         var result = OutboundHttpUrlValidator.ValidateConfiguration(url);
         if (!result.IsValid)
         {
-<<<<<<< HEAD
-            failures.Add($"{propertyName} must be a valid absolute URL.");
-            return;
-        }
-
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-        {
-            failures.Add($"{propertyName} must use HTTP or HTTPS.");
-=======
             failures.Add($"{propertyName} {result.ErrorMessage}");
->>>>>>> origin/trunk
         }
     }
 
@@ -121,15 +97,9 @@ public abstract class OptionsValidator<
         ArgumentNullException.ThrowIfNull(options);
 
         var validationResults = new List<ValidationResult>();
-<<<<<<< HEAD
-        var validationContext = new ValidationContext(options, serviceProvider: null, items: null);
-
-        Validator.TryValidateObject(options, validationContext, validationResults, validateAllProperties: true);
-=======
         var validationContext = CreateValidationContext(options, typeof(T).Name);
 
         TryValidateObject(options, validationContext, validationResults);
->>>>>>> origin/trunk
         var errors = validationResults.Select(r => r.ErrorMessage ?? "Validation error").ToList();
         ValidateOptions(options, errors);
 
@@ -140,31 +110,6 @@ public abstract class OptionsValidator<
 
         return ValidateOptionsResult.Fail(errors);
     }
-<<<<<<< HEAD
-
-    private static string FormatByteCount(long value)
-    {
-        const long kilobyte = 1024;
-        const long megabyte = 1024 * kilobyte;
-        const long gigabyte = 1024 * megabyte;
-
-        if (value % gigabyte == 0)
-        {
-            return $"{value / gigabyte}GB";
-        }
-
-        if (value % megabyte == 0)
-        {
-            return $"{value / megabyte}MB";
-        }
-
-        if (value % kilobyte == 0)
-        {
-            return $"{value / kilobyte}KB";
-        }
-
-        return $"{value} bytes";
-=======
 
     private static string FormatByteCount(long value)
     {
@@ -214,6 +159,5 @@ public abstract class OptionsValidator<
         ICollection<ValidationResult> validationResults)
     {
         return Validator.TryValidateObject(instance, validationContext, validationResults, validateAllProperties: true);
->>>>>>> origin/trunk
     }
 }

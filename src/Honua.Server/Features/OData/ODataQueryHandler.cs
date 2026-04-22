@@ -401,9 +401,18 @@ internal sealed partial class ODataQueryHandler(
                 context.TraceIdentifier);
 
             // Build feature query using query service
-            var featureQuery = _querySearchService.BuildFeatureQuery(
-                filter, orderby, pagination.Limit,
-                pagination.Offset, layer, out var queryError);
+            var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
+                filter,
+                orderby,
+                pagination.Limit,
+                pagination.Offset,
+                layer,
+                select,
+                expand,
+                count,
+                compute,
+                format,
+                effectiveToken);
 
             if (queryError != null)
             {

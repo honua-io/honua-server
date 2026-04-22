@@ -61,7 +61,7 @@ public sealed class ResourceLeakDetectionOptions
     /// <summary>
     /// Whether to capture stack traces for resource allocations (expensive but useful for debugging).
     /// </summary>
-    public bool CaptureAllocationStackTraces { get; set; } = false;
+    public bool CaptureAllocationStackTraces { get; set; }
 
     /// <summary>
     /// Maximum number of stack trace frames to capture.
@@ -249,8 +249,7 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
     {
         if (_disposed || !ShouldTrack()) return;
 
-        if (resource == null)
-            throw new ArgumentNullException(nameof(resource));
+        ArgumentNullException.ThrowIfNull(resource);
 
         if (_trackedResources.Count >= _options.MaxTrackedResources)
         {
@@ -425,7 +424,7 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
             ScanDuration = stopwatch.Elapsed
         };
 
-        if (detectedLeaks.Any())
+        if (detectedLeaks.Count > 0)
         {
             ResourceLog.ResourceLeaksDetected(_logger, detectedLeaks.Count, resourcesScanned);
 
@@ -513,7 +512,10 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
 
             if (method != null)
             {
-                sb.AppendLine($"   at {method.DeclaringType?.FullName}.{method.Name}");
+                sb.Append("   at ");
+                sb.Append(method.DeclaringType?.FullName);
+                sb.Append('.');
+                sb.AppendLine(method.Name);
             }
         }
 

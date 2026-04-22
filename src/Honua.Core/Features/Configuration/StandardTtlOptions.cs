@@ -1,10 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-<<<<<<< HEAD
-=======
 using System.Diagnostics.CodeAnalysis;
->>>>>>> origin/trunk
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.Core.Features.Configuration;
@@ -12,11 +9,7 @@ namespace Honua.Core.Features.Configuration;
 /// <summary>
 /// Standard TTL categories used across the application.
 /// </summary>
-<<<<<<< HEAD
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "Short and long TTL names are stable public configuration categories.")]
-=======
 [SuppressMessage("Naming", "CA1720:Identifiers should not contain type names", Justification = "TTL categories are domain terms used throughout configuration and docs.")]
->>>>>>> origin/trunk
 public enum TtlCategory
 {
     /// <summary>
@@ -48,11 +41,7 @@ public enum TtlCategory
 /// <summary>
 /// Provides standardized cache TTL values with environment-aware defaults.
 /// </summary>
-<<<<<<< HEAD
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "Short and long TTL property names are part of the public configuration contract.")]
-=======
 [SuppressMessage("Naming", "CA1720:Identifiers should not contain type names", Justification = "Public configuration property names intentionally mirror TTL category names.")]
->>>>>>> origin/trunk
 public sealed class StandardTtlOptions
 {
     /// <summary>

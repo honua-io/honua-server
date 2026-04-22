@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
+using Honua.DuckDB;
 using Honua.DuckDB.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 
@@ -123,14 +124,15 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         return await ExecuteEncodedGeometryQueryAsync<GmlFeature>(
-            query, layerId, "select_gml", cancellationToken,
+            query, layerId, "select_gml",
             (reader, mapping) =>
             {
                 var id = reader.GetInt64(0);
                 var geometryText = reader.IsDBNull(1) ? null : reader.GetString(1);
                 var attributes = ReadAttributesFromColumns(reader, mapping, startIndex: 2);
                 return GmlFeature.Create(id, geometryText, attributes);
-            });
+            },
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -138,14 +140,15 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         return await ExecuteEncodedGeometryQueryAsync<EncodedGeoJsonFeature>(
-            query, layerId, "select_geojson", cancellationToken,
+            query, layerId, "select_geojson",
             (reader, mapping) =>
             {
                 var id = reader.GetInt64(0);
                 var geometryGeoJson = reader.IsDBNull(1) ? null : reader.GetString(1);
                 var attributes = ReadAttributesFromColumns(reader, mapping, startIndex: 2);
                 return EncodedGeoJsonFeature.Create(id, geometryGeoJson, attributes);
-            });
+            },
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -153,14 +156,15 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         return await ExecuteEncodedGeometryQueryAsync<KmlFeature>(
-            query, layerId, "select_kml", cancellationToken,
+            query, layerId, "select_kml",
             (reader, mapping) =>
             {
                 var id = reader.GetInt64(0);
                 var geometryText = reader.IsDBNull(1) ? null : reader.GetString(1);
                 var attributes = ReadAttributesFromColumns(reader, mapping, startIndex: 2);
                 return KmlFeature.Create(id, geometryText, attributes);
-            });
+            },
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -510,8 +514,8 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         ParameterizedQuery query,
         int layerId,
         string operationType,
-        CancellationToken cancellationToken,
-        Func<DbDataReader, DuckDBLayerMapping, T> readRow)
+        Func<DbDataReader, DuckDBLayerMapping, T> readRow,
+        CancellationToken cancellationToken)
     {
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
         return await ExecuteQueryOperationAsync(
@@ -553,7 +557,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         }
         catch (Exception ex) when (ShouldWrapQueryException(ex))
         {
-            _logger.LogError(ex, "DuckDB {OperationType} query failed for layer {LayerId}.", operationType, layerId);
+            DuckDbLog.QueryFailed(_logger, operationType, layerId, ex);
             throw CreateSafeQueryException(layerId, operationType, ex);
         }
     }
@@ -593,7 +597,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         }
         catch (Exception ex) when (ShouldWrapQueryException(ex))
         {
-            _logger.LogError(ex, "DuckDB {OperationType} query failed for layer {LayerId}.", operationType, layerId);
+            DuckDbLog.QueryFailed(_logger, operationType, layerId, ex);
             throw CreateSafeQueryException(layerId, operationType, ex);
         }
     }
@@ -614,7 +618,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
         }
         catch (Exception ex) when (ShouldWrapQueryException(ex))
         {
-            _logger.LogError(ex, "DuckDB {OperationType} query failed for layer {LayerId}.", operationType, layerId);
+            DuckDbLog.QueryFailed(_logger, operationType, layerId, ex);
             throw CreateSafeQueryException(layerId, operationType, ex);
         }
     }

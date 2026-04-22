@@ -128,7 +128,7 @@ internal sealed class AdaptiveBrotliStream : Stream
     {
         if (_compressionStream == null)
         {
-            await _buffer.WriteAsync(buffer, offset, count, cancellationToken);
+            await _buffer.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
 
             if (_buffer.Length >= _options.FastCompressionThreshold || ShouldFlush())
             {
@@ -137,7 +137,7 @@ internal sealed class AdaptiveBrotliStream : Stream
         }
         else
         {
-            await _compressionStream.WriteAsync(buffer, offset, count, cancellationToken);
+            await _compressionStream.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
         }
     }
 
@@ -193,7 +193,7 @@ internal sealed class AdaptiveBrotliStream : Stream
     private CompressionLevel DetermineCompressionLevel(long contentSize)
         => AdaptiveCompressionLevelSelector.Select(contentSize, _options);
 
-    private bool ShouldFlush()
+    private static bool ShouldFlush()
     {
         // Force initialization if we're about to flush/close without reaching threshold
         return false; // Simple implementation for now
@@ -299,7 +299,7 @@ internal sealed class AdaptiveGzipStream : Stream
     {
         if (_compressionStream == null)
         {
-            await _buffer.WriteAsync(buffer, offset, count, cancellationToken);
+            await _buffer.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
 
             if (_buffer.Length >= _options.FastCompressionThreshold)
             {
@@ -308,7 +308,7 @@ internal sealed class AdaptiveGzipStream : Stream
         }
         else
         {
-            await _compressionStream.WriteAsync(buffer, offset, count, cancellationToken);
+            await _compressionStream.WriteAsync(buffer.AsMemory(offset, count), cancellationToken);
         }
     }
 

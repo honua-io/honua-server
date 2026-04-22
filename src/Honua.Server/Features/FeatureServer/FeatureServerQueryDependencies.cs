@@ -4,6 +4,7 @@
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Validation;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Services;
@@ -19,6 +20,8 @@ internal sealed class FeatureServerQueryDependencies
         IFeatureServerQueryServices queryServices,
         IFilterExpressionService filterExpressionService,
         FeatureServerQueryExecutor queryExecutor,
+        IQueryParameterAdapter<GeoServicesQueryRequest> queryParameterAdapter,
+        IQueryProcessor queryProcessor,
         IResponseCache responseCache,
         IETagService etagService,
         IOptions<CacheOptions> cacheOptions)
@@ -28,6 +31,8 @@ internal sealed class FeatureServerQueryDependencies
         QueryServices = queryServices.ThrowIfNull();
         FilterExpressionService = filterExpressionService.ThrowIfNull();
         QueryExecutor = queryExecutor.ThrowIfNull();
+        QueryParameterAdapter = queryParameterAdapter.ThrowIfNull();
+        QueryProcessor = queryProcessor.ThrowIfNull();
         ResponseCache = responseCache.ThrowIfNull();
         ETagService = etagService.ThrowIfNull();
         CacheOptions = cacheOptions.ValidateAndGetValue();
@@ -37,6 +42,8 @@ internal sealed class FeatureServerQueryDependencies
     public IFeatureServerQueryServices QueryServices { get; }
     public IFilterExpressionService FilterExpressionService { get; }
     public FeatureServerQueryExecutor QueryExecutor { get; }
+    public IQueryParameterAdapter<GeoServicesQueryRequest> QueryParameterAdapter { get; }
+    public IQueryProcessor QueryProcessor { get; }
     public IResponseCache ResponseCache { get; }
     public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }

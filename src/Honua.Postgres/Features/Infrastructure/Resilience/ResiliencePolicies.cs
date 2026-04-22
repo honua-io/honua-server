@@ -130,7 +130,7 @@ internal static class ResiliencePolicies
     /// </summary>
     internal static IAsyncPolicy CreateFreshDeadlockRetryPolicy() => BuildDeadlockRetryPolicy();
 
-    private static IAsyncPolicy BuildConnectionRetryPolicy()
+    private static Polly.Wrap.AsyncPolicyWrap BuildConnectionRetryPolicy()
     {
         var builder = Policy
             .Handle<NpgsqlException>(IsConnectionError)
@@ -139,13 +139,13 @@ internal static class ResiliencePolicies
         return BuildPolicyWithContextCallback(builder, ResiliencePolicyOptions.Default);
     }
 
-    private static IAsyncPolicy BuildDeadlockRetryPolicy()
+    private static Polly.Wrap.AsyncPolicyWrap BuildDeadlockRetryPolicy()
     {
         var builder = Policy.Handle<NpgsqlException>(IsDeadlockError);
         return BuildPolicyWithContextCallback(builder, DeadlockDefaults);
     }
 
-    private static IAsyncPolicy BuildPolicyWithContextCallback(PolicyBuilder builder, ResiliencePolicyOptions options)
+    private static Polly.Wrap.AsyncPolicyWrap BuildPolicyWithContextCallback(PolicyBuilder builder, ResiliencePolicyOptions options)
     {
         var retryPolicy = builder.WaitAndRetryAsync(
             options.MaxRetryAttempts,

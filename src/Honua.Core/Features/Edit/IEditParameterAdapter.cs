@@ -130,12 +130,12 @@ public sealed record ProtocolEditLimits
     /// <summary>
     /// Whether conditional operations (ETags, If-Match) are supported.
     /// </summary>
-    public bool SupportsConditionalOperations { get; init; } = false;
+    public bool SupportsConditionalOperations { get; init; }
 
     /// <summary>
     /// Whether partial updates (PATCH semantics) are supported.
     /// </summary>
-    public bool SupportsPartialUpdates { get; init; } = false;
+    public bool SupportsPartialUpdates { get; init; }
 
     /// <summary>
     /// Whether geometric validation is required.
@@ -221,17 +221,17 @@ public sealed record TransactionSemantics
     /// <summary>
     /// Whether partial success is allowed (some operations succeed, others fail).
     /// </summary>
-    public bool AllowsPartialSuccess { get; init; } = false;
+    public bool AllowsPartialSuccess { get; init; }
 
     /// <summary>
     /// Whether operation ordering must be preserved.
     /// </summary>
-    public bool RequiresOrderedExecution { get; init; } = false;
+    public bool RequiresOrderedExecution { get; init; }
 
     /// <summary>
     /// Whether the protocol supports transaction handles/IDs.
     /// </summary>
-    public bool SupportsTransactionHandles { get; init; } = false;
+    public bool SupportsTransactionHandles { get; init; }
 
     /// <summary>
     /// Default transaction isolation level.

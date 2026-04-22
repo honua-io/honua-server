@@ -162,7 +162,7 @@ internal static class AdminAuthEndpoints
 
             if (string.IsNullOrWhiteSpace(discovery.AuthorizationEndpoint))
             {
-                logger.LogWarning("OIDC provider {ProviderKey} did not return an authorization endpoint.", provider.Key);
+                AdminAuthLog.MissingAuthorizationEndpoint(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
             }
 
@@ -206,7 +206,7 @@ internal static class AdminAuthEndpoints
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
         {
-            logger.LogWarning(ex, "Failed to create authorize URL for provider {ProviderKey}.", provider.Key);
+            AdminAuthLog.CreateAuthorizeUrlFailed(logger, provider.Key, ex);
             return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
         }
     }
@@ -263,7 +263,7 @@ internal static class AdminAuthEndpoints
 
             if (string.IsNullOrWhiteSpace(discovery.TokenEndpoint))
             {
-                logger.LogWarning("OIDC provider {ProviderKey} did not return a token endpoint.", provider.Key);
+                AdminAuthLog.MissingTokenEndpoint(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
             }
 
@@ -278,10 +278,7 @@ internal static class AdminAuthEndpoints
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning(
-                    "OIDC token request for provider {ProviderKey} failed with status code {StatusCode}.",
-                    provider.Key,
-                    (int)response.StatusCode);
+                AdminAuthLog.TokenRequestFailed(logger, provider.Key, (int)response.StatusCode);
                 return StandardErrorHelpers.CreateBadRequest(context, "Authentication failed with the identity provider.");
             }
 
@@ -291,7 +288,7 @@ internal static class AdminAuthEndpoints
 
             if (tokenResponse is null || string.IsNullOrWhiteSpace(tokenResponse.AccessToken))
             {
-                logger.LogWarning("OIDC token request for provider {ProviderKey} returned an empty token response.", provider.Key);
+                AdminAuthLog.EmptyTokenResponse(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
             }
 
@@ -304,7 +301,7 @@ internal static class AdminAuthEndpoints
             if (validatedClaims is null ||
                 !AdminAuthClaimsProjector.TryProjectValidatedClaims(validatedClaims, out var sessionClaims))
             {
-                logger.LogWarning("OIDC token request for provider {ProviderKey} returned tokens that could not be projected into an admin session.", provider.Key);
+                AdminAuthLog.InvalidTokenProjection(logger, provider.Key);
                 return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
             }
 
@@ -358,7 +355,7 @@ internal static class AdminAuthEndpoints
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
         {
-            logger.LogWarning(ex, "Failed to request token for provider {ProviderKey}.", provider.Key);
+            AdminAuthLog.RequestTokenFailed(logger, provider.Key, ex);
             return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
         }
         finally
@@ -746,7 +743,7 @@ internal static class AdminAuthEndpoints
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
         {
-            logger.LogWarning(ex, "Failed to create logout URL for provider {ProviderKey}.", provider.Key);
+            AdminAuthLog.CreateLogoutUrlFailed(logger, provider.Key, ex);
             return null;
         }
     }

@@ -242,7 +242,7 @@ internal sealed class HonuaProcessService : Proto.ProcessService.ProcessServiceB
 
         GeoprocessingAdmissionException admissionEx => new RpcException(
             new Status(StatusCode.ResourceExhausted, admissionEx.Message),
-            new Metadata
+            new global::Grpc.Core.Metadata
             {
                 { "honua-admission-outcome", admissionEx.Outcome.ToString() },
                 { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },

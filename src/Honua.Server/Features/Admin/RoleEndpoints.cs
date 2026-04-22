@@ -113,7 +113,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to list roles");
+            RoleLog.ListRolesFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Role listing failed",
                 detail: "An internal error occurred while listing roles.",
@@ -152,7 +152,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to create role");
+            RoleLog.CreateRoleFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Role creation failed",
                 detail: "An internal error occurred while creating the role.",
@@ -179,7 +179,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get role {RoleId}", id);
+            RoleLog.GetRoleFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Role retrieval failed",
                 detail: "An internal error occurred while retrieving the role.",
@@ -219,7 +219,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to update role {RoleId}", id);
+            RoleLog.UpdateRoleFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Role update failed",
                 detail: "An internal error occurred while updating the role.",
@@ -247,7 +247,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete role {RoleId}", id);
+            RoleLog.DeleteRoleFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Role deletion failed",
                 detail: "An internal error occurred while deleting the role.",
@@ -283,7 +283,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get permissions for role {RoleId}", id);
+            RoleLog.GetPermissionsFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Permission retrieval failed",
                 detail: "An internal error occurred while retrieving permissions.",
@@ -329,7 +329,7 @@ internal static partial class RoleEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to set permissions for role {RoleId}", id);
+            RoleLog.SetPermissionsFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Permission update failed",
                 detail: "An internal error occurred while updating permissions.",

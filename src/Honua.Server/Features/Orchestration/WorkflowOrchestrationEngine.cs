@@ -828,7 +828,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
     }
 
-    private (WorkflowStepStatus Status, DateTimeOffset? NextAttemptAt) ComputeFailureDisposition(
+    private static (WorkflowStepStatus Status, DateTimeOffset? NextAttemptAt) ComputeFailureDisposition(
         WorkflowStepDefinition stepDefinition,
         WorkflowStepState state,
         int completedAttempts,

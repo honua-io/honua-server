@@ -307,7 +307,7 @@ internal static class GeoParquetReader
         }
     }
 
-    private static GeoParquetMetadata ParseGeoMetadata(IReadOnlyDictionary<string, string>? customMetadata)
+    private static GeoParquetMetadata ParseGeoMetadata(Dictionary<string, string>? customMetadata)
     {
         if (customMetadata == null || !customMetadata.TryGetValue("geo", out var geoJson))
         {

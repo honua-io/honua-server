@@ -495,7 +495,7 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
             .ToList();
     }
 
-    private ExceptionClassification ClassifyException(Exception exception)
+    private static ExceptionClassification ClassifyException(Exception exception)
     {
         var exceptionType = exception.GetType();
 
@@ -615,7 +615,7 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
         exceptionType.Name.Contains("Database");
 
     private static bool IsNetworkException(Type exceptionType) =>
-        exceptionType.Namespace?.StartsWith("System.Net") == true ||
+        exceptionType.Namespace?.StartsWith("System.Net", StringComparison.Ordinal) == true ||
         exceptionType.Name.Contains("Http") ||
         exceptionType.Name.Contains("Socket") ||
         exceptionType.Name.Contains("Network");
@@ -657,7 +657,9 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
 
         if (stackTrace.Length > _options.MaxStackTraceLength)
         {
-            stackTrace = stackTrace.Substring(0, _options.MaxStackTraceLength) + "... (truncated)";
+            stackTrace = string.Concat(
+                stackTrace.AsSpan(0, _options.MaxStackTraceLength),
+                "... (truncated)");
         }
 
         return _options.SanitizeSensitiveData ? SanitizeMessage(stackTrace) : stackTrace;

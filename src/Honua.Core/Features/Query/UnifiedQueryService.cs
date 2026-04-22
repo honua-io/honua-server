@@ -38,8 +38,7 @@ public sealed class UnifiedQueryService
     public void RegisterAdapter<TParams>(IQueryParameterAdapter<TParams> adapter)
     {
         _adapters[typeof(TParams)] = adapter ?? throw new ArgumentNullException(nameof(adapter));
-        _logger.LogInformation("Registered query adapter for protocol {Protocol} with parameter type {ParamType}",
-            adapter.ProtocolName, typeof(TParams).Name);
+        QueryLog.RegisteredQueryAdapter(_logger, adapter.ProtocolName, typeof(TParams).Name);
     }
 
     /// <summary>
@@ -64,8 +63,7 @@ public sealed class UnifiedQueryService
                 return UnifiedQueryResult.Failure($"No adapter registered for parameter type {typeof(TParams).Name}");
             }
 
-            _logger.LogDebug("Converting {Protocol} parameters to unified query for layer {LayerId}",
-                adapter.ProtocolName, layer.Id);
+            QueryLog.ConvertingQueryParameters(_logger, adapter.ProtocolName, layer.Id);
 
             // Convert protocol parameters to unified query
             var conversionResult = await adapter.ConvertAsync(parameters, layer, cancellationToken);
@@ -89,8 +87,7 @@ public sealed class UnifiedQueryService
             // Convert to feature query for data access
             var featureQuery = _queryProcessor.ToFeatureQuery(optimizedQuery, layer);
 
-            _logger.LogDebug("Executing unified query for layer {LayerId} with protocol {Protocol}",
-                layer.Id, adapter.ProtocolName);
+            QueryLog.ExecutingUnifiedQuery(_logger, layer.Id, adapter.ProtocolName);
 
             // Execute the query
             var result = await _featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
@@ -108,7 +105,7 @@ public sealed class UnifiedQueryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute unified query for layer {LayerId}", layer.Id);
+            QueryLog.ExecuteUnifiedQueryFailed(_logger, layer.Id, ex);
             return UnifiedQueryResult.Failure("An error occurred while executing the query.");
         }
     }
@@ -157,8 +154,7 @@ public sealed class UnifiedQueryService
             // Convert to feature query for data access
             var featureQuery = _queryProcessor.ToFeatureQuery(countQuery, layer);
 
-            _logger.LogDebug("Executing count query for layer {LayerId} with protocol {Protocol}",
-                layer.Id, adapter.ProtocolName);
+            QueryLog.ExecutingCountQuery(_logger, layer.Id, adapter.ProtocolName);
 
             // Execute the count query
             var count = await _featureReader.CountAsync(layer.Id, featureQuery, cancellationToken);
@@ -171,7 +167,7 @@ public sealed class UnifiedQueryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute count query for layer {LayerId}", layer.Id);
+            QueryLog.ExecuteCountQueryFailed(_logger, layer.Id, ex);
             return UnifiedCountResult.Failure("An error occurred while executing the count query.");
         }
     }
@@ -207,7 +203,7 @@ public sealed class UnifiedQueryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to build cache key for layer {LayerId}", layer.Id);
+            QueryLog.BuildCacheKeyFailed(_logger, layer.Id, ex);
             return null;
         }
     }
@@ -245,7 +241,7 @@ public sealed class UnifiedQueryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to determine streaming preference for layer {LayerId}", layer.Id);
+            QueryLog.DetermineStreamingPreferenceFailed(_logger, layer.Id, ex);
             return false;
         }
     }
@@ -258,7 +254,7 @@ public sealed class UnifiedQueryService
     {
         return _adapters.ToDictionary(
             kvp => kvp.Key,
-            kvp => ((dynamic)kvp.Value).ProtocolName) as IReadOnlyDictionary<Type, string>;
+            kvp => (string)((dynamic)kvp.Value).ProtocolName);
     }
 }
 

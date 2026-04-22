@@ -45,11 +45,11 @@ public interface IResponseBuilder
     /// <summary>
     /// Builds an error response with standardized error information.
     /// </summary>
-    /// <param name="error">Error details to include</param>
+    /// <param name="errorDetails">Error details to include</param>
     /// <param name="options">Response building options</param>
     /// <returns>Unified error response data</returns>
     ResponseData BuildErrorResponse(
-        ResponseError error,
+        ResponseError errorDetails,
         ResponseBuildOptions? options = null);
 
     /// <summary>

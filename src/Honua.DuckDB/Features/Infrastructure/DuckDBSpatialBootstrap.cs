@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
+using Honua.DuckDB;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.DuckDB.Features.Infrastructure;
@@ -46,11 +47,11 @@ internal sealed class DuckDBSpatialBootstrap
             {
                 if (!string.IsNullOrWhiteSpace(_extensionPath))
                 {
-                    _logger.LogInformation("Installing DuckDB spatial extension from offline path: {Path}", _extensionPath);
+                    DuckDbLog.InstallingSpatialExtensionFromOfflinePath(_logger, _extensionPath);
                 }
 
                 await ExecuteNonQueryAsync(connection, "INSTALL spatial", cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation("DuckDB spatial extension installed");
+                DuckDbLog.SpatialExtensionInstalled(_logger);
             }
             catch
             {

@@ -5,6 +5,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.OgcFeatures.Services;
@@ -22,6 +23,8 @@ internal sealed class OgcFeaturesQueryDependencies
         ICrsRegistry crsRegistry,
         OgcFilterProcessor filterProcessor,
         OgcFeaturesGeometryServices geometryServices,
+        IQueryParameterAdapter<OgcFeaturesQueryParameters> queryParameterAdapter,
+        IQueryProcessor queryProcessor,
         IResponseCache responseCache,
         IETagService etagService,
         IOptions<CacheOptions> cacheOptions,
@@ -34,6 +37,8 @@ internal sealed class OgcFeaturesQueryDependencies
         CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         FilterProcessor = filterProcessor ?? throw new ArgumentNullException(nameof(filterProcessor));
         GeometryServices = geometryServices ?? throw new ArgumentNullException(nameof(geometryServices));
+        QueryParameterAdapter = queryParameterAdapter ?? throw new ArgumentNullException(nameof(queryParameterAdapter));
+        QueryProcessor = queryProcessor ?? throw new ArgumentNullException(nameof(queryProcessor));
         ResponseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
         ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
@@ -47,6 +52,8 @@ internal sealed class OgcFeaturesQueryDependencies
     public ICrsRegistry CrsRegistry { get; }
     public OgcFilterProcessor FilterProcessor { get; }
     public OgcFeaturesGeometryServices GeometryServices { get; }
+    public IQueryParameterAdapter<OgcFeaturesQueryParameters> QueryParameterAdapter { get; }
+    public IQueryProcessor QueryProcessor { get; }
     public IResponseCache ResponseCache { get; }
     public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }

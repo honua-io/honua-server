@@ -1298,7 +1298,7 @@ internal sealed partial class ODataBatchHandler
         return CreateSuccessResponse(requestId, 204, null);
     }
 
-    private async Task<ODataBatchResponseItem?> ValidateBatchRequestAccessAsync(
+    private static async Task<ODataBatchResponseItem?> ValidateBatchRequestAccessAsync(
         HttpContext context,
         string requestId,
         LayerDefinition layer,

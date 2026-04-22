@@ -769,7 +769,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         };
     }
 
-    private static void AddRendererMetadata(IDictionary<string, string> metadata, JsonElement renderer, string propertyName)
+    private static void AddRendererMetadata(SortedDictionary<string, string> metadata, JsonElement renderer, string propertyName)
     {
         var value = GetOptionalStringProperty(renderer, propertyName);
         if (!string.IsNullOrWhiteSpace(value))

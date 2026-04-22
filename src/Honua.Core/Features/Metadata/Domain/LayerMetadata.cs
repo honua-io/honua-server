@@ -154,12 +154,12 @@ public sealed record LayerFieldInfo
     /// <summary>
     /// Whether this field is indexed for performance.
     /// </summary>
-    public bool IsIndexed { get; init; } = false;
+    public bool IsIndexed { get; init; }
 
     /// <summary>
     /// Whether this field supports full-text search.
     /// </summary>
-    public bool IsSearchable { get; init; } = false;
+    public bool IsSearchable { get; init; }
 
     /// <summary>
     /// Domain information for coded values.
@@ -257,7 +257,7 @@ public sealed record FieldValidation
     /// <summary>
     /// Whether the field is required.
     /// </summary>
-    public bool IsRequired { get; init; } = false;
+    public bool IsRequired { get; init; }
 
     /// <summary>
     /// Maximum length for text fields.
@@ -288,7 +288,7 @@ public sealed record LayerStatistics
     /// <summary>
     /// Whether feature count is approximate.
     /// </summary>
-    public bool FeatureCountIsApproximate { get; init; } = false;
+    public bool FeatureCountIsApproximate { get; init; }
 
     /// <summary>
     /// Data size information.
@@ -340,7 +340,7 @@ public sealed record LayerSpatialInfo
     /// <summary>
     /// Whether the layer has geometry data.
     /// </summary>
-    public bool HasGeometry { get; init; } = false;
+    public bool HasGeometry { get; init; }
 
     /// <summary>
     /// Spatial reference system for the layer.
@@ -355,7 +355,7 @@ public sealed record LayerSpatialInfo
     /// <summary>
     /// Whether extent is computed or cached.
     /// </summary>
-    public bool ExtentIsComputed { get; init; } = false;
+    public bool ExtentIsComputed { get; init; }
 
     /// <summary>
     /// Supported spatial operations.
@@ -381,7 +381,7 @@ public sealed record SpatialOperations
     /// <summary>
     /// Whether spatial indexing is available.
     /// </summary>
-    public bool HasSpatialIndex { get; init; } = false;
+    public bool HasSpatialIndex { get; init; }
 
     /// <summary>
     /// Supported geometry analysis operations.
@@ -407,17 +407,17 @@ public sealed record GeometryComplexity
     /// <summary>
     /// Whether geometries have curves.
     /// </summary>
-    public bool HasCurves { get; init; } = false;
+    public bool HasCurves { get; init; }
 
     /// <summary>
     /// Whether geometries have Z values.
     /// </summary>
-    public bool HasZ { get; init; } = false;
+    public bool HasZ { get; init; }
 
     /// <summary>
     /// Whether geometries have M values.
     /// </summary>
-    public bool HasM { get; init; } = false;
+    public bool HasM { get; init; }
 }
 
 /// <summary>
@@ -469,7 +469,7 @@ public sealed record TemporalExtent
     /// <summary>
     /// Whether extent is computed or cached.
     /// </summary>
-    public bool IsComputed { get; init; } = false;
+    public bool IsComputed { get; init; }
 }
 
 /// <summary>
@@ -532,7 +532,7 @@ public sealed record SymbologyCapabilities
     /// <summary>
     /// Whether custom symbols are supported.
     /// </summary>
-    public bool SupportsCustomSymbols { get; init; } = false;
+    public bool SupportsCustomSymbols { get; init; }
 
     /// <summary>
     /// Whether transparency is supported.
@@ -600,7 +600,7 @@ public sealed record RelationshipCapabilities
     /// <summary>
     /// Whether relationship editing is supported.
     /// </summary>
-    public bool SupportsEdit { get; init; } = false;
+    public bool SupportsEdit { get; init; }
 
     /// <summary>
     /// Maximum related records returned.
@@ -652,7 +652,7 @@ public sealed record LayerQueryCapabilities
     /// <summary>
     /// Whether temporal queries are supported.
     /// </summary>
-    public bool SupportsTemporalQuery { get; init; } = false;
+    public bool SupportsTemporalQuery { get; init; }
 
     /// <summary>
     /// Maximum features per query.
@@ -678,27 +678,27 @@ public sealed record LayerEditCapabilities
     /// <summary>
     /// Whether creating features is allowed.
     /// </summary>
-    public bool SupportsCreate { get; init; } = false;
+    public bool SupportsCreate { get; init; }
 
     /// <summary>
     /// Whether updating features is allowed.
     /// </summary>
-    public bool SupportsUpdate { get; init; } = false;
+    public bool SupportsUpdate { get; init; }
 
     /// <summary>
     /// Whether deleting features is allowed.
     /// </summary>
-    public bool SupportsDelete { get; init; } = false;
+    public bool SupportsDelete { get; init; }
 
     /// <summary>
     /// Whether geometry editing is allowed.
     /// </summary>
-    public bool SupportsGeometryUpdate { get; init; } = false;
+    public bool SupportsGeometryUpdate { get; init; }
 
     /// <summary>
     /// Whether attribute editing is allowed.
     /// </summary>
-    public bool SupportsAttributeUpdate { get; init; } = false;
+    public bool SupportsAttributeUpdate { get; init; }
 
     /// <summary>
     /// Fields that can be edited.
@@ -714,7 +714,7 @@ public sealed record AttachmentCapabilities
     /// <summary>
     /// Whether attachments are supported.
     /// </summary>
-    public bool SupportsAttachments { get; init; } = false;
+    public bool SupportsAttachments { get; init; }
 
     /// <summary>
     /// Maximum attachment size in bytes.
@@ -740,12 +740,12 @@ public sealed record SyncCapabilities
     /// <summary>
     /// Whether sync is supported.
     /// </summary>
-    public bool SupportsSync { get; init; } = false;
+    public bool SupportsSync { get; init; }
 
     /// <summary>
     /// Whether bidirectional sync is supported.
     /// </summary>
-    public bool SupportsBidirectionalSync { get; init; } = false;
+    public bool SupportsBidirectionalSync { get; init; }
 
     /// <summary>
     /// Sync data retention period.

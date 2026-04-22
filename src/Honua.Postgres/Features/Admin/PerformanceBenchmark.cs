@@ -196,15 +196,8 @@ internal static class PerformanceBenchmark
 
     private static void LogBenchmarkResult(ILogger logger, BenchmarkResult result)
     {
-        logger.LogInformation(
-            "Performance benchmark for Layer {LayerId}: " +
-            "Features: {ActualCount}/{ExpectedCount}, " +
-            "Count: {CountTime}ms, " +
-            "Spatial: {SpatialTime}ms, " +
-            "Attributes: {AttributeTime}ms, " +
-            "Max: {MaxTime}ms, " +
-            "Target: {TargetTime}ms, " +
-            "Performant: {IsPerformant}",
+        PerformanceBenchmarkLog.BenchmarkResult(
+            logger,
             result.LayerId,
             result.ActualFeatureCount,
             result.ExpectedFeatureCount,
@@ -218,12 +211,8 @@ internal static class PerformanceBenchmark
 
     private static void LogIndexUtilization(ILogger logger, IndexUtilizationResult result)
     {
-        logger.LogInformation(
-            "Index utilization for Layer {LayerId}: " +
-            "Spatial scans: {SpatialScans}, " +
-            "Attribute scans: {AttributeScans}, " +
-            "Spatial indexes: {SpatialCount}, " +
-            "Attribute indexes: {AttributeCount}",
+        PerformanceBenchmarkLog.IndexUtilization(
+            logger,
             result.LayerId,
             result.TotalSpatialScans,
             result.TotalAttributeScans,

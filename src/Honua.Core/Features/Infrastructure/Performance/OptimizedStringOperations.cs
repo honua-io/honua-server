@@ -385,7 +385,7 @@ public static class OptimizedStringOperations
             var sb = _stringBuilderPool.Get();
             try
             {
-                sb.AppendFormat(template, args);
+                sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, template, args);
                 return sb.ToString();
             }
             finally
@@ -447,7 +447,7 @@ public static class OptimizedStringOperations
 
         public OptimizedStringBuilder AppendFormat(string format, params object?[] args)
         {
-            _sb.AppendFormat(format, args);
+            _sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, format, args);
             return this;
         }
 
@@ -472,51 +472,51 @@ public static class OptimizedStringOperations
 /// <summary>
 /// Cache for commonly used string constants to avoid repeated allocations.
 /// </summary>
-public static class StringConstants
+internal static class StringConstants
 {
     // SQL keywords and operators
-    public const string SELECT = "SELECT";
-    public const string FROM = "FROM";
-    public const string WHERE = "WHERE";
-    public const string AND = " AND ";
-    public const string OR = " OR ";
-    public const string ORDER_BY = "ORDER BY";
-    public const string GROUP_BY = "GROUP BY";
-    public const string HAVING = "HAVING";
-    public const string LIMIT = "LIMIT";
-    public const string OFFSET = "OFFSET";
+    internal const string SELECT = "SELECT";
+    internal const string FROM = "FROM";
+    internal const string WHERE = "WHERE";
+    internal const string AND = " AND ";
+    internal const string OR = " OR ";
+    internal const string ORDER_BY = "ORDER BY";
+    internal const string GROUP_BY = "GROUP BY";
+    internal const string HAVING = "HAVING";
+    internal const string LIMIT = "LIMIT";
+    internal const string OFFSET = "OFFSET";
 
     // Common SQL functions
-    public const string ST_INTERSECTS = "ST_Intersects";
-    public const string ST_WITHIN = "ST_Within";
-    public const string ST_CONTAINS = "ST_Contains";
-    public const string ST_TRANSFORM = "ST_Transform";
-    public const string ST_GEOMFROMTEXT = "ST_GeomFromText";
+    internal const string ST_INTERSECTS = "ST_Intersects";
+    internal const string ST_WITHIN = "ST_Within";
+    internal const string ST_CONTAINS = "ST_Contains";
+    internal const string ST_TRANSFORM = "ST_Transform";
+    internal const string ST_GEOMFROMTEXT = "ST_GeomFromText";
 
     // Database column names (commonly used)
-    public const string OBJECTID_COLUMN = "objectid";
-    public const string SHAPE_COLUMN = "shape";
-    public const string LAYERID_COLUMN = "layerid";
+    internal const string OBJECTID_COLUMN = "objectid";
+    internal const string SHAPE_COLUMN = "shape";
+    internal const string LAYERID_COLUMN = "layerid";
 
     // HTTP headers
-    public const string CONTENT_TYPE = "Content-Type";
-    public const string CORRELATION_ID = "X-Correlation-ID";
-    public const string CACHE_CONTROL = "Cache-Control";
+    internal const string CONTENT_TYPE = "Content-Type";
+    internal const string CORRELATION_ID = "X-Correlation-ID";
+    internal const string CACHE_CONTROL = "Cache-Control";
 
     // Content types
-    public const string APPLICATION_JSON = "application/json";
-    public const string APPLICATION_XML = "application/xml";
-    public const string TEXT_PLAIN = "text/plain";
+    internal const string APPLICATION_JSON = "application/json";
+    internal const string APPLICATION_XML = "application/xml";
+    internal const string TEXT_PLAIN = "text/plain";
 
     // Common format strings for hot paths
-    public static readonly string[] PARAMETER_PLACEHOLDERS =
+    internal static readonly string[] PARAMETER_PLACEHOLDERS =
         Enumerable.Range(1, 100).Select(i => $"${i}").ToArray();
 
     /// <summary>
     /// Gets a parameter placeholder for the given index (1-based).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string GetParameterPlaceholder(int index)
+    internal static string GetParameterPlaceholder(int index)
     {
         return index > 0 && index <= PARAMETER_PLACEHOLDERS.Length
             ? PARAMETER_PLACEHOLDERS[index - 1]

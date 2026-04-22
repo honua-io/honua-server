@@ -1,5 +1,6 @@
 # Scale-out testing environment with multiple Honua instances, Redis, and load balancer
 # Usage: docker-compose -f docker-compose.scale-test.yml up --scale honua=3
+name: honua-scale-test
 
 services:
   # PostgreSQL with PostGIS (shared by all Honua instances)
@@ -24,7 +25,7 @@ services:
       - "${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_scale_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_scale_test"]
       interval: 10s
@@ -161,11 +162,9 @@ services:
       HONUA_SCALE_TEST_CANARY_WEIGHT: "${HONUA_SCALE_TEST_CANARY_WEIGHT:-0}"
     ports:
       - "${HONUA_SCALE_TEST_HTTP_PORT:-8080}:80"
-      - "${HONUA_SCALE_TEST_HTTPS_PORT:-8443}:443"
     volumes:
       - ./docker/nginx/scale-test.conf:/etc/nginx/scale-test.conf.template:ro
       - ./docker/nginx/render-scale-test-conf.sh:/docker-entrypoint.d/40-render-scale-test-conf.sh:ro
-      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - honua
     healthcheck:
@@ -173,6 +172,41 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
+
+  # Postgres exporter for scale-test monitoring
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+    profiles:
+      - monitoring
+    environment:
+      DATA_SOURCE_NAME: "postgresql://honua_user:honua_password@postgres:5432/honua_scale_test?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Redis exporter for scale-test monitoring
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    profiles:
+      - monitoring
+    command:
+      - "--redis.addr=redis://redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Nginx exporter for scale-test monitoring
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    profiles:
+      - monitoring
+    command:
+      - "--nginx.scrape-uri=http://nginx/nginx_status"
+    depends_on:
+      - nginx
     restart: unless-stopped
 
   # Redis Insight for monitoring Redis

@@ -128,7 +128,7 @@ public static class PerformanceMonitoringIntegrationExtensions
                 allocationContext);
         }
 
-        return resource;
+        return resource!;
     }
 
     /// <summary>

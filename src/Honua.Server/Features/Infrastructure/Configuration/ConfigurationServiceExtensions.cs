@@ -8,10 +8,7 @@ using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
-<<<<<<< HEAD
-=======
 using Honua.Server.Features.Infrastructure.Helpers;
->>>>>>> origin/trunk
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -75,10 +72,6 @@ public static class ConfigurationServiceExtensions
             if (isDevelopment)
             {
                 options.FailOnSecretValidationError = false; // Be more lenient in development
-<<<<<<< HEAD
-                options.AutoResolveSecrets = true;
-=======
->>>>>>> origin/trunk
             }
         });
 
@@ -167,14 +160,11 @@ public static class ConfigurationServiceExtensions
     /// <param name="isRequired">Whether this configuration is required for startup</param>
     /// <param name="enableSecretResolution">Whether to enable automatic secret resolution</param>
     /// <returns>The service collection for chaining</returns>
-<<<<<<< HEAD
-=======
     [UnconditionalSuppressMessage(
         "AOT",
         "SYSLIB1104",
         Justification = "This generic helper is retained for non-AOT/test usage. NativeAOT startup uses concrete registrations in AddStandardConfiguration.")]
     [RequiresUnreferencedCode("Generic configuration binding helper is not trim-safe. Use AddStandardConfiguration or concrete option registrations in NativeAOT-critical paths.")]
->>>>>>> origin/trunk
     public static IServiceCollection ConfigureWithValidation<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions>(
         this IServiceCollection services,
@@ -187,50 +177,6 @@ public static class ConfigurationServiceExtensions
         // Secret provider options must bind directly. Resolving them through
         // ISecretProvider would require constructing the provider to configure
         // the options the provider itself consumes, creating a DI cycle.
-<<<<<<< HEAD
-        var shouldEnableSecretResolution =
-            enableSecretResolution && typeof(TOptions) != typeof(SecretProviderOptions);
-
-        // Register for validation
-        services.AddSingleton<IConfigureOptions<TOptions>>(sp =>
-        {
-            var validator = sp.GetRequiredService<IConfigurationValidator>();
-            validator.RegisterOptionsType<TOptions>(sectionName, isRequired);
-            return new ConfigureNamedOptions<TOptions>(Options.DefaultName, options =>
-            {
-                var method = typeof(ConfigurationBinder).GetMethod(nameof(ConfigurationBinder.Bind), new[] { typeof(IConfiguration), typeof(object) });
-                method?.Invoke(null, new object[] { configuration.GetSection(sectionName), options! });
-            });
-        });
-
-        // Configure options with secret resolution if enabled
-        if (shouldEnableSecretResolution)
-        {
-            services.Configure<TOptions>(options =>
-            {
-                var section = configuration.GetSection(sectionName);
-                var method = typeof(ConfigurationBinder).GetMethod(nameof(ConfigurationBinder.Bind), new[] { typeof(IConfiguration), typeof(object) });
-                method?.Invoke(null, new object[] { section, options! });
-
-                // Secret resolution will be handled by a post-configuration service
-            });
-
-            services.AddSingleton<IPostConfigureOptions<TOptions>, SecretResolutionPostConfigureOptions<TOptions>>();
-        }
-        else
-        {
-            services.Configure<TOptions>(options =>
-            {
-                var method = typeof(ConfigurationBinder).GetMethod(nameof(ConfigurationBinder.Bind), new[] { typeof(IConfiguration), typeof(object) });
-                method?.Invoke(null, new object[] { configuration.GetSection(sectionName), options! });
-            });
-        }
-
-        // Add validation for startup
-        services.AddSingleton<IValidateOptions<TOptions>, DataAnnotationValidateOptions<TOptions>>();
-
-        return services;
-=======
         return RegisterConfiguredOptions<TOptions>(
             services,
             configuration,
@@ -247,7 +193,6 @@ public static class ConfigurationServiceExtensions
                     bindMethod?.Invoke(null, new object[] { config.GetSection(name), options! });
                 });
             });
->>>>>>> origin/trunk
     }
 
     /// <summary>
@@ -267,22 +212,6 @@ public static class ConfigurationServiceExtensions
         services.AddConfigurationValidation(configuration);
 
         // Register standard configuration types
-<<<<<<< HEAD
-        services.ConfigureWithValidation<StandardTtlOptions>(configuration, StandardTtlOptions.SectionName);
-        services.ConfigureWithValidation<SecretProviderOptions>(
-            configuration,
-            SecretProviderOptions.SectionName,
-            enableSecretResolution: false);
-        services.ConfigureWithValidation<SecureConfigurationOptions>(configuration, SecureConfigurationOptions.SectionName);
-
-        // Register cache options with enhanced validation
-        services.ConfigureWithValidation<Core.Features.Caching.CacheOptions>(
-            configuration,
-            Core.Features.Caching.CacheOptions.SectionName);
-
-        return services;
-    }
-=======
         RegisterConfiguredOptions<StandardTtlOptions>(
             services,
             configuration,
@@ -346,7 +275,6 @@ public static class ConfigurationServiceExtensions
         services.AddSingleton<IValidateOptions<TOptions>, DataAnnotationValidateOptions<TOptions>>();
         return services;
     }
->>>>>>> origin/trunk
 }
 
 /// <summary>
@@ -371,19 +299,22 @@ internal sealed class SecretResolutionPostConfigureOptions<
     {
         if (options == null) return;
 
+        var optionsTypeName = typeof(TOptions).Name;
+
         try
         {
             ResolveSecretsInOptions(options);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to resolve secrets in configuration options {OptionsType}", typeof(TOptions).Name);
+            ConfigurationServiceExtensionsLog.OptionsSecretResolutionFailed(_logger, optionsTypeName, ex);
             throw;
         }
     }
 
     private void ResolveSecretsInOptions(TOptions options)
     {
+        var optionsTypeName = typeof(TOptions).Name;
         var properties = typeof(TOptions).GetProperties(
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
 
@@ -392,30 +323,6 @@ internal sealed class SecretResolutionPostConfigureOptions<
             if (property.PropertyType == typeof(string) && property.CanWrite && property.CanRead)
             {
                 var value = property.GetValue(options) as string;
-<<<<<<< HEAD
-                if (!string.IsNullOrWhiteSpace(value) && _secretProvider.IsSecretReference(value))
-                {
-                    try
-                    {
-                        // Use Task.Run with ConfigureAwait(false) to safely resolve secrets in sync context
-                        // This is necessary because PostConfigure is inherently synchronous in the options pattern
-                        var resolvedValue = Task.Run(async () =>
-                            await _secretProvider.GetSecretAsync(value).ConfigureAwait(false)).ConfigureAwait(false).GetAwaiter().GetResult();
-                        if (!string.IsNullOrEmpty(resolvedValue))
-                        {
-                            property.SetValue(options, resolvedValue);
-                            _logger.LogDebug("Resolved secret reference for {OptionsType}.{PropertyName}",
-                                typeof(TOptions).Name, property.Name);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to resolve secret reference for {OptionsType}.{PropertyName}: {SecretRef}",
-                            typeof(TOptions).Name, property.Name, value);
-                        throw;
-                    }
-                }
-=======
                 if (string.IsNullOrWhiteSpace(value))
                 {
                     continue;
@@ -427,11 +334,11 @@ internal sealed class SecretResolutionPostConfigureOptions<
                     {
                         var resolvedValue = SecretReferenceResolver.ResolveEnvironmentReference(
                             value,
-                            $"{typeof(TOptions).Name}.{property.Name}");
+                            $"{optionsTypeName}.{property.Name}");
                         property.SetValue(options, resolvedValue);
-                        _logger.LogDebug(
-                            "Resolved environment secret reference for {OptionsType}.{PropertyName}",
-                            typeof(TOptions).Name,
+                        ConfigurationServiceExtensionsLog.EnvironmentSecretReferenceResolved(
+                            _logger,
+                            optionsTypeName,
                             property.Name);
                         continue;
                     }
@@ -439,16 +346,19 @@ internal sealed class SecretResolutionPostConfigureOptions<
                     if (_secretProvider.IsSecretReference(value))
                     {
                         throw new InvalidOperationException(
-                            $"Configuration option '{typeof(TOptions).Name}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
+                            $"Configuration option '{optionsTypeName}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to resolve secret reference for {OptionsType}.{PropertyName}: {SecretRef}",
-                        typeof(TOptions).Name, property.Name, value);
+                    ConfigurationServiceExtensionsLog.SecretReferenceResolutionFailed(
+                        _logger,
+                        optionsTypeName,
+                        property.Name,
+                        value,
+                        ex);
                     throw;
                 }
->>>>>>> origin/trunk
             }
         }
     }
@@ -478,7 +388,7 @@ internal sealed class ConfigurationValidationStartupService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting configuration validation...");
+        ConfigurationServiceExtensionsLog.ConfigurationValidationStarting(_logger);
 
         try
         {
@@ -498,21 +408,20 @@ internal sealed class ConfigurationValidationStartupService : IHostedService
                         "Application startup aborted. See logs for details.");
                 }
 
-                _logger.LogWarning(
-                    "Configuration validation completed with {ErrorCount} errors and {WarningCount} warnings, " +
-                    "but startup will continue in {Environment} environment",
-                    validationResult.TotalErrors, validationResult.TotalWarnings, _environment.EnvironmentName);
+                ConfigurationServiceExtensionsLog.ConfigurationValidationContinuingWithErrors(
+                    _logger,
+                    validationResult.TotalErrors,
+                    validationResult.TotalWarnings,
+                    _environment.EnvironmentName);
             }
             else
             {
-                _logger.LogInformation(
-                    "Configuration validation completed successfully. Validated {SectionCount} sections",
-                    validationResult.Results.Count);
+                ConfigurationValidatorLog.ValidationCompleted(_logger, validationResult.Results.Count);
             }
         }
         catch (Exception ex) when (!(ex is InvalidOperationException))
         {
-            _logger.LogError(ex, "Configuration validation failed due to unexpected error");
+            ConfigurationServiceExtensionsLog.ConfigurationValidationUnexpectedFailure(_logger, ex);
 
             if (_secureOptions.FailOnSecretValidationError && !_environment.IsDevelopment())
             {

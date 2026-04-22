@@ -7,34 +7,28 @@ rule_files:
 
 scrape_configs:
   # Honua Server instances
-  - job_name: 'honua-servers'
-    static_configs:
-      - targets: ['honua_1:8080', 'honua_2:8080', 'honua_3:8080']
+  - job_name: 'honua'
+    dns_sd_configs:
+      - names: ['honua']
+        type: 'A'
+        port: 8080
     scrape_interval: 10s
     metrics_path: '/metrics'
-    params:
-      format: ['prometheus']
 
-  # PostgreSQL monitoring (if pg_exporter is used)
+  # PostgreSQL monitoring
   - job_name: 'postgres'
     static_configs:
-      - targets: ['postgres:9187']
+      - targets: ['postgres-exporter:9187']
     scrape_interval: 30s
 
   # Redis monitoring
   - job_name: 'redis'
     static_configs:
-      - targets: ['redis:9121']
+      - targets: ['redis-exporter:9121']
     scrape_interval: 30s
 
-  # Nginx monitoring (if nginx-prometheus-exporter is used)
+  # Nginx monitoring
   - job_name: 'nginx'
     static_configs:
-      - targets: ['nginx:9113']
-    scrape_interval: 30s
-
-  # Node exporter for system metrics (if needed)
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ['nginx-exporter:9113']
     scrape_interval: 30s

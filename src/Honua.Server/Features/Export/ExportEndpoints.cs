@@ -319,7 +319,7 @@ internal static class ExportEndpoints
             try { Directory.Delete(scratchDir, recursive: true); }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to clean up GeoPackage scratch directory: {Path}", scratchDir);
+                ExportLog.ScratchDirectoryCleanupFailed(logger, scratchDir, ex);
             }
         }
     }

@@ -34,7 +34,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get cached value for key: {Key}", key);
+            RedisCacheManagerAdapterLog.GetFailed(_logger, key, ex);
             return default;
         }
     }
@@ -56,7 +56,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to set cached value for key: {Key}", key);
+            RedisCacheManagerAdapterLog.SetFailed(_logger, key, ex);
             throw;
         }
     }
@@ -70,7 +70,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to remove cached value for key: {Key}", key);
+            RedisCacheManagerAdapterLog.RemoveFailed(_logger, key, ex);
             return false;
         }
     }
@@ -78,7 +78,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
     public async Task<int> RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
         // Pattern-based removal is not supported by IDistributedCache
-        _logger.LogWarning("Pattern-based cache removal is not supported by IDistributedCache: {Pattern}", pattern);
+        RedisCacheManagerAdapterLog.PatternRemovalUnsupported(_logger, pattern);
         return 0;
     }
 
@@ -91,7 +91,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to check if key exists: {Key}", key);
+            RedisCacheManagerAdapterLog.ExistsCheckFailed(_logger, key, ex);
             return false;
         }
     }

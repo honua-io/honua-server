@@ -95,7 +95,7 @@ public record MetadataProviderOptions
     /// <summary>
     /// Whether to calculate expensive metadata (like feature counts and computed extents).
     /// </summary>
-    public bool IncludeExpensiveMetadata { get; init; } = false;
+    public bool IncludeExpensiveMetadata { get; init; }
 
     /// <summary>
     /// Maximum time to spend on expensive metadata calculations.

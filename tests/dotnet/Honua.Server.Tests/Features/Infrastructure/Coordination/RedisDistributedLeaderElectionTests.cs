@@ -336,8 +336,6 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             It.IsAny<RedisValue[]>()), Times.AtLeastOnce);
     }
 
-<<<<<<< HEAD
-=======
     [UnitTest]
     [Operation(Operations.Infrastructure)]
     public async Task Dispose_WhenReleaseDoesNotComplete_ReturnsAfterTimeout()
@@ -370,7 +368,6 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             It.IsAny<RedisValue[]>()), Times.Once);
     }
 
->>>>>>> origin/trunk
     private RedisDistributedLeaderElection CreateRedisBackedElection()
     {
         _redis.SetupGet(r => r.IsConnected).Returns(true);

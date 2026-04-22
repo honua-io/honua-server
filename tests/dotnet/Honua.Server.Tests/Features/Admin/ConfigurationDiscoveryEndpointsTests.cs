@@ -1,14 +1,7 @@
-<<<<<<< HEAD
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
-
-using System.Net;
-=======
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
 using System.Text.Json;
->>>>>>> origin/trunk
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -49,13 +42,6 @@ public sealed class ConfigurationDiscoveryEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/configuration/discover")]
-<<<<<<< HEAD
-    public async Task DiscoverConfiguration_WithAdminAuth_ReturnsNotFound()
-    {
-        var response = await _client.GetAsync("/api/v1/admin/configuration/discover");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-=======
     public async Task DiscoverConfiguration_WithAdminAuth_ReturnsMaskedConfigurationOverview()
     {
         var response = await _client.GetAsync("/api/v1/admin/configuration/discover");
@@ -124,6 +110,5 @@ public sealed class ConfigurationDiscoveryEndpointsTests : IAsyncLifetime
         summaryJson.RootElement.GetProperty("registeredTypes").GetInt32().Should().BeGreaterThanOrEqualTo(0);
         summaryJson.RootElement.GetProperty("environment").GetString().Should().Be("Test");
         summaryJson.RootElement.GetProperty("lastDiscovery").GetString().Should().NotBeNullOrWhiteSpace();
->>>>>>> origin/trunk
     }
 }

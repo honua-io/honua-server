@@ -151,7 +151,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (InvalidDataException ex)
         {
-            logger.LogWarning(ex, "Invalid WFS 2.0 XML request body");
+            Wfs20DispatcherLog.InvalidXmlRequestBody(logger, ex);
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "InvalidParameterValue",
@@ -160,7 +160,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process WFS 2.0 request");
+            Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process WFS request");
         }
     }
@@ -292,7 +292,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (ArgumentException ex)
         {
-            logger.LogWarning(ex, "DescribeFeatureType validation failed");
+            Wfs20DispatcherLog.DescribeFeatureTypeValidationFailed(logger, ex);
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "InvalidParameterValue",
@@ -301,7 +301,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process DescribeFeatureType request");
+            Wfs20DispatcherLog.DescribeFeatureTypeRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DescribeFeatureType request");
         }
     }
@@ -377,7 +377,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process GetFeature request");
+            Wfs20DispatcherLog.GetFeatureRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetFeature request");
         }
     }
@@ -443,7 +443,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process GetPropertyValue request");
+            Wfs20DispatcherLog.GetPropertyValueRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetPropertyValue request");
         }
     }
@@ -474,7 +474,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process Transaction request");
+            Wfs20DispatcherLog.TransactionRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process Transaction request");
         }
     }
@@ -502,7 +502,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process ListStoredQueries request");
+            Wfs20DispatcherLog.ListStoredQueriesRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process ListStoredQueries request");
         }
     }
@@ -531,7 +531,7 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process DescribeStoredQueries request");
+            Wfs20DispatcherLog.DescribeStoredQueriesRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DescribeStoredQueries request");
         }
     }

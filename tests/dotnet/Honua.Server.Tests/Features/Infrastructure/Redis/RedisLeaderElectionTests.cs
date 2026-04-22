@@ -179,8 +179,6 @@ public sealed class RedisLeaderElectionTests : IDisposable
         election.Dispose();
     }
 
-<<<<<<< HEAD
-=======
     [UnitTest]
     public async Task Dispose_WhenLeader_ReleasesLeadershipBeforeDisposal()
     {
@@ -222,7 +220,6 @@ public sealed class RedisLeaderElectionTests : IDisposable
             Times.Once);
     }
 
->>>>>>> origin/trunk
     private RedisLeaderElection CreateElection(string key, TimeSpan? leaseDuration = null)
     {
         return new RedisLeaderElection(

@@ -673,7 +673,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private TransactionFeaturePayload ReadTransactionFeaturePayload(
+    private static TransactionFeaturePayload ReadTransactionFeaturePayload(
         LayerDefinition layer,
         XElement featureElement)
     {
@@ -730,7 +730,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private TransactionFeatureChanges ParseTransactionUpdateChanges(
+    private static TransactionFeatureChanges ParseTransactionUpdateChanges(
         LayerDefinition layer,
         XElement updateElement)
     {
@@ -888,7 +888,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
+    private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
         int layerId,
         HashSet<int> validatedLayerIds,
@@ -1484,15 +1484,12 @@ internal sealed partial class Wfs20Handler
     {
         if (prepared.LayerIdCount <= 1)
         {
-            var editBatch = FeatureEditBatch.Create(
-                rollbackOnFailure: rollbackOnFailure,
-                operations: prepared.Operations
-                    .Select(static operation => operation.EditOperation)
-                    .ToImmutableArray());
-
-            return await _featureWriter.ApplyEditsAsync(
+            return await ExecutePreparedEditAsync(
                 prepared.LayerId,
-                editBatch,
+                prepared.Operations
+                    .Select(static operation => operation.EditOperation)
+                    .ToImmutableArray(),
+                rollbackOnFailure,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -1534,15 +1531,12 @@ internal sealed partial class Wfs20Handler
                      .OrderBy(static group => group.Min(operation => operation.Sequence)))
         {
             var operations = layerGroup.OrderBy(static operation => operation.Sequence).ToImmutableArray();
-            var editBatch = FeatureEditBatch.Create(
-                rollbackOnFailure: false,
-                operations: operations
-                    .Select(static operation => operation.EditOperation)
-                    .ToImmutableArray());
-
-            var layerResult = await _featureWriter.ApplyEditsAsync(
+            var layerResult = await ExecutePreparedEditAsync(
                 layerGroup.Key,
-                editBatch,
+                operations
+                    .Select(static operation => operation.EditOperation)
+                    .ToImmutableArray(),
+                rollbackOnFailure: false,
                 cancellationToken).ConfigureAwait(false);
 
             createdCount += layerResult.CreatedCount;
@@ -1612,8 +1606,41 @@ internal sealed partial class Wfs20Handler
             deleteResults: aggregatedDeleteResults.ToImmutableArray());
     }
 
+    private async Task<FeatureEditResult> ExecutePreparedEditAsync(
+        int layerId,
+        ImmutableArray<FeatureEditOperation> operations,
+        bool rollbackOnFailure,
+        CancellationToken cancellationToken)
+    {
+        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Layer '{layerId}' was not found.");
 
-    private async Task<IReadOnlyDictionary<int, string>> ResolveTransactionServiceIdsAsync(
+        var editAdapterResult = await _editParameterAdapter.ConvertAsync(
+            new Wfs20EditRequest
+            {
+                Operations = operations,
+                RollbackOnFailure = rollbackOnFailure
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
+        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
+        {
+            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid WFS transaction.");
+        }
+
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        if (!editValidation.IsValid)
+        {
+            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid WFS transaction.");
+        }
+
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+    }
+
+
+    private static async Task<IReadOnlyDictionary<int, string>> ResolveTransactionServiceIdsAsync(
         HttpContext context,
         TransactionPreparationResult prepared,
         CancellationToken cancellationToken)

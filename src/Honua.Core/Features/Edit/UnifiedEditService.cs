@@ -39,8 +39,7 @@ public sealed class UnifiedEditService
     public void RegisterAdapter<TRequest>(IEditParameterAdapter<TRequest> adapter)
     {
         _adapters[typeof(TRequest)] = adapter ?? throw new ArgumentNullException(nameof(adapter));
-        _logger.LogInformation("Registered edit adapter for protocol {Protocol} with request type {RequestType}",
-            adapter.ProtocolName, typeof(TRequest).Name);
+        EditLog.RegisteredEditAdapter(_logger, adapter.ProtocolName, typeof(TRequest).Name);
     }
 
     /// <summary>
@@ -65,8 +64,7 @@ public sealed class UnifiedEditService
                 return UnifiedEditResult.Failure($"No adapter registered for request type {typeof(TRequest).Name}");
             }
 
-            _logger.LogDebug("Converting {Protocol} edit request to unified edit for layer {LayerId}",
-                adapter.ProtocolName, layer.Id);
+            EditLog.ConvertingEditRequest(_logger, adapter.ProtocolName, layer.Id);
 
             // Convert protocol request to unified edit
             var conversionResult = await adapter.ConvertAsync(protocolRequest, layer, cancellationToken);
@@ -98,10 +96,13 @@ public sealed class UnifiedEditService
             // Convert to feature edit batch for data access
             var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, layer);
 
-            _logger.LogDebug("Executing unified edit for layer {LayerId} with protocol {Protocol}, " +
-                           "{CreateCount} creates, {UpdateCount} updates, {DeleteCount} deletes",
-                layer.Id, adapter.ProtocolName,
-                editBatch.Creates.Length, editBatch.Updates.Length, editBatch.Deletes.Length);
+            EditLog.ExecutingUnifiedEdit(
+                _logger,
+                layer.Id,
+                adapter.ProtocolName,
+                editBatch.Creates.Length,
+                editBatch.Updates.Length,
+                editBatch.Deletes.Length);
 
             // Execute the edit operation
             var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
@@ -120,7 +121,7 @@ public sealed class UnifiedEditService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute unified edit for layer {LayerId}", layer.Id);
+            EditLog.ExecuteUnifiedEditFailed(_logger, layer.Id, ex);
             return UnifiedEditResult.Failure("An error occurred while executing the edit operation.");
         }
     }
@@ -150,8 +151,7 @@ public sealed class UnifiedEditService
             }
 
             var requests = protocolRequests.ToList();
-            _logger.LogDebug("Executing batch edit for {Protocol} with {RequestCount} requests on layer {LayerId}",
-                adapter.ProtocolName, requests.Count, layer.Id);
+            EditLog.ExecutingBatchEdit(_logger, adapter.ProtocolName, requests.Count, layer.Id);
 
             var unifiedRequests = new List<UnifiedEditRequest>();
             var allMetadata = new Dictionary<string, object>();
@@ -193,7 +193,7 @@ public sealed class UnifiedEditService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to execute batch edit for layer {LayerId}", layer.Id);
+            EditLog.ExecuteBatchEditFailed(_logger, layer.Id, ex);
             return UnifiedBatchEditResult.Failure("An error occurred while executing the batch edit operation.");
         }
     }
@@ -230,7 +230,7 @@ public sealed class UnifiedEditService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to estimate edit performance for layer {LayerId}", layer.Id);
+            EditLog.EstimateEditPerformanceFailed(_logger, layer.Id, ex);
             return null;
         }
     }
@@ -266,7 +266,7 @@ public sealed class UnifiedEditService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to validate edit request for layer {LayerId}", layer.Id);
+            EditLog.ValidateEditRequestFailed(_logger, layer.Id, ex);
             return EditValidationResult.Failure("An error occurred while validating the edit request.");
         }
     }
@@ -279,7 +279,7 @@ public sealed class UnifiedEditService
     {
         return _adapters.ToDictionary(
             kvp => kvp.Key,
-            kvp => ((dynamic)kvp.Value).ProtocolName) as IReadOnlyDictionary<Type, string>;
+            kvp => (string)((dynamic)kvp.Value).ProtocolName);
     }
 
     private async Task<UnifiedBatchEditResult> ExecuteBatchTransactionAsync(

@@ -71,7 +71,7 @@ public sealed class QueryPerformanceMonitoringOptions
     /// <summary>
     /// Whether to capture query text for slow queries (may contain sensitive data).
     /// </summary>
-    public bool CaptureQueryText { get; set; } = false;
+    public bool CaptureQueryText { get; set; }
 
     /// <summary>
     /// Maximum length of query text to capture.
@@ -249,8 +249,7 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
 
     public IQueryExecutionContext StartQueryExecution(string queryType, string correlationId)
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(DatabaseQueryPerformanceMonitor));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         return new QueryExecutionContext(this, queryType, correlationId, _options);
     }
@@ -339,7 +338,10 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
 
         // Update query type metrics
         var queryTypeMetrics = _queryTypeMetrics.GetOrAdd(data.QueryType, _ => new QueryTypeMetrics());
-        queryTypeMetrics.RecordExecution(data.ExecutionTimeMs, data.Success);
+        queryTypeMetrics.RecordExecution(
+            data.ExecutionTimeMs,
+            data.Success,
+            data.ExecutionTimeMs >= _options.SlowQueryThresholdMs);
 
         // Check for slow query
         if (data.ExecutionTimeMs >= _options.SlowQueryThresholdMs)
@@ -403,7 +405,7 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
         private double _maxTimeMs;
         private readonly object _lock = new();
 
-        public void RecordExecution(double executionTimeMs, bool success)
+        public void RecordExecution(double executionTimeMs, bool success, bool isSlow)
         {
             lock (_lock)
             {
@@ -412,6 +414,9 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
 
                 if (executionTimeMs > _maxTimeMs)
                     _maxTimeMs = executionTimeMs;
+
+                if (isSlow)
+                    Interlocked.Increment(ref _slowCount);
 
                 if (!success)
                     Interlocked.Increment(ref _failedCount);

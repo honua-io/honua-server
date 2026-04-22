@@ -159,7 +159,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to evaluate deploy telemetry signals for operation {OperationId}", operation.OperationId);
+            DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
             return new DeployTelemetryDecision
             {
                 WaitForMoreTelemetry = true,

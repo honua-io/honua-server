@@ -32,8 +32,8 @@ internal sealed class HostValidationMiddleware(
             return;
         }
 
-        _logger.LogWarning(
-            "Rejected request with untrusted host header '{Host}' for path '{Path}'.",
+        HostValidationLog.RejectedUntrustedHost(
+            _logger,
             context.Request.Host.Value,
             context.Request.Path.Value);
 

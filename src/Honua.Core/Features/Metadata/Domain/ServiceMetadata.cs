@@ -258,7 +258,7 @@ public sealed record FilterCapabilities
     /// <summary>
     /// Whether temporal filters are supported.
     /// </summary>
-    public bool SupportsTemporal { get; init; } = false;
+    public bool SupportsTemporal { get; init; }
 
     /// <summary>
     /// Supported operators for attribute queries.
@@ -279,32 +279,32 @@ public sealed record EditCapabilities
     /// <summary>
     /// Whether creating new features is supported.
     /// </summary>
-    public bool SupportsCreate { get; init; } = false;
+    public bool SupportsCreate { get; init; }
 
     /// <summary>
     /// Whether updating existing features is supported.
     /// </summary>
-    public bool SupportsUpdate { get; init; } = false;
+    public bool SupportsUpdate { get; init; }
 
     /// <summary>
     /// Whether deleting features is supported.
     /// </summary>
-    public bool SupportsDelete { get; init; } = false;
+    public bool SupportsDelete { get; init; }
 
     /// <summary>
     /// Whether batch operations are supported.
     /// </summary>
-    public bool SupportsBatchOperations { get; init; } = false;
+    public bool SupportsBatchOperations { get; init; }
 
     /// <summary>
     /// Whether transactions (rollback) are supported.
     /// </summary>
-    public bool SupportsTransactions { get; init; } = false;
+    public bool SupportsTransactions { get; init; }
 
     /// <summary>
     /// Whether attachment operations are supported.
     /// </summary>
-    public bool SupportsAttachments { get; init; } = false;
+    public bool SupportsAttachments { get; init; }
 }
 
 /// <summary>
@@ -330,7 +330,7 @@ public sealed record FormatCapabilities
     /// <summary>
     /// Whether geometry precision can be controlled.
     /// </summary>
-    public bool SupportsGeometryPrecision { get; init; } = false;
+    public bool SupportsGeometryPrecision { get; init; }
 }
 
 /// <summary>
@@ -361,12 +361,12 @@ public sealed record SpatialCapabilities
     /// <summary>
     /// Whether 3D geometry is supported.
     /// </summary>
-    public bool Supports3D { get; init; } = false;
+    public bool Supports3D { get; init; }
 
     /// <summary>
     /// Whether measured geometry is supported.
     /// </summary>
-    public bool SupportsM { get; init; } = false;
+    public bool SupportsM { get; init; }
 }
 
 /// <summary>
@@ -423,7 +423,7 @@ public sealed record ServiceSpatialInfo
     /// <summary>
     /// Whether extent information is computed or cached.
     /// </summary>
-    public bool ExtentIsComputed { get; init; } = false;
+    public bool ExtentIsComputed { get; init; }
 }
 
 /// <summary>
@@ -434,7 +434,7 @@ public sealed record ServiceTemporalInfo
     /// <summary>
     /// Whether any layers have temporal data.
     /// </summary>
-    public bool HasTemporalData { get; init; } = false;
+    public bool HasTemporalData { get; init; }
 
     /// <summary>
     /// Overall time extent of all temporal layers.
@@ -465,12 +465,12 @@ public sealed record TemporalCapabilities
     /// <summary>
     /// Whether point-in-time queries are supported.
     /// </summary>
-    public bool SupportsTimeInstant { get; init; } = false;
+    public bool SupportsTimeInstant { get; init; }
 
     /// <summary>
     /// Whether time range queries are supported.
     /// </summary>
-    public bool SupportsTimeRange { get; init; } = false;
+    public bool SupportsTimeRange { get; init; }
 
     /// <summary>
     /// Supported temporal relationships.
@@ -486,7 +486,7 @@ public sealed record AccessControlInfo
     /// <summary>
     /// Whether the service requires authentication.
     /// </summary>
-    public bool RequiresAuthentication { get; init; } = false;
+    public bool RequiresAuthentication { get; init; }
 
     /// <summary>
     /// Whether anonymous access is allowed.
@@ -517,7 +517,7 @@ public sealed record LayerAccessInfo
     /// <summary>
     /// Whether the layer requires authentication.
     /// </summary>
-    public bool RequiresAuthentication { get; init; } = false;
+    public bool RequiresAuthentication { get; init; }
 
     /// <summary>
     /// Required roles for layer access.

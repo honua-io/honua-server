@@ -71,7 +71,7 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
         using var activity = ActivitySource.StartActivity("UnifiedMetadataProvider.GetServiceMetadata");
         activity?.SetTag("service.name", service.Name);
 
-        _logger.LogDebug("Generating service metadata for {ServiceName}", service.Name);
+        UnifiedMetadataProviderLog.GeneratingServiceMetadata(_logger, service.Name);
 
         try
         {
@@ -80,14 +80,13 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             var cacheDuration = options.IncludeExpensiveMetadata ? ExpensiveCacheDuration : DefaultCacheDuration;
             _cache.Set(cacheKey, metadata, cacheDuration);
 
-            _logger.LogDebug("Generated service metadata for {ServiceName} with {LayerCount} layers",
-                service.Name, metadata.Layers.Length);
+            UnifiedMetadataProviderLog.GeneratedServiceMetadata(_logger, service.Name, metadata.Layers.Length);
 
             return metadata;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate service metadata for {ServiceName}", service.Name);
+            UnifiedMetadataProviderLog.GenerateServiceMetadataFailed(_logger, service.Name, ex);
             throw;
         }
     }
@@ -111,7 +110,7 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
         activity?.SetTag("layer.id", layer.Id);
         activity?.SetTag("layer.name", layer.Name);
 
-        _logger.LogDebug("Generating layer metadata for {ServiceName}/{LayerName}", service.Name, layer.Name);
+        UnifiedMetadataProviderLog.GeneratingLayerMetadata(_logger, service.Name, layer.Name);
 
         try
         {
@@ -120,13 +119,12 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             var cacheDuration = options.IncludeExpensiveMetadata ? ExpensiveCacheDuration : DefaultCacheDuration;
             _cache.Set(cacheKey, metadata, cacheDuration);
 
-            _logger.LogDebug("Generated layer metadata for {ServiceName}/{LayerName}", service.Name, layer.Name);
+            UnifiedMetadataProviderLog.GeneratedLayerMetadata(_logger, service.Name, layer.Name);
             return metadata;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate layer metadata for {ServiceName}/{LayerName}",
-                service.Name, layer.Name);
+            UnifiedMetadataProviderLog.GenerateLayerMetadataFailed(_logger, service.Name, layer.Name, ex);
             throw;
         }
     }
@@ -145,7 +143,7 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
 
         using var activity = ActivitySource.StartActivity("UnifiedMetadataProvider.GetGlobalCapabilities");
 
-        _logger.LogDebug("Generating global capabilities");
+        UnifiedMetadataProviderLog.GeneratingGlobalCapabilities(_logger);
 
         try
         {
@@ -153,12 +151,12 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
 
             _cache.Set(cacheKey, capabilities, ExpensiveCacheDuration);
 
-            _logger.LogDebug("Generated global capabilities");
+            UnifiedMetadataProviderLog.GeneratedGlobalCapabilities(_logger);
             return capabilities;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate global capabilities");
+            UnifiedMetadataProviderLog.GenerateGlobalCapabilitiesFailed(_logger, ex);
             throw;
         }
     }
@@ -359,13 +357,11 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
                 }
                 catch (OperationCanceledException)
                 {
-                    _logger.LogWarning("Field statistics computation timed out for {LayerName}.{FieldName}",
-                        layer.Name, field.Name);
+                    UnifiedMetadataProviderLog.FieldStatisticsTimedOut(_logger, layer.Name, field.Name);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to compute field statistics for {LayerName}.{FieldName}",
-                        layer.Name, field.Name);
+                    UnifiedMetadataProviderLog.FieldStatisticsFailed(_logger, layer.Name, field.Name, ex);
                 }
             }
 
@@ -451,16 +447,16 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
     }
 
     // Additional helper methods would be implemented here to complete the metadata generation
-    private string[] GetSupportedSpatialRelations() =>
+    private static string[] GetSupportedSpatialRelations() =>
         ["intersects", "contains", "within", "crosses", "overlaps", "touches", "disjoint"];
 
-    private string[] GetSupportedFilterOperators() =>
+    private static string[] GetSupportedFilterOperators() =>
         ["=", "<>", "<", "<=", ">", ">=", "LIKE", "IN", "IS NULL", "IS NOT NULL"];
 
-    private string[] GetSupportedFilterFunctions() =>
+    private static string[] GetSupportedFilterFunctions() =>
         ["UPPER", "LOWER", "LENGTH", "SUBSTRING", "NOW"];
 
-    private SpatialReference[] GetSupportedSpatialReferences(ServiceDefinition service, LayerMetadata[] layers)
+    private static SpatialReference[] GetSupportedSpatialReferences(ServiceDefinition service, LayerMetadata[] layers)
     {
         var srsSet = new HashSet<SpatialReference> { service.SpatialReference };
         foreach (var layer in layers)
@@ -471,27 +467,27 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
     }
 
     // Placeholder methods - these would contain actual implementation
-    private async Task<LayerStatistics?> ComputeLayerStatisticsAsync(LayerDefinition layer, TimeSpan timeout, CancellationToken cancellationToken) => null;
-    private async Task<FieldStatistics?> ComputeFieldStatisticsAsync(LayerDefinition layer, FieldDefinition field, CancellationToken cancellationToken) => null;
-    private async Task<object[]?> GetUniqueFieldValuesAsync(LayerDefinition layer, FieldDefinition field, int limit, CancellationToken cancellationToken) => null;
-    private async Task<LayerStyleInfo?> BuildLayerStyleInfoAsync(LayerDefinition layer, CancellationToken cancellationToken) => null;
-    private async Task<ProtocolCapabilities> BuildProtocolCapabilitiesAsync(CancellationToken cancellationToken) => new();
-    private async Task<GlobalSpatialCapabilities> BuildGlobalSpatialCapabilitiesAsync(CancellationToken cancellationToken) => new() { DefaultCrs = SpatialReference.WGS84 };
+    private static async Task<LayerStatistics?> ComputeLayerStatisticsAsync(LayerDefinition layer, TimeSpan timeout, CancellationToken cancellationToken) => null;
+    private static async Task<FieldStatistics?> ComputeFieldStatisticsAsync(LayerDefinition layer, FieldDefinition field, CancellationToken cancellationToken) => null;
+    private static async Task<object[]?> GetUniqueFieldValuesAsync(LayerDefinition layer, FieldDefinition field, int limit, CancellationToken cancellationToken) => null;
+    private static async Task<LayerStyleInfo?> BuildLayerStyleInfoAsync(LayerDefinition layer, CancellationToken cancellationToken) => null;
+    private static async Task<ProtocolCapabilities> BuildProtocolCapabilitiesAsync(CancellationToken cancellationToken) => new();
+    private static async Task<GlobalSpatialCapabilities> BuildGlobalSpatialCapabilitiesAsync(CancellationToken cancellationToken) => new() { DefaultCrs = SpatialReference.WGS84 };
 
     // Helper methods for extracting information
-    private string[] ExtractKeywordsFromService(ServiceDefinition service) => Array.Empty<string>();
-    private string[] ExtractKeywordsFromLayer(LayerDefinition layer) => Array.Empty<string>();
-    private string? ExtractLicenseFromService(ServiceDefinition service) => service.Metadata?.Stac?.License;
-    private ContactInfo? ExtractContactFromConfiguration() => null;
-    private ProviderInfo? ExtractProviderFromConfiguration() => null;
-    private string DetermineLayerType(LayerDefinition layer) => layer.HasGeometry ? "Feature Layer" : "Table";
-    private bool DetermineIfFieldIsIndexed(FieldDefinition field) => field.Name.Contains("id", StringComparison.OrdinalIgnoreCase);
-    private bool DetermineIfFieldIsSearchable(FieldDefinition field) => field.Type == FieldType.String;
-    private FieldDomain? ExtractFieldDomain(FieldDefinition field) => null;
-    private FieldValidation? ExtractFieldValidation(FieldDefinition field) => null;
+    private static string[] ExtractKeywordsFromService(ServiceDefinition service) => Array.Empty<string>();
+    private static string[] ExtractKeywordsFromLayer(LayerDefinition layer) => Array.Empty<string>();
+    private static string? ExtractLicenseFromService(ServiceDefinition service) => service.Metadata?.Stac?.License;
+    private static ContactInfo? ExtractContactFromConfiguration() => null;
+    private static ProviderInfo? ExtractProviderFromConfiguration() => null;
+    private static string DetermineLayerType(LayerDefinition layer) => layer.HasGeometry ? "Feature Layer" : "Table";
+    private static bool DetermineIfFieldIsIndexed(FieldDefinition field) => field.Name.Contains("id", StringComparison.OrdinalIgnoreCase);
+    private static bool DetermineIfFieldIsSearchable(FieldDefinition field) => field.Type == FieldType.String;
+    private static FieldDomain? ExtractFieldDomain(FieldDefinition field) => null;
+    private static FieldValidation? ExtractFieldValidation(FieldDefinition field) => null;
 
     // Additional helper methods would be implemented here...
-    private LayerSpatialInfo BuildLayerSpatialInfo(LayerDefinition layer, LayerStatistics? statistics) => new()
+    private static LayerSpatialInfo BuildLayerSpatialInfo(LayerDefinition layer, LayerStatistics? statistics) => new()
     {
         GeometryType = layer.GeometryType,
         HasGeometry = layer.HasGeometry,
@@ -500,7 +496,7 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
         ExtentIsComputed = false
     };
 
-    private LayerTemporalInfo? BuildLayerTemporalInfo(LayerDefinition layer) =>
+    private static LayerTemporalInfo? BuildLayerTemporalInfo(LayerDefinition layer) =>
         layer.Metadata?.TimeInfo != null ? new LayerTemporalInfo
         {
             StartTimeField = layer.Metadata.TimeInfo.StartTimeField,
@@ -508,7 +504,7 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             TrackIdField = layer.Metadata.TimeInfo.TrackIdField
         } : null;
 
-    private LayerRelationshipInfo[] BuildLayerRelationships(LayerDefinition layer, ServiceDefinition service, MetadataProviderOptions options) =>
+    private static LayerRelationshipInfo[] BuildLayerRelationships(LayerDefinition layer, ServiceDefinition service, MetadataProviderOptions options) =>
         layer.Relationships?.Select(r => new LayerRelationshipInfo
         {
             Definition = r,
@@ -521,26 +517,26 @@ internal sealed class UnifiedMetadataProvider : IMetadataProvider
             }
         }).ToArray() ?? Array.Empty<LayerRelationshipInfo>();
 
-    private LayerCapabilities BuildLayerCapabilities(LayerDefinition layer, ServiceDefinition service) => new();
-    private LayerAccessInfo BuildLayerAccessControl(IRequestContext context, LayerDefinition layer, ServiceDefinition service) => new();
-    private ServiceSpatialInfo BuildServiceSpatialInfo(ServiceDefinition service, LayerMetadata[] layers, bool includeExpensive) => new()
+    private static LayerCapabilities BuildLayerCapabilities(LayerDefinition layer, ServiceDefinition service) => new();
+    private static LayerAccessInfo BuildLayerAccessControl(IRequestContext context, LayerDefinition layer, ServiceDefinition service) => new();
+    private static ServiceSpatialInfo BuildServiceSpatialInfo(ServiceDefinition service, LayerMetadata[] layers, bool includeExpensive) => new()
     {
         Extent = service.EffectiveExtent,
         ExtentSrs = service.SpatialReference
     };
 
-    private ServiceTemporalInfo? BuildServiceTemporalInfo(ServiceDefinition service, LayerMetadata[] layers) => null;
-    private AccessControlInfo BuildServiceAccessControl(IRequestContext context, ServiceDefinition service, LayerMetadata[] layers) => new();
-    private ServiceLinks BuildServiceLinks(string baseUrl, ServiceDefinition service, ServiceCapabilities capabilities) => new() { BaseUrl = baseUrl };
+    private static ServiceTemporalInfo? BuildServiceTemporalInfo(ServiceDefinition service, LayerMetadata[] layers) => null;
+    private static AccessControlInfo BuildServiceAccessControl(IRequestContext context, ServiceDefinition service, LayerMetadata[] layers) => new();
+    private static ServiceLinks BuildServiceLinks(string baseUrl, ServiceDefinition service, ServiceCapabilities capabilities) => new() { BaseUrl = baseUrl };
 
-    private GlobalFormatCapabilities BuildGlobalFormatCapabilities() => new();
-    private GlobalQueryCapabilities BuildGlobalQueryCapabilities() => new();
-    private GlobalLimits BuildGlobalLimits() => new();
-    private SecurityCapabilities BuildSecurityCapabilities() => new();
-    private PerformanceCapabilities BuildPerformanceCapabilities() => new();
-    private ExtensionCapabilities BuildExtensionCapabilities() => new();
+    private static GlobalFormatCapabilities BuildGlobalFormatCapabilities() => new();
+    private static GlobalQueryCapabilities BuildGlobalQueryCapabilities() => new();
+    private static GlobalLimits BuildGlobalLimits() => new();
+    private static SecurityCapabilities BuildSecurityCapabilities() => new();
+    private static PerformanceCapabilities BuildPerformanceCapabilities() => new();
+    private static ExtensionCapabilities BuildExtensionCapabilities() => new();
 
-    private string GenerateServiceVersion(ServiceDefinition service) =>
+    private static string GenerateServiceVersion(ServiceDefinition service) =>
         $"{service.Name}:{service.Layers.Length}:{DateTimeOffset.UtcNow:yyyyMMdd}";
 
     private static string GetOptionsHash(MetadataProviderOptions options) =>

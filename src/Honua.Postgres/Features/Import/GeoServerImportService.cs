@@ -505,7 +505,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     }
 
     private static void AddStyleResourceLinks(
-        IDictionary<string, HashSet<string>> map,
+        Dictionary<string, HashSet<string>> map,
         IReadOnlyDictionary<StyleReferenceKey, string[]> styleIdsByReference,
         string layerWorkspaceName,
         string? styleReference,
@@ -590,7 +590,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private static string GetCoverageStoreId(string workspaceName, string coverageStoreName)
         => $"coverage-store:{workspaceName}:{coverageStoreName}";
 
-    private static string? ResolveDependencyAddress(IReadOnlyDictionary<string, string> metadata)
+    private static string? ResolveDependencyAddress(Dictionary<string, string> metadata)
     {
         if (metadata.TryGetValue("url", out var url) && !string.IsNullOrWhiteSpace(url))
         {

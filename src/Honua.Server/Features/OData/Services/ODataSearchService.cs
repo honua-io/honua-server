@@ -102,13 +102,16 @@ internal sealed partial class ODataSearchService
 
         var textSearchFilter = BuildTextSearchCondition(searchTerms, layer);
 
-        var query = _queryService.BuildFeatureQuery(
+        var (query, queryError) = await _queryService.BuildFeatureQueryAsync(
             filter,
             orderby,
             top ?? 1000,
             skip,
             layer,
-            out var queryError);
+            select,
+            expand,
+            count,
+            cancellationToken: cancellationToken);
         if (queryError != null)
         {
             throw new ArgumentException(queryError);

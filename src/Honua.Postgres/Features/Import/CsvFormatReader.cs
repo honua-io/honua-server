@@ -298,7 +298,7 @@ internal static class CsvFormatReader
         return sampleRecords;
     }
 
-    private static char DetectDelimiter(IReadOnlyList<string> sampleRecords)
+    private static char DetectDelimiter(List<string> sampleRecords)
     {
         if (sampleRecords.Count == 0)
         {

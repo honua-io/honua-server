@@ -98,7 +98,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error validating edit request for layer {LayerId}", layer.Id);
+            EditLog.ValidateEditFailed(_logger, layer.Id, ex);
             return EditValidationResult.Failure("Failed to validate edit request");
         }
     }
@@ -121,15 +121,13 @@ public sealed class EditProcessor : IEditProcessor
             // Add performance hints
             optimizedRequest = AddPerformanceHints(optimizedRequest, layer);
 
-            _logger.LogDebug("Optimized edit request for layer {LayerId}: {OriginalOps} -> {OptimizedOps} operations",
-                layer.Id, editRequest.TotalOperations, optimizedRequest.TotalOperations);
+            EditLog.EditRequestOptimized(_logger, layer.Id, editRequest.TotalOperations, optimizedRequest.TotalOperations);
 
             return optimizedRequest;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to optimize edit request for layer {LayerId}, returning original",
-                layer.Id);
+            EditLog.OptimizeEditFailed(_logger, layer.Id, ex);
             return editRequest;
         }
     }
@@ -164,8 +162,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error converting unified edit request to feature edit batch for layer {LayerId}",
-                layer.Id);
+            EditLog.FeatureEditBatchConversionFailed(_logger, layer.Id, ex);
             throw;
         }
     }
@@ -236,8 +233,7 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error validating transaction {TransactionId} for layer {LayerId}",
-                transaction.TransactionId, layer.Id);
+            EditLog.ValidateTransactionFailed(_logger, transaction.TransactionId, layer.Id, ex);
             return TransactionValidationResult.Failure("Failed to validate transaction");
         }
     }
@@ -329,12 +325,12 @@ public sealed class EditProcessor : IEditProcessor
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to estimate performance for edit request on layer {LayerId}", layer.Id);
+            EditLog.EstimateEditPerformanceFailed(_logger, layer.Id, ex);
             throw;
         }
     }
 
-    private EditValidationResult ValidateCreateOperations(
+    private static EditValidationResult ValidateCreateOperations(
         ImmutableArray<EditFeature> creates,
         LayerDefinition layer)
     {
@@ -353,17 +349,12 @@ public sealed class EditProcessor : IEditProcessor
                 return EditValidationResult.Failure("Attributes required for create operation");
             }
 
-            // Validate geometry if layer requires it
-            if (feature.Geometry == null && RequiresGeometry(layer))
-            {
-                return EditValidationResult.Failure("Geometry required for create operation");
-            }
         }
 
         return EditValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    private EditValidationResult ValidateUpdateOperations(
+    private static EditValidationResult ValidateUpdateOperations(
         ImmutableArray<EditFeature> updates,
         LayerDefinition layer)
     {
@@ -383,7 +374,7 @@ public sealed class EditProcessor : IEditProcessor
         return EditValidationResult.Success();
     }
 
-    private EditValidationResult ValidateDeleteOperations(
+    private static EditValidationResult ValidateDeleteOperations(
         ImmutableArray<long> deletes,
         LayerDefinition layer)
     {
@@ -398,7 +389,7 @@ public sealed class EditProcessor : IEditProcessor
         return EditValidationResult.Success();
     }
 
-    private EditValidationResult ValidateOrderedOperations(
+    private static EditValidationResult ValidateOrderedOperations(
         ImmutableArray<UnifiedEditOperation> operations,
         LayerDefinition layer)
     {
@@ -430,7 +421,7 @@ public sealed class EditProcessor : IEditProcessor
         return EditValidationResult.Success();
     }
 
-    private EditValidationResult ValidateTransactionOptions(
+    private static EditValidationResult ValidateTransactionOptions(
         EditTransactionOptions options,
         LayerDefinition layer)
     {
@@ -449,7 +440,7 @@ public sealed class EditProcessor : IEditProcessor
         return EditValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    private TransactionValidationResult ValidateLayerCompatibility(EditTransaction transaction, LayerDefinition layer)
+    private static TransactionValidationResult ValidateLayerCompatibility(EditTransaction transaction, LayerDefinition layer)
     {
         var warnings = new List<string>();
 
@@ -471,31 +462,31 @@ public sealed class EditProcessor : IEditProcessor
         return TransactionValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    private UnifiedEditRequest OptimizeGeometryOperations(UnifiedEditRequest request, LayerDefinition layer)
+    private static UnifiedEditRequest OptimizeGeometryOperations(UnifiedEditRequest request, LayerDefinition layer)
     {
         // Implementation would include geometry simplification, validation caching, etc.
         return request;
     }
 
-    private UnifiedEditRequest OptimizeAttributeOperations(UnifiedEditRequest request, LayerDefinition layer)
+    private static UnifiedEditRequest OptimizeAttributeOperations(UnifiedEditRequest request, LayerDefinition layer)
     {
         // Implementation would include attribute validation caching, default value handling, etc.
         return request;
     }
 
-    private UnifiedEditRequest OptimizeOperationOrder(UnifiedEditRequest request, LayerDefinition layer)
+    private static UnifiedEditRequest OptimizeOperationOrder(UnifiedEditRequest request, LayerDefinition layer)
     {
         // Implementation would include reordering operations for optimal database performance
         return request;
     }
 
-    private UnifiedEditRequest AddPerformanceHints(UnifiedEditRequest request, LayerDefinition layer)
+    private static UnifiedEditRequest AddPerformanceHints(UnifiedEditRequest request, LayerDefinition layer)
     {
         // Implementation would add hints for query optimization, caching, etc.
         return request;
     }
 
-    private ImmutableArray<Feature> ConvertToFeatures(
+    private static ImmutableArray<Feature> ConvertToFeatures(
         ImmutableArray<EditFeature>? editFeatures,
         LayerDefinition layer,
         bool isCreate)
@@ -517,7 +508,7 @@ public sealed class EditProcessor : IEditProcessor
         return features.ToImmutableArray();
     }
 
-    private ImmutableArray<FeatureEditOperation> ConvertToFeatureOperations(
+    private static ImmutableArray<FeatureEditOperation> ConvertToFeatureOperations(
         ImmutableArray<UnifiedEditOperation> operations,
         LayerDefinition layer)
     {
@@ -555,14 +546,14 @@ public sealed class EditProcessor : IEditProcessor
         return featureOperations.ToImmutableArray();
     }
 
-    private Feature ConvertEditFeatureToFeature(EditFeature editFeature, LayerDefinition layer, bool isCreate)
+    private static Feature ConvertEditFeatureToFeature(EditFeature editFeature, LayerDefinition layer, bool isCreate)
     {
         var objectId = isCreate ? 0 : (editFeature.ObjectId ?? 0);
         var attributes = editFeature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         return Feature.Create(objectId, editFeature.Geometry, attributes);
     }
 
-    private bool HasGlobalIds(UnifiedEditRequest request)
+    private static bool HasGlobalIds(UnifiedEditRequest request)
     {
         if (request.Creates?.IsDefaultOrEmpty == false)
         {
@@ -577,7 +568,7 @@ public sealed class EditProcessor : IEditProcessor
         return false;
     }
 
-    private bool HasComplexGeometry(UnifiedEditRequest request)
+    private static bool HasComplexGeometry(UnifiedEditRequest request)
     {
         // Simplified check - in reality would analyze geometry complexity
         var hasGeometry = false;
@@ -595,19 +586,19 @@ public sealed class EditProcessor : IEditProcessor
         return hasGeometry;
     }
 
-    private int GetMaxOperationsForLayer(LayerDefinition layer)
+    private static int GetMaxOperationsForLayer(LayerDefinition layer)
     {
         // In reality, this would check layer configuration or capabilities
         return 10000; // Default maximum operations per layer
     }
 
-    private bool RequiresAttributes(LayerDefinition layer)
+    private static bool RequiresAttributes(LayerDefinition layer)
     {
         // Check if layer has non-nullable attribute fields without default values
         return layer.AttributeFields.Any(f => !f.Nullable && f.DefaultValue == null);
     }
 
-    private bool RequiresGeometry(LayerDefinition layer)
+    private static bool RequiresGeometry(LayerDefinition layer)
     {
         return layer.GeometryType != GeometryType.None;
     }

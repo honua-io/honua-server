@@ -20,6 +20,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 /// </summary>
 [Protocol(Protocols.Streaming)]
 [Operation(Operations.Streaming)]
+[Collection("Performance")]
 public sealed class FeatureStreamCdcScaleTests : IDisposable
 {
     private const int SubscriberCount = 100;

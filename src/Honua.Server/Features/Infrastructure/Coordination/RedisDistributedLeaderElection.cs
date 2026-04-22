@@ -14,10 +14,7 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LeaseRenewalInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RedisRetryBackoff = TimeSpan.FromSeconds(30);
-<<<<<<< HEAD
-=======
     private static readonly TimeSpan DisposeReleaseTimeout = TimeSpan.FromSeconds(1);
->>>>>>> origin/trunk
     private const string RenewLeadershipScript = @"
         local key = KEYS[1]
         local instanceId = ARGV[1]
@@ -270,35 +267,13 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
     }
 
-<<<<<<< HEAD
-    private void RenewLeaseAsync(object? state)
-=======
     private async void RenewLeaseAsync(object? state)
->>>>>>> origin/trunk
     {
         if (_disposed || !_isLeader)
         {
             return;
         }
 
-<<<<<<< HEAD
-        // Fire-and-forget task with proper exception handling
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var renewed = await HeartbeatAsync();
-                if (!renewed)
-                {
-                    Log.LeaseRenewalFailed(_logger, _leaderKey, _instanceId);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
-            }
-        });
-=======
         try
         {
             var renewed = await HeartbeatAsync();
@@ -311,7 +286,6 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         {
             Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
         }
->>>>>>> origin/trunk
     }
 
     private bool ShouldUseRedis()
@@ -350,13 +324,6 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         {
             try
             {
-<<<<<<< HEAD
-                _ = Task.Run(async () => await ReleaseLeadershipAsync());
-            }
-            catch
-            {
-                // Ignore disposal exceptions
-=======
                 ReleaseLeadershipAsync().WaitAsync(DisposeReleaseTimeout).GetAwaiter().GetResult();
             }
             catch (TimeoutException)
@@ -368,7 +335,6 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
             {
                 _isLeader = false;
                 Log.LeaderElectionError(_logger, "DisposeReleaseLeadership", _leaderKey, ex);
->>>>>>> origin/trunk
             }
         }
 
@@ -413,11 +379,8 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         [LoggerMessage(1212, LogLevel.Debug, "Heartbeat fallback activated for {LeaderKey}")]
         public static partial void HeartbeatFallbackActivated(ILogger logger, string leaderKey);
-<<<<<<< HEAD
-=======
 
         [LoggerMessage(1213, LogLevel.Warning, "Timed out waiting {Timeout} to release leadership for {LeaderKey} by instance {InstanceId} during dispose")]
         public static partial void DisposeReleaseTimedOut(ILogger logger, string leaderKey, string instanceId, TimeSpan timeout);
->>>>>>> origin/trunk
     }
 }

@@ -16,6 +16,7 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
+[Collection("ControlPlaneTransitionTelemetry")]
 public sealed class ExecutionJobReconcilerTests
 {
     [Fact]

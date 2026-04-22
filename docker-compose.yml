@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL with PostGIS for development
   postgres:
@@ -20,37 +18,9 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_dev"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # PostgreSQL with PostGIS for tests (opt-in)
-  postgis-test:
-    image: postgis/postgis:18-3.6
-    profiles:
-      - test
-    environment:
-      POSTGRES_DB: honua_test
-      POSTGRES_USER: test
-      POSTGRES_PASSWORD: test
-      # Enable encryption at rest and security features
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
-      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
-      # Enable encryption and security features
-      POSTGRESQL_CONF_ssl: "on"
-      POSTGRESQL_CONF_password_encryption: "scram-sha-256"
-      POSTGRESQL_CONF_log_connections: "on"
-      POSTGRESQL_CONF_log_disconnections: "on"
-    ports:
-      - "${POSTGRES_TEST_PORT:-5433}:5432"
-    volumes:
-      - postgres_test_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U test -d honua_test"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -141,7 +111,6 @@ services:
 
 volumes:
   postgres_data:
-  postgres_test_data:
   honua_logs:
   honua_cache:
   dotnet_diagnostics:

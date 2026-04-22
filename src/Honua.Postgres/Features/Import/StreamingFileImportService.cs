@@ -590,7 +590,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         Stream fileStream,
         SupportedFileFormat format,
         int sourceSrid,
-        IReadOnlyList<string> warnings,
+        string[] warnings,
         IProgress<ImportProgress>? progress,
         string jobId,
         CancellationToken cancellationToken,
@@ -708,7 +708,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         // Surface skipped null-geometry rows in the completion progress report
         // so background/queued imports expose the same warning as synchronous results.
-        var completionWarningsBuilder = new List<string>(warnings.Count + 2);
+        var completionWarningsBuilder = new List<string>(warnings.Length + 2);
         completionWarningsBuilder.AddRange(warnings);
         if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
         {

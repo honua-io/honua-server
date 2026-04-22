@@ -14,6 +14,8 @@ namespace Honua.Server.Features.Infrastructure.Resilience;
 /// </summary>
 public static class HttpClientHealthCheckExtensions
 {
+    private static readonly string[] DefaultTags = ["http", "external"];
+
     /// <summary>
     /// Adds health checks for HTTP clients with circuit breaker state monitoring.
     /// </summary>
@@ -37,7 +39,7 @@ public static class HttpClientHealthCheckExtensions
 
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(10);
         var effectiveClientName = httpClientName ?? serviceType;
-        var effectiveTags = (tags ?? Enumerable.Empty<string>()).Concat(new[] { "http", "external" });
+        var effectiveTags = (tags ?? Enumerable.Empty<string>()).Concat(DefaultTags);
 
         return builder.Add(new HealthCheckRegistration(
             $"http-{serviceType}",
@@ -63,10 +65,7 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
     private readonly string _httpClientName;
     private readonly string _serviceType;
     private readonly string _healthCheckUri;
-<<<<<<< HEAD
-=======
     private readonly string _healthCheckUriSafe;
->>>>>>> origin/trunk
     private readonly TimeSpan _timeout;
 
     public HttpClientHealthCheck(
@@ -82,11 +81,6 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
         _httpClientName = httpClientName;
         _serviceType = serviceType;
         _healthCheckUri = healthCheckUri;
-<<<<<<< HEAD
-        _timeout = timeout;
-    }
-
-=======
         // Query strings may contain credentials or tokens; surface only scheme+host+path in logs.
         _healthCheckUriSafe = SanitizeForLogging(healthCheckUri);
         _timeout = timeout;
@@ -105,7 +99,6 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
             : parsed.ToString().Split('?', 2)[0];
     }
 
->>>>>>> origin/trunk
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
@@ -121,20 +114,14 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
             var data = new Dictionary<string, object>
             {
                 ["service_type"] = _serviceType,
-<<<<<<< HEAD
-                ["health_check_uri"] = _healthCheckUri,
-=======
                 ["health_check_uri"] = _healthCheckUriSafe,
->>>>>>> origin/trunk
                 ["circuit_breaker_state"] = circuitBreakerState?.ToString() ?? "unknown"
             };
 
             // If circuit breaker is open, return degraded without making HTTP call
             if (circuitBreakerState == CircuitState.Open)
             {
-                _logger.LogWarning(
-                    "HTTP health check for {ServiceType} skipped due to open circuit breaker",
-                    _serviceType);
+                HttpClientHealthCheckLog.SkippedDueToOpenCircuitBreaker(_logger, _serviceType);
 
                 return HealthCheckResult.Degraded(
                     $"Circuit breaker is open for service {_serviceType}",
@@ -152,18 +139,18 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogDebug(
-                    "HTTP health check for {ServiceType} succeeded in {ElapsedMs}ms",
-                    _serviceType, elapsed.TotalMilliseconds);
+                HttpClientHealthCheckLog.Succeeded(_logger, _serviceType, elapsed.TotalMilliseconds);
 
                 return HealthCheckResult.Healthy(
                     $"Service {_serviceType} is healthy",
                     data);
             }
 
-            _logger.LogWarning(
-                "HTTP health check for {ServiceType} returned {StatusCode} in {ElapsedMs}ms",
-                _serviceType, response.StatusCode, elapsed.TotalMilliseconds);
+            HttpClientHealthCheckLog.ReturnedStatusCode(
+                _logger,
+                _serviceType,
+                (int)response.StatusCode,
+                elapsed.TotalMilliseconds);
 
             return HealthCheckResult.Degraded(
                 $"Service {_serviceType} returned {response.StatusCode}",
@@ -172,9 +159,7 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(
-                "HTTP health check for {ServiceType} was cancelled",
-                _serviceType);
+            HttpClientHealthCheckLog.Cancelled(_logger, _serviceType);
 
             return HealthCheckResult.Degraded(
                 $"Health check for service {_serviceType} was cancelled",
@@ -182,19 +167,13 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
                 new Dictionary<string, object>
                 {
                     ["service_type"] = _serviceType,
-<<<<<<< HEAD
-                    ["health_check_uri"] = _healthCheckUri,
-=======
                     ["health_check_uri"] = _healthCheckUriSafe,
->>>>>>> origin/trunk
                     ["cancelled"] = true
                 });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "HTTP health check for {ServiceType} failed with exception",
-                _serviceType);
+            HttpClientHealthCheckLog.Failed(_logger, _serviceType, ex);
 
             return HealthCheckResult.Degraded(
                 $"Service {_serviceType} health check failed: {ex.Message}",
@@ -202,11 +181,7 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
                 new Dictionary<string, object>
                 {
                     ["service_type"] = _serviceType,
-<<<<<<< HEAD
-                    ["health_check_uri"] = _healthCheckUri,
-=======
                     ["health_check_uri"] = _healthCheckUriSafe,
->>>>>>> origin/trunk
                     ["exception"] = ex.GetType().Name
                 });
         }

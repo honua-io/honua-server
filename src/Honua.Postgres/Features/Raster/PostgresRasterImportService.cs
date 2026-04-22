@@ -88,7 +88,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         var warnings = new List<string>();
 
         ReportProgress(progress, operationId, startedAt, RasterImportPhase.Validating, OperationStatus.Processing, "Validating raster file");
-        PostgresRasterImportLog.ImportStarted(_logger, request.LayerId, request.FileName, request.Format.ToString());
+        PostgresRasterImportLog.ImportStarted(_logger, request.LayerId, request.FileName, request.Format);
 
         try
         {

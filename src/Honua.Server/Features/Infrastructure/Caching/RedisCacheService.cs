@@ -925,7 +925,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to track cache key {CacheKey} in Redis index.", prefixedKey);
+                RedisCacheIndexLog.RedisIndexTrackFailed(_logger, prefixedKey, ex);
                 return;
             }
         }
@@ -952,7 +952,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to remove cache key {CacheKey} from Redis index.", prefixedKey);
+                RedisCacheIndexLog.RedisIndexRemoveFailed(_logger, prefixedKey, ex);
                 return;
             }
         }

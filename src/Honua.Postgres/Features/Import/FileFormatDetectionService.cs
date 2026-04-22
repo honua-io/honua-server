@@ -80,8 +80,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         var detected = FileExtensions.GetValueOrDefault(extension);
         if (detected != default)
         {
-            _logger.LogDebug("Detected format {Format} from extension {Extension} for file {FileName}",
-                detected, extension, fileName);
+            FileFormatDetectionLog.DetectedFromExtension(_logger, detected, extension, fileName);
         }
 
         return detected;
@@ -110,8 +109,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         {
             if (fileContent.StartsWith(magicBytes.Span))
             {
-                _logger.LogDebug("Detected format {Format} from magic number for file {FileName}",
-                    format, fileName);
+                FileFormatDetectionLog.DetectedFromMagicNumber(_logger, format, fileName);
                 return format;
             }
         }
@@ -123,9 +121,8 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
             var detectedFormat = DetectTextFormat(textContent, fileName);
             if (detectedFormat.HasValue)
             {
-                _logger.LogDebug("Detected format {Format} from content analysis for file {FileName}",
-                    detectedFormat, fileName);
-                return detectedFormat;
+                FileFormatDetectionLog.DetectedFromContentAnalysis(_logger, detectedFormat.Value, fileName);
+                return detectedFormat.Value;
             }
         }
 

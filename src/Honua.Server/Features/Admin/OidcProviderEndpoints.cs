@@ -107,7 +107,7 @@ internal static partial class OidcProviderEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to list OIDC providers");
+            OidcProviderLog.ListProvidersFailed(logger, ex);
             return TypedResults.Problem(
                 title: "OIDC provider listing failed",
                 detail: "An internal error occurred while listing OIDC providers.",
@@ -150,7 +150,7 @@ internal static partial class OidcProviderEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to create OIDC provider");
+            OidcProviderLog.CreateProviderFailed(logger, ex);
             return TypedResults.Problem(
                 title: "OIDC provider creation failed",
                 detail: "An internal error occurred while creating the OIDC provider.",
@@ -177,7 +177,7 @@ internal static partial class OidcProviderEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get OIDC provider {ProviderId}", id);
+            OidcProviderLog.GetProviderFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "OIDC provider retrieval failed",
                 detail: "An internal error occurred while retrieving the OIDC provider.",
@@ -221,7 +221,7 @@ internal static partial class OidcProviderEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to update OIDC provider {ProviderId}", id);
+            OidcProviderLog.UpdateProviderFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "OIDC provider update failed",
                 detail: "An internal error occurred while updating the OIDC provider.",
@@ -249,7 +249,7 @@ internal static partial class OidcProviderEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete OIDC provider {ProviderId}", id);
+            OidcProviderLog.DeleteProviderFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "OIDC provider deletion failed",
                 detail: "An internal error occurred while deleting the OIDC provider.",
@@ -287,7 +287,7 @@ internal static partial class OidcProviderEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to test OIDC provider {ProviderId}", id);
+            OidcProviderLog.TestProviderFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "OIDC provider test failed",
                 detail: "An internal error occurred while testing the OIDC provider.",

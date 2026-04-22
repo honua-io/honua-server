@@ -92,7 +92,7 @@ internal sealed class Wfs20TransactionHandler : IWfs20TransactionHandler
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "WFS 2.0 transaction {TransactionId} failed", transactionId);
+            Wfs20TransactionHandlerLog.TransactionFailed(_logger, transactionId, ex);
 
             var errorResponse = new Wfs20TransactionResponse
             {
@@ -151,7 +151,7 @@ internal sealed class Wfs20TransactionHandler : IWfs20TransactionHandler
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to execute insert operation");
+                Wfs20TransactionHandlerLog.InsertOperationFailed(_logger, ex);
                 results.Add(new Wfs20OperationResult
                 {
                     OperationType = Wfs20OperationType.Insert,
@@ -231,7 +231,7 @@ internal sealed class Wfs20TransactionHandler : IWfs20TransactionHandler
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to execute update operation");
+                Wfs20TransactionHandlerLog.UpdateOperationFailed(_logger, ex);
                 results.Add(new Wfs20OperationResult
                 {
                     OperationType = Wfs20OperationType.Update,
@@ -311,7 +311,7 @@ internal sealed class Wfs20TransactionHandler : IWfs20TransactionHandler
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to execute delete operation");
+                Wfs20TransactionHandlerLog.DeleteOperationFailed(_logger, ex);
                 results.Add(new Wfs20OperationResult
                 {
                     OperationType = Wfs20OperationType.Delete,
@@ -337,7 +337,7 @@ internal sealed class Wfs20TransactionHandler : IWfs20TransactionHandler
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to resolve layer ID for feature type '{FeatureTypeName}'", featureTypeName);
+            Wfs20TransactionHandlerLog.ResolveLayerIdFailed(_logger, featureTypeName, ex);
             return null;
         }
     }

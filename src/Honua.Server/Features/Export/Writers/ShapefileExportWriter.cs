@@ -117,7 +117,7 @@ internal static class ShapefileExportWriter
             try { Directory.Delete(scratchDir, recursive: true); }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to clean up export scratch directory: {Path}", scratchDir);
+                ExportLog.ScratchDirectoryCleanupFailed(logger, scratchDir, ex);
             }
         }
     }

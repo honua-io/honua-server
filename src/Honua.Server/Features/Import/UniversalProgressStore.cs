@@ -104,6 +104,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             {
                 await AddToRedisIndexAsync(operationId, progress.Type).ConfigureAwait(false);
             }
+            else
+            {
+                CacheFallback(operationId, progress, effectiveTtl);
+            }
         }
         catch (Exception ex)
         {
@@ -439,6 +443,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                 HandleRedisFailure(ex, "scan progress");
                 throw CreateDistributedStateUnavailableException("list active operations", ex);
             }
+        }
+
+        if (!_isUsingFallback)
+        {
+            return GetActiveOperationIdsFromFallback(operationType);
         }
 
         throw CreateDistributedStateUnavailableException("list active operations");

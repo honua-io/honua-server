@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -35,6 +36,8 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly IFeatureServerGeometryServices _geometryServices = dependencies.GeometryServices;
+    private readonly IEditParameterAdapter<GeoServicesEditRequest> _editParameterAdapter = dependencies.EditParameterAdapter;
+    private readonly IEditProcessor _editProcessor = dependencies.EditProcessor;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
@@ -121,7 +124,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Execute edits in the database
-            var editResult = await ExecuteEdits(layer.Id, editContext, request, cancellationToken);
+            var editResult = await ExecuteEdits(layer.Id, layer, editContext, request, cancellationToken);
 
             if (!editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
@@ -336,6 +339,7 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     private async Task<FeatureEditResult> ExecuteEdits(
         int layerId,
+        LayerDefinition layer,
         EditOperationContext context,
         ApplyEditsRequest request,
         CancellationToken cancellationToken)
@@ -345,13 +349,30 @@ internal sealed class FeatureServerEditsHandler(
             return FeatureEditResult.Success(0, 0, 0);
         }
 
-        var editBatch = FeatureEditBatch.Create(
-            creates: context.CreateFeatures.ToImmutableArray(),
-            updates: context.UpdateFeatures.ToImmutableArray(),
-            deletes: context.DeleteIds.ToImmutableArray(),
-            rollbackOnFailure: request.RollbackOnFailure,
-            useGlobalIds: request.UseGlobalIds);
+        var editAdapterResult = await _editParameterAdapter.ConvertAsync(
+            new GeoServicesEditRequest
+            {
+                Creates = context.CreateFeatures.ToImmutableArray(),
+                Updates = context.UpdateFeatures.ToImmutableArray(),
+                Deletes = context.DeleteIds.ToImmutableArray(),
+                RollbackOnFailure = request.RollbackOnFailure,
+                UseGlobalIds = request.UseGlobalIds
+            },
+            layer,
+            cancellationToken);
+        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
+        {
+            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
+        }
 
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        if (!editValidation.IsValid)
+        {
+            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
+        }
+
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
         var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken);
 
         ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults);

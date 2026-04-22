@@ -50,7 +50,7 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting thermal-optimized connection pool with base {ConnectionCount} connections", BaseWarmupConnectionCount);
+        PostgresConnectionPoolWarmupLog.StartingConnectionPool(_logger, BaseWarmupConnectionCount);
 
         var warmupStart = DateTimeOffset.UtcNow;
 
@@ -80,24 +80,24 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
             _patternAnalyzer.StartTracking();
 
             var elapsed = DateTimeOffset.UtcNow - warmupStart;
-            _logger.LogInformation("Thermal-optimized connection pool startup completed in {ElapsedMs}ms", elapsed.TotalMilliseconds);
+            PostgresConnectionPoolWarmupLog.StartupCompleted(_logger, elapsed.TotalMilliseconds);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Thermal connection pool startup cancelled");
+            PostgresConnectionPoolWarmupLog.StartupCancelled(_logger);
             throw;
         }
         catch (Exception ex)
         {
             var elapsed = DateTimeOffset.UtcNow - warmupStart;
-            _logger.LogWarning(ex, "Thermal connection pool startup encountered issues but will continue (elapsed: {ElapsedMs}ms)", elapsed.TotalMilliseconds);
+            PostgresConnectionPoolWarmupLog.StartupIssues(_logger, elapsed.TotalMilliseconds, ex);
             // Don't throw - allow startup to continue even if warm-up fails
         }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Thermal connection pool service stopping");
+        PostgresConnectionPoolWarmupLog.ServiceStopping(_logger);
 
         // WEEK 5 FIX: Stop thermal optimization timers
         _thermalOptimizationTimer?.Change(Timeout.Infinite, Timeout.Infinite);
@@ -127,13 +127,16 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
                     var zoneStatus = _thermalManager.GetZoneStatus();
-                    _logger.LogDebug("Thermal zones optimized: Hot={HotConnections}, Warm={WarmConnections}, Cold={ColdConnections}",
-                        zoneStatus.HotConnections, zoneStatus.WarmConnections, zoneStatus.ColdConnections);
+                    PostgresConnectionPoolWarmupLog.ThermalZonesOptimized(
+                        _logger,
+                        zoneStatus.HotConnections,
+                        zoneStatus.WarmConnections,
+                        zoneStatus.ColdConnections);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error during thermal zone optimization");
+                PostgresConnectionPoolWarmupLog.ThermalZoneOptimizationError(_logger, ex);
             }
         });
     }
@@ -153,8 +156,11 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
                 var insights = _patternAnalyzer.GetPatternInsights();
                 if (insights.HasPredictablePatterns)
                 {
-                    _logger.LogInformation("Usage pattern analysis: Peak times detected at {PeakHours}, predictability={Predictability:F2}",
-                        string.Join(", ", insights.PeakHours), insights.PredictabilityScore);
+                    if (_logger.IsEnabled(LogLevel.Information))
+                    {
+                        var peakHours = string.Join(", ", insights.PeakHours);
+                        PostgresConnectionPoolWarmupLog.UsagePatternAnalysis(_logger, peakHours, insights.PredictabilityScore);
+                    }
 
                     // Update predictive prewarmer with new insights
                     _predictivePrewarmer.UpdatePatternInsights(insights);
@@ -162,7 +168,7 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error during usage pattern analysis");
+                PostgresConnectionPoolWarmupLog.UsagePatternAnalysisError(_logger, ex);
             }
         });
     }
@@ -171,7 +177,7 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
     {
         try
         {
-            _logger.LogDebug("Warming up connection #{ConnectionNumber}", connectionNumber);
+            PostgresConnectionPoolWarmupLog.WarmingUpConnection(_logger, connectionNumber);
 
             await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
@@ -179,7 +185,7 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
             await using var command = new NpgsqlCommand("SELECT 1", connection);
             await command.ExecuteScalarAsync(cancellationToken);
 
-            _logger.LogDebug("Connection #{ConnectionNumber} warmed up successfully", connectionNumber);
+            PostgresConnectionPoolWarmupLog.ConnectionWarmedUp(_logger, connectionNumber);
 
             // WEEK 5 FIX: Record connection acquisition for pattern analysis
             _patternAnalyzer.RecordConnectionAcquisition(DateTime.UtcNow);
@@ -190,7 +196,7 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to warm up connection #{ConnectionNumber}", connectionNumber);
+            PostgresConnectionPoolWarmupLog.WarmupConnectionFailed(_logger, connectionNumber, ex);
             // Don't throw - continue warming up other connections
         }
     }
@@ -206,13 +212,12 @@ internal sealed class PostgresConnectionPoolWarmupService : IHostedService, IDis
             if (prediction.ShouldPrewarm)
             {
                 await _thermalManager.PrewarmForPredictedLoadAsync(prediction);
-                _logger.LogInformation("Predictive pre-warming triggered: Expected load increase={LoadIncrease:F2}",
-                    prediction.ExpectedLoadIncrease);
+                PostgresConnectionPoolWarmupLog.PredictivePrewarmingTriggered(_logger, prediction.ExpectedLoadIncrease);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error during predictive pre-warming");
+            PostgresConnectionPoolWarmupLog.PredictivePrewarmingError(_logger, ex);
         }
     }
 
@@ -252,7 +257,7 @@ internal sealed class ThermalZoneManager : IDisposable
 
     public async Task InitializeThermalZonesAsync(CancellationToken cancellationToken)
     {
-        _logger.LogDebug("Initializing thermal zones");
+        PostgresConnectionPoolWarmupLog.InitializingThermalZones(_logger);
 
         // Pre-populate hot zone with immediately available connections
         var hotTasks = new List<Task>();
@@ -262,7 +267,7 @@ internal sealed class ThermalZoneManager : IDisposable
         }
 
         await Task.WhenAll(hotTasks);
-        _logger.LogInformation("Thermal zones initialized: {HotCount} hot connections ready", _hotZone.Count);
+        PostgresConnectionPoolWarmupLog.ThermalZonesInitialized(_logger, _hotZone.Count);
     }
 
     public async Task OptimizeZonesAsync(LoadMetrics currentLoad, LoadPrediction prediction)
@@ -305,8 +310,7 @@ internal sealed class ThermalZoneManager : IDisposable
         if (prewarmTasks.Count > 0)
         {
             await Task.WhenAll(prewarmTasks);
-            _logger.LogInformation("Predictive pre-warming completed: {AdditionalHot} hot, {AdditionalWarm} warm connections",
-                additionalHot, additionalWarm);
+            PostgresConnectionPoolWarmupLog.PredictivePrewarmingCompleted(_logger, additionalHot, additionalWarm);
         }
     }
 
@@ -343,7 +347,7 @@ internal sealed class ThermalZoneManager : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to create hot zone connection");
+            PostgresConnectionPoolWarmupLog.CreateHotZoneConnectionFailed(_logger, ex);
         }
     }
 
@@ -365,7 +369,7 @@ internal sealed class ThermalZoneManager : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to create warm zone connection");
+            PostgresConnectionPoolWarmupLog.CreateWarmZoneConnectionFailed(_logger, ex);
         }
     }
 
@@ -494,13 +498,13 @@ internal sealed class UsagePatternAnalyzer : IDisposable
     public void StartTracking()
     {
         _isTracking = true;
-        _logger.LogDebug("Usage pattern tracking started");
+        PostgresConnectionPoolWarmupLog.UsagePatternTrackingStarted(_logger);
     }
 
     public void StopTracking()
     {
         _isTracking = false;
-        _logger.LogDebug("Usage pattern tracking stopped");
+        PostgresConnectionPoolWarmupLog.UsagePatternTrackingStopped(_logger);
     }
 
     public void RecordConnectionAcquisition(DateTime timestamp)
@@ -632,7 +636,7 @@ internal sealed class PredictivePrewarmer : IDisposable
     public void UpdatePatternInsights(PatternInsights insights)
     {
         _currentInsights = insights;
-        _logger.LogDebug("Pattern insights updated: Predictability={Predictability:F2}", insights.PredictabilityScore);
+        PostgresConnectionPoolWarmupLog.PatternInsightsUpdated(_logger, insights.PredictabilityScore);
     }
 
     public LoadPrediction PredictUpcomingLoad()

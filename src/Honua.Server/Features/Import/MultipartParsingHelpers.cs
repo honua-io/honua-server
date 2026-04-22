@@ -40,7 +40,10 @@ internal static class MultipartParsingHelpers
         try { File.Delete(path); }
         catch (Exception ex)
         {
-            logger?.LogDebug(ex, "Best-effort cleanup of staged file failed: {Path}", path);
+            if (logger != null)
+            {
+                MultipartParsingHelpersLog.StagedFileCleanupFailed(logger, path, ex);
+            }
         }
     }
 

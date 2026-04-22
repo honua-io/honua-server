@@ -1,10 +1,5 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
-<<<<<<< HEAD
-
-using System.ComponentModel;
-=======
 using System.Globalization;
->>>>>>> origin/trunk
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Configuration;
@@ -82,26 +77,6 @@ public static class ConfigurationValueExtensions
             return (T)(object)value;
         }
 
-<<<<<<< HEAD
-        var converter = TypeDescriptor.GetConverter(targetType);
-        if (!converter.CanConvertFrom(typeof(string)))
-        {
-            throw new InvalidOperationException(
-                $"Configuration value '{key}' cannot be converted to {targetType.Name}.");
-        }
-
-        try
-        {
-            var converted = converter.ConvertFromInvariantString(value);
-            if (converted is T typedValue)
-            {
-                return typedValue;
-            }
-
-            return (T)converted!;
-        }
-        catch (Exception ex) when (ex is FormatException or NotSupportedException or ArgumentException)
-=======
         try
         {
             var converted = targetType switch
@@ -127,7 +102,6 @@ public static class ConfigurationValueExtensions
             return (T)converted;
         }
         catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException or UriFormatException)
->>>>>>> origin/trunk
         {
             throw new InvalidOperationException(
                 $"Configuration value '{key}' is not a valid {targetType.Name}: '{value}'.",

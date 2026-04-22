@@ -241,7 +241,7 @@ public sealed record Wfs20Capabilities
     /// <summary>
     /// Whether transactions are supported.
     /// </summary>
-    public bool SupportsTransactions { get; init; } = false;
+    public bool SupportsTransactions { get; init; }
 
     /// <summary>
     /// Supported coordinate reference systems.
@@ -293,17 +293,17 @@ public sealed record GeoServicesCapabilities
     /// <summary>
     /// Whether editing is supported.
     /// </summary>
-    public bool SupportsEditing { get; init; } = false;
+    public bool SupportsEditing { get; init; }
 
     /// <summary>
     /// Whether attachments are supported.
     /// </summary>
-    public bool SupportsAttachments { get; init; } = false;
+    public bool SupportsAttachments { get; init; }
 
     /// <summary>
     /// Whether sync is supported.
     /// </summary>
-    public bool SupportsSync { get; init; } = false;
+    public bool SupportsSync { get; init; }
 }
 
 /// <summary>
@@ -324,7 +324,7 @@ public sealed record ODataCapabilities
     /// <summary>
     /// Whether change tracking is supported.
     /// </summary>
-    public bool SupportsChangeTracking { get; init; } = false;
+    public bool SupportsChangeTracking { get; init; }
 
     /// <summary>
     /// Supported query options.
@@ -397,12 +397,12 @@ public sealed record GlobalSpatialCapabilities
     /// <summary>
     /// Whether 3D geometries are supported.
     /// </summary>
-    public bool Supports3D { get; init; } = false;
+    public bool Supports3D { get; init; }
 
     /// <summary>
     /// Whether measured geometries are supported.
     /// </summary>
-    public bool SupportsM { get; init; } = false;
+    public bool SupportsM { get; init; }
 
     /// <summary>
     /// Supported spatial operations.
@@ -443,7 +443,7 @@ public sealed record GlobalFormatCapabilities
     /// <summary>
     /// Whether custom formats can be added.
     /// </summary>
-    public bool SupportsCustomFormats { get; init; } = false;
+    public bool SupportsCustomFormats { get; init; }
 }
 
 /// <summary>
@@ -464,12 +464,12 @@ public sealed record GlobalQueryCapabilities
     /// <summary>
     /// Whether temporal queries are supported globally.
     /// </summary>
-    public bool SupportsTemporal { get; init; } = false;
+    public bool SupportsTemporal { get; init; }
 
     /// <summary>
     /// Whether full-text search is supported globally.
     /// </summary>
-    public bool SupportsFullTextSearch { get; init; } = false;
+    public bool SupportsFullTextSearch { get; init; }
 
     /// <summary>
     /// Whether statistical queries are supported globally.
@@ -541,7 +541,7 @@ public sealed record RateLimits
     /// <summary>
     /// Whether rate limiting is enabled.
     /// </summary>
-    public bool Enabled { get; init; } = false;
+    public bool Enabled { get; init; }
 }
 
 /// <summary>
@@ -567,17 +567,17 @@ public sealed record SecurityCapabilities
     /// <summary>
     /// Whether API key authentication is supported.
     /// </summary>
-    public bool SupportsApiKeys { get; init; } = false;
+    public bool SupportsApiKeys { get; init; }
 
     /// <summary>
     /// Whether OAuth is supported.
     /// </summary>
-    public bool SupportsOAuth { get; init; } = false;
+    public bool SupportsOAuth { get; init; }
 
     /// <summary>
     /// Whether HTTPS is enforced.
     /// </summary>
-    public bool RequiresHttps { get; init; } = false;
+    public bool RequiresHttps { get; init; }
 }
 
 /// <summary>
@@ -608,7 +608,7 @@ public sealed record PerformanceCapabilities
     /// <summary>
     /// Whether background processing is supported.
     /// </summary>
-    public bool SupportsBackgroundProcessing { get; init; } = false;
+    public bool SupportsBackgroundProcessing { get; init; }
 }
 
 /// <summary>
@@ -624,7 +624,7 @@ public sealed record ExtensionCapabilities
     /// <summary>
     /// Whether custom extensions can be loaded.
     /// </summary>
-    public bool SupportsCustomExtensions { get; init; } = false;
+    public bool SupportsCustomExtensions { get; init; }
 
     /// <summary>
     /// Extension API version.

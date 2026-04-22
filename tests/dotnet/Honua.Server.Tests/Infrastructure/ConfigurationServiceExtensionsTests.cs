@@ -13,11 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-<<<<<<< HEAD
-=======
 using NSubstitute;
 using System.ComponentModel.DataAnnotations;
->>>>>>> origin/trunk
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -57,8 +54,6 @@ public sealed class ConfigurationServiceExtensionsTests
         provider.GetRequiredService<ISecretProvider>().Should().NotBeNull();
     }
 
-<<<<<<< HEAD
-=======
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ConfigureWithValidation_BindsRegisteredOptions_AndValidatesSuccessfully()
@@ -267,7 +262,6 @@ public sealed class ConfigurationServiceExtensionsTests
             result.OptionsTypeName == nameof(TestValidationOptions));
     }
 
->>>>>>> origin/trunk
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = Environments.Development;
@@ -278,8 +272,6 @@ public sealed class ConfigurationServiceExtensionsTests
 
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
-<<<<<<< HEAD
-=======
 
     private sealed class TestValidationOptions
     {
@@ -288,5 +280,4 @@ public sealed class ConfigurationServiceExtensionsTests
         [Required]
         public string? RequiredValue { get; set; }
     }
->>>>>>> origin/trunk
 }

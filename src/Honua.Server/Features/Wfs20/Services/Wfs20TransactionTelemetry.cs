@@ -242,11 +242,20 @@ internal sealed class Wfs20TransactionTelemetry : IDisposable
 
             if (result.Success)
             {
-                Wfs20TransactionLog.OperationSucceeded(_logger, _operationType.ToString(), _featureTypeName, result.FeatureId, _stopwatch.Elapsed.TotalMilliseconds);
+                Wfs20TransactionLog.OperationSucceeded(
+                    _logger,
+                    _operationType,
+                    _featureTypeName,
+                    result.FeatureId,
+                    _stopwatch.Elapsed.TotalMilliseconds);
             }
             else
             {
-                Wfs20TransactionLog.OperationFailed(_logger, _operationType.ToString(), _featureTypeName, result.ErrorMessage ?? "Unknown error");
+                Wfs20TransactionLog.OperationFailed(
+                    _logger,
+                    _operationType,
+                    _featureTypeName,
+                    result.ErrorMessage ?? "Unknown error");
             }
         }
 
@@ -269,8 +278,8 @@ internal static partial class Wfs20TransactionLog
     public static partial void TransactionCompleted(ILogger logger, string transactionId, bool success, int inserted, int updated, int deleted, double duration);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "WFS 2.0 operation {OperationType} on {FeatureTypeName} succeeded: FeatureId={FeatureId}, Duration={Duration}ms")]
-    public static partial void OperationSucceeded(ILogger logger, string operationType, string featureTypeName, long? featureId, double duration);
+    public static partial void OperationSucceeded(ILogger logger, Wfs20OperationType operationType, string featureTypeName, long? featureId, double duration);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 operation {OperationType} on {FeatureTypeName} failed: {ErrorMessage}")]
-    public static partial void OperationFailed(ILogger logger, string operationType, string featureTypeName, string errorMessage);
+    public static partial void OperationFailed(ILogger logger, Wfs20OperationType operationType, string featureTypeName, string errorMessage);
 }

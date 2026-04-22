@@ -31,15 +31,31 @@ internal sealed class ODataQuerySearchService
     /// <summary>
     /// Builds a feature query from OData parameters with proper validation and conversion.
     /// </summary>
-    public FeatureQuery BuildFeatureQuery(
+    public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
         string? filter,
         string? orderby,
         int? resultRecordCount,
         int? resultOffset,
         LayerDefinition layer,
-        out string? error)
+        string? select = null,
+        string? expand = null,
+        bool? count = null,
+        string? compute = null,
+        string? format = null,
+        CancellationToken cancellationToken = default)
     {
-        return _queryService.BuildFeatureQuery(filter, orderby, resultRecordCount, resultOffset, layer, out error);
+        return await _queryService.BuildFeatureQueryAsync(
+            filter,
+            orderby,
+            resultRecordCount,
+            resultOffset,
+            layer,
+            select,
+            expand,
+            count,
+            compute,
+            format,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

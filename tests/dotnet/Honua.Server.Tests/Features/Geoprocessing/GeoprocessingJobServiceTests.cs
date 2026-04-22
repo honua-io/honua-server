@@ -39,8 +39,8 @@ public sealed class GeoprocessingJobServiceTests
     public GeoprocessingJobServiceTests()
     {
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Allowed());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
 
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
@@ -78,8 +78,8 @@ public sealed class GeoprocessingJobServiceTests
         // Auth is the adapter's responsibility (EnsureCallerAuthorized) so the
         // service method must succeed even when the evaluator would deny access.
         _authEvaluator
-            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
-            .Returns(AccessDecision.Forbidden());
+            .EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
 
         var result = _sut.ValidatePlan(CreateValidPlan(), CreatePrincipal());
 

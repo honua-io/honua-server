@@ -622,11 +622,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         OperatorResourceType resourceType,
         OperatorOperation operation)
     {
-        var decision = _authEvaluator.Evaluate(principal, new OperatorAuthorizationRequest
+        var decision = _authEvaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
         {
             ResourceType = resourceType,
             Operation = operation
-        });
+        }).ConfigureAwait(false).GetAwaiter().GetResult();
 
         if (decision.IsAllowed)
         {

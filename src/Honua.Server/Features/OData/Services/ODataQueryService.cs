@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -18,61 +19,67 @@ namespace Honua.Server.Features.OData.Services;
 internal sealed partial class ODataQueryService
 {
     private readonly IFilterExpressionService _filterExpressionService;
+    private readonly IQueryParameterAdapter<ODataQueryParameters> _queryParameterAdapter;
+    private readonly IQueryProcessor _queryProcessor;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataQueryService"/> class.
     /// </summary>
-    public ODataQueryService(IFilterExpressionService filterExpressionService)
+    public ODataQueryService(
+        IFilterExpressionService filterExpressionService,
+        IQueryParameterAdapter<ODataQueryParameters> queryParameterAdapter,
+        IQueryProcessor queryProcessor)
     {
         _filterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
+        _queryParameterAdapter = queryParameterAdapter ?? throw new ArgumentNullException(nameof(queryParameterAdapter));
+        _queryProcessor = queryProcessor ?? throw new ArgumentNullException(nameof(queryProcessor));
     }
 
     /// <summary>
     /// Builds a feature query from OData parameters with proper validation and conversion.
     /// </summary>
-    public FeatureQuery BuildFeatureQuery(
+    public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
         string? filter,
         string? orderby,
         int? resultRecordCount,
         int? resultOffset,
         LayerDefinition layer,
-        out string? error)
+        string? select = null,
+        string? expand = null,
+        bool? count = null,
+        string? compute = null,
+        string? format = null,
+        CancellationToken cancellationToken = default)
     {
-        error = null;
+        var conversion = await _queryParameterAdapter.ConvertAsync(
+            new ODataQueryParameters
+            {
+                Filter = filter,
+                OrderBy = orderby,
+                Top = resultRecordCount,
+                Skip = resultOffset,
+                Select = select,
+                Expand = expand,
+                Count = count,
+                Compute = compute,
+                Format = format
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
 
-        SqlFragment? sqlFilter = null;
-        if (!string.IsNullOrWhiteSpace(filter))
+        if (!conversion.IsSuccess || conversion.Query == null)
         {
-            try
-            {
-                sqlFilter = ConvertODataFilterToSqlFragment(filter, layer);
-            }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-            {
-                error = "Invalid filter expression.";
-                return new FeatureQuery();
-            }
+            return (new FeatureQuery(), conversion.ErrorMessage ?? "Invalid OData query.");
         }
 
-        var orderByClauses = OrderByParsing.ParseODataOrderBy(orderby, layer);
-        if (!orderByClauses.HasValue || orderByClauses.Value.IsDefaultOrEmpty)
+        var validation = _queryProcessor.ValidateQuery(conversion.Query.Value, layer);
+        if (!validation.IsValid)
         {
-            orderByClauses = ImmutableArray.Create(new OrderByClause(
-                FieldNames.ObjectId,
-                ascending: true,
-                fieldType: FieldType.BigInteger));
+            return (new FeatureQuery(), validation.ErrorMessage ?? "Invalid OData query.");
         }
 
-        return new FeatureQuery
-        {
-            Where = null,
-            SqlFilter = sqlFilter,
-            SpatialFilter = null,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OrderBy = orderByClauses,
-            Limit = resultRecordCount,
-            Offset = resultOffset
-        };
+        var optimized = _queryProcessor.OptimizeQuery(conversion.Query.Value, layer);
+        return (_queryProcessor.ToFeatureQuery(optimized, layer), null);
     }
 
     /// <summary>

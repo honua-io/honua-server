@@ -19,16 +19,11 @@ internal static class ConfigurationDiscoveryEndpoints
     /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapConfigurationDiscoveryEndpoints(this IEndpointRouteBuilder endpoints)
     {
-<<<<<<< HEAD
-        var group = endpoints.MapGroup("/configuration")
-            .WithTags("Admin", "Configuration");
-=======
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/configuration")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Configuration")
             .RequireAdminAuthorization();
->>>>>>> origin/trunk
 
         _ = group.MapGet("/discover", HandleDiscoverConfigurationAsync)
             .WithName("DiscoverConfiguration")

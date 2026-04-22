@@ -208,7 +208,7 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         QueryExecutionContext context,
         QueryCacheOptions? options = null)
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(QueryResultCacheManager));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         ArgumentNullException.ThrowIfNull(cacheKey);
         ArgumentNullException.ThrowIfNull(queryExecutor);
@@ -447,7 +447,7 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         await Task.CompletedTask;
     }
 
-    private bool ShouldCacheResult<T>(T result, QueryCacheOptions? options)
+    private static bool ShouldCacheResult<T>(T result, QueryCacheOptions? options)
     {
         if (result == null)
             return options?.CacheEmptyResults == true;
@@ -479,7 +479,7 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
             Interlocked.Increment(ref _totalEvictions);
             if (key is string keyString && _keyStatistics.TryRemove(keyString, out _))
             {
-                CacheLog.ItemEvicted(_logger, keyString, reason.ToString());
+                CacheLog.ItemEvicted(_logger, keyString, reason);
             }
         });
 
@@ -625,7 +625,7 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
             EventId = 9310,
             Level = LogLevel.Debug,
             Message = "Cache item evicted: {CacheKey} (reason: {Reason})")]
-        public static partial void ItemEvicted(ILogger logger, string cacheKey, string reason);
+        public static partial void ItemEvicted(ILogger logger, string cacheKey, EvictionReason reason);
 
         [LoggerMessage(
             EventId = 9311,
