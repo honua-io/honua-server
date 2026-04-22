@@ -12,6 +12,9 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class ExecutionJobCancellationHelperTests
 {
+    private const string TransitionTestBackendNoOp = "execution-cancel-noop-test";
+    private const string TransitionTestBackendCancelled = "execution-cancel-terminal-test";
+
     [Fact]
     public async Task TryApplyBackendCancelAsync_IdenticalNonterminalObservation_IsNoOpAndDoesNotBumpUpdatedAt()
     {
@@ -21,7 +24,7 @@ public sealed class ExecutionJobCancellationHelperTests
         var createdAt = DateTimeOffset.UtcNow.AddMinutes(-30);
         var updatedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
         var cancellationRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-9);
-        var job = CreateJobRecord("job-noop", ExecutionJobStatus.Running) with
+        var job = CreateJobRecord("job-noop", ExecutionJobStatus.Running, backend: TransitionTestBackendNoOp) with
         {
             CreatedAt = createdAt,
             UpdatedAt = updatedAt,
@@ -42,7 +45,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Running"
         };
 
-        var transitions = ListenForTransitions();
+        var transitions = ListenForTransitions(TransitionTestBackendNoOp);
         using var listener = transitions.Listener;
 
         var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
@@ -102,7 +105,7 @@ public sealed class ExecutionJobCancellationHelperTests
     [Fact]
     public async Task TryApplyBackendCancelAsync_TerminalCancelledObservation_PersistsAndEmitsTransitionMetric()
     {
-        var job = CreateJobRecord("job-terminal", ExecutionJobStatus.Running) with
+        var job = CreateJobRecord("job-terminal", ExecutionJobStatus.Running, backend: TransitionTestBackendCancelled) with
         {
             ClaimedBy = "worker-3",
             CancellationRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1)
@@ -115,7 +118,7 @@ public sealed class ExecutionJobCancellationHelperTests
             Message = "Cancelled by user"
         };
 
-        var transitions = ListenForTransitions();
+        var transitions = ListenForTransitions(TransitionTestBackendCancelled);
         using var listener = transitions.Listener;
 
         var result = await ExecutionJobCancellationHelper.TryApplyBackendCancelAsync(
@@ -345,7 +348,7 @@ public sealed class ExecutionJobCancellationHelperTests
             "the merge must return the same reference when all observable fields match — callers rely on ReferenceEquals to detect no-ops");
     }
 
-    private static (MeterListener Listener, List<(string? Status, string? PreviousStatus)> Events) ListenForTransitions()
+    private static (MeterListener Listener, List<(string? Status, string? PreviousStatus)> Events) ListenForTransitions(string expectedBackend)
     {
         var events = new List<(string? Status, string? PreviousStatus)>();
         var listener = new MeterListener
@@ -361,11 +364,16 @@ public sealed class ExecutionJobCancellationHelperTests
         };
         listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
         {
+            string? backend = null;
             string? status = null;
             string? previous = null;
             foreach (var tag in tags)
             {
-                if (tag.Key == "honua.controlplane.execution.status")
+                if (tag.Key == ControlPlaneTelemetry.Tags.Backend)
+                {
+                    backend = tag.Value as string;
+                }
+                else if (tag.Key == "honua.controlplane.execution.status")
                 {
                     status = tag.Value as string;
                 }
@@ -373,6 +381,11 @@ public sealed class ExecutionJobCancellationHelperTests
                 {
                     previous = tag.Value as string;
                 }
+            }
+
+            if (!string.Equals(backend, expectedBackend, StringComparison.Ordinal))
+            {
+                return;
             }
 
             lock (events)
@@ -386,7 +399,8 @@ public sealed class ExecutionJobCancellationHelperTests
 
     private static ExecutionJobRecord CreateJobRecord(
         string operationId,
-        ExecutionJobStatus status) => new()
+        ExecutionJobStatus status,
+        string backend = "azure-batch") => new()
         {
             OperationId = operationId,
             Status = status,
@@ -396,7 +410,7 @@ public sealed class ExecutionJobCancellationHelperTests
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.AzureBatch,
-                Backend = "azure-batch",
+                Backend = backend,
                 WorkloadId = "plan-cancel",
                 WorkloadName = "Geoprocessing"
             }
