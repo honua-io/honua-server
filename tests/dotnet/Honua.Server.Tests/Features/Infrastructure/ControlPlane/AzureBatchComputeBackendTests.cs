@@ -50,18 +50,40 @@ public sealed class AzureBatchComputeBackendTests
     [Fact]
     public async Task StartAsync_RecordsSubmissionMetricOnlyForFreshSubmissions()
     {
+        const string metricBackend = "honua-azure-batch-metric-test";
         var samples = new List<long>();
         using var listener = new MeterListener
         {
             InstrumentPublished = (instrument, currentListener) =>
             {
-                if (instrument.Name == "honua.execution.job.submitted")
+                if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobSubmitted)
                 {
                     currentListener.EnableMeasurementEvents(instrument);
                 }
             }
         };
-        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            string? backend = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == ControlPlaneTelemetry.Tags.Backend)
+                {
+                    backend = tag.Value as string;
+                    break;
+                }
+            }
+
+            if (!string.Equals(backend, metricBackend, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lock (samples)
+            {
+                samples.Add(measurement);
+            }
+        });
         listener.Start();
 
         var freshBackend = new AzureBatchComputeBackend(
@@ -71,10 +93,16 @@ public sealed class AzureBatchComputeBackendTests
             new StubAzureBatchClient { ReturnStatus = HttpStatusCode.Conflict },
             NullLogger<AzureBatchComputeBackend>.Instance);
 
-        await freshBackend.StartAsync(CreateJob());
-        await resumedBackend.StartAsync(CreateJob());
+        await freshBackend.StartAsync(CreateJob(backend: metricBackend));
+        await resumedBackend.StartAsync(CreateJob(backend: metricBackend));
 
-        samples.Should().ContainSingle().Which.Should().Be(1,
+        long[] sampleSnapshot;
+        lock (samples)
+        {
+            sampleSnapshot = samples.ToArray();
+        }
+
+        sampleSnapshot.Should().ContainSingle().Which.Should().Be(1,
             "idempotent resume paths must not inflate the fresh submission counter");
     }
 
@@ -627,7 +655,8 @@ public sealed class AzureBatchComputeBackendTests
         string? providerJobId = null,
         string? runtimeProfile = null,
         IReadOnlyDictionary<string, string>? parameters = null,
-        string workloadName = "test-workload")
+        string workloadName = "test-workload",
+        string backend = AzureBatchComputeBackend.BackendIdentifier)
     {
         var operationId = $"job-{Guid.NewGuid():N}";
         parameters ??= new Dictionary<string, string>(StringComparer.Ordinal)
@@ -646,7 +675,7 @@ public sealed class AzureBatchComputeBackendTests
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.AzureBatch,
-                Backend = AzureBatchComputeBackend.BackendIdentifier,
+                Backend = backend,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = workloadName,
                 WorkloadId = "wl-1",

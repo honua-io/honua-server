@@ -290,18 +290,40 @@ public sealed class KubernetesJobBatchComputeBackendTests
         // Mirrors AzureBatchComputeBackendTests.StartAsync_RecordsSubmissionMetricOnlyForFreshSubmissions:
         // dashboards on honua.execution.job.submitted must not undercount Kubernetes
         // submissions, and idempotent 409 resumes must not double-count.
+        const string metricBackend = "honua-kubernetes-job-metric-test";
         var samples = new List<long>();
         using var listener = new MeterListener
         {
             InstrumentPublished = (instrument, currentListener) =>
             {
-                if (instrument.Name == "honua.execution.job.submitted")
+                if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobSubmitted)
                 {
                     currentListener.EnableMeasurementEvents(instrument);
                 }
             }
         };
-        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            string? backend = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == ControlPlaneTelemetry.Tags.Backend)
+                {
+                    backend = tag.Value as string;
+                    break;
+                }
+            }
+
+            if (!string.Equals(backend, metricBackend, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lock (samples)
+            {
+                samples.Add(measurement);
+            }
+        });
         listener.Start();
 
         var freshClient = Substitute.For<IKubernetesJobClient>();
@@ -324,10 +346,16 @@ public sealed class KubernetesJobBatchComputeBackendTests
             });
         var resumedBackend = CreateBackend(resumedClient);
 
-        await freshBackend.StartAsync(CreateJob("job-metric-fresh", image: "honua/worker:1.0.0"));
-        await resumedBackend.StartAsync(CreateJob("job-metric-resume", image: "honua/worker:1.0.0"));
+        await freshBackend.StartAsync(CreateJob("job-metric-fresh", image: "honua/worker:1.0.0", backend: metricBackend));
+        await resumedBackend.StartAsync(CreateJob("job-metric-resume", image: "honua/worker:1.0.0", backend: metricBackend));
 
-        samples.Should().ContainSingle().Which.Should().Be(1,
+        long[] sampleSnapshot;
+        lock (samples)
+        {
+            sampleSnapshot = samples.ToArray();
+        }
+
+        sampleSnapshot.Should().ContainSingle().Which.Should().Be(1,
             "idempotent resume paths must not inflate the fresh submission counter");
     }
 
@@ -1464,14 +1492,15 @@ public sealed class KubernetesJobBatchComputeBackendTests
     private static ExecutionJobRecord CreateJob(
         string operationId,
         string? image = null,
-        ExecutionJobStatus status = ExecutionJobStatus.Queued)
+        ExecutionJobStatus status = ExecutionJobStatus.Queued,
+        string backend = KubernetesJobBatchComputeBackend.BackendId)
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
         var spec = new ExecutionJobSpec
         {
             Kind = ExecutionJobKind.Geoprocessing,
             TargetKind = BatchComputeTargetKind.KubernetesJob,
-            Backend = KubernetesJobBatchComputeBackend.BackendId,
+            Backend = backend,
             WorkloadId = "wl",
             WorkloadName = "workload",
             Artifact = image,
