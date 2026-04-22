@@ -23,7 +23,8 @@ public sealed class JobExecutionServiceTests
 {
     private static ExecutionJobRecord CreateProvisioningJob(
         string operationId = "job-1",
-        string claimedBy = "worker-test")
+        string claimedBy = "worker-test",
+        string backend = "local")
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -40,7 +41,7 @@ public sealed class JobExecutionServiceTests
             {
                 Kind = ExecutionJobKind.Geoprocessing,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local",
+                Backend = backend,
                 WorkloadName = "test"
             }
         };
@@ -1745,7 +1746,8 @@ public sealed class JobExecutionServiceTests
     [UnitTest]
     public async Task ProcessJob_EmitsTransitionTelemetry_ForRunningAndFinalize()
     {
-        var provisioning = CreateProvisioningJob();
+        const string telemetryBackend = "job-execution-running-finalize-test";
+        var provisioning = CreateProvisioningJob(backend: telemetryBackend);
         var running = provisioning with { Status = ExecutionJobStatus.Running };
 
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
@@ -1771,17 +1773,19 @@ public sealed class JobExecutionServiceTests
             NullLogger<JobExecutionService>.Instance);
 
         var transitions = new List<MeasurementSample>();
-        using var listener = CreateTransitionListener(transitions);
+        using var listener = CreateTransitionListener(transitions, telemetryBackend);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         listener.RecordObservableInstruments();
 
-        Assert.Contains(transitions, sample =>
+        var snapshot = SnapshotMeasurements(transitions);
+
+        Assert.Contains(snapshot, sample =>
             GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Provisioning" &&
             GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Running");
 
-        Assert.Contains(transitions, sample =>
+        Assert.Contains(snapshot, sample =>
             GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Running" &&
             GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Succeeded");
     }
@@ -1789,7 +1793,8 @@ public sealed class JobExecutionServiceTests
     [UnitTest]
     public async Task ProcessJob_EmitsTransitionTelemetry_ForAbandonRequeue()
     {
-        var provisioning = CreateProvisioningJob() with
+        const string telemetryBackend = "job-execution-requeue-test";
+        var provisioning = CreateProvisioningJob(backend: telemetryBackend) with
         {
             RetryPolicy = new JobRetryPolicy
             {
@@ -1822,21 +1827,23 @@ public sealed class JobExecutionServiceTests
             NullLogger<JobExecutionService>.Instance);
 
         var transitions = new List<MeasurementSample>();
-        using var listener = CreateTransitionListener(transitions);
+        using var listener = CreateTransitionListener(transitions, telemetryBackend);
 
         await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
 
         listener.RecordObservableInstruments();
 
+        var snapshot = SnapshotMeasurements(transitions);
+
         // Retry path: Running -> Queued must emit a transition sample.
-        Assert.Contains(transitions, sample =>
+        Assert.Contains(snapshot, sample =>
             GetTagString(sample.Tags, "honua.controlplane.execution.previous_status") == "Running" &&
             GetTagString(sample.Tags, "honua.controlplane.execution.status") == "Queued");
     }
 
     private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
 
-    private static MeterListener CreateTransitionListener(List<MeasurementSample> samples)
+    private static MeterListener CreateTransitionListener(List<MeasurementSample> samples, string expectedBackend)
     {
         // Bind to the production counter instance so this listener cannot drift from the
         // instrument name registered by ControlPlaneTelemetry.
@@ -1853,13 +1860,30 @@ public sealed class JobExecutionServiceTests
         };
         listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
         {
+            var tagArray = tags.ToArray();
+            if (!string.Equals(
+                    GetTagString(tagArray, ControlPlaneTelemetry.Tags.Backend),
+                    expectedBackend,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
             lock (samples)
             {
-                samples.Add(new MeasurementSample(measurement, tags.ToArray()));
+                samples.Add(new MeasurementSample(measurement, tagArray));
             }
         });
         listener.Start();
         return listener;
+    }
+
+    private static MeasurementSample[] SnapshotMeasurements(List<MeasurementSample> samples)
+    {
+        lock (samples)
+        {
+            return samples.ToArray();
+        }
     }
 
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
