@@ -20,7 +20,7 @@ src/Honua.Core/Features/Infrastructure/Validation/
 
 #### 2. Comprehensive Test Coverage
 ```
-tests/Honua.Core.Tests/Features/Infrastructure/Validation/
+tests/dotnet/Honua.Core.Tests/Features/Infrastructure/Validation/
 ├── ValidatedServiceBaseTests.cs      # 15+ test cases for base class
 ├── ValidationExtensionsTests.cs      # 20+ test cases for extensions  
 └── ServiceValidationHelpersTests.cs  # 15+ test cases for helpers

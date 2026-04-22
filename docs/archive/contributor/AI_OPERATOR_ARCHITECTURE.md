@@ -499,9 +499,9 @@ The evaluation suite should measure:
 - failure recovery behavior
 
 Phase 1 of this strategy is implemented by the end-to-end operator eval harness
-in `tests/Honua.TestKit/Eval/` (see
+in `tests/dotnet/Honua.TestKit/Eval/` (see
 [TestKit → Operator Eval Harness](../../contributor/testkit.md#end-to-end-operator-eval-harness)).
-Scenarios declared under `tests/Eval/scenarios/` drive the canonical runtime
+Scenarios declared under `tests/dotnet/eval/scenarios/` drive the canonical runtime
 and every protocol adapter through the deterministic stage model and emit a
 versioned `eval-report.json` that `honua-devops-31` consumes as the canonical
 server-side integration gate. Execution-, publish-, package-, and deploy-dependent

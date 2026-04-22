@@ -7,7 +7,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - **Agent Guidelines** — see `AGENTS.md` in the repository root
 - [Development Setup](development/getting-started.md) — prerequisites, installation, and first run
 - [Contributing Guide](development/contributing.md) — code style, architecture rules, PR process
-- [K3d + Helm Development](development/k3d-helm.md) — local Kubernetes development
+- [Local Helm Testing](development/k3d-helm.md) — handoff to the `honua-helm` repository
 
 ## Architecture
 
@@ -29,7 +29,6 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Python Integration Tests](testing-python.md) — pytest OGC and FeatureServer tests
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
-- [Benchmarks](benchmarks.md) — BenchmarkDotNet performance tests
 - [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
 - [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance
 - [OGC API Maps Conformance](ogc-maps-conformance-testing.md) — OGC API Maps conformance gate
@@ -44,7 +43,6 @@ This section is for people **building or extending** Honua (core contributors, a
 - [CI Config Conventions](../ci/config-conventions.md) — env vars, cache keys, artifact naming, and composite actions
 - [CI Quality Gates](CI_QUALITY_GATES.md) — automated quality enforcement
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
-- [CodeCov Setup](CODECOV_SETUP.md) — code coverage monitoring
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review
 
 ## Project Operations

@@ -16,7 +16,7 @@ RESULTS_DIR="ogc-maps-results"
 CONFIGURATION="Release"
 VERBOSE=false
 
-TEST_PROJECT="tests/Honua.Server.Tests/Honua.Server.Tests.csproj"
+TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 TEST_FILTER="FullyQualifiedName~OgcMapsConformanceTests|FullyQualifiedName~OgcMapsBasicTests|FullyQualifiedName~OgcMapsConformanceHandlerTests"
 
 usage() {

@@ -35,8 +35,7 @@ RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | b
 # Install dotnet tools
 RUN dotnet tool install --global dotnet-ef && \
     dotnet tool install --global dotnet-format && \
-    dotnet tool install --global dotnet-reportgenerator-globaltool && \
-    dotnet tool install --global coverlet.console
+    dotnet tool install --global dotnet-reportgenerator-globaltool
 
 # Add dotnet tools to PATH
 ENV PATH="$PATH:/root/.dotnet/tools"
@@ -64,13 +63,12 @@ USER vscode
 # Install dotnet tools for user
 RUN dotnet tool install --global dotnet-ef && \
     dotnet tool install --global dotnet-format && \
-    dotnet tool install --global dotnet-reportgenerator-globaltool && \
-    dotnet tool install --global coverlet.console
+    dotnet tool install --global dotnet-reportgenerator-globaltool
 
 # Add dotnet tools to PATH for vscode user
 ENV PATH="$PATH:/home/vscode/.dotnet/tools"
 
-# Configure git (will be overridden by devcontainer)
+# Configure git (can be overridden by local tooling)
 RUN git config --global init.defaultBranch main && \
     git config --global user.email "dev@honua.example.com" && \
     git config --global user.name "Developer"
@@ -87,5 +85,5 @@ ENV DOTNET_WATCH_RESTART_ON_RUDE_EDIT=true
 # Expose development ports
 EXPOSE 8080 5001
 
-# Default command for devcontainer
+# Default command for local development containers
 CMD ["sleep", "infinity"]

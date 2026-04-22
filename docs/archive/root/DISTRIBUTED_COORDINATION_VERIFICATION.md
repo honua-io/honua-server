@@ -67,7 +67,7 @@ coordinator2.TryEnqueueRefresh("layer:expensive-data", RefreshCallback);
 // Without Redis: Both execute independently (fallback mode)
 ```
 
-**Code Location**: `tests/Honua.Server.Tests/Features/Integration/DistributedCoordinationIntegrationTests.cs`
+**Code Location**: `tests/dotnet/Honua.Server.Tests/Features/Integration/DistributedCoordinationIntegrationTests.cs`
 
 ### 2. Leader Election for Background Tasks
 

@@ -11,35 +11,31 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.AppHost", "src\Honua.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.ServiceDefaults", "src\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj", "{E5F6A7B8-C9D0-1234-EF01-456789012345}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.TestKit", "tests\Honua.TestKit\Honua.TestKit.csproj", "{D4E5F6A7-B8C9-0123-DEF0-234567890123}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.TestKit", "tests\dotnet\Honua.TestKit\Honua.TestKit.csproj", "{D4E5F6A7-B8C9-0123-DEF0-234567890123}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Server.Tests", "tests\Honua.Server.Tests\Honua.Server.Tests.csproj", "{E5F6A7B8-C9D0-1234-EF01-345678901234}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Server.Tests", "tests\dotnet\Honua.Server.Tests\Honua.Server.Tests.csproj", "{E5F6A7B8-C9D0-1234-EF01-345678901234}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Architecture.Tests", "tests\Honua.Architecture.Tests\Honua.Architecture.Tests.csproj", "{15E10F2A-5805-4E70-ADE1-FEE7DA86AB54}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Architecture.Tests", "tests\dotnet\Honua.Architecture.Tests\Honua.Architecture.Tests.csproj", "{15E10F2A-5805-4E70-ADE1-FEE7DA86AB54}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Tests", "tests\Honua.Core.Tests\Honua.Core.Tests.csproj", "{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Tests", "tests\dotnet\Honua.Core.Tests\Honua.Core.Tests.csproj", "{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", "{66320409-64EC-F7C5-3DEF-65E7510DAAD1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Tests", "tests\dotnet\Honua.Postgres.Tests\Honua.Postgres.Tests.csproj", "{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Benchmarks", "benchmarks\Honua.Benchmarks\Honua.Benchmarks.csproj", "{F9F24087-26D9-481F-83B3-402D67B926EE}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Tests", "tests\Honua.Postgres.Tests\Honua.Postgres.Tests.csproj", "{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LoadTests", "tests\Honua.LoadTests\Honua.LoadTests.csproj", "{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LoadTests", "tests\dotnet\Honua.LoadTests\Honua.LoadTests.csproj", "{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core", "src\Honua.Core\Honua.Core.csproj", "{6FA86D72-BAEC-4B23-8EE0-CF7725E4BD3D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Security.Tests", "tests\Honua.Core.Security.Tests\Honua.Core.Security.Tests.csproj", "{AE285A79-B7A3-40A2-932E-C8F194CBF780}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Security.Tests", "tests\dotnet\Honua.Core.Security.Tests\Honua.Core.Security.Tests.csproj", "{AE285A79-B7A3-40A2-932E-C8F194CBF780}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Security.Tests", "tests\Honua.Postgres.Security.Tests\Honua.Postgres.Security.Tests.csproj", "{BA94AC61-9842-4F07-B871-E4801B39D621}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Postgres.Security.Tests", "tests\dotnet\Honua.Postgres.Security.Tests\Honua.Postgres.Security.Tests.csproj", "{BA94AC61-9842-4F07-B871-E4801B39D621}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.DuckDB", "src\Honua.DuckDB\Honua.DuckDB.csproj", "{A077F367-021A-4BC4-8545-6D97DCD84AC6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.DuckDB.Tests", "tests\Honua.DuckDB.Tests\Honua.DuckDB.Tests.csproj", "{241A15C1-E00C-404E-944F-804B892EFF80}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.DuckDB.Tests", "tests\dotnet\Honua.DuckDB.Tests\Honua.DuckDB.Tests.csproj", "{241A15C1-E00C-404E-944F-804B892EFF80}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -147,18 +143,6 @@ Global
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}.Release|x64.Build.0 = Release|Any CPU
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}.Release|x86.ActiveCfg = Release|Any CPU
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3}.Release|x86.Build.0 = Release|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x64.Build.0 = Debug|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Debug|x86.Build.0 = Debug|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x64.ActiveCfg = Release|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x64.Build.0 = Release|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x86.ActiveCfg = Release|Any CPU
-		{F9F24087-26D9-481F-83B3-402D67B926EE}.Release|x86.Build.0 = Release|Any CPU
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -250,7 +234,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{15E10F2A-5805-4E70-ADE1-FEE7DA86AB54} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{EC240BD6-3D37-4ED9-82C2-88BEE0A00FB3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
-		{F9F24087-26D9-481F-83B3-402D67B926EE} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
 		{E602BFBA-DE7B-4C54-A1B4-D42827E46D91} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{E032A2D5-C4A0-4E85-8D10-3A0D3B4144E5} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{6FA86D72-BAEC-4B23-8EE0-CF7725E4BD3D} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}

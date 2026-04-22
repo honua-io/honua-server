@@ -39,7 +39,7 @@ jobs:
           HONUA_TEST_ESRI_PARITY: '1'
         run: |
           mkdir -p tests/TestResults
-          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -59,14 +59,14 @@ jobs:
           fi
 
           cp "$latest_scorecard" artifacts/parity/current-scorecard.json
-          cp tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json artifacts/parity/baseline-scorecard.json
+          cp tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json artifacts/parity/baseline-scorecard.json
           echo "scorecard_path=artifacts/parity/current-scorecard.json" >> "$GITHUB_OUTPUT"
 
       - name: Baseline regression gate
         run: |
           bash scripts/check-parity-scorecard-regression.sh \
             artifacts/parity/current-scorecard.json \
-            tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json
+            tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
 
       - name: Write parity summary
         if: always()

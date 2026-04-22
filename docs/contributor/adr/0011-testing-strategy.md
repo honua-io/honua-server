@@ -23,7 +23,7 @@ For a multi-protocol feature server (GeoServices REST, OGC API Features, OData, 
 - Fail the build if any endpoint lacks test coverage
 
 ```csharp
-// tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs
+// tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs
 [ArchitectureTest]
 public void AllEndpoints_HaveIntegrationTests()
 {
@@ -266,26 +266,10 @@ public static class EndpointRegistry
 test:
   steps:
     - name: Run All Tests
-      run: dotnet test --collect:"XPlat Code Coverage"
+      run: dotnet test
 
     - name: API Surface Coverage
       run: dotnet test --filter "Category=Architecture" --logger "trx"
-
-    - name: Line/Branch Coverage Gate
-      run: |
-        reportgenerator -reports:**/coverage.cobertura.xml -targetdir:coverage
-        LINE=$(grep -oP 'Line coverage: \K[\d.]+' coverage/Summary.txt)
-        BRANCH=$(grep -oP 'Branch coverage: \K[\d.]+' coverage/Summary.txt)
-
-        if (( $(echo "$LINE < 80" | bc -l) )); then
-          echo "::error::Line coverage ${LINE}% below 80%"
-          exit 1
-        fi
-
-        if (( $(echo "$BRANCH < 70" | bc -l) )); then
-          echo "::error::Branch coverage ${BRANCH}% below 70%"
-          exit 1
-        fi
 ```
 
 ## Consequences

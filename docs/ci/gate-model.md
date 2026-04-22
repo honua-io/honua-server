@@ -31,14 +31,11 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `ci.yml` | Build, test, architecture gate, coverage, Esri Leaflet browser compatibility | None (always runs) |
+| `ci.yml` | Build, test, architecture gate, Esri Leaflet browser compatibility | None (always runs) |
 | `pr-validation.yml` | PR template compliance | None (always runs) |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
-| `proto-wire-governance.yml` | Protobuf wire stability | `**/*.proto` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `parity-scorecard-governance.yml` | Parity baseline stability | Parity/baseline asset paths |
-| `terraform-ci.yml` (plan/validate) | Infra plan validity | `terraform/**`, `*.tf` |
-| `performance-benchmarks.yml` (quick) | Performance regression | `src/**`, `benchmarks/**` |
 
 ## Nightly Lane
 
@@ -55,7 +52,6 @@ These workflows run on schedule and can be dispatched manually:
 | `cite-kml22-conformance.yml` | Fri 3am UTC | OGC KML 2.2 CITE conformance |
 | `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
 | `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
-| `performance-benchmarks.yml` (full) | Daily 6am UTC | Full benchmark suite + cross-platform |
 | `geoservices-parity-nightly.yml` | Scheduled | GeoServices parity check |
 | `windows-client-compat-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
@@ -80,7 +76,6 @@ These workflows run on schedule and can be dispatched manually:
 | `deploy.yml` | Push / manual | Environment promotion |
 | `deploy-platform-images.yml` | Push / manual | Platform image deployment |
 | `cloud-post-apply-validation.yml` | Workflow call / manual | Post-deploy validation |
-| `terraform-ci.yml` (apply) | Protected branch | Infrastructure apply |
 
 ## Maintenance Lane
 

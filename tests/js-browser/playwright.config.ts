@@ -12,9 +12,9 @@ export default defineConfig({
   retries: 1,
   reporter: [
     ['list'],
-    ['./shared/cert-reporter.ts'],
+    ['./esri-leaflet/support/cert-reporter.ts'],
   ],
-  globalSetup: resolve(__dirname, 'global-setup.ts'),
+  globalSetup: resolve(__dirname, 'esri-leaflet', 'global-setup.ts'),
   use: {
     baseURL,
     screenshot: 'only-on-failure',

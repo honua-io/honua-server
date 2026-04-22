@@ -10,13 +10,13 @@
 - [DuckDB Provider](operator/duckdb-provider.md)
 - [TLS Connection Guide](operator/tls-connection-guide.md)
 - [Security](operator/security.md)
+- [HTTP Client Resilience](operator/http-client-resilience.md)
 - [Monitoring & Observability](operator/monitoring.md)
 - [Operations](operator/operations.md)
 - [Control Plane API](operator/CONTROL_PLANE_API.md)
 - [Webhooks](operator/feature-change-webhooks.md)
 - [Tile Operations](operator/tile-operations-runbook.md)
 - [Troubleshooting](operator/troubleshooting.md)
-- [Benchmarks](operator/BENCHMARK_RESULTS.md)
 - [Upgrade & Rollback](operator/runbooks/UPGRADE_AND_ROLLBACK.md)
 
 ## GIS User Guide

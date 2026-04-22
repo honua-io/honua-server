@@ -149,7 +149,7 @@ var poolProvider = new DefaultObjectPoolProvider
 Run comprehensive tests to ensure no memory leaks:
 
 ```bash
-dotnet test tests/Honua.Core.Tests/Infrastructure/Monitoring/MemoryManagementTests.cs
+dotnet test tests/dotnet/Honua.Core.Tests/Infrastructure/Monitoring/MemoryManagementTests.cs
 ```
 
 ### Load Testing Recommendations

@@ -11,7 +11,6 @@ OUTPUT_ROOT=".audit/runs"
 DRY_RUN=false
 FAIL_FAST=false
 SKIP_SCALE=false
-SKIP_BENCHMARKS=false
 SKIP_CITE=false
 
 ALL_AGENTS=("architecture" "security" "geodesy" "performance" "protocol")
@@ -44,7 +43,6 @@ Options:
   --dry-run                            Print planned checks without executing
   --fail-fast                          Stop on first required check failure
   --skip-scale                         Skip scale tests (phase 3 optional checks)
-  --skip-benchmarks                    Skip benchmark runner in performance agent
   --skip-cite                          Skip CITE protocol suites
   --help, -h                           Show this help
 
@@ -211,7 +209,7 @@ run_architecture_agent() {
             "dotnet build Honua.sln --configuration Release /p:TreatWarningsAsErrors=true" || return $?
 
         run_check "architecture" "1" "architecture-tests" "required" \
-            "dotnet test tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj --configuration Release --logger \"trx;LogFileName=architecture-tests.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj --configuration Release --logger \"trx;LogFileName=architecture-tests.trx\"" || return $?
 
         run_check "architecture" "1" "aot-publish" "required" \
             "dotnet publish src/Honua.Server/Honua.Server.csproj --configuration Release --runtime linux-x64 --self-contained -p:PublishAot=true -p:HonuaSkipAdminClientForAotVerification=true -p:StripSymbols=true -o \"$OUTPUT_DIR/aot-publish\"" || return $?
@@ -219,7 +217,7 @@ run_architecture_agent() {
 
     if phase_selected "3"; then
         run_check "architecture" "3" "api-surface-registry-drift" "required" \
-            "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~EndpointRegistryDrift|FullyQualifiedName~ApiSurfaceComplianceTests' --logger \"trx;LogFileName=api-surface-compliance.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~EndpointRegistryDrift|FullyQualifiedName~ApiSurfaceComplianceTests' --logger \"trx;LogFileName=api-surface-compliance.trx\"" || return $?
     fi
 }
 
@@ -230,13 +228,13 @@ run_security_agent() {
 
     if phase_selected "1"; then
         run_check "security" "1" "server-security-auth-tests" "required" \
-            "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~Authentication|FullyQualifiedName~ApiKey' --logger \"trx;LogFileName=server-security.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~Authentication|FullyQualifiedName~ApiKey' --logger \"trx;LogFileName=server-security.trx\"" || return $?
 
         run_check "security" "1" "postgres-security-tests" "required" \
-            "dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~ConnectionEncryption|FullyQualifiedName~SecureConnection' --logger \"trx;LogFileName=postgres-security.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Security|FullyQualifiedName~ConnectionEncryption|FullyQualifiedName~SecureConnection' --logger \"trx;LogFileName=postgres-security.trx\"" || return $?
 
         run_check "security" "1" "input-validation-tests" "required" \
-            "dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Validation|FullyQualifiedName~FilterExpression' --logger \"trx;LogFileName=core-validation.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Validation|FullyQualifiedName~FilterExpression' --logger \"trx;LogFileName=core-validation.trx\"" || return $?
     fi
 }
 
@@ -247,13 +245,13 @@ run_geodesy_agent() {
 
     if phase_selected "1"; then
         run_check "geodesy" "1" "postgres-crs-transform-tests" "required" \
-            "dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Crs|FullyQualifiedName~SpatialReference|FullyQualifiedName~Wkt|FullyQualifiedName~Wkb|FullyQualifiedName~Transform' --logger \"trx;LogFileName=geodesy-postgres.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --filter 'FullyQualifiedName~Crs|FullyQualifiedName~SpatialReference|FullyQualifiedName~Wkt|FullyQualifiedName~Wkb|FullyQualifiedName~Transform' --logger \"trx;LogFileName=geodesy-postgres.trx\"" || return $?
 
         run_check "geodesy" "1" "server-spatial-query-tests" "required" \
-            "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~AdvancedSpatialQuery|FullyQualifiedName~SpatialReference|FullyQualifiedName~OgcCrsResolver|FullyQualifiedName~Wms|FullyQualifiedName~Wmts|FullyQualifiedName~Mvt' --logger \"trx;LogFileName=geodesy-server.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~AdvancedSpatialQuery|FullyQualifiedName~SpatialReference|FullyQualifiedName~OgcCrsResolver|FullyQualifiedName~Wms|FullyQualifiedName~Wmts|FullyQualifiedName~Mvt' --logger \"trx;LogFileName=geodesy-server.trx\"" || return $?
 
         run_check "geodesy" "1" "core-bbox-tiling-tests" "required" \
-            "dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~BoundingBox|FullyQualifiedName~TileMath|FullyQualifiedName~Cql2' --logger \"trx;LogFileName=geodesy-core.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --filter 'FullyQualifiedName~BoundingBox|FullyQualifiedName~TileMath|FullyQualifiedName~Cql2' --logger \"trx;LogFileName=geodesy-core.trx\"" || return $?
     fi
 }
 
@@ -264,24 +262,13 @@ run_performance_agent() {
 
     if phase_selected "2"; then
         run_check "performance" "2" "performance-category-tests" "required" \
-            "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'Category=Performance' --logger \"trx;LogFileName=performance-tests.trx\"" || return $?
+            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'Category=Performance' --logger \"trx;LogFileName=performance-tests.trx\"" || return $?
 
-        if [[ "$SKIP_BENCHMARKS" == "true" ]]; then
-            record_skip "performance" "2" "benchmark-runner" "required" "skipped by --skip-benchmarks"
-        else
-            if [[ "$MODE" == "quick" ]]; then
-                run_check "performance" "2" "benchmark-runner" "required" \
-                    "./scripts/run-performance-tests.sh --quick" || return $?
-            else
-                run_check "performance" "2" "benchmark-runner" "required" \
-                    "./scripts/run-performance-tests.sh" || return $?
-            fi
-        fi
     fi
 
     if phase_selected "3"; then
         run_check "performance" "3" "observability-tests" "required" \
-            "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~MetricsEndpointsTests|FullyQualifiedName~DatabasePerformanceEndpointsTests|FullyQualifiedName~HealthEndpointTests|FullyQualifiedName~HealthEndpointsTests'" || return $?
+            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~MetricsEndpointsTests|FullyQualifiedName~DatabasePerformanceEndpointsTests|FullyQualifiedName~HealthEndpointTests|FullyQualifiedName~HealthEndpointsTests'" || return $?
 
         if [[ "$SKIP_SCALE" == "true" ]]; then
             record_skip "performance" "3" "scale-tests" "optional" "skipped by --skip-scale"
@@ -289,7 +276,7 @@ run_performance_agent() {
             record_skip "performance" "3" "scale-tests" "optional" "set HONUA_SCALE_TEST_BASE_URL to enable scale checks"
         else
             run_check "performance" "3" "scale-tests" "optional" \
-                "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --filter 'Category=Scale'" || return $?
+                "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter 'Category=Scale'" || return $?
         fi
     fi
 }
@@ -332,7 +319,7 @@ run_protocol_agent() {
 
     if phase_selected "3"; then
         run_check "protocol" "3" "integration-protocol-tests" "required" \
-            "dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~OData|FullyQualifiedName~MapServer|FullyQualifiedName~FeatureServer|FullyQualifiedName~ApiSurfaceComplianceTests'" || return $?
+            "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --configuration Release --filter 'FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~OData|FullyQualifiedName~MapServer|FullyQualifiedName~FeatureServer|FullyQualifiedName~ApiSurfaceComplianceTests'" || return $?
 
         record_skip "protocol" "3" "desktop-gis-client-validation" "optional" \
             "manual validation required with QGIS, ArcGIS Pro, and web clients"
@@ -472,10 +459,6 @@ parse_args() {
                 ;;
             --skip-scale)
                 SKIP_SCALE=true
-                shift
-                ;;
-            --skip-benchmarks)
-                SKIP_BENCHMARKS=true
                 shift
                 ;;
             --skip-cite)

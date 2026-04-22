@@ -99,7 +99,7 @@ builder.Services.AddDataIntegrityCoordination();
 
 Created comprehensive test suite to validate fixes:
 
-**File**: `tests/Honua.Server.Tests/Features/Security/P0CriticalFixesValidationTests.cs`
+**File**: `tests/dotnet/Honua.Server.Tests/Features/Security/P0CriticalFixesValidationTests.cs`
 
 **Test Coverage**:
 - JWT replay attack prevention
@@ -139,7 +139,7 @@ Created comprehensive test suite to validate fixes:
 ```bash
 # Build and test the fixes
 dotnet build src/Honua.Server/Honua.Server.csproj
-dotnet test tests/Honua.Server.Tests/Features/Security/P0CriticalFixesValidationTests.cs
+dotnet test tests/dotnet/Honua.Server.Tests/Features/Security/P0CriticalFixesValidationTests.cs
 
 # Verify authentication configuration
 dotnet run --project src/Honua.Server -- --test-auth-config

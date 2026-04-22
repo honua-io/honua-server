@@ -26,7 +26,7 @@ docker pull postgis/postgis:16-3.4-alpine > /dev/null 2>&1 || echo "   ⚠️ Co
 echo "6. Running all .NET tests..."
 mkdir -p ./tests/TestResults
 
-dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
+dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -34,7 +34,7 @@ dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
+dotnet test tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -42,7 +42,7 @@ dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -50,7 +50,7 @@ dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -59,7 +59,7 @@ dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -68,7 +68,7 @@ dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -77,7 +77,7 @@ dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
@@ -86,7 +86,7 @@ dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
 
-dotnet test tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \

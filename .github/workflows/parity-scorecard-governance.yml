@@ -6,8 +6,8 @@ on:
       - trunk
       - main
     paths:
-      - 'tests/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
-      - 'tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
+      - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
       - 'scripts/check-parity-scorecard-regression.sh'
       - 'scripts/check-parity-scorecard-baseline-sync.sh'
       - '.github/workflows/geoservices-parity-nightly.yml'
@@ -17,8 +17,8 @@ on:
       - trunk
       - main
     paths:
-      - 'tests/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
-      - 'tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
+      - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
       - 'scripts/check-parity-scorecard-regression.sh'
       - 'scripts/check-parity-scorecard-baseline-sync.sh'
       - '.github/workflows/geoservices-parity-nightly.yml'
@@ -44,8 +44,8 @@ jobs:
       - name: Smoke test parity regression gate
         run: |
           bash scripts/check-parity-scorecard-regression.sh \
-            tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json \
-            tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json
+            tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json \
+            tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
 
       - name: Verify parity baseline sync
         run: |

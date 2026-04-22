@@ -344,5 +344,10 @@ Recommended approach:
 - Configure a scrape target for Honua `GET /metrics`.
 - Import dashboard JSON from `docker/grafana/dashboards/honua-overview.json`.
 - Apply alert rules from `docker/prometheus/alerts.yml`.
+- Use `docs/operator/examples/production-monitoring.json` as a baseline app
+  configuration for monitoring, resilience, and rate-limiting thresholds.
+- Use `docs/operator/examples/prometheus-alerts.yml` as a broader standalone
+  Prometheus ruleset reference when you are not using the bundled Docker
+  example stack.
 
 If you use Terraform for observability, use the separate `honua-terraform` repository.

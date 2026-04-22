@@ -10,7 +10,7 @@ Connect QGIS to Honua Server via OGC API Features and query geospatial data in u
 ## 1. Start Honua Server
 
 ```bash
-docker compose -f infrastructure/docker-compose/docker-compose.yml up -d
+docker compose up -d
 ```
 
 Wait for the server to be ready:
@@ -59,7 +59,7 @@ curl -X POST http://localhost:8080/api/v1/admin/import/upload \
 
 The upload creates a database table. To make it available as an OGC collection, register a connection and publish the layer.
 
-**Register a connection** (skip if you already have one). Use the credentials from `infrastructure/docker-compose/docker-compose.yml`:
+**Register a connection** (skip if you already have one). Use the default credentials from the root `docker-compose.yml`:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/admin/connections \
@@ -69,8 +69,8 @@ curl -X POST http://localhost:8080/api/v1/admin/connections \
     "host": "postgres",
     "port": 5432,
     "databaseName": "honua_dev",
-    "username": "honua",
-    "password": "honua_dev_password",
+    "username": "honua_user",
+    "password": "honua_password",
     "sslMode": "Prefer"
   }'
 # Note the connectionId from the response: { "success": true, "data": { "connectionId": "..." } }

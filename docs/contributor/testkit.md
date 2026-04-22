@@ -303,7 +303,7 @@ Each test class in the `Database` collection gets a shared PostgreSQL container 
 ## Project Structure
 
 ```
-tests/Honua.TestKit/
+tests/dotnet/Honua.TestKit/
 ├── Attributes/              # Custom test attributes
 │   ├── UnitTestAttribute.cs
 │   ├── IntegrationTestAttribute.cs
@@ -374,7 +374,7 @@ single fixture-backed scenario suite and emits a versioned report that
 
 ### Authoring scenarios
 
-Scenarios are JSON documents under `tests/Eval/scenarios/*.json`, deserialized
+Scenarios are JSON documents under `tests/dotnet/eval/scenarios/*.json`, deserialized
 through the source-generated `EvalJsonContext` (AOT-safe, no runtime
 reflection). Each scenario declares:
 
@@ -403,7 +403,7 @@ reflection). Each scenario declares:
   that currently affects stage scoping)
 
 The loader resolves scenarios (in order) from `HONUA_EVAL_SCENARIO_ROOT`, then
-the `tests/Eval/scenarios/` directory under `Honua.sln`. When
+the `tests/dotnet/eval/scenarios/` directory under `Honua.sln`. When
 `HONUA_EVAL_SCENARIO_ROOT` is set but points at a directory that does not
 exist, the loader raises `EvalScenarioException` instead of silently falling
 back to the bundled corpus so a typoed override cannot mask itself as a green
@@ -508,7 +508,7 @@ Locally:
 
 ```bash
 # Run the full operator eval harness lane
-dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
   --filter "FullyQualifiedName~Honua.Server.Tests.Features.Eval"
 
 # Filter by the OperatorEval protocol trait

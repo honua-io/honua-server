@@ -152,10 +152,10 @@ grep -r "IsDevelopmentMode\|IsTestMode" appsettings*.json
 
 ```bash
 # Run security tests
-dotnet test tests/Honua.Server.Tests/Features/Security/CriticalSecurityFixTests.cs
+dotnet test tests/dotnet/Honua.Server.Tests/Features/Security/CriticalSecurityFixTests.cs
 
 # Run integration tests
-dotnet test tests/Honua.Server.Tests/ --filter="Category=Security"
+dotnet test tests/dotnet/Honua.Server.Tests/ --filter="Category=Security"
 
 # Run verification script
 ./scripts/verify-security-fixes.sh

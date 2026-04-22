@@ -31,4 +31,4 @@ Standardized scorecards, checklists, and readout templates for lighthouse migrat
 | [Release Checklist](../../../contributor/RELEASE_CHECKLIST.md) | Current release gate integration |
 | [`parity-scorecard-governance.yml`](../../../../.github/workflows/parity-scorecard-governance.yml) | Parity scorecard CI governance |
 | [`geoservices-parity-nightly.yml`](../../../../.github/workflows/geoservices-parity-nightly.yml) | Nightly geoservices parity runs |
-| [`parity-scorecard-baseline.json`](../../../../tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json) | Existing parity baseline data |
+| [`parity-scorecard-baseline.json`](../../../../tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json) | Existing parity baseline data |

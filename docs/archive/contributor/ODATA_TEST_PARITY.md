@@ -265,16 +265,16 @@ This section maps OData tests to equivalent OGC API Features test scenarios.
 
 ```bash
 # Run all OData tests
-dotnet test tests/Honua.Server.Tests/Features/OData/
+dotnet test tests/dotnet/Honua.Server.Tests/Features/OData/
 
 # Run specific test file
-dotnet test tests/Honua.Server.Tests/Features/OData/ODataFilterMatrixTests.cs
+dotnet test tests/dotnet/Honua.Server.Tests/Features/OData/ODataFilterMatrixTests.cs
 
 # Run tests with filter
 dotnet test --filter "FullyQualifiedName~OData"
 
 # Run tests with verbose output
-dotnet test tests/Honua.Server.Tests/Features/OData/ --logger "console;verbosity=detailed"
+dotnet test tests/dotnet/Honua.Server.Tests/Features/OData/ --logger "console;verbosity=detailed"
 ```
 
 ## Test Data

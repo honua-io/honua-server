@@ -98,7 +98,7 @@ This document summarizes the 4 critical security vulnerabilities that were ident
 
 ## Testing Coverage
 
-**Test File:** `tests/Honua.Server.Tests/Features/Security/CriticalSecurityFixTests.cs`
+**Test File:** `tests/dotnet/Honua.Server.Tests/Features/Security/CriticalSecurityFixTests.cs`
 
 Comprehensive test coverage includes:
 1. **Authentication bypass validation** - Tests environment/config matching

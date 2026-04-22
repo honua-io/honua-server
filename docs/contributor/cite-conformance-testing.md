@@ -294,9 +294,6 @@ Before releases, run comprehensive testing:
 # Full conformance validation
 ./scripts/run-cite-tests.sh --profile full --verbose
 
-# Performance testing (if integrated)
-./scripts/run-performance-tests.sh
-
 # Security scanning
 ./scripts/run-security-scan.sh
 ```

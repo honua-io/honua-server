@@ -26,12 +26,10 @@
   </PropertyGroup>
 
   <!--
-    Test + benchmark projects don't need to run `dotnet pack`; suppressing the
-    default `IsPackable` skips pack-related targets during restore/build.
+    Test projects don't need to run `dotnet pack`; suppressing the default
+    `IsPackable` skips pack-related targets during restore/build.
   -->
-  <PropertyGroup Condition="
-      $(MSBuildProjectFullPath.Contains('/tests/'))
-      OR $(MSBuildProjectFullPath.Contains('/benchmarks/'))">
+  <PropertyGroup Condition="$(MSBuildProjectFullPath.Contains('/tests/'))">
     <IsPackable>false</IsPackable>
     <IsPublishable>false</IsPublishable>
   </PropertyGroup>

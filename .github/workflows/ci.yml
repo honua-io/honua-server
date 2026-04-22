@@ -238,7 +238,7 @@ jobs:
 
       - name: Start emulator containers (Azurite + Localstack)
         run: |
-          docker compose -f .devcontainer/docker-compose.emulators.yml up -d --quiet-pull
+          docker compose -f docker/docker-compose.emulators.yml up -d --quiet-pull
           for i in {1..30}; do
             if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
               && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
@@ -247,7 +247,7 @@ jobs:
             sleep 2
           done
           echo "Emulators failed to start."
-          docker compose -f .devcontainer/docker-compose.emulators.yml ps
+          docker compose -f docker/docker-compose.emulators.yml ps
           exit 1
 
       - name: Build .NET test binaries
@@ -263,7 +263,7 @@ jobs:
       - name: Run .NET Tests (Core/Postgres)
         timeout-minutes: 20
         run: |
-          dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -271,7 +271,7 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
-          dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
+          dotnet test tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -279,7 +279,7 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
-          dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -292,7 +292,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -320,7 +320,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -348,7 +348,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -376,7 +376,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -404,7 +404,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -439,7 +439,7 @@ jobs:
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |
-          dotnet test tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
@@ -937,7 +937,7 @@ jobs:
           HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
           HONUA_TEST_CONFIGURATION: Release
         run: |
-          dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+          dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --configuration Release \
             --no-build \
             --logger "console;verbosity=detailed"
@@ -1137,4 +1137,3 @@ jobs:
             exit 1
           fi
           echo "All required CI jobs passed."
-

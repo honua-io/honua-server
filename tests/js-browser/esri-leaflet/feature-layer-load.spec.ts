@@ -1,5 +1,5 @@
-import { test, expect } from '../shared/test-fixtures.js';
-import { initFeatureLayer, waitForLayerLoad } from '../shared/map-harness.js';
+import { test, expect } from './support/test-fixtures.js';
+import { initFeatureLayer, waitForLayerLoad } from './support/map-harness.js';
 
 test.describe('FeatureLayer Load and Connection', () => {
   test('[CERT-CONN-01] FeatureLayer connects and fires load event', async ({ page, staticUrl, config }) => {

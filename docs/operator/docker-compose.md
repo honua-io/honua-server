@@ -1,41 +1,34 @@
-# Docker Compose Sample (pre-built image)
+# Docker Compose
 
-This compose file runs a **pre-built Honua Server image** with PostGIS and optional Redis/MinIO. Use this for evaluating Honua or deploying it without building from source.
-
-> **For development**, use the root `docker-compose.yml` instead — it builds Honua from source and mounts local code.
-
-| | Root `docker-compose.yml` | This file |
-|---|---|---|
-| **Purpose** | Development (builds from source) | Evaluation / deployment (pre-built image) |
-| **Image** | Built from local Dockerfile | `honuaio/honua-server:latest` (or override) |
-| **DB credentials** | `honua_user` / `honua_password` | `honua` / `honua_dev_password` |
-| **Auth** | Development mode | `HONUA_DEV_AUTH=true` (disable for prod) |
+The supported local compose entrypoint is the repo-root [`docker-compose.yml`](../../docker-compose.yml). It builds Honua from source and starts PostGIS, with optional Redis and MinIO profiles.
 
 ## Requirements
+
 - Docker
 - Docker Compose (v2+)
 
-## Quick Start (from repo root)
+## Quick Start
+
 ```bash
-docker compose -f infrastructure/docker-compose/docker-compose.yml up -d
+docker compose up -d
 ```
 
-By default this pulls `honuaio/honua-server:latest`. Override with nightly tags if needed:
-```bash
-HONUA_IMAGE=honuaio/honua-server:nightly \
-  docker compose -f infrastructure/docker-compose/docker-compose.yml up -d
+The default local database credentials are:
 
-HONUA_IMAGE=ghcr.io/honua-io/honua-server:nightly-aot \
-  docker compose -f infrastructure/docker-compose/docker-compose.yml up -d
+- database: `honua_dev`
+- username: `honua_user`
+- password: `honua_password`
+
+## Optional Profiles
+
+Enable Redis:
+
+```bash
+HONUA_REDIS_URL=redis:6379 docker compose --profile redis up -d
 ```
 
-## Enable Redis (optional)
-```bash
-HONUA_REDIS_URL=redis:6379 \
-  docker compose -f infrastructure/docker-compose/docker-compose.yml --profile redis up -d
-```
+Enable MinIO:
 
-## Enable MinIO (optional S3-compatible storage)
 ```bash
 HONUA_STORAGE_PROVIDER=AwsS3 \
 HONUA_S3_BUCKET=honua-dev \
@@ -43,36 +36,17 @@ HONUA_S3_REGION=us-east-1 \
 HONUA_S3_SERVICE_URL=http://minio:9000 \
 HONUA_S3_ACCESS_KEY_ID=minioadmin \
 HONUA_S3_SECRET_ACCESS_KEY=minioadmin \
-  docker compose -f infrastructure/docker-compose/docker-compose.yml --profile minio up -d
+docker compose --profile minio up -d
 ```
-
-Create the bucket once MinIO is up (console at `http://localhost:9001`, credentials default to `minioadmin` / `minioadmin`).
-
-## Optional pgAdmin
-```bash
-docker compose -f infrastructure/docker-compose/docker-compose.yml --profile admin up -d
-```
-
-pgAdmin will be available at `http://localhost:5050` (admin@honua.local / admin).
 
 ## Health Check
+
 ```bash
 curl http://localhost:8080/healthz/live
 ```
 
 ## Shutdown
-```bash
-docker compose -f infrastructure/docker-compose/docker-compose.yml down --remove-orphans --volumes
-```
 
-## Notes
-- Auth is disabled for dev with `HONUA_DEV_AUTH=true`. Set `HONUA_ADMIN_PASSWORD` and remove `HONUA_DEV_AUTH` if you want admin auth in dev.
-- The image can be overridden via `HONUA_IMAGE` if you want `nightly-aot`, a SHA tag, or Docker Hub.
-- Redis is optional; set `HONUA_REDIS_URL=redis:6379` and use the `redis` profile to enable it.
-- MinIO is optional; use the `minio` profile and set `HONUA_STORAGE_PROVIDER=AwsS3` with the S3 env vars above.
-- Optional port overrides: `POSTGRES_PORT`, `REDIS_PORT`, `HONUA_HTTP_PORT`, `PGADMIN_PORT`.
-
-## Validate the Sample
 ```bash
-bash scripts/verify-docker-compose-sample.sh
+docker compose down --remove-orphans --volumes
 ```

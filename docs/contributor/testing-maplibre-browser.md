@@ -19,7 +19,7 @@ Playwright + Chromium end-to-end suite that proves MapLibre GL JS can load style
 | JS-EXT-01 | `tile-rendering.spec.ts` |
 | JS-EXT-02 | `tile-rendering.spec.ts` |
 
-The custom reporter (`helpers/cert-reporter.ts`) writes a `<run-id>-js-mvt.cert.json` envelope to `test-results/`.
+The custom reporter (`maplibre/support/cert-reporter.ts`) writes a `<run-id>-js-mvt.cert.json` envelope to `test-results/`.
 
 ## Prerequisites
 
@@ -78,15 +78,15 @@ The `maplibre-compat` job in `ci.yml` runs this suite as a merge-blocking gate. 
 tests/js-browser/
 ├── package.json
 ├── playwright.maplibre.config.ts
-├── maplibre-global-setup.ts
 ├── tsconfig.json
-├── helpers/
-│   ├── constants.ts
-│   ├── map-harness.ts
-│   └── cert-reporter.ts
-└── specs/
+└── maplibre/
+    ├── global-setup.ts
     ├── style-loading.spec.ts
     ├── tile-rendering.spec.ts
     ├── layer-visibility.spec.ts
     └── feature-query.spec.ts
+    └── support/
+        ├── constants.ts
+        ├── map-harness.ts
+        └── cert-reporter.ts
 ```

@@ -235,7 +235,7 @@ chmod +x scripts/run-cloud-post-apply-validation.sh
 
 scripts/post-deployment-verification.sh
 
-dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     -p:RunAnalyzers=false \
     --filter "Category=Cloud"
 
@@ -246,7 +246,7 @@ if [[ "$INCLUDE_SCALE_TESTS" == "true" ]]; then
     fi
 
     echo "Running scale validation against ${HONUA_SCALE_TEST_BASE_URL}"
-    dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
         -p:RunAnalyzers=false \
         --filter "Category=Scale"
 fi

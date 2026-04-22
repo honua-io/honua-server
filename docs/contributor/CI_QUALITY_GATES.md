@@ -8,7 +8,6 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 - `ci.yml`: build, formatting verification, full test suite, merge-blocking Esri Leaflet browser compatibility tests, and MCP certification (see [MCP Certification](mcp-certification.md)).
 - `pr-validation.yml`: PR template compliance validation.
-- `performance-benchmarks.yml`: performance benchmarks (`quick` mode on PR, `full` mode on nightly/manual).
 - `load-soak-nightly.yml`: nightly load/soak testing.
 - `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility certification (full CERT-\* matrix: 18 test cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes and reusable evidence pack artifacts.
 - `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
@@ -16,7 +15,6 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `cite-kml22-conformance.yml`, `cite-gml32-conformance.yml`, `cite-gpkg12-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
 - `openapi-contract-governance.yml`: Admin/control-plane OpenAPI contract validation and breaking-change checks.
 - `control-plane-sdk-governance.yml`: reproducible control-plane SDK generation and release artifact publishing.
-- `proto-wire-governance.yml`: protobuf wire compatibility enforcement via `buf breaking`.
 - `nightly-container-build.yml`: nightly image builds.
 
 ## CI Gate (Required Status Check)
@@ -29,8 +27,6 @@ The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blockin
 - XML docs (`CS1591`) are currently enforced for `Honua.Core` as warnings (phase-in plan), with full-repo enforcement planned.
 - Formatting is enforced with `dotnet format` checks.
 - API surface coverage is enforced via architecture tests.
-- Coverage thresholds are enforced via Codecov; see `CODECOV_SETUP.md` for current targets.
-
 ## Conformance Baseline Policy
 
 The CITE regression gates for implemented map/tile standards run on:
@@ -106,9 +102,8 @@ These workflows enforce the control-plane versioning policy defined in `docs/dev
 |---|---|
 | `openapi-contract-governance.yml` | OpenAPI spec shape and breaking-change detection for admin endpoints |
 | `control-plane-sdk-governance.yml` | Reproducible SDK generation from the admin OpenAPI spec |
-| `proto-wire-governance.yml` | Protobuf wire compatibility via `buf breaking` |
 
-Breaking changes in these workflows require explicit opt-in (`OPENAPI_ALLOW_BREAKING_CHANGES=true` or `BUF_ALLOW_BREAKING_CHANGES=true`) and corresponding documentation updates.
+Breaking changes in these workflows require explicit opt-in (`OPENAPI_ALLOW_BREAKING_CHANGES=true`) and corresponding documentation updates.
 
 ### Standards Compatibility
 

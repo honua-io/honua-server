@@ -1,5 +1,5 @@
-import { test, expect } from '../shared/test-fixtures.js';
-import { initDynamicMapLayer, waitForMapIdle } from '../shared/map-harness.js';
+import { test, expect } from './support/test-fixtures.js';
+import { initDynamicMapLayer, waitForMapIdle } from './support/map-harness.js';
 
 test.describe('DynamicMapLayer — MapServer Consumption', () => {
   test('[CERT-CONN-01] DynamicMapLayer loads and issues export requests', async ({ page, staticUrl, config }) => {

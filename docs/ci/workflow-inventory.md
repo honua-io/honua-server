@@ -10,11 +10,8 @@
 | `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; includes the merge-blocking operator eval harness lane (`Features.Eval|Features.Geoprocessing|Features.OgcProcesses|Features.Grpc`) and uploads `operator-eval-report` plus STAC and Esri Leaflet client-compat artifacts |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
-| `proto-wire-governance.yml` | Proto Wire Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to `.proto` changes |
 | `control-plane-sdk-governance.yml` | Control Plane SDK Governance | PR + release | `pull_request`, `push`, `workflow_dispatch`, `release` | Yes (PR jobs) | PR governance separate from release publishing |
 | `parity-scorecard-governance.yml` | Parity Scorecard Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to parity/baseline assets |
-| `terraform-ci.yml` | Terraform CI | PR + deploy | `pull_request`, `push`, `workflow_dispatch` | Yes (plan/validate) | `fmt`/`validate`/`plan` in PR; apply in deploy |
-| `performance-benchmarks.yml` | Performance Benchmarks | PR + nightly | `pull_request` (path-scoped), `push`, `schedule`, `workflow_dispatch` | Yes (critical regression) | Event-driven: quick load on PR, full load on push/schedule/manual |
 | `cite-conformance.yml` | OGC CITE Conformance (Features) | nightly | `schedule`, `workflow_dispatch` | No | Weekly Monday 6am UTC |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Tuesday 6am UTC |
 | `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Monday 3am UTC |
@@ -72,13 +69,6 @@ Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment
 
 **Rationale**: Conformance suites are external, heavyweight, and non-deterministic. They belong in the nightly certification lane, not the PR-blocking path. Regressions are caught by the weekly schedule and can be tested on-demand via `workflow_dispatch`.
 
-### Performance workflows consolidated
-
-`performance.yml` (nightly-only) was removed. Its scheduled coverage is now handled by `performance-benchmarks.yml` with event-driven mode selection:
-
-- **PR**: path-filtered, reduced load parameters (quick load test)
-- **push / schedule / manual**: full benchmark suite including full load tests
-
 ### CodeQL moved off PR path
 
 `codeql.yml` no longer triggers on `pull_request`. It runs on `push` to trunk and on a weekly schedule. This avoids adding a slow, non-deterministic security scan to every PR cycle.
@@ -97,7 +87,7 @@ All issue forms now require acceptance criteria, affected repos, gate-tier impac
 
 ### Composite actions extracted
 
-Five composite actions were added to `.github/actions/`. Two are actively used in `performance-benchmarks.yml`; three are pre-positioned for future workflow adoption:
+Five composite actions were added to `.github/actions/` for shared CI setup and evidence handling:
 
 - `setup-dotnet-ci` — .NET SDK, NuGet cache *(active)*
 - `setup-node-ci` — Node.js setup, npm cache *(future: SDK workflows)*
