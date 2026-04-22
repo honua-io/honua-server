@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Spec.Domain;
 
@@ -308,12 +309,12 @@ internal sealed partial class SpecMutationApplier
             return unitLiteral;
         }
 
-        if (long.TryParse(value, out var integer))
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
         {
             return new LiteralNode(SourceSpan.Synthetic, SpecTypeKind.Integer, Number: integer, Integer: integer);
         }
 
-        if (double.TryParse(value, out var number))
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
         {
             return new LiteralNode(SourceSpan.Synthetic, SpecTypeKind.Number, Number: number);
         }
@@ -363,7 +364,7 @@ internal sealed partial class SpecMutationApplier
             return false;
         }
 
-        var numeric = double.Parse(match.Groups["value"].Value);
+        var numeric = double.Parse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture);
         var unit = match.Groups["unit"].Value;
         var kind = unit switch
         {

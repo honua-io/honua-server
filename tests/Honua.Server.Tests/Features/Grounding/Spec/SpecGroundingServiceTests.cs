@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
@@ -685,6 +686,59 @@ public sealed class SpecGroundingServiceTests
     }
 
     [Fact]
+    public async Task Mutate_WithDecimalDistanceUnderNonEnglishCulture_ParsesAndSummarizesInvariantly()
+    {
+        using var cultureScope = new CultureScope("fr-FR");
+        using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use rivers as river. buffer river by 500.5.m in EPSG:3857 as river_buffer",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        var distance = payload.RootElement
+            .GetProperty("compute")[0]
+            .GetProperty("params")
+            .GetProperty("distance");
+        distance.GetProperty("value").GetDouble().Should().Be(500.5);
+        distance.GetProperty("unit").GetString().Should().Be("m");
+
+        var summary = harness.Service.Summarize(result.Mutation.NextSpec);
+        summary.Sections.Single(section => section.SectionId == "compute").Text
+            .Should().Contain("distance=500.5.m");
+    }
+
+    [Fact]
+    public async Task Mutate_ViewportUnderNonEnglishCulture_PreservesInvariantCoordinateFormatting()
+    {
+        using var cultureScope = new CultureScope("fr-FR");
+        using var harness = CreateHarness();
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "viewport center -157.85 21.35 zoom 11",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().BeNull();
+        result.Mutation.Should().NotBeNull();
+
+        using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
+        var viewport = payload.RootElement.GetProperty("map").GetProperty("viewport");
+        viewport.GetProperty("center").GetString().Should().Be("-157.85,21.35");
+        viewport.GetProperty("zoom").GetInt64().Should().Be(11);
+    }
+
+    [Fact]
     public async Task Mutate_WhenPlannedOutputReferencesUnknownId_ReturnsInvalidMutation()
     {
         using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Zones"));
@@ -805,6 +859,28 @@ public sealed class SpecGroundingServiceTests
 
     private static string? GetStringTag(KeyValuePair<string, object?>[] tags, string name)
         => tags.FirstOrDefault(tag => tag.Key == name).Value as string;
+
+    private sealed class CultureScope : IDisposable
+    {
+        private readonly CultureInfo _originalCulture;
+        private readonly CultureInfo _originalUiCulture;
+
+        public CultureScope(string cultureName)
+        {
+            _originalCulture = CultureInfo.CurrentCulture;
+            _originalUiCulture = CultureInfo.CurrentUICulture;
+
+            var culture = new CultureInfo(cultureName);
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+        }
+
+        public void Dispose()
+        {
+            CultureInfo.CurrentCulture = _originalCulture;
+            CultureInfo.CurrentUICulture = _originalUiCulture;
+        }
+    }
 
     private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
 }

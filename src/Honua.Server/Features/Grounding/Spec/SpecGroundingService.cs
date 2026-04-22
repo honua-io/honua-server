@@ -509,21 +509,10 @@ internal sealed partial class SpecGroundingService
 
         if (TryParseViewport(clause, out var viewport))
         {
-            var values = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["center"] = $"{viewport.Longitude},{viewport.Latitude}"
-            };
-            values["zoom"] = viewport.Zoom.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-            var viewportFields = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["zoom"] = viewport.Zoom.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            };
-
             return ClausePlanResult.FromMutation(new SetViewportMutation(new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["center"] = $"{viewport.Longitude},{viewport.Latitude}",
-                ["zoom"] = viewport.Zoom.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                ["zoom"] = viewport.Zoom
             }));
         }
 
@@ -1601,15 +1590,15 @@ internal sealed partial class SpecGroundingService
 
     private static bool TryParseViewport(
         string clause,
-        out (double Longitude, double Latitude, int Zoom) result)
+        out (string Longitude, string Latitude, string Zoom) result)
     {
         var match = ViewportPattern().Match(clause);
         if (match.Success)
         {
             result = (
-                double.Parse(match.Groups["lon"].Value, System.Globalization.CultureInfo.InvariantCulture),
-                double.Parse(match.Groups["lat"].Value, System.Globalization.CultureInfo.InvariantCulture),
-                int.Parse(match.Groups["zoom"].Value, System.Globalization.CultureInfo.InvariantCulture));
+                match.Groups["lon"].Value,
+                match.Groups["lat"].Value,
+                match.Groups["zoom"].Value);
             return true;
         }
 

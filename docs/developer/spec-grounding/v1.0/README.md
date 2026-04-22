@@ -42,7 +42,7 @@ Request body:
 | `context` | no | `target_id` is only used as the default resolver for `only <tail>` scope clauses when the turn omits an explicit target. `default_crs` / `default_unit` satisfy missing CRS or unit values for `buffer`, `within`, and `reproject`. `hints` is accepted for forward-compatibility, but the current clause planner does not consume it yet. |
 | `clarification_answer` | no | Echoes the current clarification card's server-issued `intent_id` plus `answers`. When supplied, `intent_id` is required and `answers` must contain at least one non-blank answer for at least one non-blank `question_id`. Current single-select and confirmation questions consume only the first value in each array. |
 
-Response body (`200 OK` + `application/json` for any well-formed request; `400` + `application/problem+json` for malformed JSON or invalid/missing `turn` / `spec`):
+Response body (`200 OK` + `application/json` for any well-formed request; `400` + `application/problem+json` for malformed JSON, invalid or missing `turn`, invalid or missing `spec`, or an invalid `clarification_answer` shape):
 
 ```json
 {
@@ -91,7 +91,7 @@ An empty `{}` spec is accepted here as well and yields `title_summary = "No sour
 
 ## Closed mutation catalog
 
-The S1 scope enumerates exactly nine mutation kinds. Any request that would require a different kind returns `error.kind = "out_of_scope"` with a pointer to `docs/developer/spec-grammar/v1.0/README.md`, which structurally honours ADR-0028 (no mutation kind targets row-level data).
+The S1 scope enumerates exactly nine mutation kinds. Explicit roadmap keywords (`schedule`, `publish`, `deploy`, `dashboard`, `app`) short-circuit to `error.kind = "out_of_scope"` with a pointer to `docs/developer/spec-grammar/v1.0/README.md`, which structurally honours ADR-0028 (no mutation kind targets row-level data). Other turns that do not map to one of the supported mutations remain `unresolvable`.
 
 | `kind` wire value | Payload | Effect |
 |---|---|---|
@@ -153,7 +153,7 @@ Clarification `intent_id` values are server-generated from the outstanding clari
 | `invalid_mutation` | The applier threw `InvalidOperationException` (e.g. `remove-source` on a missing id), or the post-apply `ISpecValidator` returned error-severity diagnostics. |
 | `out_of_scope` | Turn contains an S2/S3 keyword (`schedule`, `publish`, `deploy`, `dashboard`, `app`). The warnings list includes a pointer to `docs/developer/spec-grammar/v1.0/README.md`. |
 
-Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing `turn`, non-object `spec`, missing `clarification_answer.intent_id`, empty or blank `clarification_answer.answers`, blank question ids, or malformed JSON. Ambiguous turns return `200` with `clarifications[]` and no `error`; other validation or grounding failures return `200` with a structured `error` envelope.
+Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing or blank `turn`; missing, `null`, non-object, or unreadable `spec`; missing `clarification_answer.intent_id`; empty `clarification_answer.answers`; blank question ids; blank answer values; or malformed JSON. Ambiguous turns return `200` with `clarifications[]` and no `error`; other validation or grounding failures return `200` with a structured `error` envelope.
 Malformed JSON is handled by the shared exception mapper and currently returns the generic `Bad Request` / `Invalid JSON payload.` envelope. Endpoint-level shape validation returns `title = "Invalid spec grounding request"` with a field-specific `detail`.
 
 ## Round-trip invariants

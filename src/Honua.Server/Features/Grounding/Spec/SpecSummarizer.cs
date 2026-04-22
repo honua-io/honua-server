@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Server.Features.Grounding.Spec;
@@ -147,10 +148,10 @@ internal sealed class SpecSummarizer
         {
             LiteralNode { Kind: SpecTypeKind.String } literal => literal.String ?? string.Empty,
             LiteralNode { Kind: SpecTypeKind.Boolean } literal => literal.Boolean?.ToString().ToLowerInvariant() ?? "false",
-            LiteralNode { Kind: SpecTypeKind.Integer } literal => literal.Integer?.ToString() ?? "0",
-            LiteralNode { Kind: SpecTypeKind.Number } literal => literal.Number?.ToString("0.###") ?? "0",
+            LiteralNode { Kind: SpecTypeKind.Integer } literal => literal.Integer?.ToString(CultureInfo.InvariantCulture) ?? "0",
+            LiteralNode { Kind: SpecTypeKind.Number } literal => literal.Number?.ToString("0.###", CultureInfo.InvariantCulture) ?? "0",
             LiteralNode { Kind: SpecTypeKind.Distance or SpecTypeKind.Duration or SpecTypeKind.Area } literal =>
-                $"{literal.Number?.ToString("0.###")}.{literal.Unit}",
+                $"{literal.Number?.ToString("0.###", CultureInfo.InvariantCulture)}.{literal.Unit}",
             ReferenceNode reference => reference.Canonical,
             ArrayLiteral array => string.Join(", ", array.Items.Select(FormatExpression)),
             ObjectExpression obj => string.Join(", ", obj.Fields.Select(field => $"{field.Key}={FormatExpression(field.Value)}")),

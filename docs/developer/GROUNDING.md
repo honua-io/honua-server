@@ -261,8 +261,11 @@ The spec-grounding surface reuses the ADR-0027 clarification shape
 reason codes (`ambiguous_dataset`, `ambiguous_column`,
 `ambiguous_filter_value`, `ambiguous_unit`, `ambiguous_crs`,
 `ambiguous_process`, `heavy_operation_confirmation`) and typed
-candidate payloads. See [Spec Grounding v1.0](spec-grounding/v1.0/README.md)
-for the full contract and clause grammar.
+candidate payloads. Explicit roadmap keywords (`schedule`, `publish`,
+`deploy`, `dashboard`, `app`) surface `out_of_scope`; other turns that
+cannot be mapped to the closed mutation catalog stay `unresolvable`.
+See [Spec Grounding v1.0](spec-grounding/v1.0/README.md) for the full
+contract and clause grammar.
 
 ## Related
 
