@@ -128,6 +128,25 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GroundingMutate)]
     [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_MissingTurn_ReturnsProblemDetails()
+    {
+        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement("{}")
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
+        root.GetProperty("detail").GetString().Should().Be("turn is required.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
     public async Task Mutate_MissingUnitClarification_ExposesNauticalMilesCandidate()
     {
         using var harness = new SpecGroundingHarness(SpecGroundingTestSupport.CreateLayer(4, "Zones"));
@@ -151,6 +170,24 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
         clarification.GetProperty("candidates").EnumerateArray()
             .Select(candidate => candidate.GetProperty("unit").GetString())
             .Should().Equal("km", "m", "mi", "ft", "nm");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    public async Task Summarize_EmptySpec_ReturnsEmptyAnalysisTitleAndNoSections()
+    {
+        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/summarize", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement("{}")
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        root.GetProperty("title_summary").GetString().Should().Be("No sources, computations, or outputs are defined yet.");
+        root.GetProperty("section_summaries").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]

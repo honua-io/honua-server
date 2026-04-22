@@ -1401,7 +1401,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Endpoint integration coverage plus service-level clarification, preservation, and round-trip invariants",
+          "proofMechanism": "Endpoint integration coverage plus service-level wire-envelope, clarification retry, preservation, and round-trip invariants",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingEndpointTests.cs",
@@ -1410,7 +1410,7 @@
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
-          "linkedTicket": null,
+          "linkedTicket": "#790",
           "versionCaptureRule": null
         }
       ]

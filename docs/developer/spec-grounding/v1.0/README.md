@@ -8,7 +8,7 @@
 
 ## Endpoints
 
-Both endpoints accept and return `application/json` and currently allow anonymous access (the same surface is also intended for admin workspace use). All request and response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility. Inactive nullable branch properties (`mutation`, `error`) are omitted from the JSON payload rather than serialized as `null`; `clarifications` and `warnings` are always emitted as arrays.
+Both endpoints accept JSON request bodies and currently allow anonymous access (the same surface is also intended for admin workspace use). Successful responses return `application/json`; malformed or semantically invalid wire payloads return `application/problem+json`. All request and success-response DTOs flow through a source-generated `SpecGroundingJsonContext` for AOT compatibility. Inactive nullable branch properties (`mutation`, `error`) are omitted from the JSON payload rather than serialized as `null`; `clarifications`, `warnings`, and clarification `candidates` are always emitted as arrays.
 
 ### `POST /v1/grounding/spec/mutate`
 
@@ -39,10 +39,10 @@ Request body:
 |---|---|---|
 | `spec` | yes | Canonical JSON form of the current `SpecDocument`. An empty object is accepted and is equivalent to a fresh `analysis` spec. |
 | `turn` | yes | Natural-language instruction. Multiple clauses can be separated by `.`, `;`, or newlines; each clause is grounded in order and the per-clause mutations are applied sequentially before the full batch is re-validated. |
-| `context` | no | Disambiguation hints: default `target_id` for scope clauses, `default_crs`, `default_unit`, and freeform `hints`. When the turn omits a unit or CRS and `context` supplies one, the clarification is skipped. |
-| `clarification_answer` | no | Echoes `intent_id` + `answers` from a prior clarification turn. Each `answers[questionId]` must contain at least one non-blank value. |
+| `context` | no | `target_id` is only used as the default resolver for `only <tail>` scope clauses when the turn omits an explicit target. `default_crs` / `default_unit` satisfy missing CRS or unit values for `buffer`, `within`, and `reproject`. `hints` is accepted for forward-compatibility, but the current clause planner does not consume it yet. |
+| `clarification_answer` | no | Echoes `intent_id` + `answers` from a prior clarification turn. Each `answers[questionId]` must contain at least one non-blank value. Current single-select and confirmation questions consume only the first value in each array. |
 
-Response body (`200 OK` for any well-formed request; `400` Problem Details only for malformed JSON or invalid/missing `turn` / `spec`):
+Response body (`200 OK` + `application/json` for any well-formed request; `400` + `application/problem+json` for malformed JSON or invalid/missing `turn` / `spec`):
 
 ```json
 {
@@ -62,8 +62,9 @@ Each non-`400` response activates one branch: success includes `mutation`, ambig
 - `mutation.next_spec` is the canonical JSON emitted by `SpecCanonicalizer.ToJson(nextDocument)` after `ISpecValidator.Validate` reported no error-severity diagnostics.
 - `mutation.sections_touched` / `sections_preserved` partition the canonical top-level section names (`sources`, `scope`, `compute`, `map`, `outputs`) based on which canonical sections changed after the applied mutations. Sections in `sections_preserved` round-trip byte-for-byte through the canonical emitter.
 - `clarifications[]` is one entry per `ClarificationQuestion`. Each entry carries `intent_id`, `kind` (one of `pick-dataset`, `pick-column`, `pick-value`, `specify-unit`, `specify-crs`, `choose-op`, `confirm-heavy-op`), `reason_codes[]`, `question_id`, `question_kind`, `prompt`, and typed `candidates[]`. `reason_codes[]` are deduplicated per clarification envelope, then copied onto each entry so card-by-card renderers still see the full ambiguity context.
+- Current S1 flows emit one clarification card/question at a time even though the retry payload remains `clarification_answer.answers{}` keyed by `question_id` to stay aligned with ADR-0027. Stale answers for questions that are no longer relevant are ignored; answers that do not match the current candidate set cause the service to re-emit the current clarification.
 - `warnings[]` echoes non-error `SpecDiagnostic`s surfaced during validation or catalog lookup.
-- `error.kind` ∈ `unresolvable`, `invalid_mutation`, `out_of_scope`. Ambiguous turns return `clarifications[]` and omit `error`. The response never includes a partially applied spec on error.
+- `error.kind` ∈ `unresolvable`, `invalid_mutation`, `out_of_scope`. Ambiguous turns return `clarifications[]` and omit `error`; the internal `ambiguous` state is not serialized on the wire. The response never includes a partially applied spec on error.
 
 ### `POST /v1/grounding/spec/summarize`
 
@@ -86,6 +87,7 @@ Response body:
 ```
 
 Summaries are a pure deterministic function of the canonical AST: no LLM is called. Section ids align with the canonical section names so callers can pair a summary with the `sections_touched` / `sections_preserved` list from a mutation response. Invalid or missing `spec` yields the same `400` Problem Details envelope as `mutate`.
+An empty `{}` spec is accepted here as well and yields `title_summary = "No sources, computations, or outputs are defined yet."` with `section_summaries = []`.
 
 ## Closed mutation catalog
 
@@ -129,7 +131,7 @@ Clauses containing `schedule`, `publish`, `deploy`, `dashboard`, or `app` short-
 
 ## Clarifications
 
-Structured clarification kinds reuse the ADR-0027 `ClarificationRequest` / `ClarificationQuestion` model. The wire envelope flattens questions into one entry per `clarifications[]` element so workspace renderers can render each one as a card.
+Structured clarification kinds reuse the ADR-0027 `ClarificationRequest` / `ClarificationQuestion` model. The wire envelope flattens questions into one entry per `clarifications[]` element so workspace renderers can render each one as a card. `candidates` is always present as an array on each card, including `[]` for confirmation-only prompts.
 
 | `kind` | `question_id` | `question_kind` | `reason_codes` | Typed candidate fields |
 |---|---|---|---|---|
@@ -151,7 +153,8 @@ All clarifications carry the same `intent_id` across turns when the caller echoe
 | `invalid_mutation` | The applier threw `InvalidOperationException` (e.g. `remove-source` on a missing id), or the post-apply `ISpecValidator` returned error-severity diagnostics. |
 | `out_of_scope` | Turn contains an S2/S3 keyword (`schedule`, `publish`, `deploy`, `dashboard`, `app`). The warnings list includes a pointer to `docs/developer/spec-grammar/v1.0/README.md`. |
 
-Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing `turn`, non-object `spec`, invalid `clarification_answer` shape. Ambiguous turns return `200` with `clarifications[]` and no `error`; other validation or grounding failures return `200` with a structured `error` envelope.
+Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing `turn`, non-object `spec`, invalid `clarification_answer` shape, or malformed JSON. Ambiguous turns return `200` with `clarifications[]` and no `error`; other validation or grounding failures return `200` with a structured `error` envelope.
+Malformed JSON is handled by the shared exception mapper and currently returns the generic `Bad Request` / `Invalid JSON payload.` envelope. Endpoint-level shape validation returns `title = "Invalid spec grounding request"` with a field-specific `detail`.
 
 ## Round-trip invariants
 

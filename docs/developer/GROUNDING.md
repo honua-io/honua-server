@@ -247,10 +247,14 @@ intents and catalog candidates. Editing a canonical [spec grammar](spec-grammar/
 document from natural language is a separate surface:
 
 - `POST /v1/grounding/spec/mutate` — NL turn → validated `SpecMutationPlan`
-  over a closed set of mutation kinds, with `sections_touched` /
-  `sections_preserved` for workspace diff rendering.
+  over a closed set of mutation kinds, with one active `mutation` /
+  `clarifications[]` / `error` branch per `200 application/json`
+  response and `sections_touched` / `sections_preserved` for workspace
+  diff rendering. Malformed or invalid wire payloads return
+  `400 application/problem+json`.
 - `POST /v1/grounding/spec/summarize` — canonical spec → deterministic
-  per-section English summaries.
+  per-section English summaries; empty `{}` yields the empty-analysis
+  title plus no section summaries.
 
 The spec-grounding surface reuses the ADR-0027 clarification shape
 (`ClarificationRequest` / `ClarificationQuestion`) but adds spec-specific
