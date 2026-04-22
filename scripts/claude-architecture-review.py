@@ -48,12 +48,39 @@ def get_honua_rules() -> str:
     except Exception as e:
         return f"# Architecture Rules (Error reading CLAUDE.md: {e})\n\nFallback to basic checks..."
 
+def git_ref_exists(ref: str) -> bool:
+    """Return True when the git ref resolves to a commit."""
+    try:
+        subprocess.run(
+            ['git', 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def resolve_base_ref(base_ref: str = "trunk") -> str:
+    """Prefer the remote tracking base so stale local branches do not widen diffs."""
+    if "/" in base_ref:
+        return base_ref
+
+    candidates = [f"origin/{base_ref}", base_ref]
+    for candidate in candidates:
+        if git_ref_exists(candidate):
+            return candidate
+
+    return base_ref
+
 def get_changed_files(base_ref: str = "trunk") -> List[str]:
     """Get list of changed C# files since base ref"""
     try:
+        resolved_base_ref = resolve_base_ref(base_ref)
+
         # Get changed files
         result = subprocess.run([
-            'git', 'diff', '--name-only', f"{base_ref}...HEAD"
+            'git', 'diff', '--name-only', f"{resolved_base_ref}...HEAD"
         ], capture_output=True, text=True, check=True)
 
         files = [f for f in result.stdout.strip().split('\n')
@@ -68,6 +95,8 @@ def get_file_content_and_diff(file_path: str, base_ref: str = "trunk") -> Dict[s
     diff = ""
 
     try:
+        resolved_base_ref = resolve_base_ref(base_ref)
+
         # Get current file content
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -75,7 +104,7 @@ def get_file_content_and_diff(file_path: str, base_ref: str = "trunk") -> Dict[s
 
         # Get diff
         result = subprocess.run([
-            'git', 'diff', f"{base_ref}...HEAD", '--', file_path
+            'git', 'diff', f"{resolved_base_ref}...HEAD", '--', file_path
         ], capture_output=True, text=True, check=True)
         diff = result.stdout
 
@@ -197,7 +226,10 @@ def local_architecture_review() -> Dict[str, Any]:
     """Perform local architecture review"""
     print("🔍 Running Claude Architecture Review...")
 
-    changed_files = get_changed_files()
+    base_ref = resolve_base_ref(os.environ.get("GITHUB_BASE_REF", "trunk"))
+    print(f"📍 Comparing changes against {base_ref}")
+
+    changed_files = get_changed_files(base_ref)
 
     if not changed_files:
         return {
@@ -214,7 +246,7 @@ def local_architecture_review() -> Dict[str, Any]:
     for file_path in changed_files:
         print(f"  🔍 Analyzing {file_path}...")
 
-        file_info = get_file_content_and_diff(file_path)
+        file_info = get_file_content_and_diff(file_path, base_ref)
         content = file_info["content"]
 
         if not content:

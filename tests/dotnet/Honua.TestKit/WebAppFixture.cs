@@ -63,6 +63,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public const int TestLayerId = 0;
 
+    private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
     private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long-for-security";
     private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
     private const string TestSecureConnectionName = "test";
@@ -138,6 +139,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                     {
                         ["ConnectionStrings:honua"] = _postgres.ConnectionString,
                         ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
+                        // Avoid live DNS dependency during startup validation in integration tests.
+                        ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
+                        ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
                         ["HONUA_SKIP_MIGRATIONS"] = "true",
                         ["Limits:Connections:RequestTimeout"] = "00:05:00",
                         ["Limits:Query:QueryTimeout"] = "00:02:00",
@@ -320,6 +324,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                             {
                                 ["ConnectionStrings:honua"] = _sharedPostgres.ConnectionString,
                                 ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
+                                // Avoid live DNS dependency during startup validation in integration tests.
+                                ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
+                                ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
                                 ["HONUA_DEV_AUTH"] = "true",
                                 ["HONUA_ADMIN_PASSWORD"] = SharedAdminPassword,
                                 ["HONUA_SKIP_MIGRATIONS"] = "true",
