@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.6" />
+    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
   </ItemGroup>
 
