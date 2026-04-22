@@ -98,6 +98,48 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GroundingMutate)]
     [Endpoint("POST /v1/grounding/spec/mutate")]
+    public async Task Mutate_MismatchedClarificationIntent_ReissuesCurrentClarification()
+    {
+        var firstResponse = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement("{}"),
+            turn = "use hospitals as hospitals"
+        });
+
+        using var firstPayload = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+        var expectedIntentId = firstPayload.RootElement
+            .GetProperty("clarifications")[0]
+            .GetProperty("intent_id")
+            .GetString();
+
+        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        {
+            spec = SpecGroundingTestSupport.ParseJsonElement("{}"),
+            turn = "use hospitals as hospitals",
+            clarification_answer = new
+            {
+                intent_id = "spec-grounding-other",
+                answers = new Dictionary<string, string[]>
+                {
+                    ["dataset.selection"] = ["catalog:layer:3"]
+                }
+            }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        root.TryGetProperty("mutation", out _).Should().BeFalse();
+        root.TryGetProperty("error", out _).Should().BeFalse();
+        var clarification = root.GetProperty("clarifications")[0];
+        clarification.GetProperty("intent_id").GetString().Should().Be(expectedIntentId);
+        clarification.GetProperty("kind").GetString().Should().Be("pick-dataset");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingMutate)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
     public async Task Mutate_InvalidMutation_ReturnsStructuredErrorWithoutErrorDiagnosticsInWarnings()
     {
         using var harness = new SpecGroundingHarness(SpecGroundingTestSupport.CreateLayer(4, "Zones"));

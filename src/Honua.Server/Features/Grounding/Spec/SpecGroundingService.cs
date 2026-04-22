@@ -4,6 +4,8 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -60,7 +62,6 @@ internal sealed partial class SpecGroundingService
         SpecGroundingLog.MutateStarted(_logger, turn.Length, retried);
 
         var warnings = new List<SpecDiagnostic>();
-        var intentId = clarificationAnswer?.IntentId;
         var layers = await LoadLayersAsync(warnings, cancellationToken).ConfigureAwait(false);
         var catalogSnapshot = layers.Count == 0
             ? StaticSpecCatalogSnapshot.Empty
@@ -112,7 +113,6 @@ internal sealed partial class SpecGroundingService
                 normalizedContext,
                 clarificationAnswer,
                 layers,
-                intentId,
                 cancellationToken).ConfigureAwait(false);
 
             warnings.AddRange(clauseResult.Warnings);
@@ -251,7 +251,6 @@ internal sealed partial class SpecGroundingService
         SpecGroundingContext context,
         ClarificationResponse? clarificationAnswer,
         IReadOnlyList<LayerDefinition> layers,
-        string? intentId,
         CancellationToken cancellationToken)
     {
         _ = cancellationToken;
@@ -286,8 +285,7 @@ internal sealed partial class SpecGroundingService
                 sourceSummary.SourcePhrase,
                 sourceSummary.SourceId,
                 layers,
-                clarificationAnswer,
-                intentId).ConfigureAwait(false);
+                clarificationAnswer).ConfigureAwait(false);
         }
 
         if (TryParseUseDataset(clause, out var useDataset))
@@ -297,8 +295,7 @@ internal sealed partial class SpecGroundingService
                 useDataset.SourcePhrase,
                 useDataset.SourceId,
                 layers,
-                clarificationAnswer,
-                intentId).ConfigureAwait(false);
+                clarificationAnswer).ConfigureAwait(false);
         }
 
         if (TryParseSummaryScope(clause, out var summaryScope))
@@ -316,15 +313,18 @@ internal sealed partial class SpecGroundingService
 
         if (TryParseOnlyClause(clause, out var onlyTail))
         {
-            return ResolveOnlyClause(document, onlyTail, context, layers, clarificationAnswer, intentId);
+            return ResolveOnlyClause(document, onlyTail, context, layers, clarificationAnswer);
         }
 
         if (TryParseSummaryCompute(clause, out var summaryCompute))
         {
-            if (RequiresHeavyConfirmation(summaryCompute.OperatorName) &&
-                !IsConfirmed(clarificationAnswer, "heavy.confirm"))
+            if (RequiresHeavyConfirmation(summaryCompute.OperatorName))
             {
-                return ClausePlanResult.FromClarification(CreateHeavyConfirmation(intentId, summaryCompute.OperatorName));
+                var clarification = CreateHeavyConfirmation(summaryCompute.OperatorName);
+                if (!IsConfirmed(clarificationAnswer, clarification.Request.IntentId, "heavy.confirm"))
+                {
+                    return ClausePlanResult.FromClarification(clarification);
+                }
             }
 
             return ClausePlanResult.FromMutation(new AddComputeMutation(
@@ -343,16 +343,26 @@ internal sealed partial class SpecGroundingService
                     $"Buffer target '{buffer.Target}' does not match any known source or compute id.");
             }
 
-            var unit = buffer.Unit ?? context.DefaultUnit ?? GetSingleAnswer(clarificationAnswer, "unit.selection");
+            var unit = buffer.Unit ?? context.DefaultUnit;
             if (string.IsNullOrWhiteSpace(unit))
             {
-                return ClausePlanResult.FromClarification(CreateUnitClarification(intentId));
+                var clarification = CreateUnitClarification();
+                unit = GetSingleAnswer(clarificationAnswer, clarification.Request.IntentId, "unit.selection");
+                if (string.IsNullOrWhiteSpace(unit))
+                {
+                    return ClausePlanResult.FromClarification(clarification);
+                }
             }
 
-            var crs = buffer.Crs ?? context.DefaultCrs ?? GetSingleAnswer(clarificationAnswer, "crs.selection");
+            var crs = buffer.Crs ?? context.DefaultCrs;
             if (string.IsNullOrWhiteSpace(crs))
             {
-                return ClausePlanResult.FromClarification(CreateCrsClarification(intentId));
+                var clarification = CreateCrsClarification();
+                crs = GetSingleAnswer(clarificationAnswer, clarification.Request.IntentId, "crs.selection");
+                if (string.IsNullOrWhiteSpace(crs))
+                {
+                    return ClausePlanResult.FromClarification(clarification);
+                }
             }
 
             var computeId = buffer.ComputeId ?? NormalizeIdentifier($"{targetId}_buffer");
@@ -369,16 +379,26 @@ internal sealed partial class SpecGroundingService
 
         if (TryParseWithin(clause, out var within))
         {
-            var unit = within.Unit ?? context.DefaultUnit ?? GetSingleAnswer(clarificationAnswer, "unit.selection");
+            var unit = within.Unit ?? context.DefaultUnit;
             if (string.IsNullOrWhiteSpace(unit))
             {
-                return ClausePlanResult.FromClarification(CreateUnitClarification(intentId));
+                var clarification = CreateUnitClarification();
+                unit = GetSingleAnswer(clarificationAnswer, clarification.Request.IntentId, "unit.selection");
+                if (string.IsNullOrWhiteSpace(unit))
+                {
+                    return ClausePlanResult.FromClarification(clarification);
+                }
             }
 
-            var crs = within.Crs ?? context.DefaultCrs ?? GetSingleAnswer(clarificationAnswer, "crs.selection");
+            var crs = within.Crs ?? context.DefaultCrs;
             if (string.IsNullOrWhiteSpace(crs))
             {
-                return ClausePlanResult.FromClarification(CreateCrsClarification(intentId));
+                var clarification = CreateCrsClarification();
+                crs = GetSingleAnswer(clarificationAnswer, clarification.Request.IntentId, "crs.selection");
+                if (string.IsNullOrWhiteSpace(crs))
+                {
+                    return ClausePlanResult.FromClarification(clarification);
+                }
             }
 
             var leftResolution = await ResolveSourceReferenceAsync(
@@ -386,8 +406,7 @@ internal sealed partial class SpecGroundingService
                 within.LeftPhrase,
                 sourceIdHint: null,
                 layers,
-                clarificationAnswer,
-                intentId).ConfigureAwait(false);
+                clarificationAnswer).ConfigureAwait(false);
             if (!leftResolution.IsSuccess)
             {
                 return leftResolution.ToClauseResult();
@@ -405,8 +424,7 @@ internal sealed partial class SpecGroundingService
                 within.RightPhrase,
                 sourceIdHint: null,
                 layers,
-                clarificationAnswer,
-                intentId).ConfigureAwait(false);
+                clarificationAnswer).ConfigureAwait(false);
             if (!rightResolution.IsSuccess)
             {
                 return rightResolution.ToClauseResult();
@@ -456,16 +474,21 @@ internal sealed partial class SpecGroundingService
 
         if (ContainsNearAmbiguity(lower) && !HasDirectOperator(lower))
         {
-            var answer = GetSingleAnswer(clarificationAnswer, "operator.selection");
+            var clarification = CreateOperatorClarification();
+            var answer = GetSingleAnswer(clarificationAnswer, clarification.Request.IntentId, "operator.selection");
             if (string.IsNullOrWhiteSpace(answer))
             {
-                return ClausePlanResult.FromClarification(CreateOperatorClarification(intentId));
+                return ClausePlanResult.FromClarification(clarification);
             }
         }
 
-        if (RequiresHeavyConfirmation(lower) && !IsConfirmed(clarificationAnswer, "heavy.confirm"))
+        if (RequiresHeavyConfirmation(lower))
         {
-            return ClausePlanResult.FromClarification(CreateHeavyConfirmation(intentId, "zonal_stats"));
+            var clarification = CreateHeavyConfirmation("zonal_stats");
+            if (!IsConfirmed(clarificationAnswer, clarification.Request.IntentId, "heavy.confirm"))
+            {
+                return ClausePlanResult.FromClarification(clarification);
+            }
         }
 
         if (TryParseShowMap(clause, out var map))
@@ -526,10 +549,15 @@ internal sealed partial class SpecGroundingService
                     $"Reproject target '{reproject.Target}' does not match any known source or compute id.");
             }
 
-            var crs = reproject.Crs ?? context.DefaultCrs ?? GetSingleAnswer(clarificationAnswer, "crs.selection");
+            var crs = reproject.Crs ?? context.DefaultCrs;
             if (string.IsNullOrWhiteSpace(crs))
             {
-                return ClausePlanResult.FromClarification(CreateCrsClarification(intentId));
+                var clarification = CreateCrsClarification();
+                crs = GetSingleAnswer(clarificationAnswer, clarification.Request.IntentId, "crs.selection");
+                if (string.IsNullOrWhiteSpace(crs))
+                {
+                    return ClausePlanResult.FromClarification(clarification);
+                }
             }
 
             var computeId = reproject.ComputeId ?? NormalizeIdentifier($"{targetId}_reproject");
@@ -548,8 +576,7 @@ internal sealed partial class SpecGroundingService
         string tail,
         SpecGroundingContext context,
         IReadOnlyList<LayerDefinition> layers,
-        ClarificationResponse? clarificationAnswer,
-        string? intentId)
+        ClarificationResponse? clarificationAnswer)
     {
         var targetId = ResolveScopeTarget(document, context, tail);
         if (targetId is null)
@@ -586,34 +613,62 @@ internal sealed partial class SpecGroundingService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var resolvedValue = valueCandidates.Length switch
+        string? resolvedValue;
+        if (valueCandidates.Length > 1)
         {
-            > 1 when TryGetSelectedValue(clarificationAnswer, valueCandidates, out var selectedValue) => selectedValue,
-            > 1 => null,
-            > 0 => valueCandidates[0],
-            _ => tail.Trim()
-        };
+            var clarification = CreateValueClarification(valueCandidates);
+            if (!TryGetSelectedValue(
+                    clarificationAnswer,
+                    clarification.Request.IntentId,
+                    valueCandidates,
+                    out var selectedValue))
+            {
+                return ClausePlanResult.FromClarification(clarification);
+            }
 
-        if (resolvedValue is null)
+            resolvedValue = selectedValue;
+        }
+        else
         {
-            return ClausePlanResult.FromClarification(CreateValueClarification(intentId, valueCandidates));
+            resolvedValue = valueCandidates.Length > 0 ? valueCandidates[0] : tail.Trim();
         }
 
-        var field = fieldCandidates.Length switch
+        FieldDefinition? field;
+        if (fieldCandidates.Length > 1)
         {
-            > 1 when TryGetSelectedField(clarificationAnswer, fieldCandidates, out var selectedField) => selectedField,
-            > 1 => null,
-            1 => fieldCandidates[0],
-            _ when stringFields.Length == 1 => stringFields[0],
-            _ when TryGetSelectedField(clarificationAnswer, stringFields, out var selectedFallbackField) => selectedFallbackField,
-            _ => null
-        };
+            var clarification = CreateColumnClarification(fieldCandidates);
+            if (!TryGetSelectedField(
+                    clarificationAnswer,
+                    clarification.Request.IntentId,
+                    fieldCandidates,
+                    out var selectedField))
+            {
+                return ClausePlanResult.FromClarification(clarification);
+            }
 
-        if (field is null)
+            field = selectedField;
+        }
+        else if (fieldCandidates.Length == 1)
         {
-            return ClausePlanResult.FromClarification(CreateColumnClarification(
-                intentId,
-                fieldCandidates.Length > 1 ? fieldCandidates : stringFields));
+            field = fieldCandidates[0];
+        }
+        else if (stringFields.Length == 1)
+        {
+            field = stringFields[0];
+        }
+        else
+        {
+            var clarification = CreateColumnClarification(stringFields);
+            if (!TryGetSelectedField(
+                    clarificationAnswer,
+                    clarification.Request.IntentId,
+                    stringFields,
+                    out var selectedFallbackField))
+            {
+                return ClausePlanResult.FromClarification(clarification);
+            }
+
+            field = selectedFallbackField;
         }
 
         var value = TrimKnownFieldSuffix(resolvedValue, field.Name);
@@ -626,16 +681,14 @@ internal sealed partial class SpecGroundingService
         string sourcePhrase,
         string? sourceIdHint,
         IReadOnlyList<LayerDefinition> layers,
-        ClarificationResponse? clarificationAnswer,
-        string? intentId)
+        ClarificationResponse? clarificationAnswer)
     {
         var resolution = await ResolveSourceReferenceAsync(
             document,
             sourcePhrase,
             sourceIdHint,
             layers,
-            clarificationAnswer,
-            intentId).ConfigureAwait(false);
+            clarificationAnswer).ConfigureAwait(false);
 
         return resolution.ToClauseResult();
     }
@@ -645,8 +698,7 @@ internal sealed partial class SpecGroundingService
         string sourcePhrase,
         string? sourceIdHint,
         IReadOnlyList<LayerDefinition> layers,
-        ClarificationResponse? clarificationAnswer,
-        string? intentId)
+        ClarificationResponse? clarificationAnswer)
     {
         var existing = TryMatchExistingSource(document, sourcePhrase);
         if (existing is not null)
@@ -671,9 +723,14 @@ internal sealed partial class SpecGroundingService
 
         if (candidates.Length > 1)
         {
-            if (!TryGetSelectedLayer(clarificationAnswer, candidates, out var selectedLayer))
+            var clarification = CreateDatasetClarification(candidates);
+            if (!TryGetSelectedLayer(
+                    clarificationAnswer,
+                    clarification.Request.IntentId,
+                    candidates,
+                    out var selectedLayer))
             {
-                return SourceResolution.FromClarification(CreateDatasetClarification(intentId, candidates));
+                return SourceResolution.FromClarification(clarification);
             }
 
             var selectedSourceId = ResolveSourceId(document, sourceIdHint ?? NormalizeIdentifier(selectedLayer.Name));
@@ -1013,21 +1070,23 @@ internal sealed partial class SpecGroundingService
 
     private static bool TryGetSelectedLayer(
         ClarificationResponse? clarificationAnswer,
+        string expectedIntentId,
         IReadOnlyList<LayerMatch> candidates,
         out LayerDefinition layer)
     {
         layer = null!;
-        return TryGetSingleAnswer(clarificationAnswer, "dataset.selection", out var selection) &&
+        return TryGetSingleAnswer(clarificationAnswer, expectedIntentId, "dataset.selection", out var selection) &&
                TryResolveLayerBySelection(candidates.Select(static candidate => candidate.Layer).ToArray(), selection, out layer);
     }
 
     private static bool TryGetSelectedField(
         ClarificationResponse? clarificationAnswer,
+        string expectedIntentId,
         IReadOnlyList<FieldDefinition> candidates,
         out FieldDefinition field)
     {
         field = null!;
-        if (!TryGetSingleAnswer(clarificationAnswer, "column.selection", out var selection))
+        if (!TryGetSingleAnswer(clarificationAnswer, expectedIntentId, "column.selection", out var selection))
         {
             return false;
         }
@@ -1039,11 +1098,12 @@ internal sealed partial class SpecGroundingService
 
     private static bool TryGetSelectedValue(
         ClarificationResponse? clarificationAnswer,
+        string expectedIntentId,
         IReadOnlyList<string> candidates,
         out string value)
     {
         value = string.Empty;
-        if (!TryGetSingleAnswer(clarificationAnswer, "value.selection", out var selection))
+        if (!TryGetSingleAnswer(clarificationAnswer, expectedIntentId, "value.selection", out var selection))
         {
             return false;
         }
@@ -1061,16 +1121,18 @@ internal sealed partial class SpecGroundingService
 
     private static bool TryGetSingleAnswer(
         ClarificationResponse? clarificationAnswer,
+        string expectedIntentId,
         string questionId,
         out string value)
     {
         value = string.Empty;
-        if (clarificationAnswer is null)
+        var response = clarificationAnswer;
+        if (response is null || !HasMatchingClarificationIntent(response, expectedIntentId))
         {
             return false;
         }
 
-        if (!clarificationAnswer.Answers.TryGetValue(questionId, out var values) || values.Count == 0)
+        if (!response.Answers.TryGetValue(questionId, out var values) || values.Count == 0)
         {
             return false;
         }
@@ -1079,205 +1141,147 @@ internal sealed partial class SpecGroundingService
         return !string.IsNullOrWhiteSpace(value);
     }
 
-    private static string GetSingleAnswer(ClarificationResponse? clarificationAnswer, string questionId)
+    private static string GetSingleAnswer(
+        ClarificationResponse? clarificationAnswer,
+        string expectedIntentId,
+        string questionId)
     {
-        return TryGetSingleAnswer(clarificationAnswer, questionId, out var value)
+        return TryGetSingleAnswer(clarificationAnswer, expectedIntentId, questionId, out var value)
             ? value
             : string.Empty;
     }
 
-    private static bool IsConfirmed(ClarificationResponse? clarificationAnswer, string questionId)
+    private static bool IsConfirmed(
+        ClarificationResponse? clarificationAnswer,
+        string expectedIntentId,
+        string questionId)
     {
-        var value = GetSingleAnswer(clarificationAnswer, questionId);
+        var value = GetSingleAnswer(clarificationAnswer, expectedIntentId, questionId);
         return string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(value, "confirm", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildIntentId(string? existingIntentId)
-        => !string.IsNullOrWhiteSpace(existingIntentId)
-            ? existingIntentId
-            : $"spec-grounding-{Guid.NewGuid():N}";
+    private static bool HasMatchingClarificationIntent(
+        ClarificationResponse? clarificationAnswer,
+        string expectedIntentId)
+        => clarificationAnswer is not null &&
+           string.Equals(clarificationAnswer.IntentId, expectedIntentId, StringComparison.Ordinal);
 
-    private static SpecClarificationEnvelope CreateDatasetClarification(string? intentId, IEnumerable<LayerMatch> candidates)
+    private static SpecClarificationEnvelope CreateDatasetClarification(IEnumerable<LayerMatch> candidates)
     {
         var list = candidates.ToArray();
         var questionId = "dataset.selection";
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.AmbiguousDataset,
+            questionId,
+            ClarificationQuestionKind.SingleSelect,
+            "Which dataset should be used?",
+            list.Select(match => new ClarificationOption
             {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.AmbiguousDataset],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.SingleSelect,
-                        Prompt = "Which dataset should be used?",
-                        Options = list.Select(match => new ClarificationOption
-                        {
-                            Id = $"catalog:layer:{match.Layer.Id}",
-                            Label = match.Layer.Name
-                        }).ToArray()
-                    }
-                ]
-            },
-            new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal)
+                Id = $"catalog:layer:{match.Layer.Id}",
+                Label = match.Layer.Name
+            }).ToArray(),
+            list.Select(match => new SpecClarificationCandidate
             {
-                [questionId] = list.Select(match => new SpecClarificationCandidate
-                {
-                    CandidateType = "dataset",
-                    Id = $"catalog:layer:{match.Layer.Id}",
-                    Label = match.Layer.Name,
-                    CatalogRef = $"catalog:layer:{match.Layer.Id}",
-                    SchemaPreview = match.Layer.Fields
-                        .Where(field => !field.IsGeometry)
-                        .Take(5)
-                        .Select(field => field.Name)
-                        .ToArray()
-                }).ToArray()
-            });
+                CandidateType = "dataset",
+                Id = $"catalog:layer:{match.Layer.Id}",
+                Label = match.Layer.Name,
+                CatalogRef = $"catalog:layer:{match.Layer.Id}",
+                SchemaPreview = match.Layer.Fields
+                    .Where(field => !field.IsGeometry)
+                    .Take(5)
+                    .Select(field => field.Name)
+                    .ToArray()
+            }).ToArray());
     }
 
-    private static SpecClarificationEnvelope CreateColumnClarification(string? intentId, IEnumerable<FieldDefinition> fields)
+    private static SpecClarificationEnvelope CreateColumnClarification(IEnumerable<FieldDefinition> fields)
     {
         var list = fields.ToArray();
         var questionId = "column.selection";
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.AmbiguousColumn,
+            questionId,
+            ClarificationQuestionKind.SingleSelect,
+            "Which column should the filter use?",
+            list.Select(field => new ClarificationOption
             {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.AmbiguousColumn],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.SingleSelect,
-                        Prompt = "Which column should the filter use?",
-                        Options = list.Select(field => new ClarificationOption
-                        {
-                            Id = field.Name,
-                            Label = field.Name
-                        }).ToArray()
-                    }
-                ]
-            },
-            new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal)
+                Id = field.Name,
+                Label = field.Name
+            }).ToArray(),
+            list.Select(field => new SpecClarificationCandidate
             {
-                [questionId] = list.Select(field => new SpecClarificationCandidate
-                {
-                    CandidateType = "column",
-                    Id = field.Name,
-                    Label = field.Name,
-                    ColumnName = field.Name,
-                    TypeRef = field.Type.ToString(),
-                    Nullable = field.Nullable,
-                    Sample = field.Description
-                }).ToArray()
-            });
+                CandidateType = "column",
+                Id = field.Name,
+                Label = field.Name,
+                ColumnName = field.Name,
+                TypeRef = field.Type.ToString(),
+                Nullable = field.Nullable,
+                Sample = field.Description
+            }).ToArray());
     }
 
-    private static SpecClarificationEnvelope CreateValueClarification(string? intentId, IEnumerable<string> values)
+    private static SpecClarificationEnvelope CreateValueClarification(IEnumerable<string> values)
     {
         var list = values.Select(value => value.Trim()).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var questionId = "value.selection";
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.AmbiguousFilterValue,
+            questionId,
+            ClarificationQuestionKind.SingleSelect,
+            "Which value should the filter use?",
+            list.Select(value => new ClarificationOption
             {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.AmbiguousFilterValue],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.SingleSelect,
-                        Prompt = "Which value should the filter use?",
-                        Options = list.Select(value => new ClarificationOption
-                        {
-                            Id = value,
-                            Label = value
-                        }).ToArray()
-                    }
-                ]
-            },
-            new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal)
+                Id = value,
+                Label = value
+            }).ToArray(),
+            list.Select(value => new SpecClarificationCandidate
             {
-                [questionId] = list.Select(value => new SpecClarificationCandidate
-                {
-                    CandidateType = "value",
-                    Id = value,
-                    Label = value,
-                    Value = value
-                }).ToArray()
-            });
+                CandidateType = "value",
+                Id = value,
+                Label = value,
+                Value = value
+            }).ToArray());
     }
 
-    private static SpecClarificationEnvelope CreateUnitClarification(string? intentId)
+    private static SpecClarificationEnvelope CreateUnitClarification()
     {
         const string questionId = "unit.selection";
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.AmbiguousUnit,
+            questionId,
+            ClarificationQuestionKind.SingleSelect,
+            "Which unit should be used?",
+            UnitCandidates.Select(unit => new ClarificationOption { Id = unit, Label = unit }).ToArray(),
+            UnitCandidates.Select(unit => new SpecClarificationCandidate
             {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.AmbiguousUnit],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.SingleSelect,
-                        Prompt = "Which unit should be used?",
-                        Options = UnitCandidates.Select(unit => new ClarificationOption { Id = unit, Label = unit }).ToArray()
-                    }
-                ]
-            },
-            new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal)
-            {
-                [questionId] = UnitCandidates.Select(unit => new SpecClarificationCandidate
-                {
-                    CandidateType = "unit",
-                    Id = unit,
-                    Label = unit,
-                    Unit = unit
-                }).ToArray()
-            });
+                CandidateType = "unit",
+                Id = unit,
+                Label = unit,
+                Unit = unit
+            }).ToArray());
     }
 
-    private static SpecClarificationEnvelope CreateCrsClarification(string? intentId)
+    private static SpecClarificationEnvelope CreateCrsClarification()
     {
         const string questionId = "crs.selection";
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.AmbiguousCrs,
+            questionId,
+            ClarificationQuestionKind.SingleSelect,
+            "Which projected CRS should be used?",
+            CrsCandidates.Select(crs => new ClarificationOption { Id = crs, Label = crs }).ToArray(),
+            CrsCandidates.Select(crs => new SpecClarificationCandidate
             {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.AmbiguousCrs],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.SingleSelect,
-                        Prompt = "Which projected CRS should be used?",
-                        Options = CrsCandidates.Select(crs => new ClarificationOption { Id = crs, Label = crs }).ToArray()
-                    }
-                ]
-            },
-            new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal)
-            {
-                [questionId] = CrsCandidates.Select(crs => new SpecClarificationCandidate
-                {
-                    CandidateType = "crs",
-                    Id = crs,
-                    Label = crs,
-                    Crs = crs
-                }).ToArray()
-            });
+                CandidateType = "crs",
+                Id = crs,
+                Label = crs,
+                Crs = crs
+            }).ToArray());
     }
 
-    private static SpecClarificationEnvelope CreateOperatorClarification(string? intentId)
+    private static SpecClarificationEnvelope CreateOperatorClarification()
     {
         const string questionId = "operator.selection";
         var operators = new[]
@@ -1286,51 +1290,103 @@ internal sealed partial class SpecGroundingService
             new SpecClarificationCandidate { CandidateType = "operator", Id = "spatial_join", Label = "spatial_join", OperatorName = "spatial_join" }
         };
 
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.AmbiguousProcess,
+            questionId,
+            ClarificationQuestionKind.SingleSelect,
+            "Which operation should be used?",
+            operators.Select(candidate => new ClarificationOption
             {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.AmbiguousProcess],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.SingleSelect,
-                        Prompt = "Which operation should be used?",
-                        Options = operators.Select(candidate => new ClarificationOption
-                        {
-                            Id = candidate.Id,
-                            Label = candidate.Label
-                        }).ToArray()
-                    }
-                ]
-            },
+                Id = candidate.Id,
+                Label = candidate.Label
+            }).ToArray(),
+            operators);
+    }
+
+    private static SpecClarificationEnvelope CreateHeavyConfirmation(string operatorName)
+    {
+        const string questionId = "heavy.confirm";
+        return CreateClarificationEnvelope(
+            ClarificationReasonCode.HeavyOperationConfirmation,
+            questionId,
+            ClarificationQuestionKind.Confirmation,
+            $"Confirm that the heavy operator '{operatorName}' should be added.",
+            options: null,
+            candidates: []);
+    }
+
+    private static SpecClarificationEnvelope CreateClarificationEnvelope(
+        ClarificationReasonCode reasonCode,
+        string questionId,
+        ClarificationQuestionKind questionKind,
+        string prompt,
+        IReadOnlyList<ClarificationOption>? options,
+        IReadOnlyList<SpecClarificationCandidate> candidates)
+    {
+        var question = new ClarificationQuestion
+        {
+            QuestionId = questionId,
+            Kind = questionKind,
+            Prompt = prompt,
+            Options = options
+        };
+
+        var request = new ClarificationRequest
+        {
+            IntentId = BuildIntentId(reasonCode, question, candidates),
+            ReasonCodes = [reasonCode],
+            Questions = [question]
+        };
+
+        return new SpecClarificationEnvelope(
+            request,
             new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal)
             {
-                [questionId] = operators
+                [questionId] = candidates
             });
     }
 
-    private static SpecClarificationEnvelope CreateHeavyConfirmation(string? intentId, string operatorName)
+    private static string BuildIntentId(
+        ClarificationReasonCode reasonCode,
+        ClarificationQuestion question,
+        IReadOnlyList<SpecClarificationCandidate> candidates)
     {
-        const string questionId = "heavy.confirm";
-        return new SpecClarificationEnvelope(
-            new ClarificationRequest
-            {
-                IntentId = BuildIntentId(intentId),
-                ReasonCodes = [ClarificationReasonCode.HeavyOperationConfirmation],
-                Questions =
-                [
-                    new ClarificationQuestion
-                    {
-                        QuestionId = questionId,
-                        Kind = ClarificationQuestionKind.Confirmation,
-                        Prompt = $"Confirm that the heavy operator '{operatorName}' should be added."
-                    }
-                ]
-            },
-            new Dictionary<string, IReadOnlyList<SpecClarificationCandidate>>(StringComparer.Ordinal));
+        // The intent id fingerprints the outstanding clarification state so
+        // stale answers cannot be rebound to a different candidate set.
+        var builder = new StringBuilder()
+            .Append("reason=").Append(reasonCode).Append('\n')
+            .Append("question=").Append(question.QuestionId).Append('\n')
+            .Append("kind=").Append(question.Kind).Append('\n')
+            .Append("prompt=").Append(question.Prompt).Append('\n');
+
+        foreach (var option in question.Options ?? [])
+        {
+            builder
+                .Append("option=").Append(option.Id).Append('|')
+                .Append(option.Label).Append('\n');
+        }
+
+        foreach (var candidate in candidates)
+        {
+            builder
+                .Append("candidate=").Append(candidate.CandidateType).Append('|')
+                .Append(candidate.Id).Append('|')
+                .Append(candidate.Label).Append('|')
+                .Append(candidate.CatalogRef ?? string.Empty).Append('|')
+                .Append(string.Join(",", candidate.SchemaPreview ?? Array.Empty<string>())).Append('|')
+                .Append(candidate.ColumnName ?? string.Empty).Append('|')
+                .Append(candidate.TypeRef ?? string.Empty).Append('|')
+                .Append(candidate.Nullable?.ToString() ?? string.Empty).Append('|')
+                .Append(candidate.Sample ?? string.Empty).Append('|')
+                .Append(candidate.Value ?? string.Empty).Append('|')
+                .Append(candidate.Count?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty).Append('|')
+                .Append(candidate.Unit ?? string.Empty).Append('|')
+                .Append(candidate.Crs ?? string.Empty).Append('|')
+                .Append(candidate.OperatorName ?? string.Empty).Append('\n');
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+        return $"spec-grounding-{Convert.ToHexString(hash.AsSpan(0, 12)).ToLowerInvariant()}";
     }
 
     private static bool RequiresHeavyConfirmation(string value)

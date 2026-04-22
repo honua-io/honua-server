@@ -258,9 +258,10 @@ document from natural language is a separate surface:
 
 The spec-grounding surface reuses the ADR-0027 clarification shape
 (`ClarificationRequest` / `ClarificationQuestion`) but adds spec-specific
-reason codes (`ambiguous_column`, `ambiguous_filter_value`,
-`ambiguous_unit`, `ambiguous_crs`, `heavy_operation_confirmation`) and
-typed candidate payloads. See [Spec Grounding v1.0](spec-grounding/v1.0/README.md)
+reason codes (`ambiguous_dataset`, `ambiguous_column`,
+`ambiguous_filter_value`, `ambiguous_unit`, `ambiguous_crs`,
+`ambiguous_process`, `heavy_operation_confirmation`) and typed
+candidate payloads. See [Spec Grounding v1.0](spec-grounding/v1.0/README.md)
 for the full contract and clause grammar.
 
 ## Related

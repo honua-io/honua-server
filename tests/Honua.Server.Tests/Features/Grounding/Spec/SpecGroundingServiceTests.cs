@@ -44,12 +44,21 @@ public sealed class SpecGroundingServiceTests
             SpecGroundingTestSupport.CreateLayer(1, "Hospitals North"),
             SpecGroundingTestSupport.CreateLayer(2, "Hospitals South"));
 
+        var firstResult = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use hospitals as hospitals",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+        var intentId = firstResult.Clarification!.Request.IntentId;
+
         var result = await harness.Service.MutateAsync(
             SpecGroundingTestSupport.CreateEmptySpecDocument(),
             "use hospitals as hospitals",
             context: null,
             clarificationAnswer: CreateClarificationResponse(
-                "spec-grounding-dataset",
+                intentId,
                 "dataset.selection",
                 "catalog:layer:2"),
             principal: null,
@@ -62,6 +71,41 @@ public sealed class SpecGroundingServiceTests
         using var payload = JsonDocument.Parse(result.Mutation!.NextSpecCanonicalJson);
         var source = payload.RootElement.GetProperty("sources")[0];
         source.GetProperty("ref").GetString().Should().Be("catalog:layer:2");
+    }
+
+    [Fact]
+    public async Task Mutate_WithMismatchedDatasetClarificationIntent_ReissuesCurrentClarification()
+    {
+        using var harness = CreateHarness(
+            SpecGroundingTestSupport.CreateLayer(1, "Hospitals North"),
+            SpecGroundingTestSupport.CreateLayer(2, "Hospitals South"));
+
+        var firstResult = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use hospitals as hospitals",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+        var expectedIntentId = firstResult.Clarification!.Request.IntentId;
+
+        var result = await harness.Service.MutateAsync(
+            SpecGroundingTestSupport.CreateEmptySpecDocument(),
+            "use hospitals as hospitals",
+            context: null,
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-other",
+                "dataset.selection",
+                "catalog:layer:2"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().Be(SpecGroundingErrorKind.Ambiguous);
+        result.Mutation.Should().BeNull();
+        result.Clarification.Should().NotBeNull();
+        result.Clarification!.Request.IntentId.Should().Be(expectedIntentId);
+        result.Clarification.Request.IntentId.Should().NotBe("spec-grounding-other");
+        result.Clarification.Request.Questions[0].QuestionId.Should().Be("dataset.selection");
     }
 
     [Fact]
@@ -139,16 +183,26 @@ public sealed class SpecGroundingServiceTests
                     new FieldDefinition("category", FieldType.String, Length: 64)
                 ]));
 
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source parcels { type = "layer", ref = "catalog:layer:1" }
+            """);
+        var firstResult = await harness.Service.MutateAsync(
+            currentSpec,
+            "only status",
+            new SpecGroundingContext(TargetId: "parcels"),
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+        var intentId = firstResult.Clarification!.Request.IntentId;
+
         var result = await harness.Service.MutateAsync(
-            harness.Parse(
-                """
-                grammar "v1.0"
-                source parcels { type = "layer", ref = "catalog:layer:1" }
-                """),
+            currentSpec,
             "only status",
             new SpecGroundingContext(TargetId: "parcels"),
             clarificationAnswer: CreateClarificationResponse(
-                "spec-grounding-column",
+                intentId,
                 "column.selection",
                 "category"),
             principal: null,
@@ -208,16 +262,26 @@ public sealed class SpecGroundingServiceTests
                     new FieldDefinition("zone", FieldType.String, Length: 16)
                 ]));
 
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source parcels { type = "layer", ref = "catalog:layer:1" }
+            """);
+        var firstResult = await harness.Service.MutateAsync(
+            currentSpec,
+            "only AE or VE",
+            new SpecGroundingContext(TargetId: "parcels"),
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+        var intentId = firstResult.Clarification!.Request.IntentId;
+
         var result = await harness.Service.MutateAsync(
-            harness.Parse(
-                """
-                grammar "v1.0"
-                source parcels { type = "layer", ref = "catalog:layer:1" }
-                """),
+            currentSpec,
             "only AE or VE",
             new SpecGroundingContext(TargetId: "parcels"),
             clarificationAnswer: CreateClarificationResponse(
-                "spec-grounding-value",
+                intentId,
                 "value.selection",
                 "VE"),
             principal: null,
@@ -280,12 +344,14 @@ public sealed class SpecGroundingServiceTests
     {
         using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Zones"));
 
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source zones { type = "layer", ref = "catalog:layer:1" }
+            """);
+
         var result = await harness.Service.MutateAsync(
-            harness.Parse(
-                """
-                grammar "v1.0"
-                source zones { type = "layer", ref = "catalog:layer:1" }
-                """),
+            currentSpec,
             "buffer zones by 500 in EPSG:3857 as zone_buffer",
             context: null,
             clarificationAnswer: null,
@@ -300,6 +366,43 @@ public sealed class SpecGroundingServiceTests
         result.Clarification.CandidatesByQuestionId["unit.selection"]
             .Select(candidate => candidate.Unit)
             .Should().Equal("km", "m", "mi", "ft", "nm");
+    }
+
+    [Fact]
+    public async Task Mutate_WithMismatchedUnitClarificationIntent_ReissuesCurrentClarification()
+    {
+        using var harness = CreateHarness(SpecGroundingTestSupport.CreateLayer(1, "Zones"));
+
+        var currentSpec = harness.Parse(
+            """
+            grammar "v1.0"
+            source zones { type = "layer", ref = "catalog:layer:1" }
+            """);
+        var firstResult = await harness.Service.MutateAsync(
+            currentSpec,
+            "buffer zones by 500 in EPSG:3857 as zone_buffer",
+            context: null,
+            clarificationAnswer: null,
+            principal: null,
+            CancellationToken.None);
+        var expectedIntentId = firstResult.Clarification!.Request.IntentId;
+
+        var result = await harness.Service.MutateAsync(
+            currentSpec,
+            "buffer zones by 500 in EPSG:3857 as zone_buffer",
+            context: null,
+            clarificationAnswer: CreateClarificationResponse(
+                "spec-grounding-other",
+                "unit.selection",
+                "m"),
+            principal: null,
+            CancellationToken.None);
+
+        result.ErrorKind.Should().Be(SpecGroundingErrorKind.Ambiguous);
+        result.Mutation.Should().BeNull();
+        result.Clarification.Should().NotBeNull();
+        result.Clarification!.Request.IntentId.Should().Be(expectedIntentId);
+        result.Clarification.Request.Questions[0].QuestionId.Should().Be("unit.selection");
     }
 
     [Fact]
