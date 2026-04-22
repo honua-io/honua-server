@@ -289,15 +289,31 @@ Explicit query overrides still win:
 - `telemetry.latency_p95.query`
 - `telemetry.sample_count.query`
 
-To render a starter `ControlPlane` config fragment from Terraform outputs, use:
+Keep environment-specific `ControlPlane` target metadata in the infrastructure repository that owns deployment state. For Honua-managed environments, that now means `honua-terraform`. In this repository, document and maintain the shape of the config, but do not rely on a local Terraform-output renderer.
 
-```bash
-terraform output -json > terraform-output.json
-./scripts/render-control-plane-config-from-terraform.sh \
-  --terraform-output-json terraform-output.json
+```json
+{
+  "ControlPlane": {
+    "TelemetryConnections": [
+      {
+        "ConnectionId": "prometheus-default",
+        "ConnectionType": "Prometheus",
+        "BaseUrl": "https://prometheus.example.com"
+      }
+    ],
+    "DeployTargets": [
+      {
+        "TargetId": "prod-honua",
+        "TargetKind": "Kubernetes",
+        "BackendName": "honua-gitops-kubernetes",
+        "TelemetryConnectionId": "prometheus-default"
+      }
+    ]
+  }
+}
 ```
 
-The renderer also consumes provider-specific identity hints when Terraform exposes them, including:
+Populate provider-specific identity hints from your infrastructure source of truth, including:
 
 - `control_plane_target_id`
 - `control_plane_target_name`

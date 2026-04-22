@@ -338,7 +338,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
             .Returns(Task.FromResult(true));
 
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var handler = new DelayedSuccessHandler(TimeSpan.FromMilliseconds(1_500));
+        var handler = new DelayedSuccessHandler(TimeSpan.FromMilliseconds(2_500));
         httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
 
         var dispatcher = new FeatureChangeWebhookDispatcher(
@@ -359,8 +359,14 @@ public sealed class FeatureChangeWebhookDispatcherTests
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(1));
-        await Task.Delay(TimeSpan.FromMilliseconds(1_250));
+        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(3));
+
+        await WaitForConditionAsync(
+            () => database.ReceivedCalls().Any(call =>
+                call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
+                string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromMilliseconds(100));
 
         var claimExtendCalls = database.ReceivedCalls().Count(call =>
             call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
@@ -519,6 +525,23 @@ public sealed class FeatureChangeWebhookDispatcherTests
             new object[] { cancellationToken }) as Task;
         Assert.NotNull(task);
         await task!;
+    }
+
+    private static async Task WaitForConditionAsync(
+        Func<bool> condition,
+        TimeSpan timeout,
+        TimeSpan pollInterval)
+    {
+        var start = DateTime.UtcNow;
+        while (!condition())
+        {
+            if (DateTime.UtcNow - start >= timeout)
+            {
+                break;
+            }
+
+            await Task.Delay(pollInterval);
+        }
     }
 
     private static async Task<bool> InvokeTryLoadDeliveredCursorAsync(

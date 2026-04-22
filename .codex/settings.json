@@ -1,6 +1,0 @@
-{
-  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/settings.json",
-  "commitMessageTrailer": false,
-  "contextWindow": "200k",
-  "model": "claude-sonnet-4-20250514"
-}

@@ -336,43 +336,93 @@ public sealed class AwsBatchComputeBackendTests
     [Fact]
     public async Task StartAsync_RecordsSubmissionMetricOnFreshSubmissions()
     {
+        const string metricBackend = "honua-aws-batch-metric-fresh-test";
         var samples = new List<long>();
         using var listener = new MeterListener
         {
             InstrumentPublished = (instrument, currentListener) =>
             {
-                if (instrument.Name == "honua.execution.job.submitted")
+                if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobSubmitted)
                 {
                     currentListener.EnableMeasurementEvents(instrument);
                 }
             }
         };
-        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            string? backend = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == ControlPlaneTelemetry.Tags.Backend)
+                {
+                    backend = tag.Value as string;
+                    break;
+                }
+            }
+
+            if (!string.Equals(backend, metricBackend, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lock (samples)
+            {
+                samples.Add(measurement);
+            }
+        });
         listener.Start();
 
         var backend = CreateBackend(new StubAwsBatchJobClient());
 
-        await backend.StartAsync(CreateJob());
+        await backend.StartAsync(CreateJob(backend: metricBackend));
 
-        samples.Should().ContainSingle().Which.Should().Be(1,
+        long[] sampleSnapshot;
+        lock (samples)
+        {
+            sampleSnapshot = samples.ToArray();
+        }
+
+        sampleSnapshot.Should().ContainSingle().Which.Should().Be(1,
             "AWS Batch must emit the standard submission counter so execution dashboards pick up every backend");
     }
 
     [Fact]
     public async Task StartAsync_DoesNotRecordSubmissionMetricOnRejectedSubmission()
     {
+        const string metricBackend = "honua-aws-batch-metric-rejected-test";
         var samples = new List<long>();
         using var listener = new MeterListener
         {
             InstrumentPublished = (instrument, currentListener) =>
             {
-                if (instrument.Name == "honua.execution.job.submitted")
+                if (instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobSubmitted)
                 {
                     currentListener.EnableMeasurementEvents(instrument);
                 }
             }
         };
-        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            string? backend = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == ControlPlaneTelemetry.Tags.Backend)
+                {
+                    backend = tag.Value as string;
+                    break;
+                }
+            }
+
+            if (!string.Equals(backend, metricBackend, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lock (samples)
+            {
+                samples.Add(measurement);
+            }
+        });
         listener.Start();
 
         var client = new StubAwsBatchJobClient
@@ -384,9 +434,12 @@ public sealed class AwsBatchComputeBackendTests
         };
         var backend = CreateBackend(client);
 
-        await backend.StartAsync(CreateJob());
+        await backend.StartAsync(CreateJob(backend: metricBackend));
 
-        samples.Should().BeEmpty("rejected submissions must not inflate the fresh-submission counter");
+        lock (samples)
+        {
+            samples.Should().BeEmpty("rejected submissions must not inflate the fresh-submission counter");
+        }
     }
 
     [Fact]
@@ -1079,7 +1132,8 @@ public sealed class AwsBatchComputeBackendTests
     internal static ExecutionJobRecord CreateJob(
         IReadOnlyDictionary<string, string>? parameters = null,
         string? providerOperationId = null,
-        ExecutionJobStatus status = ExecutionJobStatus.Queued)
+        ExecutionJobStatus status = ExecutionJobStatus.Queued,
+        string backend = "honua-aws-batch")
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -1092,7 +1146,7 @@ public sealed class AwsBatchComputeBackendTests
             Spec = new ExecutionJobSpec
             {
                 TargetKind = BatchComputeTargetKind.AwsBatch,
-                Backend = "honua-aws-batch",
+                Backend = backend,
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "heavy-gdal-clip",
                 WorkloadId = "heavy-gdal-clip",

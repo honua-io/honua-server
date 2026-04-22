@@ -258,6 +258,10 @@ scripts/setup-playwright-wsl.sh
 .env.local
 .env.production
 .env.docker
+
+# Local AI tool settings
+.codex/settings.json
+.claude/settings.json
 !.env.example
 
 !.env.*.example
