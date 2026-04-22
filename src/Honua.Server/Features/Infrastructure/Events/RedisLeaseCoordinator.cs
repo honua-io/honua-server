@@ -19,7 +19,7 @@ internal sealed class RedisLeaseCoordinator(
     private readonly string _ownerId = Guid.NewGuid().ToString("N");
     private readonly object _leaseStateLock = new();
     private CancellationTokenSource _leaseLostCts = new();
-    private bool _hasLease;
+    private volatile bool _hasLease;
 
     public bool IsConfigured => _database != null;
     public bool HasLease => _hasLease;
@@ -43,7 +43,8 @@ internal sealed class RedisLeaseCoordinator(
 
         try
         {
-            var acquired = _hasLease
+            var hadLease = HasLease;
+            var acquired = hadLease
                 ? await _database.LockExtendAsync(_leaseKey, _ownerId, _leaseDuration).ConfigureAwait(false)
                 : await _database.LockTakeAsync(_leaseKey, _ownerId, _leaseDuration).ConfigureAwait(false);
 
@@ -72,7 +73,7 @@ internal sealed class RedisLeaseCoordinator(
 
     internal async Task MaintainLeaseAsync(TimeSpan renewalInterval, CancellationToken cancellationToken)
     {
-        if (_database == null || !_hasLease)
+        if (_database == null || !HasLease)
         {
             return;
         }
@@ -81,7 +82,7 @@ internal sealed class RedisLeaseCoordinator(
 
         try
         {
-            while (!cancellationToken.IsCancellationRequested && _hasLease)
+            while (!cancellationToken.IsCancellationRequested && HasLease)
             {
                 await Task.Delay(renewalInterval, cancellationToken).ConfigureAwait(false);
                 if (!await TryAcquireOrExtendAsync().ConfigureAwait(false))
@@ -97,7 +98,7 @@ internal sealed class RedisLeaseCoordinator(
 
     public async Task ReleaseAsync()
     {
-        if (_database == null || !_hasLease)
+        if (_database == null || !HasLease)
         {
             MarkLeaseLost();
             return;

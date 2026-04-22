@@ -2,6 +2,11 @@
 
 The supported local compose entrypoint is the repo-root [`docker-compose.yml`](../../docker-compose.yml). It builds Honua from source and starts PostGIS, with optional Redis and MinIO profiles.
 
+Container layout is intentional:
+
+- Repo root holds the canonical web runtime entrypoints: [`Dockerfile`](../../Dockerfile), [`docker-compose.yml`](../../docker-compose.yml), and [`docker-compose.scale-test.yml`](../../docker-compose.scale-test.yml).
+- [`docker/`](../../docker/) holds specialized variants and support assets such as AOT/Lambda/Functions Dockerfiles, emulator compose, CITE stacks, nginx, and Prometheus files.
+
 ## Requirements
 
 - Docker

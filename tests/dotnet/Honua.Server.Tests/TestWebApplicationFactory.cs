@@ -34,6 +34,8 @@ namespace Honua.Server.Tests;
 /// </summary>
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Test");
@@ -71,6 +73,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Alerts:Enabled"] = "false",
                 ["ConnectionStrings:DefaultConnection"] = TestConnectionStrings.DefaultPostgresConnectionString,
                 ["ConnectionStrings:honua"] = TestConnectionStrings.DefaultPostgresConnectionString,
+                // Avoid live DNS dependency during startup validation in tests.
+                ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
+                ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
                 ["HONUA_SKIP_MIGRATIONS"] = "true",
                 ["HONUA_SERVE_API_DOCS"] = "true",
                 ["FileStorage:Provider"] = "Local",

@@ -12,6 +12,8 @@ All deployment options require a PostGIS-enabled PostgreSQL database. Redis is o
 
 If you just want to try Honua locally, the root `docker-compose.yml` in the repo root is the fastest option — see the Quick Start in the main README.
 
+The repo keeps the default web image and local compose entrypoints at the root (`Dockerfile`, `docker-compose.yml`, `docker-compose.scale-test.yml`). Specialized container variants and supporting assets live under `docker/`.
+
 ## Control plane and GitOps direction
 
 Honua is building its own control plane for deploy coordination and change management.

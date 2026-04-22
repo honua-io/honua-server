@@ -140,7 +140,7 @@ For conformance runs:
 ```
 
 **Solutions**:
-- Check Docker container logs: `docker-compose -f docker/cite-compose.yml logs honua-server`
+- Check Docker container logs: `docker compose -f docker/cite-compose.yml logs honua-server`
 - Verify database connectivity
 - Ensure ports 8080-8081 are available
 - Check disk space and memory availability

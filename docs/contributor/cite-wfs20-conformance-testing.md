@@ -145,7 +145,7 @@ For WFS 2.0 conformance runs:
 ```
 
 **Solutions**:
-- Check Docker container logs: `docker-compose -f docker/cite-wfs20-compose.yml logs honua-server`
+- Check Docker container logs: `docker compose -f docker/cite-wfs20-compose.yml logs honua-server`
 - Verify database connectivity
 - Ensure port 8080 is available
 - Check that WFS 2.0 endpoints are enabled

@@ -20,6 +20,18 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+docker_compose() {
+    docker compose --project-directory "$PROJECT_ROOT" "$@"
+}
+
+require_docker_compose() {
+    if ! docker compose version >/dev/null 2>&1; then
+        echo "❌ Docker Compose v2 plugin is required but not available."
+        echo "   Install Docker Desktop or the docker compose plugin for your distro."
+        exit 1
+    fi
+}
+
 # Function to detect package manager
 detect_package_manager() {
     if command_exists apt-get; then
@@ -157,11 +169,8 @@ install_docker() {
             # Add user to docker group
             sudo usermod -aG docker "$USER"
 
-            # Install Docker Compose
-            local compose_version="v2.23.0"
-            sudo curl -L "https://github.com/docker/compose/releases/download/$compose_version/docker-compose-$(uname -s)-$(uname -m)" \
-                -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
+            # Verify Docker Compose v2 is available after Docker install.
+            require_docker_compose
             ;;
         "Darwin")
             echo "Please install Docker Desktop for Mac from https://docker.com/products/docker-desktop"
@@ -300,13 +309,15 @@ setup_project_env() {
     # Setup test database
     echo "🗄️  Setting up test database..."
     if command_exists docker; then
+        require_docker_compose
+
         # Start postgres for development
-        docker-compose up -d postgres
+        docker_compose up -d postgres
 
         # Wait for postgres to be ready
         echo "⏳ Waiting for PostgreSQL to be ready..."
         timeout=60
-        while ! docker-compose exec -T postgres pg_isready -U honua_user -d honua_dev >/dev/null 2>&1; do
+        while ! docker_compose exec -T postgres pg_isready -U honua_user -d honua_dev >/dev/null 2>&1; do
             sleep 2
             timeout=$((timeout - 2))
             if [ $timeout -le 0 ]; then
@@ -350,12 +361,13 @@ validate_installation() {
         ((failed_checks++))
     fi
 
-    # Check Docker Compose
-    if command_exists docker-compose || docker compose version >/dev/null 2>&1; then
-        local compose_version=$(docker-compose --version 2>/dev/null || docker compose version 2>/dev/null || echo "ERROR")
+    # Check Docker Compose v2
+    if docker compose version >/dev/null 2>&1; then
+        local compose_version
+        compose_version=$(docker compose version 2>/dev/null || echo "ERROR")
         echo "✅ Docker Compose: $compose_version"
     else
-        echo "❌ Docker Compose: Not found"
+        echo "❌ Docker Compose: v2 plugin not found"
         ((failed_checks++))
     fi
 
@@ -392,13 +404,13 @@ show_next_steps() {
     echo "1. Reload your shell or run: source ~/.bashrc"
     echo "2. Test the build: cd $PROJECT_ROOT && dotnet build"
     echo "3. Run tests: dotnet test"
-    echo "4. Start development services: docker-compose up -d"
+    echo "4. Start development services: docker compose up -d"
     echo "5. Run the application: cd src/Honua.Server && dotnet run"
     echo ""
     echo "Useful commands:"
-    echo "- Start services: docker-compose up -d"
-    echo "- View logs: docker-compose logs -f"
-    echo "- Stop services: docker-compose down"
+    echo "- Start services: docker compose up -d"
+    echo "- View logs: docker compose logs -f"
+    echo "- Stop services: docker compose down"
     echo "- Run tests: dotnet test"
     echo "- Check format: dotnet format Honua.sln --verify-no-changes"
     echo "- Pre-PR check: ./scripts/pre-pr-check.sh"
