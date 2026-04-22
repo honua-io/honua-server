@@ -13,6 +13,7 @@ Deploy, configure, monitor, and manage Honua Server.
 
 - [Environment Variables](../../.env.example) — Complete configuration reference
 - [Security](security.md) — Authentication, authorization, CORS, CSP
+- [HTTP Client Resilience](http-client-resilience.md) — Retry, circuit breaker, and timeout tuning for external services
 - [Feature Change Webhooks](feature-change-webhooks.md) — Event notification setup
 
 ## Database
@@ -32,7 +33,6 @@ Deploy, configure, monitor, and manage Honua Server.
 
 - [Monitoring & Observability](monitoring.md) — Health checks, Prometheus, OpenTelemetry, alerting
 - [Troubleshooting](troubleshooting.md) — Common issues and diagnostic steps
-- [Benchmarks](BENCHMARK_RESULTS.md) — Performance baselines ([methodology](BENCHMARK_METHODOLOGY.md), [reproduction](BENCHMARK_REPRODUCTION.md))
 
 ## Runbooks
 

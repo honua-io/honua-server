@@ -393,7 +393,7 @@ public class QueryHandler
 # .github/workflows/ci.yml
 - name: Enforce Architecture Rules
   run: |
-    dotnet test tests/Honua.Architecture.Tests/ \
+    dotnet test tests/dotnet/Honua.Architecture.Tests/ \
       --filter "Category=Architecture" \
       --logger "trx" \
       --results-directory TestResults/
@@ -410,7 +410,7 @@ public class QueryHandler
 #!/bin/sh
 # Run architecture tests before commit
 echo "Checking dependency injection limits..."
-dotnet test tests/Honua.Architecture.Tests/ --filter "Category=DependencyLimits" -q
+dotnet test tests/dotnet/Honua.Architecture.Tests/ --filter "Category=DependencyLimits" -q
 
 if [ $? -ne 0 ]; then
     echo "❌ Dependency injection limits exceeded. Please refactor before committing."

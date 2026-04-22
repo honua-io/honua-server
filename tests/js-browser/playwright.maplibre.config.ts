@@ -3,16 +3,16 @@ import { defineConfig, devices } from '@playwright/test';
 const isCI = !!process.env.CI;
 
 export default defineConfig({
-  testDir: './specs',
+  testDir: './maplibre',
   fullyParallel: false,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
   workers: 1,
   reporter: [
     ['list'],
-    ['./helpers/cert-reporter.ts'],
+    ['./maplibre/support/cert-reporter.ts'],
   ],
-  globalSetup: './maplibre-global-setup.ts',
+  globalSetup: './maplibre/global-setup.ts',
   use: {
     baseURL: process.env.HONUA_BASE_URL ?? 'http://localhost:5000',
     screenshot: 'only-on-failure',

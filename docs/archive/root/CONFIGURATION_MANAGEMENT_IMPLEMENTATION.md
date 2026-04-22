@@ -146,8 +146,8 @@ public class DatabaseService
 ## Testing
 
 **Unit Tests Created**:
-- `tests/Honua.Core.Tests/Features/Configuration/StandardTtlOptionsTests.cs`
-- `tests/Honua.Core.Tests/Features/Configuration/CachedSecretProviderTests.cs`
+- `tests/dotnet/Honua.Core.Tests/Features/Configuration/StandardTtlOptionsTests.cs`
+- `tests/dotnet/Honua.Core.Tests/Features/Configuration/CachedSecretProviderTests.cs`
 
 **Test Coverage**:
 - TTL validation and environment awareness

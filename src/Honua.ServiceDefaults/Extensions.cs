@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -514,7 +513,6 @@ public static partial class Extensions
     /// <summary>
     /// Adds adaptive sampling services for intelligent distributed tracing.
     /// </summary>
-    [RequiresUnreferencedCode("Calls Microsoft.Extensions.DependencyInjection.OptionsConfigurationServiceCollectionExtensions.Configure<TOptions>(IConfiguration)")]
     private static IHostApplicationBuilder AddAdaptiveSampling(this IHostApplicationBuilder builder)
     {
         // Bind adaptive sampling configuration from environment variables

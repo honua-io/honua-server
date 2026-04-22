@@ -72,7 +72,7 @@ Run a specific category:
 ```bash
 dotnet test --filter Category=Unit
 dotnet test --filter Category=Integration
-dotnet test tests/Honua.Architecture.Tests/
+dotnet test tests/dotnet/Honua.Architecture.Tests/
 ```
 
 ## 5. Development loop

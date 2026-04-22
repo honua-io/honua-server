@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
-import { test, expect } from '../shared/test-fixtures.js';
-import { initFeatureLayer, initDynamicMapLayer, waitForLayerLoad, waitForMapIdle, assertMapNotBlank } from '../shared/map-harness.js';
+import { test, expect } from './support/test-fixtures.js';
+import { initFeatureLayer, initDynamicMapLayer, waitForLayerLoad, waitForMapIdle, assertMapNotBlank } from './support/map-harness.js';
 
 test.describe('Visual Rendering Assertions', () => {
   test('[CERT-RNDR-01][CERT-RNDR-SYM-01][EL-EXT-01] FeatureLayer symbology renders with drawingInfo', async ({ page, staticUrl, config }) => {
@@ -17,7 +17,7 @@ test.describe('Visual Rendering Assertions', () => {
     // The drawingInfo-driven point symbol render is the substantiation for
     // CERT-RNDR-SYM-01 in this lane. The CERT IDs in the test title flow
     // through CertReporter onTestEnd into the .cert.json envelope under the
-    // featureserver protocol — see tests/js-browser/shared/cert-reporter.ts
+    // featureserver protocol — see tests/js-browser/esri-leaflet/support/cert-reporter.ts
     // and docs/gis/visual-style-certification-slice.md.
 
     // Visual snapshot: clip to #map container

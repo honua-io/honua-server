@@ -81,22 +81,21 @@ The authoritative OpenAPI specification is maintained at `docs/developer/api-spe
 
 - `openapi-contract-governance.yml` validates OpenAPI shape and compares admin contract against baseline ref.
 - `control-plane-sdk-governance.yml` validates reproducible SDK generation from the admin OpenAPI spec.
-- `proto-wire-governance.yml` validates protobuf wire compatibility (see below).
 - Potential breakages fail CI by default.
 - Intentional breakages must be explicitly approved by setting the appropriate environment variable and updating migration/deprecation docs in the same PR.
 
 ## gRPC and Wire Compatibility
 
-Protobuf contracts live at `src/Honua.Core/Transport/Proto/geospatial/v1/`. The following rules govern wire-format evolution:
+Geospatial gRPC protobuf contracts are owned in [`honua-io/geospatial-grpc`](https://github.com/honua-io/geospatial-grpc). This repository consumes those contracts at runtime, but it is no longer the source of truth for wire-governance automation.
+
+The following rules still govern wire-format evolution:
 
 - **No field renumbering.** Once a field number is assigned, it must not change.
 - **Additive message evolution only.** New fields must be optional and appended with new (higher) field numbers.
 - **Enum values are append-only.** New enum values are appended at the end; existing values must not be reordered or renumbered.
 - **Deprecated fields** are marked with `[deprecated = true]`. If a field is removed, its field number must be `reserved` to prevent accidental reuse.
 - **Breaking wire changes** require explicit review plus a documented migration and rollout plan before merge.
-- **CI enforcement** via `buf breaking` in `proto-wire-governance.yml`. Wire-incompatible changes fail CI unless `BUF_ALLOW_BREAKING_CHANGES=true` is set.
-
-For detailed wire compatibility rules, see [proto/WIRE_COMPATIBILITY.md](../../proto/WIRE_COMPATIBILITY.md).
+- **CI enforcement** lives in the `geospatial-grpc` repository.
 
 ## Database Migration Compatibility
 

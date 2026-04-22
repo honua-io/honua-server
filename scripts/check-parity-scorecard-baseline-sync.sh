@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-parity_test_file="${1:-tests/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs}"
-baseline_scorecard="${2:-tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json}"
+parity_test_file="${1:-tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs}"
+baseline_scorecard="${2:-tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json}"
 
 if [[ ! -f "$parity_test_file" ]]; then
   echo "Parity test definition file not found: $parity_test_file" >&2

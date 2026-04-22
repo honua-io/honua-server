@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -17,7 +16,6 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
 
-    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     public SecureConnectionDataSourceCache(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

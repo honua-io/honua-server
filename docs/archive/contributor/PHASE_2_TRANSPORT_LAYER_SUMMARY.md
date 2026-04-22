@@ -176,6 +176,6 @@ The transport layer foundation is now complete and ready for platform-specific i
 
 The transport layer has been successfully integrated into the honua-server repository:
 - `/src/Honua.Core/Transport/` - Core transport implementation
-- `/tests/Honua.Core.Tests/TransportLayerValidationTests.cs` - Validation tests
+- `/tests/dotnet/Honua.Core.Tests/TransportLayerValidationTests.cs` - Validation tests
 
 This foundation enables the next phase of platform-specific implementations while maintaining consistency and type safety across the entire Honua ecosystem.

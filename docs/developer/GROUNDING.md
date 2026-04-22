@@ -231,8 +231,8 @@ catalog. The fixtures are consumed by:
   `GroundingService` + `DeterministicGroundingEngine` +
   `BuiltInProcessCatalog` stack on every CI run.
 - The honua-server-734 eval harness for cross-engine conformance scoring
-  once grounding scenarios are added to `tests/Eval/scenarios/` — the
-  harness is landed (`tests/Honua.Server.Tests/Features/Eval/`), and its
+  once grounding scenarios are added to `tests/dotnet/eval/scenarios/` — the
+  harness is landed (`tests/dotnet/Honua.Server.Tests/Features/Eval/`), and its
   current scenarios target analyst and publishing workflows.
 
 **Edit rule**: a change to `DeterministicGroundingEngine` or

@@ -3,5 +3,4 @@
 
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("Honua.Benchmarks")]
 [assembly: InternalsVisibleTo("Honua.Postgres.Tests")]

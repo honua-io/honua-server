@@ -87,7 +87,6 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 
 - Integration tests use Testcontainers + PostGIS.
 - Architecture tests enforce dependency direction and endpoint coverage.
-- Performance benchmarks live under `benchmarks/`.
 
 ## Architectural Constraints (Enforced)
 

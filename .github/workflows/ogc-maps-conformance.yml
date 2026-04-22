@@ -36,7 +36,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: dotnet restore tests/Honua.Server.Tests/Honua.Server.Tests.csproj
+        run: dotnet restore tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
 
       - name: Run OGC API - Maps conformance tests
         id: run-tests

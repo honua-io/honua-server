@@ -48,7 +48,7 @@ dotnet format Honua.sln --verify-no-changes
 dotnet test Honua.sln --configuration Release
 
 # 5. Architecture tests
-dotnet test tests/Honua.Architecture.Tests/
+dotnet test tests/dotnet/Honua.Architecture.Tests/
 
 # 6. AOT build
 dotnet publish src/Honua.Server --configuration Release -p:PublishAot=true -p:StripSymbols=true -o ./publish

@@ -53,10 +53,8 @@ docs/
 scripts/
 !scripts/init-db.sql
 
-# Local infra and benchmark artifacts not needed for app image builds
+# Local artifacts not needed for app image builds
 tests/
-benchmarks/
-infrastructure/
 **/.terraform/
 
 # Temporary files

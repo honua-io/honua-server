@@ -1,7 +1,0 @@
-# Buf generate template for documentation
-version: v1
-plugins:
-  - plugin: doc
-    out: .
-    opt:
-      - markdown

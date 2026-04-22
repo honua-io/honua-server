@@ -1,7 +1,7 @@
 # Migration Parity Checklist
 
 Workflow-oriented human checklist that complements the CI-automated parity scorecard
-([`parity-scorecard-baseline.json`](../../../../tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json)
+([`parity-scorecard-baseline.json`](../../../../tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json)
 with 10 service cases x 12 checks). The automated scorecard runs in CI nightly; this
 checklist adds pilot-context verification that CI cannot cover.
 

@@ -71,14 +71,14 @@
           "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Density.cs"
         ],
         "tests": [
-          "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerQueryParameterTests.cs",
-          "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerReplicationTests.cs",
-          "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerMaintenanceTests.cs",
-          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
-          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsOgcTests.cs",
-          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsEditionGateTests.cs",
-          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsReaderAvailabilityTests.cs",
-          "tests/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsPerformanceTests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/FeatureServer/FeatureServerQueryParameterTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/FeatureServer/FeatureServerReplicationTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/FeatureServer/FeatureServerMaintenanceTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsOgcTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsEditionGateTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsReaderAvailabilityTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsPerformanceTests.cs"
         ]
       },
       "operations": {
@@ -752,10 +752,10 @@
           "src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Wmts.cs"
         ],
         "tests": [
-          "tests/Honua.Server.Tests/Features/MapServer/MapServerEndpointTests.cs",
-          "tests/Honua.Server.Tests/Features/MapServer/MapServerTileEndpointTests.cs",
-          "tests/Honua.Server.Tests/Features/MapServer/MapServerWmsTests.cs",
-          "tests/Honua.Server.Tests/Features/MapServer/MapServerWmtsTests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/MapServer/MapServerEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/MapServer/MapServerTileEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/MapServer/MapServerWmsTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/MapServer/MapServerWmtsTests.cs"
         ]
       },
       "operations": {
@@ -1108,14 +1108,14 @@
           "src/Honua.Server/Features/ImageServer/Services/ImageServerRasterFunctionPlanner.cs"
         ],
         "tests": [
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerEndpointsTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerLegendHandlerTests.cs",
-          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerAnalyzeHandlerTests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerEndpointsTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerLegendHandlerTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/ImageServer/ImageServerAnalyzeHandlerTests.cs"
         ]
       },
       "operations": {
@@ -1538,10 +1538,10 @@
           "src/Honua.Server/Features/GeometryService/Services/GeometryServiceHandler.cs"
         ],
         "tests": [
-          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
-          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
-          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs",
-          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
         ]
       },
       "operations": {
@@ -1843,11 +1843,11 @@
           "src/Honua.Server/EndpointRegistry.cs"
         ],
         "tests": [
-          "tests/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
-          "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
-          "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
-          "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs",
-          "tests/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs",
+          "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GeoprocessingJobServiceTests.cs"
         ]
       },
       "operations": {

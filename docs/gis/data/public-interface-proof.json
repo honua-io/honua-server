@@ -26,8 +26,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -56,8 +56,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -69,8 +69,8 @@
           "proofMechanism": "Singleton-heavy admin endpoints keep happy-path plus negative-path coverage",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
-            "tests/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -113,8 +113,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/Admin/FeatureChangeEventsEndpointsTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/FeatureChangeEventsEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -143,8 +143,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/MetricsEndpointsTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/MetricsEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -173,10 +173,10 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/DatabasePerformanceEndpointsTests.cs",
-            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/ProductionMonitoringEndpointSecurityTests.cs",
-            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/UploadQueueMonitoringEndpointsTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/DatabasePerformanceEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/ProductionMonitoringEndpointSecurityTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/UploadQueueMonitoringEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -207,8 +207,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -252,8 +252,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -265,8 +265,8 @@
           "proofMechanism": "Geocoding endpoint matrix retains happy-path and negative-path depth",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
-            "tests/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -295,8 +295,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -341,7 +341,7 @@
           "executionLane": "ci:esri-leaflet-browser-tests",
           "evidenceLocations": [
             "tests/js-browser/esri-leaflet/feature-layer-load.spec.ts",
-            "tests/js-browser/shared/cert-reporter.ts",
+            "tests/js-browser/esri-leaflet/support/cert-reporter.ts",
             "tests/js-browser/playwright.config.ts"
           ],
           "ownerRepo": "honua-server",
@@ -371,8 +371,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -417,7 +417,7 @@
           "executionLane": "ci:esri-leaflet-browser-tests",
           "evidenceLocations": [
             "tests/js-browser/esri-leaflet/dynamic-map-layer.spec.ts",
-            "tests/js-browser/shared/cert-reporter.ts",
+            "tests/js-browser/esri-leaflet/support/cert-reporter.ts",
             "tests/js-browser/playwright.config.ts"
           ],
           "ownerRepo": "honua-server",
@@ -449,8 +449,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -508,8 +508,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -565,8 +565,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -611,8 +611,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -625,13 +625,13 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/Honua.Server.Tests/Features/OData/ODataClientIntegrationTests.cs",
-            "tests/Honua.Server.Tests/Honua.Server.Tests.csproj"
+            "tests/dotnet/Honua.Server.Tests/Features/OData/ODataClientIntegrationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": null,
-          "versionCaptureRule": "Pin the Microsoft.OData.Client package version in tests/Honua.Server.Tests/Honua.Server.Tests.csproj and report that exact version in the release evidence notes for the OData lane."
+          "versionCaptureRule": "Pin the Microsoft.OData.Client package version in tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj and report that exact version in the release evidence notes for the OData lane."
         },
         {
           "proofClass": "real-client-certification",
@@ -639,17 +639,17 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs",
-            "tests/Honua.Server.Tests/Features/OData/ODataClientModels.cs",
-            "tests/Honua.TestKit/Infrastructure/CertificationEvidenceCollector.cs",
-            "tests/Honua.TestKit/Infrastructure/CertEnvelope.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/OData/ODataClientCertificationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/OData/ODataClientModels.cs",
+            "tests/dotnet/Honua.TestKit/Infrastructure/CertificationEvidenceCollector.cs",
+            "tests/dotnet/Honua.TestKit/Infrastructure/CertEnvelope.cs",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": null,
-          "versionCaptureRule": "Pin Microsoft.OData.Client in tests/Honua.Server.Tests/Honua.Server.Tests.csproj; ODataClientCertificationFixture reads the loaded assembly version into the cert envelope's client_version field on every CI run, and the envelope's server_version field is sourced from GITHUB_SHA or the Honua.Server informational version."
+          "versionCaptureRule": "Pin Microsoft.OData.Client in tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj; ODataClientCertificationFixture reads the loaded assembly version into the cert envelope's client_version field on every CI run, and the envelope's server_version field is sourced from GITHUB_SHA or the Honua.Server informational version."
         },
         {
           "proofClass": "real-client-certification",
@@ -694,8 +694,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -707,7 +707,7 @@
           "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
-            "tests/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OpenApiDriftTests.cs",
             "src/Honua.Server/openapi.json"
           ],
           "ownerRepo": "honua-server",
@@ -782,8 +782,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -795,7 +795,7 @@
           "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
-            "tests/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OpenApiDriftTests.cs",
             "src/Honua.Server/ogc-processes-openapi.json"
           ],
           "ownerRepo": "honua-server",
@@ -825,8 +825,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -838,7 +838,7 @@
           "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
           "executionLane": "ci:architecture",
           "evidenceLocations": [
-            "tests/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/OpenApiDriftTests.cs",
             "src/Honua.Server/ogc-tiles-openapi.json"
           ],
           "ownerRepo": "honua-server",
@@ -881,8 +881,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -894,11 +894,11 @@
           "proofMechanism": "Geometry service matrix retains happy-path and negative-path depth",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
-            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
-            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
-            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
-            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -944,8 +944,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -958,7 +958,7 @@
           "executionLane": "nightly:ogc-maps-conformance",
           "evidenceLocations": [
             ".github/workflows/ogc-maps-conformance.yml",
-            "tests/Honua.Server.Tests/Features/OgcMaps/OgcMapsConformanceTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/OgcMaps/OgcMapsConformanceTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1001,8 +1001,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1014,9 +1014,9 @@
           "proofMechanism": "GPServer adapter retains happy-path and negative-path depth for endpoint routing, parameter translation, and status mapping",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
-            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
-            "tests/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerParameterTranslationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GPServerStatusMappingTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1045,8 +1045,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1083,7 +1083,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1096,8 +1096,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1110,7 +1110,7 @@
           "executionLane": "nightly:cite-wfs20-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-wfs20-conformance.yml",
-            "tests/Honua.Server.Tests/Features/Wfs20/Wfs20EndpointsTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Wfs20/Wfs20EndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1157,8 +1157,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1171,7 +1171,7 @@
           "executionLane": "ci:maplibre-compat",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/js-browser/helpers/cert-reporter.ts",
+            "tests/js-browser/maplibre/support/cert-reporter.ts",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
             "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md"
           ],
@@ -1204,8 +1204,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1215,12 +1215,12 @@
         {
           "proofClass": "contract-governance",
           "proofMechanism": "Proto wire compatibility gate against the published schema",
-          "executionLane": "ci:proto-wire-governance",
+          "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
-            ".github/workflows/proto-wire-governance.yml",
+            "https://github.com/honua-io/geospatial-grpc",
             "src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto"
           ],
-          "ownerRepo": "honua-server",
+          "ownerRepo": "geospatial-grpc",
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": null
@@ -1258,8 +1258,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/Geoprocessing/GrpcProcessServiceIntegrationTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/GrpcProcessServiceIntegrationTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1269,12 +1269,12 @@
         {
           "proofClass": "contract-governance",
           "proofMechanism": "Proto wire compatibility gate against the published schema",
-          "executionLane": "ci:proto-wire-governance",
+          "executionLane": "repo:honua-io/geospatial-grpc",
           "evidenceLocations": [
-            ".github/workflows/proto-wire-governance.yml",
+            "https://github.com/honua-io/geospatial-grpc",
             "src/Honua.Core/Transport/Proto/geospatial/v1/process_service.proto"
           ],
-          "ownerRepo": "honua-server",
+          "ownerRepo": "geospatial-grpc",
           "status": "implemented",
           "linkedTicket": "#722",
           "versionCaptureRule": null
@@ -1302,8 +1302,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1332,8 +1332,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1345,13 +1345,13 @@
           "proofMechanism": "JSON-RPC framing, auth, tool delegation, stub envelopes, resource reads, and error mapping are covered through unit and integration tests against the operator surface",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/Honua.Server.Tests/Features/Mcp/McpEndpointIntegrationTests.cs",
-            "tests/Honua.Server.Tests/Features/Mcp/McpToolDelegationTests.cs",
-            "tests/Honua.Server.Tests/Features/Mcp/McpErrorMappingTests.cs",
-            "tests/Honua.Server.Tests/Features/Mcp/McpAuthorizationTests.cs",
-            "tests/Honua.Server.Tests/Features/Mcp/McpStubToolTests.cs",
-            "tests/Honua.Server.Tests/Features/Mcp/McpResourceSerializationTests.cs",
-            "tests/Honua.Server.Tests/Features/Mcp/McpTaxonomyAlignmentTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpEndpointIntegrationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpToolDelegationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpErrorMappingTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpAuthorizationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpStubToolTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpResourceSerializationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Mcp/McpTaxonomyAlignmentTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

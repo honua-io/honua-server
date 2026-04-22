@@ -115,9 +115,9 @@
 - `src/Honua.Postgres/ServiceCollectionExtensions.cs` [MODIFIED - leader election registration]
 
 ### Tests
-- `tests/Honua.Server.Tests/Features/Caching/DistributedCacheRefreshCoordinatorTests.cs` [NEW]
-- `tests/Honua.Server.Tests/Features/Infrastructure/Coordination/RedisDistributedLeaderElectionTests.cs` [NEW]  
-- `tests/Honua.Server.Tests/Features/Integration/DistributedCoordinationIntegrationTests.cs` [NEW]
+- `tests/dotnet/Honua.Server.Tests/Features/Caching/DistributedCacheRefreshCoordinatorTests.cs` [NEW]
+- `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Coordination/RedisDistributedLeaderElectionTests.cs` [NEW]  
+- `tests/dotnet/Honua.Server.Tests/Features/Integration/DistributedCoordinationIntegrationTests.cs` [NEW]
 
 ## Validation Complete ✅
 

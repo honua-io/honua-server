@@ -748,4 +748,4 @@ method as the `target` and `authenticated = false`.
 - Vertical slice: `src/Honua.Server/Features/Mcp/`
 - Tools: `src/Honua.Server/Features/Mcp/Tools/`
 - Resources: `src/Honua.Server/Features/Mcp/Resources/`
-- Tests: `tests/Honua.Server.Tests/Features/Mcp/`
+- Tests: `tests/dotnet/Honua.Server.Tests/Features/Mcp/`

@@ -84,7 +84,6 @@ TestResults/
 benchmark-results/
 performance-reports/
 load-test-reports/
-codecov
 
 # SQL Server
 *.mdf
@@ -274,9 +273,6 @@ scripts/setup-github-app-env.sh
 # Local Python test environment
 .venv-tests/
 
-# Benchmark artifacts
-benchmarks/**/BenchmarkDotNet.Artifacts/
-
 # Aspire
 .aspire/
 
@@ -286,6 +282,9 @@ coverage*/
 # Esri Leaflet browser test artifacts (CI uploads these)
 tests/js-browser/evidence/
 tests/js-browser/test-results/
+tests/python/gdal-ogr-results*.json
+tests/python/stac-client-compat-results*.json
+tests/python/stac-client-compat-results*.md
 
 # Local runtime/test artifacts
 tmp/

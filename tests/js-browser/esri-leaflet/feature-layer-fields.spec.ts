@@ -1,5 +1,5 @@
-import { test, expect } from '../shared/test-fixtures.js';
-import { initFeatureLayer, waitForLayerLoad, getAllFeatures } from '../shared/map-harness.js';
+import { test, expect } from './support/test-fixtures.js';
+import { initFeatureLayer, waitForLayerLoad, getAllFeatures } from './support/map-harness.js';
 
 test.describe('FeatureLayer Popup and Field Access', () => {
   test('[CERT-SCHM-01][EL-EXT-03] Feature attributes accessible via eachFeature', async ({ page, staticUrl, config }) => {

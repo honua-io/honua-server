@@ -1,9 +1,0 @@
-version: v2
-modules:
-  - path: src/Honua.Core/Transport/Proto
-deps:
-  - buf.build/geospatial/standard:v0.2.0
-  - buf.build/googleapis/googleapis
-breaking:
-  use:
-    - WIRE

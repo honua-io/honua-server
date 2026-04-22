@@ -16,7 +16,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.DuckDB;
 
@@ -31,8 +30,6 @@ internal static class ServiceCollectionExtensions
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Configuration for DuckDB options</param>
     /// <returns>Updated service collection</returns>
-    [RequiresDynamicCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(Object)")]
-    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(Object)")]
     public static IServiceCollection AddDuckDBServices(
         this IServiceCollection services,
         IConfiguration configuration)

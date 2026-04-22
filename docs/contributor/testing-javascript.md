@@ -5,7 +5,7 @@ Honua currently ships two JavaScript/TypeScript test suites:
 | Suite | Path | Runner | Purpose |
 |---|---|---|---|
 | Protocol integration | `tests/js/` | Vitest | Headless FeatureServer protocol coverage, query matrix expansion, edit flows, and metadata |
-| Browser compatibility | `tests/js-browser/` | Playwright | Real-client certification against Esri Leaflet 3.x for FeatureServer and MapServer browser consumption |
+| Browser compatibility | `tests/js-browser/` | Playwright | Real-client certification against Esri Leaflet 3.x plus MapLibre GL JS browser compatibility |
 
 ## Shared Server Bootstrap
 
@@ -68,7 +68,10 @@ Approximate suite size: `~330+` tests across query, geometry, edits, and metadat
 
 ## Playwright Browser Suite (`tests/js-browser/`)
 
-This suite proves that a real browser client can consume Honua through the `leaflet`, `esri-leaflet`, and `esri-leaflet-renderers` packages. It is the merge-blocking Esri Leaflet compatibility lane in `ci.yml` (`esri-leaflet-browser-tests` job).
+This workspace contains two Playwright lanes:
+
+- `esri-leaflet/` proves that a real browser client can consume Honua through the `leaflet`, `esri-leaflet`, and `esri-leaflet-renderers` packages. It is the merge-blocking Esri Leaflet compatibility lane in `ci.yml` (`esri-leaflet-browser-tests` job).
+- `maplibre/` proves that MapLibre GL JS can load styles, discover TileJSON, fetch MVT tiles, and render vector tiles from Honua. It runs in `ci.yml` as the `maplibre-compat` job.
 
 Current browser coverage:
 
@@ -94,6 +97,7 @@ Useful commands:
 npm run test:update-snapshots
 npm run test:headed
 npm run test:debug
+npm run test:maplibre
 npm run lint
 ```
 

@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-LOAD_TEST_PROJECT="tests/Honua.LoadTests"
+LOAD_TEST_PROJECT="tests/dotnet/Honua.LoadTests"
 BASE_URL="${BASE_URL:-${HONUA_LOAD_BASE_URL:-http://localhost:5000}}"
 PROFILE="${PROFILE:-${HONUA_LOAD_PROFILE:-quick}}"
 DURATION="${DURATION:-${HONUA_LOAD_DURATION:-}}"

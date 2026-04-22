@@ -49,7 +49,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using StackExchange.Redis;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Postgres;
 
@@ -64,8 +63,6 @@ internal static class ServiceCollectionExtensions
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Configuration to get connection string from</param>
     /// <returns>Updated service collection</returns>
-    [RequiresDynamicCode("Calls Microsoft.Extensions.DependencyInjection.OptionsConfigurationServiceCollectionExtensions.Configure<TOptions>(IConfiguration)")]
-    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
     {
         var schemaHeadersEnabled = configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");

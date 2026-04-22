@@ -1,5 +1,5 @@
-import { test, expect } from '../shared/test-fixtures.js';
-import { initFeatureLayer, waitForLayerLoad } from '../shared/map-harness.js';
+import { test, expect } from './support/test-fixtures.js';
+import { initFeatureLayer, waitForLayerLoad } from './support/map-harness.js';
 
 test.describe('FeatureLayer Query and Filter', () => {
   test('[CERT-QFLT-01] Attribute equality filter via where option', async ({ page, staticUrl, config }) => {

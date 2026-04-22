@@ -267,7 +267,7 @@ git status
     modified: Features/FeatureServer/FeatureServerEndpoints.cs
     modified: Features/FeatureServer/FeatureServerHandler.cs
     added:    Features/FeatureServer/Services/AdvancedQueryValidator.cs
-    modified: tests/Honua.Server.Tests/Features/FeatureServer/QueryTests.cs
+    modified: tests/dotnet/Honua.Server.Tests/Features/FeatureServer/QueryTests.cs
 ```
 
 **All changes localized to FeatureServer slice - no cross-cutting modifications**
@@ -321,7 +321,7 @@ if (builder.Configuration.GetValue<bool>("Features:AdminEnabled"))
 **Tests organized by feature:**
 
 ```
-tests/Honua.Server.Tests/Features/
+tests/dotnet/Honua.Server.Tests/Features/
 |-- FeatureServer/
 |   |-- QueryEndpointTests.cs
 |   |-- ApplyEditsEndpointTests.cs
