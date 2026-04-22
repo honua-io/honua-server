@@ -61,13 +61,18 @@
       "properties": {
         "comments": {
           "type": "object",
-          "description": "Block-level comments keyed by JSON-Pointer path (with a trailing '#<index>' to disambiguate multiple comments on the same target).",
+          "description": "Block-level comments keyed by JSON-Pointer path (arrays use numeric indices such as /sources/0; a trailing '#<index>' disambiguates multiple comments on the same target).",
           "additionalProperties": { "type": "string" }
         }
       }
     }
   },
   "$defs": {
+    "layerId": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "Canonical map-layer identifier string (for example 'rivers')."
+    },
     "reference": {
       "type": "string",
       "pattern": "^@[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*(\\(\\))?$",
@@ -135,7 +140,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "layers": { "type": "array", "items": { "type": "object" } },
+        "layers": {
+          "type": "array",
+          "description": "Ordered map-layer ids in canonical string form. S1 also permits object entries for future richer layer descriptors.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/layerId" },
+              { "type": "object" }
+            ]
+          }
+        },
         "viewport": { "type": "object" },
         "legend": { "type": "object" }
       }

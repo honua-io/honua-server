@@ -365,19 +365,25 @@ internal sealed partial class SpecMutationApplier
         }
 
         var numeric = double.Parse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture);
-        var unit = match.Groups["unit"].Value;
+        var unit = match.Groups["unit"].Value.ToLowerInvariant();
         var kind = unit switch
         {
             "m" or "km" or "mi" or "ft" or "nm" => SpecTypeKind.Distance,
-            "s" or "min" or "h" => SpecTypeKind.Duration,
-            "ha" => SpecTypeKind.Area,
-            _ => SpecTypeKind.Number
+            "s" or "ms" or "min" or "h" or "d" => SpecTypeKind.Duration,
+            "m2" or "km2" or "ha" or "ac" => SpecTypeKind.Area,
+            _ => SpecTypeKind.Unknown
         };
+
+        if (kind == SpecTypeKind.Unknown)
+        {
+            literal = null!;
+            return false;
+        }
 
         literal = new LiteralNode(SourceSpan.Synthetic, kind, Number: numeric, Unit: unit);
         return true;
     }
 
-    [GeneratedRegex(@"^(?<value>-?\d+(?:\.\d+)?)\.(?<unit>[a-zA-Z]+)$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<value>-?\d+(?:\.\d+)?)\.(?<unit>[a-zA-Z][a-zA-Z0-9]*)$", RegexOptions.CultureInvariant)]
     private static partial Regex UnitLiteralPattern();
 }

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
 
@@ -18,8 +17,6 @@ namespace Honua.Core.Features.Spec.Validation;
 /// </summary>
 internal sealed class ReferenceResolver
 {
-    private static readonly ConcurrentDictionary<string, TypeRef> _cache = new(StringComparer.Ordinal);
-
     private readonly SpecDocument _document;
     private readonly ISpecCatalogSnapshot _catalog;
     private readonly Dictionary<string, (TypeRef Type, SourceSpan Span)> _locals = new(StringComparer.Ordinal);
@@ -139,12 +136,6 @@ internal sealed class ReferenceResolver
 
     private TypeRef ResolveSource(SourceBinding source)
     {
-        var cacheKey = $"{_catalog.Version}|{source.Id}";
-        if (_cache.TryGetValue(cacheKey, out var cached))
-        {
-            return cached;
-        }
-
         var resolved = _catalog.ResolveSource(source);
         if (resolved is null)
         {
@@ -160,7 +151,6 @@ internal sealed class ReferenceResolver
             resolved = InferStructuralType(source);
         }
 
-        _cache[cacheKey] = resolved;
         return resolved;
     }
 
