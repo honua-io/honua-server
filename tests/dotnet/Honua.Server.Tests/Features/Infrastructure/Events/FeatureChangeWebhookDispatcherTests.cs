@@ -427,15 +427,31 @@ public sealed class FeatureChangeWebhookDispatcherTests
                 Url = "https://example.com/feature-change",
                 Secret = "super-secret",
                 MaxAttempts = 1,
-                RequestTimeoutSeconds = 5
+                RequestTimeoutSeconds = 30
             }),
             NullLogger<FeatureChangeWebhookDispatcher>.Instance);
 
         using var cts = new CancellationTokenSource();
         var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(1));
-        await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(3));
+        await handler.WaitForRequestAsync().WaitAsync(TimeSpan.FromSeconds(3));
+
+        await WaitForConditionAsync(
+            () => database.ReceivedCalls().Any(call =>
+                call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
+                string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMilliseconds(100));
+
+        var claimExtendCalls = database.ReceivedCalls().Count(call =>
+            call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync) &&
+            string.Equals(call.GetArguments()[0]?.ToString(), "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal));
+
+        Assert.True(
+            claimExtendCalls >= 1,
+            $"expected at least one delivery-claim renewal attempt before cancellation, but saw {claimExtendCalls}");
+
+        await handler.WaitForCancellationAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
         cts.Cancel();
         try
