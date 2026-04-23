@@ -77,7 +77,7 @@ public sealed class QueryProcessor : IQueryProcessor
             if (invalidFields.Count > 0)
             {
                 return QueryValidationResult.Failure(
-                    $"Unknown fields: {string.Join(", ", invalidFields)}");
+                    $"Unknown fields: {FormatFieldNamesForError(invalidFields)}");
             }
         }
 
@@ -96,7 +96,7 @@ public sealed class QueryProcessor : IQueryProcessor
             if (invalidOrderFields.Count > 0)
             {
                 return QueryValidationResult.Failure(
-                    $"Unknown order by fields: {string.Join(", ", invalidOrderFields)}");
+                    $"Unknown order by fields: {FormatFieldNamesForError(invalidOrderFields)}");
             }
         }
 
@@ -137,7 +137,7 @@ public sealed class QueryProcessor : IQueryProcessor
                 if (invalidGroupFields.Count > 0)
                 {
                     return QueryValidationResult.Failure(
-                        $"Unknown group by fields: {string.Join(", ", invalidGroupFields)}");
+                        $"Unknown group by fields: {FormatFieldNamesForError(invalidGroupFields)}");
                 }
             }
 
@@ -152,13 +152,51 @@ public sealed class QueryProcessor : IQueryProcessor
                         !availableFields.ContainsKey(stat.OnStatisticField))
                     {
                         return QueryValidationResult.Failure(
-                            $"Unknown statistics field: {stat.OnStatisticField}");
+                            $"Unknown statistics field: {FormatFieldNameForError(stat.OnStatisticField)}");
                     }
                 }
             }
         }
 
         return QueryValidationResult.Success(warnings.Count > 0 ? warnings : null);
+    }
+
+    private static string FormatFieldNamesForError(IEnumerable<string> fieldNames)
+        => string.Join(", ", fieldNames.Select(FormatFieldNameForError));
+
+    private static string FormatFieldNameForError(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return "unnamed_field";
+        }
+
+        return IsSafeFieldIdentifier(fieldName)
+            ? fieldName
+            : fieldName.SanitizeFieldName();
+    }
+
+    private static bool IsSafeFieldIdentifier(string fieldName)
+    {
+        if (fieldName.Length > 63 || fieldName[0] is >= '0' and <= '9')
+        {
+            return false;
+        }
+
+        foreach (var character in fieldName)
+        {
+            var isAsciiLetter =
+                (character is >= 'a' and <= 'z') ||
+                (character is >= 'A' and <= 'Z');
+            var isAsciiDigit = character is >= '0' and <= '9';
+
+            if (!isAsciiLetter && !isAsciiDigit && character != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <inheritdoc />
