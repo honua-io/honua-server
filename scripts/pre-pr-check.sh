@@ -54,7 +54,52 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     --no-build \
     --no-restore \
     --configuration Release \
-    --filter "FullyQualifiedName!~Honua.Server.Tests.Features." \
+    --filter "FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.CloudCog.&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Admin.|FullyQualifiedName~Honua.Server.Tests.Infrastructure.|FullyQualifiedName~Honua.Server.Tests.AdminEndpointTests" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.CloudCog.|FullyQualifiedName~Honua.Server.Tests.Contract." \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Import." \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Performance." \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Comprehensive." \
     --logger "console;verbosity=minimal" \
     --results-directory ./tests/TestResults \
     -- RunConfiguration.MaxCpuCount=1
