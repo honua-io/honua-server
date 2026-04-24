@@ -115,6 +115,14 @@ REST API and GitOps-ready management:
 - MapLibre style editing
 - Metadata manifest export/apply with approval workflows
 
+### Spec Plan/Apply Engine
+Terraform-style plan/apply semantics for canonical spec documents ([Spec Engine reference](developer/SPEC_ENGINE.md)):
+- `POST /v1/spec/plan` returns a DAG with per-node cost estimates and structured warnings (catalog/metadata only — side-effect-free)
+- `POST /v1/spec/apply` streams per-node progress events over SSE, with a mirrored `geospatial.v1.SpecService/ApplySpec` gRPC server-streaming surface
+- `POST /v1/spec/cancel` cooperatively cancels an in-flight run; `GET /v1/spec/artifact/{hash}` retrieves cached outputs
+- Content-hash artifact cache: re-applying an unchanged spec completes with zero compute invocations; mutating one node invalidates only its transitive closure
+- S1 scope: `compute` and `report` kinds execute; `dataset` / `service` / `app` slots are declared and reject apply with `spec-kind-not-in-s1`; the apply-token registry is in-process and does not survive restart
+
 ## Deployment
 
 Honua runs as a single container in combined mode. The job orchestration substrate ([ADR-0031](contributor/adr/0031-durable-job-orchestration-substrate.md)) is designed to support separate API and worker hosts for enterprise scale-out; dedicated worker-mode hosting (`AddJobWorker()`) for queue-based claim/execute on separate hosts is not yet wired. Pluggable batch-compute backends implement `IBatchComputeBackend` and are resolved by `(BackendName, TargetKind)` at runtime; the `LocalBatchComputeBackend` observes in-process worker progress in the combined host (actual local execution requires `AddJobWorker()` wiring on a worker host), and the execution-job reconciler bridges backend state into the canonical job store on every Redis-enabled host. A declarative workflow orchestration layer ([ADR-0032](contributor/adr/0032-workflow-orchestration-layer.md)) composes canonical process steps into chained, scheduled, and DAG-style runs on top of the same substrate. See [Operations — Job Orchestration](operator/operations.md#job-orchestration), [Operations — Workflow Orchestration](operator/operations.md#workflow-orchestration), and [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md#apiworker-host-separation) for details.

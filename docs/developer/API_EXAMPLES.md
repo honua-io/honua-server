@@ -13,6 +13,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 | **STAC API** | Catalog discovery and item search | `/stac` | STAC browsers, catalog tooling |
 | **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
 | **OGC API Processes** | Async geoprocessing | `/ogc/processes` | OGC-compliant process clients |
+| **Spec Plan/Apply Engine** | Terraform-style spec execution with content-hash caching | `/v1/spec/*` + `geospatial.v1.SpecService` | Deployment tooling, AI agents |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
 
@@ -23,6 +24,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 - [STAC API](#stac-api)
 - [OGC API Features](#ogc-api-features)
 - [OGC API Processes](#ogc-api-processes)
+- [Spec Plan/Apply Engine](#spec-planapply-engine)
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
 - [Error Handling](#error-handling)
@@ -487,6 +489,75 @@ Cancels a running job. Terminal jobs (successful, failed) return `409 Conflict`;
 ```bash
 curl -X DELETE http://localhost:8080/ogc/processes/jobs/{jobId}
 ```
+
+---
+
+## **Spec Plan/Apply Engine**
+
+Terraform-style plan/apply for canonical spec documents. `plan` is
+side-effect-free and reads only catalog/metadata; `apply` streams per-node
+events and serves cache hits without re-invoking the compute backend. See the
+[Spec Engine reference](SPEC_ENGINE.md) for the full contract, diagnostic
+codes, and gRPC surface.
+
+### **Plan a Spec**
+
+```bash
+curl -X POST http://localhost:8080/v1/spec/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grammarVersion": "1.0.0",
+    "processFamilyVersion": "2026.4",
+    "nodes": [
+      { "id": "parks", "kind": "compute", "op": "source.layer",
+        "parameters": { "layerId": "42" } },
+      { "id": "buffered", "kind": "compute", "op": "compute.buffer",
+        "inputs": { "source": "@parks" },
+        "parameters": { "distanceMeters": "100" } }
+    ]
+  }'
+```
+
+Returns the DAG with per-node `{estimatedRows, estimatedBytes,
+estimatedDurationMs}` and structured warnings. Structural errors (cycles,
+duplicate ids, unresolved references) return `400` with a stable `code`.
+
+### **Apply a Spec (SSE)**
+
+```bash
+curl -N -X POST http://localhost:8080/v1/spec/apply \
+  -H "Accept: text/event-stream" \
+  -H "Content-Type: application/json" \
+  -d @spec.json
+```
+
+`Accept: text/event-stream` is required. The apply token is returned on the
+`X-Spec-Apply-Token` response header. Each event carries a monotonic
+`sequence`, a `kind` (`Queued`, `Running`, `Cached`, `Succeeded`, `Failed`,
+`Skipped`, `Warning`, `ApplyStarted`, `ApplyCompleted`, `ApplyCancelled`),
+and when applicable an `actualCost` or `summary` payload.
+
+### **Cancel an Apply**
+
+```bash
+curl -X POST http://localhost:8080/v1/spec/cancel \
+  -H "Content-Type: application/json" \
+  -d '{"applyToken":"8d...bd"}'
+```
+
+Already-completed nodes remain in the cache. Returns `404 apply-token-unknown`
+when the token is not registered (e.g. after a server restart — the apply
+registry is in-process for S1).
+
+### **Fetch a Cached Artifact**
+
+```bash
+curl -O -J http://localhost:8080/v1/spec/artifact/<sha256>
+```
+
+Streams the artifact with its declared content type and sets the
+`X-Spec-Content-Hash` response header. Returns `404 artifact-not-found` when
+the hash is unknown or has been evicted.
 
 ---
 

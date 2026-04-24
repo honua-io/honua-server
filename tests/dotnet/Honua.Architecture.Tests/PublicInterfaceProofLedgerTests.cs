@@ -242,7 +242,8 @@ public sealed partial class PublicInterfaceProofLedgerTests
         }
 
         if (string.Equals(surfaceId, "grpc-feature-service", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(surfaceId, "grpc-process-service", StringComparison.OrdinalIgnoreCase))
+            string.Equals(surfaceId, "grpc-process-service", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(surfaceId, "spec-engine", StringComparison.OrdinalIgnoreCase))
         {
             return string.Equals(proof.ProofClass, "contract-governance", StringComparison.OrdinalIgnoreCase) &&
                    string.Equals(proof.OwnerRepo, "geospatial-grpc", StringComparison.OrdinalIgnoreCase) &&

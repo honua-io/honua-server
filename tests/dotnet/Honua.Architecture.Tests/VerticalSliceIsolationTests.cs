@@ -50,7 +50,8 @@ public sealed class VerticalSliceIsolationTests
         "CloudCog",
         "Infrastructure", // Infrastructure is allowed to be referenced by others
         "StaticMap",
-        "SpatialAnalytics"
+        "SpatialAnalytics",
+        "Spec"
     };
 
     /// <summary>

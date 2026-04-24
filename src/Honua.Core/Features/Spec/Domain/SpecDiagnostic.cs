@@ -4,7 +4,7 @@
 namespace Honua.Core.Features.Spec.Domain;
 
 /// <summary>
-/// Severity of a <see cref="SpecDiagnostic"/>.
+/// Severity of a spec diagnostic or plan/apply warning.
 /// </summary>
 public enum SpecDiagnosticSeverity
 {
