@@ -18,6 +18,10 @@ Build applications and integrations with Honua APIs and SDKs.
 - [MCP Server](MCP_SERVER.md) — SDK-hosted discovery/query MCP package plus the server-owned operator surface for AI agents
 - [Grounding & Intent Drafting](GROUNDING.md) — Pipeline behind `honua_ground_candidates` / `honua_clarify_intent`: workflow-family classifier, candidate ranking, material-ambiguity rule set, and deterministic engine
 
+## Spec Grammar
+
+- [Spec Grammar v1.0](spec-grammar/v1.0/README.md) — Declarative geospatial spec language (source, scope, compute, map, output) + [JSON Schema](spec-grammar/v1.0/spec.schema.json) and [EBNF](spec-grammar/v1.0/spec.ebnf)
+
 ## Internal Architecture
 
 - [Redis Fallback Patterns](REDIS_FALLBACK_PATTERNS.md) — Standardized Redis health monitoring, circuit breaker, and fallback strategies

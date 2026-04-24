@@ -1,0 +1,72 @@
+(* ===================================================================
+   Honua Spec Grammar v1.0 — EBNF for the text form
+   ===================================================================
+
+   The canonical JSON form (spec.schema.json) is authoritative; this
+   EBNF describes the human-friendly brace-based projection that the
+   admin workspace and CLIs accept.
+
+   Lexical conventions:
+     - Comments:   '#' or '//' line comments; '/* ... */' block comments.
+                   Comments are stripped from the body but preserved in
+                   canonical JSON under meta.comments keyed by JSON-Pointer path.
+     - Strings:    double-quoted; escapes \\", \\\\, \\n, \\r, \\t, \\/.
+     - Numbers:    decimal integers and IEEE-754 doubles; scientific suffix allowed.
+     - Identifiers: [A-Za-z_][A-Za-z0-9_]*.
+     - References: '@' + identifier + (dot + identifier)* + ('(' + ')')?.
+     - Trailing commas are allowed inside object and array literals.
+   =================================================================== *)
+
+Document         = { Directive | Section } ;
+
+Directive        = "grammar" String
+                 | "kind"    String
+                 | "title"   String ;
+
+Section          = Source | Scope | Compute | Map | Output ;
+
+Source           = "source" Identifier Object ;
+Scope            = "scope" Object ;
+Compute          = "compute" Identifier Object ;
+Map              = "map" Object ;
+Output           = "output" Identifier Object ;
+
+Object           = "{" [ Field { Field } [ "," ] ] "}" ;
+Field            = FieldName "=" Value [ "," ] ;
+FieldName        = Identifier | String ;
+
+Array            = "[" [ Value { "," Value } [ "," ] ] "]" ;
+
+Value            = Reference
+                 | CqlCall
+                 | GeometryLiteral
+                 | UnitLiteral
+                 | Number
+                 | String
+                 | "true" | "false" | "null"
+                 | Array
+                 | Object
+                 | Identifier ;
+
+Reference        = "@" Identifier { "." Identifier } [ "(" ")" ] ;
+
+CqlCall          = "cql2" "(" String ")" ;
+
+GeometryLiteral  = GeometryKeyword "(" WktBody ")" ;
+GeometryKeyword  = "POINT" | "LINESTRING" | "POLYGON"
+                 | "MULTIPOINT" | "MULTILINESTRING" | "MULTIPOLYGON"
+                 | "GEOMETRYCOLLECTION" ;
+WktBody          = (* Passed to NetTopologySuite's WKT reader *) ;
+
+UnitLiteral      = Number "." UnitSuffix ;
+UnitSuffix       = "km" | "m" | "mi" | "ft" | "nm"          (* distance *)
+                 | "ms" | "s" | "min" | "h" | "d"           (* duration *)
+                 | "m2" | "km2" | "ha" | "ac" ;              (* area     *)
+
+Identifier       = Letter { Letter | Digit | "_" } ;
+String           = '"' { StringChar } '"' ;
+Number           = [ "-" ] Digit { Digit } [ "." Digit { Digit } ] [ ( "e" | "E" ) [ "+" | "-" ] Digit { Digit } ] ;
+
+Letter           = "A".."Z" | "a".."z" | "_" ;
+Digit            = "0".."9" ;
+StringChar       = (* any character except '"' or control, with standard JSON escapes *) ;
