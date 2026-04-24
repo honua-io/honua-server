@@ -89,6 +89,50 @@ internal sealed partial class ODataStreamingQueryHandler(
                     "$expand contains an empty navigation expression.");
             }
 
+            var applyTrackChangesPreference = ODataUtilityService.HasTrackChangesPreference(
+                context.Request.Headers["Prefer"].ToString());
+            var trackChangesRequested = ODataUtilityService.RequestsTrackChanges(context.Request);
+
+            DateTimeOffset? deltaSince = null;
+            int? deltaLayerId = null;
+            ODataDeltaService.DeltaQueryState? deltaState = null;
+            if (!string.IsNullOrWhiteSpace(deltatoken))
+            {
+                var deltaValidation = ValidateDeltaRequestQuery(context.Request.Query.Keys);
+                if (deltaValidation != null)
+                {
+                    return ODataUtilityService.CreateODataError(
+                        context,
+                        "InvalidQueryOption",
+                        deltaValidation);
+                }
+
+                if (!ODataDeltaService.TryDecode(deltatoken, out deltaState, out var deltaError))
+                {
+                    return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
+                }
+
+                deltaSince = deltaState.Timestamp;
+                deltaLayerId = deltaState.LayerId;
+                filter = deltaState.Filter;
+                select = deltaState.Select;
+                orderby = deltaState.OrderBy;
+                expand = deltaState.Expand;
+                compute = deltaState.Compute;
+                format = deltaState.Format;
+                count = deltaState.Count?.ToString()?.ToLowerInvariant();
+                trackChangesRequested = true;
+            }
+
+            if (trackChangesRequested &&
+                (!string.IsNullOrWhiteSpace(apply) || !string.IsNullOrWhiteSpace(search)))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "Change tracking is not supported with $search or $apply.");
+            }
+
             var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
             if (formatValidation != null)
             {
@@ -112,20 +156,6 @@ internal sealed partial class ODataStreamingQueryHandler(
             if (pagingError != null)
             {
                 return pagingError;
-            }
-
-            // Validate $deltatoken if present
-            DateTimeOffset? deltaSince = null;
-            int? deltaLayerId = null;
-            if (!string.IsNullOrWhiteSpace(deltatoken))
-            {
-                if (!ODataDeltaService.TryDecode(deltatoken, out var decodedTimestamp, out var decodedLayerId, out var deltaError))
-                {
-                    return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
-                }
-
-                deltaSince = decodedTimestamp;
-                deltaLayerId = decodedLayerId;
             }
 
             if (!ODataComputeService.TryParse(compute, out var computeExpressions, out var computeError))
@@ -249,6 +279,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     orderby,
                     select,
                     expand,
+                    context,
                     effectiveToken);
                 if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
                 {
@@ -298,6 +329,21 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return layerValidation.ErrorResult!;
             }
             var layer = layerValidation.Layer!;
+            var deltaDefinition = deltaState ?? new ODataDeltaService.DeltaQueryState
+            {
+                Timestamp = DateTimeOffset.UtcNow,
+                LayerId = layerId.Value,
+                Filter = filter,
+                Select = select,
+                OrderBy = orderby,
+                Expand = expand,
+                Compute = compute,
+                Format = format,
+                Count = countValue
+            };
+            var effectiveFilter = deltaSince.HasValue
+                ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value)
+                : filter;
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -305,7 +351,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             // Build feature query using query service
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
-                filter,
+                effectiveFilter,
                 orderby,
                 pagination.Limit,
                 pagination.Offset,
@@ -329,6 +375,11 @@ internal sealed partial class ODataStreamingQueryHandler(
             {
                 // For small result sets or when $expand is used, delegate to non-streaming handler
                 var queryHandler = context.RequestServices.GetRequiredService<ODataQueryHandler>();
+                if (applyTrackChangesPreference)
+                {
+                    ODataUtilityService.ApplyTrackChangesPreference(context);
+                }
+
                 return await queryHandler.HandleGetFeaturesNonStreamingAsync(
                     context,
                     layerId.Value,
@@ -343,6 +394,9 @@ internal sealed partial class ODataStreamingQueryHandler(
                     compute,
                     format,
                     deltaSince,
+                    trackChangesRequested,
+                    deltatoken,
+                    deltaDefinition,
                     cancellationToken);
             }
 
@@ -373,6 +427,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             context.Response.ContentType = ODataUtilityService.GetODataContentType(context.Request, format);
             context.Response.Headers["Transfer-Encoding"] = "chunked";
             ODataUtilityService.SetODataHeaders(context);
+            if (applyTrackChangesPreference)
+            {
+                ODataUtilityService.ApplyTrackChangesPreference(context);
+            }
 
             var selectedFields = ODataUtilityService.ParseSelect(select);
 
@@ -393,6 +451,9 @@ internal sealed partial class ODataStreamingQueryHandler(
                 useSkipToken,
                 compute,
                 format,
+                trackChangesRequested,
+                deltatoken,
+                deltaDefinition,
                 totalCount,
                 ODataUtilityService.ShouldIncludeContext(context.Request, format),
                 computeExpressions,
@@ -412,12 +473,22 @@ internal sealed partial class ODataStreamingQueryHandler(
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             HonuaTelemetry.RecordException(featureActivity, ex);
+            if (context.Response.HasStarted)
+            {
+                return Results.Empty;
+            }
+
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
+            if (context.Response.HasStarted)
+            {
+                return Results.Empty;
+            }
+
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the OData request", 500);
         }
@@ -446,6 +517,9 @@ internal sealed partial class ODataStreamingQueryHandler(
         bool useSkipToken,
         string? compute,
         string? format,
+        bool trackChangesRequested,
+        string? deltatoken,
+        ODataDeltaService.DeltaQueryState deltaState,
         long? totalCount,
         bool includeContext,
         System.Collections.Immutable.ImmutableArray<ODataComputeExpression> computeExpressions,
@@ -515,24 +589,40 @@ internal sealed partial class ODataStreamingQueryHandler(
         if (shouldPaginate)
         {
             var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
-            var nextLink = ODataUtilityService.GenerateNextLink(
-                context.Request,
-                nextSkip,
-                pagination.Limit,
-                filter,
-                select,
-                orderby,
-                count,
-                expand,
-                useSkipToken,
-                compute,
-                format);
+            var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
+                ? ODataUtilityService.GenerateDeltaNextLink(
+                    context.Request,
+                    deltatoken,
+                    nextSkip,
+                    pagination.Limit,
+                    useSkipToken,
+                    deltaState.Filter,
+                    deltaState.OrderBy)
+                : ODataUtilityService.GenerateNextLink(
+                    context.Request,
+                    nextSkip,
+                    pagination.Limit,
+                    filter,
+                    select,
+                    orderby,
+                    count,
+                    expand,
+                    useSkipToken,
+                    compute,
+                    format,
+                    trackChangesRequested);
             writer.WriteString("@odata.nextLink", nextLink);
         }
-        else
+        else if (trackChangesRequested)
         {
-            // When there are no more pages, include a delta link for change tracking.
-            var deltaLink = ODataUtilityService.GenerateDeltaLink(context.Request, layerId, DateTimeOffset.UtcNow);
+            var deltaLink = ODataUtilityService.GenerateDeltaLink(
+                context.Request,
+                deltaState with
+                {
+                    Timestamp = DateTimeOffset.UtcNow,
+                    LayerId = layerId,
+                    Count = count
+                });
             writer.WriteString("@odata.deltaLink", deltaLink);
         }
 
@@ -540,6 +630,24 @@ internal sealed partial class ODataStreamingQueryHandler(
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
+    }
+
+    private static string? ValidateDeltaRequestQuery(IEnumerable<string> queryKeys)
+    {
+        foreach (var key in queryKeys)
+        {
+            if (key.Equals("$deltatoken", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("$top", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("$skip", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("$skiptoken", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return "Delta links are opaque. Do not append additional query options.";
+        }
+
+        return null;
     }
 
     /// <summary>

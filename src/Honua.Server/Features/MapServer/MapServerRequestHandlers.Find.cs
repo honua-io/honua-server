@@ -3,6 +3,8 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Collections.Immutable;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -15,12 +17,12 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.MapServer.Models;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    private const int MaxFindResults = 1000;
     private const string InvalidFindRequestMessage = "Invalid find request parameters.";
 
     /// <summary>
@@ -28,6 +30,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleFind(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -36,9 +39,21 @@ internal static partial class MapServerEndpoints
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "find",
+            HonuaTelemetry.Protocols.MapServer,
+            "*");
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, "find");
 
         try
         {
+            var earlyServiceError = await TryValidateMapServerServiceAsync(serviceId, context);
+            if (earlyServiceError is not null)
+            {
+                return earlyServiceError;
+            }
+
             var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
             if (values == null)
             {
@@ -90,7 +105,7 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -122,6 +137,8 @@ internal static partial class MapServerEndpoints
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
 
+            scope.WithTag(HonuaTelemetry.Tags.LayerId, layersParam.Trim());
+
             var requestedLayerIds = ParseLayerIds(layersParam);
             if (requestedLayerIds.Count == 0)
             {
@@ -143,23 +160,32 @@ internal static partial class MapServerEndpoints
             }
 
             MapServerLog.FindRequested(logger, serviceId, searchText);
-
-            using var activity = HonuaTelemetry.ActivitySource.StartActivity(
-                "MapServerFind", ActivityKind.Internal);
-            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.MapServer);
-            activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
-            activity?.SetTag(HonuaTelemetry.Tags.Operation, "find");
+            var stopwatch = Stopwatch.StartNew();
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var geometryConverter = context.RequestServices.GetRequiredService<IGeometryConverter>();
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var maxFindResults = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
             var results = new List<FindResult>();
 
             var findLayers = ResolveFindLayers(service, requestedLayerIds, dynamicLayers, context);
+            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(
+                context,
+                findLayers.Select(static entry => entry.Layer),
+                service);
+            if (accessError != null)
+            {
+                return accessError;
+            }
 
             foreach (var (layer, definitionExpression) in findLayers)
             {
+                if (results.Count >= maxFindResults)
+                {
+                    break;
+                }
+
                 if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
                 {
                     continue;
@@ -177,109 +203,117 @@ internal static partial class MapServerEndpoints
                 var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
                 var displayField = ResolveDisplayField(layer, objectIdField);
 
-                var escapedSearchText = EscapeSqlStringLiteral(searchText);
-                var fieldSearchClauses = new List<string>(fieldsToSearch.Length);
-                foreach (var field in fieldsToSearch)
+                SqlFragment? layerSqlFilter = null;
+                if (!string.IsNullOrWhiteSpace(layerDef))
                 {
-                    var quotedFieldName = $"\"{field.Name}\"";
-                    var whereClause = contains
-                        ? $"{quotedFieldName} LIKE '%{EscapeLikeWildcards(escapedSearchText)}%' ESCAPE '\\'"
-                        : $"{quotedFieldName} = '{escapedSearchText}'";
-
-                    if (!string.IsNullOrWhiteSpace(layerDef))
+                    var translationResult = filterExpressionService.Translate(FilterLanguage.ArcGisSql, layerDef, layer);
+                    if (!translationResult.IsSuccess)
                     {
-                        whereClause = $"({layerDef}) AND ({whereClause})";
+                        continue;
                     }
 
-                    fieldSearchClauses.Add(whereClause);
+                    layerSqlFilter = translationResult.SqlFilter;
                 }
 
-                var combinedWhereClause = fieldSearchClauses.Count == 1
-                    ? fieldSearchClauses[0]
-                    : $"({string.Join(" OR ", fieldSearchClauses.Select(clause => $"({clause})"))})";
+                var outFields = fieldsToSearch
+                    .Select(field => field.Name)
+                    .Append(displayField)
+                    .Append(objectIdField)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToImmutableArray();
 
-                var translationResult = filterExpressionService.Translate(FilterLanguage.ArcGisSql, combinedWhereClause, layer);
-                if (!translationResult.IsSuccess)
+                var pageSize = Math.Clamp(Math.Max(maxFindResults * 10, 50), 50, 500);
+                var offset = 0;
+
+                while (results.Count < maxFindResults)
                 {
-                    continue;
-                }
-
-                var featureQuery = new FeatureQuery
-                {
-                    SpatialReferenceSrid = service.SpatialReference.Srid,
-                    OutputSrid = outputSrid,
-                    Limit = MaxFindResults - results.Count,
-                    SqlFilter = translationResult.SqlFilter
-                };
-
-                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
-
-                foreach (var feature in queryResult.Items)
-                {
-                    var attributes = new Dictionary<string, object?>();
-                    foreach (var kvp in feature.Attributes)
+                    var featureQuery = new FeatureQuery
                     {
-                        if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                        {
-                            continue;
-                        }
+                        SpatialReferenceSrid = service.SpatialReference.Srid,
+                        OutputSrid = outputSrid,
+                        Limit = pageSize,
+                        Offset = offset,
+                        OutFields = outFields,
+                        SqlFilter = layerSqlFilter
+                    };
 
-                        attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
+                    var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+                    if (queryResult.Items.Length == 0)
+                    {
+                        break;
                     }
 
-                    object? geometryResult = null;
-                    if (returnGeometry && feature.Geometry != null)
+                    foreach (var feature in queryResult.Items)
                     {
-                        try
+                        var attributes = new Dictionary<string, object?>();
+                        foreach (var kvp in feature.Attributes)
                         {
-                            geometryResult = geometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid);
-                        }
-                        catch (ArgumentException)
-                        {
-                            geometryResult = null;
-                        }
-                    }
+                            if (FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                            {
+                                continue;
+                            }
 
-                    var displayValue = GetDisplayFieldValue(feature, displayField);
-                    foreach (var field in fieldsToSearch)
-                    {
-                        if (!TryMatchSearchField(feature, field, searchText, contains))
-                        {
-                            continue;
+                            attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
                         }
 
-                        results.Add(new FindResult
+                        object? geometryResult = null;
+                        if (returnGeometry && feature.Geometry != null)
                         {
-                            LayerId = layer.Id,
-                            LayerName = layer.Name,
-                            DisplayFieldName = displayField,
-                            FoundFieldName = field.Name,
-                            Value = displayValue,
-                            Attributes = attributes,
-                            GeometryType = layer.HasGeometry ? MapGeometryTypeToEsri(layer.GeometryType) : null,
-                            Geometry = geometryResult
-                        });
+                            try
+                            {
+                                geometryResult = geometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid);
+                            }
+                            catch (ArgumentException)
+                            {
+                                geometryResult = null;
+                            }
+                        }
 
-                        if (results.Count >= MaxFindResults)
+                        var displayValue = GetDisplayFieldValue(feature, displayField);
+                        foreach (var field in fieldsToSearch)
+                        {
+                            if (!TryMatchSearchField(feature, field, searchText, contains))
+                            {
+                                continue;
+                            }
+
+                            results.Add(new FindResult
+                            {
+                                LayerId = layer.Id,
+                                LayerName = layer.Name,
+                                DisplayFieldName = displayField,
+                                FoundFieldName = field.Name,
+                                Value = displayValue,
+                                Attributes = attributes,
+                                GeometryType = layer.HasGeometry ? MapGeometryTypeToEsri(layer.GeometryType) : null,
+                                Geometry = geometryResult
+                            });
+
+                            if (results.Count >= maxFindResults)
+                            {
+                                break;
+                            }
+                        }
+
+                        if (results.Count >= maxFindResults)
                         {
                             break;
                         }
                     }
 
-                    if (results.Count >= MaxFindResults)
+                    if (queryResult.Items.Length < pageSize)
                     {
                         break;
                     }
-                }
 
-                if (results.Count >= MaxFindResults)
-                {
-                    break;
+                    offset += queryResult.Items.Length;
                 }
             }
 
             MapServerLog.FindCompleted(logger, serviceId, results.Count);
-            HonuaTelemetry.SetSuccess(activity, results.Count);
+            stopwatch.Stop();
+            scope.SetSuccess(results.Count);
+            scope.CategorizeLatency(stopwatch.Elapsed.TotalMilliseconds);
 
             var response = new FindResponse { Results = [.. results] };
             return Results.Json(response, MapServerJsonContext.Default.FindResponse, contentType: "application/json");
@@ -287,15 +321,17 @@ internal static partial class MapServerEndpoints
         catch (ArgumentException ex)
         {
             MapServerLog.FindFailed(logger, serviceId, ex.Message, ex);
+            scope.RecordException(ex);
             return StandardErrorHelpers.CreateBadRequest(context, InvalidFindRequestMessage);
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
         catch (Exception ex)
         {
             MapServerLog.FindFailed(logger, serviceId, ex.Message, ex);
+            scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer find failed.");
         }
     }
@@ -427,7 +463,7 @@ internal static partial class MapServerEndpoints
         string searchText,
         bool contains)
     {
-        if (!feature.Attributes.TryGetValue(field.Name, out var value) || value is null)
+        if (!TryGetAttributeValue(feature, field.Name, out var value) || value is null)
         {
             return false;
         }
@@ -439,7 +475,27 @@ internal static partial class MapServerEndpoints
         }
 
         return contains
-            ? actualText.Contains(searchText, StringComparison.Ordinal)
-            : string.Equals(actualText, searchText, StringComparison.Ordinal);
+            ? actualText.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(actualText, searchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetAttributeValue(Feature feature, string fieldName, out object? value)
+    {
+        if (feature.Attributes.TryGetValue(fieldName, out value))
+        {
+            return true;
+        }
+
+        foreach (var attribute in feature.Attributes)
+        {
+            if (string.Equals(attribute.Key, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = attribute.Value;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
     }
 }

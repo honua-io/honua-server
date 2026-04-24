@@ -61,17 +61,7 @@ internal static partial class AttachmentHandler
                 LogQueryAttachments(logger, layerId, featureId);
 
                 var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
-                var infos = attachments.Select(a => new AttachmentInfo
-                {
-                    Id = a.Id,
-                    Name = a.Filename,
-                    ContentType = a.ContentType,
-                    Size = a.Size,
-                    Keywords = a.Keywords,
-                    Url = returnUrl
-                        ? BuildAttachmentUrl(context, layerId, featureId, a.Id)
-                        : null
-                }).ToArray();
+                var infos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl);
 
                 groups.Add(new AttachmentGroup
                 {
@@ -91,6 +81,38 @@ internal static partial class AttachmentHandler
         catch (Exception ex)
         {
             var featureId = featureIds.Count > 0 ? featureIds[0] : 0;
+            LogQueryAttachmentsError(logger, layerId, featureId, ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "Failed to query attachments");
+        }
+    }
+
+    /// <summary>
+    /// Returns the canonical per-feature attachment infos resource.
+    /// </summary>
+    public static async Task<IResult> GetAttachmentInfosAsync(
+        HttpContext context,
+        int layerId,
+        long featureId,
+        IAttachmentStore attachmentStore,
+        ILogger<AttachmentOperations> logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            LogQueryAttachments(logger, layerId, featureId);
+            var attachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+            var response = new AttachmentInfosResponse
+            {
+                AttachmentInfos = MapAttachmentInfos(attachments, context, layerId, featureId, returnUrl: false)
+            };
+
+            return Results.Json(
+                response,
+                FeatureServerJsonContext.Default.AttachmentInfosResponse,
+                contentType: "application/json");
+        }
+        catch (Exception ex)
+        {
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to query attachments");
         }
@@ -201,15 +223,18 @@ internal static partial class AttachmentHandler
     }
 
     /// <summary>
-    /// Updates an attachment's metadata
+    /// Updates an attachment's metadata and optionally replaces its file content.
     /// </summary>
     public static async Task<IResult> UpdateAttachmentAsync(
         HttpContext context,
         int layerId,
         long featureId,
         long attachmentId,
+        IFormFile? file,
         string? keywords,
         IAttachmentStore attachmentStore,
+        AttachmentLimits limits,
+        FileUploadSecurityOptions securityOptions,
         ILogger<AttachmentOperations> logger,
         CancellationToken cancellationToken)
     {
@@ -224,20 +249,78 @@ internal static partial class AttachmentHandler
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 
-            // Create updated attachment with new keywords
             var attachment = existingAttachment.Value;
-            var updatedAttachment = Attachment.Create(
-                attachment.Id,
-                attachment.FeatureId,
-                attachment.LayerId,
-                attachment.Filename,
-                attachment.ContentType,
-                attachment.Size,
-                attachment.CreatedAt,
-                attachment.StoragePath,
-                keywords);
+            if (file != null)
+            {
+                var fileNameValidation = FileUploadSecurity.ValidateFileName(file.FileName);
+                if (!fileNameValidation.IsValid)
+                {
+                    LogSecurityValidationFailed(logger, layerId, featureId, "filename", fileNameValidation.ErrorMessage);
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid file name",
+                        [fileNameValidation.ErrorMessage ?? "File name validation failed"]);
+                }
 
-            await attachmentStore.UpdateAsync(layerId, featureId, updatedAttachment, cancellationToken);
+                if (file.Length > limits.MaxAttachmentSize)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        $"File size ({file.Length:N0} bytes) exceeds maximum allowed size ({limits.MaxAttachmentSize:N0} bytes)");
+                }
+
+                if (!IsAllowedMimeType(file.ContentType, limits.AllowedMimeTypes))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        $"File type '{file.ContentType}' is not allowed");
+                }
+
+                var contentValidation = await FileUploadSecurity.ValidateFileContentAsync(
+                    file,
+                    securityOptions.MaxSecurityScanSizeBytes,
+                    cancellationToken);
+                if (!contentValidation.IsValid)
+                {
+                    LogSecurityValidationFailed(logger, layerId, featureId, "content", contentValidation.ErrorMessage);
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid file content",
+                        [contentValidation.ErrorMessage ?? "File content validation failed"]);
+                }
+
+                var existingAttachments = await attachmentStore.ListAsync(layerId, featureId, cancellationToken);
+                var totalOtherAttachmentSize = existingAttachments
+                    .Where(existing => existing.Id != attachmentId)
+                    .Sum(existing => existing.Size);
+                if (totalOtherAttachmentSize + file.Length > limits.MaxTotalAttachmentSize)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
+                }
+
+                await using var stream = file.OpenReadStream();
+                await attachmentStore.ReplaceAsync(
+                    layerId,
+                    featureId,
+                    attachmentId,
+                    FileUploadSecurity.SanitizeFileName(file.FileName),
+                    file.ContentType,
+                    stream,
+                    keywords,
+                    cancellationToken);
+            }
+            else
+            {
+                var updatedAttachment = Attachment.Create(
+                    attachment.Id,
+                    attachment.FeatureId,
+                    attachment.LayerId,
+                    attachment.Filename,
+                    attachment.ContentType,
+                    attachment.Size,
+                    attachment.CreatedAt,
+                    attachment.StoragePath,
+                    keywords);
+
+                await attachmentStore.UpdateAsync(layerId, featureId, updatedAttachment, cancellationToken);
+            }
 
             var response = new UpdateAttachmentResponse
             {
@@ -389,6 +472,24 @@ internal static partial class AttachmentHandler
 
         return false;
     }
+
+    private static AttachmentInfo[] MapAttachmentInfos(
+        IReadOnlyList<Attachment> attachments,
+        HttpContext context,
+        int layerId,
+        long featureId,
+        bool returnUrl)
+        => attachments.Select(attachment => new AttachmentInfo
+        {
+            Id = attachment.Id,
+            Name = attachment.Filename,
+            ContentType = attachment.ContentType,
+            Size = attachment.Size,
+            Keywords = attachment.Keywords,
+            Url = returnUrl
+                ? BuildAttachmentUrl(context, layerId, featureId, attachment.Id)
+                : null
+        }).ToArray();
 
     private static string? BuildAttachmentUrl(HttpContext context, int layerId, long featureId, long attachmentId)
     {

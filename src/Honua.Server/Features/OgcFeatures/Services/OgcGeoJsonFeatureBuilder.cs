@@ -29,7 +29,7 @@ internal static class OgcGeoJsonFeatureBuilder
                 layer,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IdFactory: idFactory)),
+                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, layer)))),
             geometry,
             links);
     }
@@ -50,7 +50,7 @@ internal static class OgcGeoJsonFeatureBuilder
                 layer,
                 new GeoJsonFeatureBuildOptions(
                     ProjectedProperties: projectedProperties,
-                    IdFactory: idFactory)),
+                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, layer)))),
             geometry,
             links);
     }

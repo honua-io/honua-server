@@ -50,6 +50,7 @@ internal sealed partial class ODataQueryHandler(
         HttpContext context,
         [FromQuery(Name = "$filter")] string? filter = null,
         [FromQuery(Name = "$select")] string? select = null,
+        [FromQuery(Name = "$orderby")] string? orderby = null,
         [FromQuery(Name = "$top")] string? top = null,
         [FromQuery(Name = "$skip")] string? skip = null,
         [FromQuery(Name = "$skiptoken")] string? skiptoken = null,
@@ -107,6 +108,11 @@ internal sealed partial class ODataQueryHandler(
             if (!string.IsNullOrWhiteSpace(filter))
             {
                 layerQuery = _querySearchService.ApplyBasicFilter((IEnumerable<Core.Features.Catalog.Domain.LayerDefinition>)layerQuery, filter);
+            }
+
+            if (!string.IsNullOrWhiteSpace(orderby))
+            {
+                layerQuery = ApplyLayerOrdering(layerQuery, orderby);
             }
 
             // Apply pagination and counting
@@ -332,6 +338,9 @@ internal sealed partial class ODataQueryHandler(
         [FromQuery(Name = "$compute")] string? compute = null,
         [FromQuery(Name = "$format")] string? format = null,
         DateTimeOffset? deltaSince = null,
+        bool trackChangesRequested = false,
+        string? deltatoken = null,
+        ODataDeltaService.DeltaQueryState? deltaState = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -400,9 +409,13 @@ internal sealed partial class ODataQueryHandler(
                 layerId.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
+            var effectiveFilter = deltaSince.HasValue
+                ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value)
+                : filter;
+
             // Build feature query using query service
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
-                filter,
+                effectiveFilter,
                 orderby,
                 pagination.Limit,
                 pagination.Offset,
@@ -421,6 +434,8 @@ internal sealed partial class ODataQueryHandler(
 
             var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions) &&
                            string.IsNullOrWhiteSpace(expand) &&
+                           string.IsNullOrWhiteSpace(deltatoken) &&
+                           !trackChangesRequested &&
                            !AcceptRequestsNonDefaultMetadata(context.Request, format);
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
             if (canCache && cacheTtl <= TimeSpan.Zero)
@@ -438,6 +453,11 @@ internal sealed partial class ODataQueryHandler(
                 if (cached != null)
                 {
                     ODataUtilityService.SetODataHeaders(context);
+                    if (trackChangesRequested)
+                    {
+                        ODataUtilityService.ApplyTrackChangesPreference(context);
+                    }
+
                     HonuaTelemetry.SetSuccess(featureActivity);
                     return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
                 }
@@ -451,7 +471,11 @@ internal sealed partial class ODataQueryHandler(
             if (!string.IsNullOrWhiteSpace(expand) && layer.HasRelationships)
             {
                 expandedRelations = await _querySearchService.ProcessExpandAsync(
-                    expand, layer, queryResult.Items.Select(f => f.Id).ToArray(), effectiveToken);
+                    expand,
+                    layer,
+                    queryResult.Items.Select(f => f.Id).ToArray(),
+                    context,
+                    effectiveToken);
             }
 
             var layerSrid = layer.SpatialReference.ToSrid();
@@ -493,18 +517,52 @@ internal sealed partial class ODataQueryHandler(
             if (ODataUtilityService.ShouldPaginate(result.Length, pagination.Offset, queryResult.TotalCount, pagination.Limit))
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
-                nextLink = ODataUtilityService.GenerateNextLink(context.Request, nextSkip, pagination.Limit,
-                    filter, select, orderby, count, expand, useSkipToken, compute, format);
+                nextLink = !string.IsNullOrWhiteSpace(deltatoken)
+                    ? ODataUtilityService.GenerateDeltaNextLink(
+                        context.Request,
+                        deltatoken,
+                        nextSkip,
+                        pagination.Limit,
+                        useSkipToken,
+                        deltaState?.Filter,
+                        deltaState?.OrderBy)
+                    : ODataUtilityService.GenerateNextLink(
+                        context.Request,
+                        nextSkip,
+                        pagination.Limit,
+                        filter,
+                        select,
+                        orderby,
+                        count,
+                        expand,
+                        useSkipToken,
+                        compute,
+                        format,
+                        trackChangesRequested);
             }
 
-            // Generate delta link when there are no more pages and no nextLink.
-            // The delta link captures the current timestamp so future requests with
-            // $deltatoken can retrieve only features modified after this point.
             string? deltaLink = null;
-            if (nextLink == null)
+            if (nextLink == null && trackChangesRequested)
             {
                 deltaLink = ODataUtilityService.GenerateDeltaLink(
-                    context.Request, layerId, DateTimeOffset.UtcNow);
+                    context.Request,
+                    (deltaState ?? new ODataDeltaService.DeltaQueryState
+                    {
+                        Timestamp = DateTimeOffset.UtcNow,
+                        LayerId = layerId,
+                        Filter = filter,
+                        Select = select,
+                        OrderBy = orderby,
+                        Expand = expand,
+                        Compute = compute,
+                        Format = format,
+                        Count = count
+                    }) with
+                    {
+                        Timestamp = DateTimeOffset.UtcNow,
+                        LayerId = layerId,
+                        Count = count
+                    });
             }
 
             var response = new ODataResponse
@@ -519,6 +577,11 @@ internal sealed partial class ODataQueryHandler(
             };
 
             ODataUtilityService.SetODataHeaders(context);
+            if (trackChangesRequested)
+            {
+                ODataUtilityService.ApplyTrackChangesPreference(context);
+            }
+
             var contentType = ODataUtilityService.GetODataContentType(context.Request, format);
             if (canCache && cacheKey != null)
             {
@@ -591,10 +654,78 @@ internal sealed partial class ODataQueryHandler(
         return ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken);
     }
 
+    private static IEnumerable<LayerDefinition> ApplyLayerOrdering(IEnumerable<LayerDefinition> layers, string orderby)
+    {
+        IOrderedEnumerable<LayerDefinition>? ordered = null;
+
+        foreach (var segment in orderby.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.IsNullOrWhiteSpace(segment))
+            {
+                continue;
+            }
+
+            var parts = segment.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 0 || parts.Length > 2)
+            {
+                throw new ArgumentException("Invalid $orderby expression.");
+            }
+
+            var field = parts[0];
+            var ascending = parts.Length == 1 || parts[1].Equals("asc", StringComparison.OrdinalIgnoreCase);
+            if (parts.Length == 2 &&
+                !parts[1].Equals("asc", StringComparison.OrdinalIgnoreCase) &&
+                !parts[1].Equals("desc", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Invalid sort direction in $orderby: {parts[1]}. Use 'asc' or 'desc'.");
+            }
+
+            ordered = ApplyLayerOrderingClause(ordered, layers, field, ascending);
+        }
+
+        return ordered ?? layers;
+    }
+
+    private static IOrderedEnumerable<LayerDefinition> ApplyLayerOrderingClause(
+        IOrderedEnumerable<LayerDefinition>? ordered,
+        IEnumerable<LayerDefinition> layers,
+        string field,
+        bool ascending)
+    {
+        return field.ToLowerInvariant() switch
+        {
+            "id" => ApplyOrder(ordered, layers, static layer => layer.Id, ascending),
+            "name" => ApplyOrder(ordered, layers, static layer => layer.Name ?? string.Empty, ascending),
+            "description" => ApplyOrder(ordered, layers, static layer => layer.Description ?? string.Empty, ascending),
+            "geometrytype" => ApplyOrder(ordered, layers, static layer => layer.GeometryType.ToString(), ascending),
+            "srid" => ApplyOrder(ordered, layers, static layer => layer.SpatialReference.ToSrid(), ascending),
+            _ => throw new ArgumentException($"Unknown field in $orderby: {field}")
+        };
+    }
+
+    private static IOrderedEnumerable<LayerDefinition> ApplyOrder<TKey>(
+        IOrderedEnumerable<LayerDefinition>? ordered,
+        IEnumerable<LayerDefinition> layers,
+        Func<LayerDefinition, TKey> selector,
+        bool ascending)
+    {
+        if (ordered != null)
+        {
+            return ascending
+                ? ordered.ThenBy(selector)
+                : ordered.ThenByDescending(selector);
+        }
+
+        return ascending
+            ? layers.OrderBy(selector)
+            : layers.OrderByDescending(selector);
+    }
+
     private static bool AcceptRequestsNonDefaultMetadata(HttpRequest request, string? format)
     {
         if (!string.IsNullOrWhiteSpace(format) &&
-            format.Contains("odata.metadata", StringComparison.OrdinalIgnoreCase) &&
+            ContainsMetadataFormatParameter(format) &&
             !format.Contains("minimal", StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -602,9 +733,17 @@ internal sealed partial class ODataQueryHandler(
 
         var accept = request.Headers.Accept.ToString();
         return !string.IsNullOrWhiteSpace(accept) &&
-               accept.Contains("odata.metadata", StringComparison.OrdinalIgnoreCase) &&
-               !accept.Contains("odata.metadata=minimal", StringComparison.OrdinalIgnoreCase);
+               ContainsMetadataFormatParameter(accept) &&
+               !ContainsMinimalMetadataFormatParameter(accept);
     }
+
+    private static bool ContainsMetadataFormatParameter(string value)
+        => value.Contains("metadata=", StringComparison.OrdinalIgnoreCase) ||
+           value.Contains("odata.metadata=", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ContainsMinimalMetadataFormatParameter(string value)
+        => value.Contains("metadata=minimal", StringComparison.OrdinalIgnoreCase) ||
+           value.Contains("odata.metadata=minimal", StringComparison.OrdinalIgnoreCase);
 
 
     /// <summary>

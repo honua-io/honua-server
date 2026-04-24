@@ -116,6 +116,22 @@ internal sealed record StandardErrorResponse(
     }
 
     /// <summary>
+    /// Creates a PreconditionFailed StandardErrorResponse.
+    /// </summary>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A PreconditionFailed StandardErrorResponse.</returns>
+    public static StandardErrorResponse PreconditionFailed(string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        return new StandardErrorResponse(
+            StatusCode: StatusCodes.Status412PreconditionFailed,
+            Title: "Precondition Failed",
+            Detail: detail,
+            AdditionalDetails: additionalDetails
+        );
+    }
+
+    /// <summary>
     /// Creates an InternalServerError StandardErrorResponse.
     /// </summary>
     /// <param name="detail">The error detail message.</param>
@@ -151,6 +167,22 @@ internal sealed record StandardErrorResponse(
             Title: "Service Unavailable",
             Detail: detail,
             AdditionalDetails: details.Count > 0 ? details : null
+        );
+    }
+
+    /// <summary>
+    /// Creates a RequestTimeout StandardErrorResponse.
+    /// </summary>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A RequestTimeout StandardErrorResponse.</returns>
+    public static StandardErrorResponse RequestTimeout(string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        return new StandardErrorResponse(
+            StatusCode: StatusCodes.Status408RequestTimeout,
+            Title: "Request Timeout",
+            Detail: detail,
+            AdditionalDetails: additionalDetails
         );
     }
 }
@@ -189,4 +221,9 @@ internal sealed class ErrorResponseFormatterOptions
     /// Optional WFS exception locator attribute.
     /// </summary>
     public string? WfsExceptionLocator { get; init; }
+
+    /// <summary>
+    /// Explicit OData error code to emit instead of inferring one from the HTTP status code.
+    /// </summary>
+    public string? ODataErrorCode { get; init; }
 }

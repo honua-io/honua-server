@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Ogc.Common;
@@ -143,8 +144,8 @@ public sealed class OgcFeaturesTransactionExceptionMappingTests
     private static WebAppFixture CreateFixtureWithUpdateException(Func<Exception> exceptionFactory)
     {
         var writer = Substitute.For<IFeatureWriter>();
-        writer.UpdateAsync(Arg.Any<int>(), Arg.Any<Feature>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<Feature>(exceptionFactory()));
+        writer.ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(_ => Task.FromException<FeatureEditResult>(exceptionFactory()));
 
         return new WebAppFixture()
             .ReplaceService<IFeatureWriter>(writer);

@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Validation;
 
@@ -47,6 +48,7 @@ internal readonly record struct OgcFeaturesQueryParameters
 internal sealed class OgcFeaturesQueryParameterAdapter(
     OgcFilterProcessor filterProcessor,
     ICommonQueryValidator queryValidator,
+    IFilterExpressionTranslator filterExpressionTranslator,
     ILogger<OgcFeaturesQueryParameterAdapter> logger) : IQueryParameterAdapter<OgcFeaturesQueryParameters>
 {
     private static readonly ImmutableHashSet<string> SortByCoreFields = ImmutableHashSet.Create(
@@ -61,6 +63,8 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         ?? throw new ArgumentNullException(nameof(filterProcessor));
     private readonly ICommonQueryValidator _queryValidator = queryValidator
         ?? throw new ArgumentNullException(nameof(queryValidator));
+    private readonly IFilterExpressionTranslator _filterExpressionTranslator = filterExpressionTranslator
+        ?? throw new ArgumentNullException(nameof(filterExpressionTranslator));
     private readonly ILogger<OgcFeaturesQueryParameterAdapter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
@@ -94,7 +98,13 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
                 return QueryAdapterResult.Failure(paginationResult.ErrorMessage ?? "Invalid paging parameters.");
             }
 
-            if (!TryParseIds(parameters.Ids, out var objectIds, out var idsError))
+            if (!OgcFeatureIdentifierResolver.TryCreateIdsFilter(
+                    parameters.Ids,
+                    layer,
+                    _filterExpressionTranslator,
+                    out var objectIds,
+                    out var idsSqlFilter,
+                    out var idsError))
             {
                 return QueryAdapterResult.Failure(idsError ?? "Invalid ids parameter.");
             }
@@ -110,9 +120,10 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             }
 
             QueryFilter? queryFilter = null;
-            if (filterResult.SqlFilter != null)
+            var sqlFilter = CombineSqlFilters(filterResult.SqlFilter, idsSqlFilter);
+            if (sqlFilter != null)
             {
-                queryFilter = QueryFilter.FromSql(filterResult.SqlFilter);
+                queryFilter = QueryFilter.FromSql(sqlFilter);
             }
 
             var metadata = new Dictionary<string, object>
@@ -154,50 +165,21 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         }
     }
 
-    private static bool TryParseIds(
-        string? rawIds,
-        out ImmutableArray<long>? objectIds,
-        out string? error)
+    private static SqlFragment? CombineSqlFilters(SqlFragment? left, SqlFragment? right)
     {
-        objectIds = null;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(rawIds))
+        if (left == null)
         {
-            return true;
+            return right;
         }
 
-        if (HasEmptyCommaSeparatedToken(rawIds))
+        if (right == null)
         {
-            error = "Parameter 'ids' contains an empty ID value.";
-            return false;
+            return left;
         }
 
-        var tokens = rawIds.Split(',', StringSplitOptions.TrimEntries);
-        if (tokens.Length == 0)
-        {
-            error = "Parameter 'ids' must contain at least one ID value.";
-            return false;
-        }
-
-        var ids = ImmutableArray.CreateBuilder<long>(tokens.Length);
-        var seen = new HashSet<long>();
-        foreach (var token in tokens)
-        {
-            if (!long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id <= 0)
-            {
-                error = $"Invalid ids value '{token}'.";
-                return false;
-            }
-
-            if (seen.Add(id))
-            {
-                ids.Add(id);
-            }
-        }
-
-        objectIds = ids.ToImmutable();
-        return true;
+        return new SqlFragment(
+            $"({left.Sql}) AND ({right.Sql})",
+            left.Parameters.Concat(right.Parameters).ToArray());
     }
 
     private static bool TryParseProperties(

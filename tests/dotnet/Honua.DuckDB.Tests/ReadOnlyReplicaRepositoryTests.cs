@@ -47,6 +47,13 @@ public class ReadOnlyReplicaRepositoryTests
     }
 
     [Fact]
+    public async Task ListByServiceAsync_ReturnsEmpty()
+    {
+        var results = await _repo.ListByServiceAsync("svc");
+        Assert.Empty(results);
+    }
+
+    [Fact]
     public async Task RemoveAsync_ReturnsFalse()
     {
         var result = await _repo.RemoveAsync("test-id");

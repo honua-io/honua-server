@@ -47,12 +47,12 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     }
 
     /// <summary>
-    /// GPServer parity must stay honest until the adapter can bind eval scenarios to a
-    /// formal GP task catalog.
+    /// GPServer parity probes should target a real published task and then report either
+    /// acceptance or an environmental skip when the durable job substrate is unavailable.
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
-    public async Task AnalysisBufferPlaces_RecordsGpServerProbeAsSkippedUntilTaskBindingExists()
+    public async Task AnalysisBufferPlaces_RecordsGpServerProbeAgainstPublishedTaskSurface()
     {
         var scenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
         var result = await _fixture.Runner.RunAsync(scenario, CancellationToken.None);
@@ -61,8 +61,11 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             .Single(probe => probe.Protocol == Protocols.GPServer);
 
         gpServerProbe.Assertion.Should().Be("submit-job-surface");
-        gpServerProbe.Status.Should().Be(EvalStageStatus.Skipped);
-        gpServerProbe.Outcome.Should().Be("task-resolution-unavailable");
+        gpServerProbe.Outcome.Should().BeOneOf("matched-acceptance", "service-unavailable", "authorization-required");
+        gpServerProbe.Status.Should().Be(
+            gpServerProbe.Outcome == "matched-acceptance"
+                ? EvalStageStatus.Passed
+                : EvalStageStatus.Skipped);
     }
 
     /// <summary>

@@ -131,7 +131,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload-url")]
-    public async Task UploadUrl_FileGdbFromS3_ImportsData()
+    public async Task UploadUrl_MultiLayerFileGdbFromS3_FailsWithoutMergingLayers()
     {
         var tableName = $"s3_fgdb_{Guid.NewGuid().ToString("N")[..8]}";
 
@@ -152,7 +152,8 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
         content.Should().Contain(tableName);
         content.Should().Contain("FileGdb");
         using var document = JsonDocument.Parse(content);
-        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+        document.RootElement.GetProperty("errorMessage").GetString().Should().Contain("multiple feature classes");
     }
 
     [IntegrationTest]

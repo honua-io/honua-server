@@ -1824,12 +1824,12 @@
       "implementedSurface": [
         "PrintingTools Export Web Map Task (service info, sync execute, async submitJob, job status, job result)",
         "PrintingTools Get Layout Templates Info Task (sync execute)",
-        "Generic GPServer adapter (#723): service info, job status, job result, cancel job over the canonical process runtime; task info and submitJob return 501 pending per-task projection of the built-in IProcessCatalog (19 seeded processes across geometry.*, analytics.*, generalization.*, data-management.*) into the GPServer surface"
+        "Generic GPServer adapter (#723): catalog-backed service info, task metadata, async submitJob, job status, job result route, and cancel job over the canonical process runtime using the built-in IProcessCatalog (19 seeded processes across geometry.*, analytics.*, generalization.*, data-management.*)"
       ],
       "knownGaps": [
-        "synchronous execute returns 501 pending #721 ExecutePlan",
-        "task info and submitJob return 501 pending per-task projection of the built-in IProcessCatalog into the GPServer surface",
-        "GP environment controls (env:*, context) are rejected with 400 until engine support is available",
+        "generic built-in tasks are async-only and do not publish a generic execute route until synchronous task projection exists",
+        "published generic task names currently mirror internal built-in process IDs (for example geometry.buffer)",
+        "GP environment controls (env:*) are rejected with 400 until engine support is available; context is preserved as protocol metadata but not interpreted yet",
         "per-parameter result retrieval route registered but actual output retrieval pending execution-engine/result-storage support"
       ],
       "evidence": {
@@ -1891,8 +1891,14 @@
           {
             "name": "GP Service Info (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer",
-            "methods": ["GET"],
-            "notes": "Returns service metadata. Task list is stub (empty) pending per-task projection of the built-in IProcessCatalog into the GPServer surface. Implemented in #723."
+            "methods": ["GET", "POST"],
+            "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723."
+          },
+          {
+            "name": "GP Task Info (generic)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}",
+            "methods": ["GET", "POST"],
+            "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723."
           },
           {
             "name": "Job Status (generic)",
@@ -1911,33 +1917,27 @@
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel",
             "methods": ["GET", "POST"],
             "notes": "Job cancellation with route binding validation. Implemented in #723."
-          }
-        ],
-        "not_implemented": [
-          {
-            "name": "GP Task Info (generic)",
-            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}",
-            "methods": ["GET"],
-            "notes": "Returns 501. Task metadata resolution pending per-task projection of the built-in IProcessCatalog into the GPServer surface. Route registered in #723."
-          },
-          {
-            "name": "Execute Task (generic, sync)",
-            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
-            "methods": ["GET", "POST"],
-            "notes": "Returns 501 (auth and env-control validation enforced first). Pending #721 ExecutePlan. Routes registered in #723."
           },
           {
             "name": "Submit Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
             "methods": ["GET", "POST"],
-            "notes": "Returns 501 (auth and env-control validation enforced first). Job submission pending per-task projection of the built-in IProcessCatalog into the GPServer surface. Route registered in #723."
+            "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
+          }
+        ],
+        "not_implemented": [
+          {
+            "name": "Execute Task (generic, sync)",
+            "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/execute",
+            "methods": [],
+            "notes": "Not published for the current generic GPServer surface because the built-in tasks are async-only. PrintingTools remains the published synchronous GPServer implementation."
           }
         ]
       },
       "knownLimitations": [
         "PrintingTools GPServer surface (Export Web Map Task, Get Layout Templates Info Task) is implemented via dedicated endpoints.",
-        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 19 processes across geometry.*, analytics.*, generalization.*, and data-management.* families for plan validation (#735, #737); destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Task info and submitJob return 501 pending per-task projection of that catalog into the GPServer surface.",
-        "Synchronous execute returns 501 pending #721 ExecutePlan.",
+        "Generic GPServer adapter (#723) operates over the canonical process runtime. The built-in IProcessCatalog seeds 19 processes across geometry.*, analytics.*, generalization.*, and data-management.* families for plan validation (#735, #737); destructive data-management ids (delete-features, calculate-field) route through the operator approval gate before execution. Published task names currently mirror those built-in process IDs.",
+        "Generic built-in tasks are async-only; a generic synchronous execute route is not published until ExecutePlan and synchronous task projection exist.",
         "Canonical model and lifecycle state mappings are established in #360."
       ]
     }

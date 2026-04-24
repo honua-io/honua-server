@@ -78,6 +78,22 @@ internal static class OgcProcessesConversionHelpers
     }
 
     /// <summary>
+    /// Converts a cancelled execution job into the OGC API Processes dismissed status shape.
+    /// </summary>
+    public static OgcStatusInfo ToOgcDismissedStatusInfo(
+        ExecutionJobRecord job,
+        string? processId,
+        string baseUrl)
+    {
+        var statusInfo = ToOgcStatusInfo(job, processId, baseUrl);
+        return statusInfo with
+        {
+            Status = "dismissed",
+            Message = "Job dismissed"
+        };
+    }
+
+    /// <summary>
     /// Returns true if the job status is a terminal state.
     /// </summary>
     public static bool IsTerminal(ExecutionJobStatus status)

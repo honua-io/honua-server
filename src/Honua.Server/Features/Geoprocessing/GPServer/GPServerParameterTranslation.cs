@@ -17,7 +17,7 @@ internal static class GPServerParameterTranslation
     /// Well-known metadata key on <see cref="ArtifactRef"/> that stores the
     /// GPServer output parameter name for per-output result routing.
     /// </summary>
-    public const string OutputParameterMetadataKey = "geoservices.output_parameter";
+    public const string OutputParameterMetadataKey = GeoprocessingProtocolMetadataKeys.GeoServicesOutputParameterMetadataKey;
 
     /// <summary>
     /// Translates incoming Esri GP parameters to canonical opaque string inputs.
@@ -108,11 +108,28 @@ internal static class GPServerParameterTranslation
     };
 
     /// <summary>
+    /// Maps a process-catalog parameter value type to an Esri GP data type string.
+    /// </summary>
+    public static string ToEsriDataType(ProcessParameterValueType valueType) => valueType switch
+    {
+        ProcessParameterValueType.Text => "GPString",
+        ProcessParameterValueType.WholeNumber => "GPLong",
+        ProcessParameterValueType.FloatingPoint => "GPDouble",
+        ProcessParameterValueType.Flag => "GPBoolean",
+        ProcessParameterValueType.Wkb => "GPDataFile",
+        ProcessParameterValueType.WkbArray => "GPMultiValue:GPDataFile",
+        ProcessParameterValueType.Srid => "GPLong",
+        ProcessParameterValueType.LayerId => "GPString",
+        _ => "GPString"
+    };
+
+    /// <summary>
     /// Reads request parameters from the HTTP context (query string for GET,
     /// form-encoded body for POST).
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, string>> ReadRequestParametersAsync(
-        HttpContext context)
+        HttpContext context,
+        CancellationToken cancellationToken = default)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -130,7 +147,7 @@ internal static class GPServerParameterTranslation
         // over query-string when the same key appears in both locations).
         if (context.Request.HasFormContentType)
         {
-            var form = await context.Request.ReadFormAsync();
+            var form = await context.Request.ReadFormAsync(cancellationToken);
             foreach (var entry in form)
             {
                 if (!string.IsNullOrEmpty(entry.Value.FirstOrDefault()))

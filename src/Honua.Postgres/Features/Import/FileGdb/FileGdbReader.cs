@@ -44,12 +44,12 @@ internal static class FileGdbReader
     }
 
     /// <summary>
-    /// Stream features from a File Geodatabase directory.
-    /// Discovers all feature class layers and streams features from each.
+    /// Stream features from a single-layer File Geodatabase directory.
+    /// Multi-layer geodatabases are rejected so feature classes are not silently merged.
     /// </summary>
     /// <param name="gdbPath">Path to the .gdb directory.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Async enumerable of features from all layers.</returns>
+    /// <returns>Async enumerable of features from the only feature class.</returns>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         string gdbPath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -67,73 +67,104 @@ internal static class FileGdbReader
             yield break;
         }
 
-        var recordIndex = 0;
-
-        for (var layerIdx = 0; layerIdx < layers.Length; layerIdx++)
+        if (layers.Length > 1)
         {
-            var layer = layers[layerIdx];
-            var tablePath = Path.Combine(gdbPath, $"a{layer.FileNumber:x8}.gdbtable");
+            throw new InvalidDataException(BuildMultiLayerImportMessage(layers));
+        }
 
-            if (!File.Exists(tablePath))
+        await foreach (var feature in ReadLayerStreamingAsync(gdbPath, layers[0], cancellationToken))
+        {
+            yield return feature;
+        }
+    }
+
+    /// <summary>
+    /// Streams features from one discovered FileGDB feature class.
+    /// </summary>
+    internal static async IAsyncEnumerable<IFeature> ReadLayerStreamingAsync(
+        string gdbPath,
+        FileGdbLayerInfo layer,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gdbPath);
+
+        if (!Directory.Exists(gdbPath))
+        {
+            throw new DirectoryNotFoundException($"File Geodatabase directory not found: {gdbPath}");
+        }
+
+        var recordIndex = 0;
+        var tablePath = Path.Combine(gdbPath, $"a{layer.FileNumber:x8}.gdbtable");
+
+        if (!File.Exists(tablePath))
+        {
+            yield break;
+        }
+
+        GdbTableReader tableReader;
+        try
+        {
+            tableReader = GdbTableReader.Open(tablePath);
+        }
+        catch (InvalidDataException)
+        {
+            yield break;
+        }
+
+        using (tableReader)
+        {
+            if (tableReader.RowCount == 0)
             {
-                continue;
+                yield break;
             }
 
-            GdbTableReader tableReader;
-            try
+            var geomDef = tableReader.GetGeometryDef();
+            if (geomDef == null)
             {
-                tableReader = GdbTableReader.Open(tablePath);
-            }
-            catch (InvalidDataException)
-            {
-                continue;
+                yield break;
             }
 
-            using (tableReader)
+            var srid = geomDef.Srid > 0 ? geomDef.Srid : 4326;
+            var geometryFactory = new GeometryFactory(new PrecisionModel(), srid);
+            var geomReader = new GdbGeometryReader(geometryFactory, geomDef);
+
+            // Find the geometry field index.
+            var geomFieldIndex = -1;
+            for (var i = 0; i < tableReader.Fields.Count; i++)
             {
-                if (tableReader.RowCount == 0)
+                if (tableReader.Fields[i].FieldType == GdbFieldType.Geometry)
                 {
-                    continue;
+                    geomFieldIndex = i;
+                    break;
+                }
+            }
+
+            foreach (var row in tableReader.ReadRows())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var feature = ConvertRowToFeature(row, tableReader.Fields, geomFieldIndex, geomReader);
+                if (feature != null)
+                {
+                    yield return feature;
                 }
 
-                var geomDef = tableReader.GetGeometryDef();
-                if (geomDef == null)
+                if (++recordIndex % 256 == 0)
                 {
-                    continue;
-                }
-
-                var srid = geomDef.Srid > 0 ? geomDef.Srid : 4326;
-                var geometryFactory = new GeometryFactory(new PrecisionModel(), srid);
-                var geomReader = new GdbGeometryReader(geometryFactory, geomDef);
-
-                // Find the geometry field index.
-                var geomFieldIndex = -1;
-                for (var i = 0; i < tableReader.Fields.Count; i++)
-                {
-                    if (tableReader.Fields[i].FieldType == GdbFieldType.Geometry)
-                    {
-                        geomFieldIndex = i;
-                        break;
-                    }
-                }
-
-                foreach (var row in tableReader.ReadRows())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var feature = ConvertRowToFeature(row, tableReader.Fields, geomFieldIndex, geomReader);
-                    if (feature != null)
-                    {
-                        yield return feature;
-                    }
-
-                    if (++recordIndex % 256 == 0)
-                    {
-                        await Task.Yield();
-                    }
+                    await Task.Yield();
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Builds the clear import rejection message used when a FileGDB contains more
+    /// than one feature class and no source-layer selection is available.
+    /// </summary>
+    internal static string BuildMultiLayerImportMessage(IReadOnlyList<FileGdbLayerInfo> layers)
+    {
+        var layerNames = string.Join(", ", layers.Select(layer => layer.Name));
+        return $"File Geodatabase contains multiple feature classes ({layerNames}). Import requires a single feature class; preview AvailableLayers lists the source layers to export or split before import.";
     }
 
     /// <summary>
@@ -141,7 +172,7 @@ internal static class FileGdbReader
     /// Falls back to scanning .gdbtable files when the catalog is unavailable.
     /// Returns layer info for tables that have a geometry field.
     /// </summary>
-    private static FileGdbLayerInfo[] DiscoverLayers(string gdbPath)
+    internal static FileGdbLayerInfo[] DiscoverLayers(string gdbPath)
     {
         var catalogPath = Path.Combine(gdbPath, "a00000001.gdbtable");
         if (File.Exists(catalogPath))
@@ -336,5 +367,5 @@ internal static class FileGdbReader
     /// <summary>
     /// Represents a discovered feature class layer in the geodatabase.
     /// </summary>
-    private readonly record struct FileGdbLayerInfo(string Name, int RowCount, int Srid, int FileNumber);
+    internal readonly record struct FileGdbLayerInfo(string Name, int RowCount, int Srid, int FileNumber);
 }

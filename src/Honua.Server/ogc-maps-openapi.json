@@ -60,6 +60,21 @@
     "/ogc/maps/map": {
       "get": {
         "summary": "Render a dataset map",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/collections" },
+          { "$ref": "#/components/parameters/bbox" },
+          { "$ref": "#/components/parameters/bboxCrs" },
+          { "$ref": "#/components/parameters/crs" },
+          { "$ref": "#/components/parameters/width" },
+          { "$ref": "#/components/parameters/height" },
+          { "$ref": "#/components/parameters/f" },
+          { "$ref": "#/components/parameters/quality" }
+        ],
         "responses": {
           "200": {
             "description": "Rendered map image",
@@ -130,6 +145,11 @@
     "/ogc/maps/collections/{collectionId}/map": {
       "get": {
         "summary": "Render a collection map",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -139,7 +159,14 @@
               "type": "integer",
               "minimum": 0
             }
-          }
+          },
+          { "$ref": "#/components/parameters/bbox" },
+          { "$ref": "#/components/parameters/bboxCrs" },
+          { "$ref": "#/components/parameters/crs" },
+          { "$ref": "#/components/parameters/width" },
+          { "$ref": "#/components/parameters/height" },
+          { "$ref": "#/components/parameters/f" },
+          { "$ref": "#/components/parameters/quality" }
         ],
         "responses": {
           "200": {
@@ -208,9 +235,125 @@
         }
       }
     },
+    "/ogc/maps/collections/{collectionId}/styles/{styleId}/map": {
+      "get": {
+        "summary": "Render a styled collection map",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "styleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          { "$ref": "#/components/parameters/bbox" },
+          { "$ref": "#/components/parameters/bboxCrs" },
+          { "$ref": "#/components/parameters/crs" },
+          { "$ref": "#/components/parameters/width" },
+          { "$ref": "#/components/parameters/height" },
+          { "$ref": "#/components/parameters/f" },
+          { "$ref": "#/components/parameters/quality" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rendered styled map image",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/tiff": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid collection identifier or map request parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found or has no renderable map data",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Styled map rendering is not implemented for this collection type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ogc/maps/collections/{collectionId}/map/tiles": {
       "get": {
         "summary": "Get collection map tilesets",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -243,6 +386,26 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Collection not found",
             "content": {
@@ -259,6 +422,11 @@
     "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}": {
       "get": {
         "summary": "Get collection map tileset",
+        "security": [
+          {},
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "collectionId",
@@ -299,6 +467,26 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Collection or tile matrix set not found",
             "content": {
@@ -314,6 +502,91 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "collections": {
+        "name": "collections",
+        "in": "query",
+        "description": "Comma-separated collection identifiers to include in a dataset map request. When omitted, all accessible map-enabled collections are considered.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "bbox": {
+        "name": "bbox",
+        "in": "query",
+        "description": "Bounding box as minX,minY,maxX,maxY in the bbox-crs coordinate reference system.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "bboxCrs": {
+        "name": "bbox-crs",
+        "in": "query",
+        "description": "Coordinate reference system for bbox coordinates. Supports EPSG codes and OGC CRS URIs.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "crs": {
+        "name": "crs",
+        "in": "query",
+        "description": "Coordinate reference system for the rendered map response. Supports EPSG codes and OGC CRS URIs.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "width": {
+        "name": "width",
+        "in": "query",
+        "description": "Rendered image width in pixels.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        }
+      },
+      "height": {
+        "name": "height",
+        "in": "query",
+        "description": "Rendered image height in pixels.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        }
+      },
+      "f": {
+        "name": "f",
+        "in": "query",
+        "description": "Short output image format. When omitted, HTTP Accept negotiation is used.",
+        "schema": {
+          "type": "string",
+          "enum": ["png", "jpeg", "jpg", "tiff", "tif"]
+        }
+      },
+      "quality": {
+        "name": "quality",
+        "in": "query",
+        "description": "Lossy compression quality for JPEG output.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
     "schemas": {
       "LandingPage": {
         "type": "object",

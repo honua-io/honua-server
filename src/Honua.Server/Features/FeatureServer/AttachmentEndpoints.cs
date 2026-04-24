@@ -60,19 +60,15 @@ internal static class AttachmentEndpoints
             .WithTags("FeatureServer", "Attachments")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }));
 
-        // Add attachment to a feature (canonical route).
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
+            .WithDisplayName("Get Feature Attachment Infos")
+            .WithName("AttachmentInfos")
+            .WithSummary("Get attachment infos for a specific feature")
+            .WithDescription("Returns the canonical attachment infos resource for a feature")
+            .WithTags("FeatureServer", "Attachments");
+
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/addAttachment", HandleAddAttachment)
             .WithDisplayName("Add Feature Attachment")
-            .WithName("AddAttachmentByFeature")
-            .WithSummary("Add an attachment to a feature")
-            .WithDescription("Upload a file attachment to a specific feature")
-            .WithTags("FeatureServer", "Attachments")
-            .AllowAnonymous()
-            .DisableAntiforgery();
-
-        // Backward-compatible legacy route.
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/addAttachment", HandleAddAttachment)
-            .WithDisplayName("Add Feature Attachment (Legacy)")
             .WithName("AddAttachment")
             .WithSummary("Add an attachment to a feature")
             .WithDescription("Upload a file attachment to a specific feature")
@@ -80,36 +76,16 @@ internal static class AttachmentEndpoints
             .AllowAnonymous()
             .DisableAntiforgery();
 
-        // Update attachment (canonical route).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/updateAttachment", HandleUpdateAttachment)
             .WithDisplayName("Update Feature Attachment")
-            .WithName("UpdateAttachmentByFeature")
-            .WithSummary("Update an attachment's metadata")
-            .WithDescription("Update keywords and other metadata for an existing attachment")
-            .WithTags("FeatureServer", "Attachments")
-            .AllowAnonymous();
-
-        // Backward-compatible legacy route.
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/updateAttachment", HandleUpdateAttachment)
-            .WithDisplayName("Update Feature Attachment (Legacy)")
             .WithName("UpdateAttachment")
             .WithSummary("Update an attachment's metadata")
             .WithDescription("Update keywords and other metadata for an existing attachment")
             .WithTags("FeatureServer", "Attachments")
             .AllowAnonymous();
 
-        // Delete attachments (canonical route).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/deleteAttachments", HandleDeleteAttachments)
             .WithDisplayName("Delete Feature Attachments")
-            .WithName("DeleteAttachmentsByFeature")
-            .WithSummary("Delete attachments from a feature")
-            .WithDescription("Delete one or more attachments from a specific feature")
-            .WithTags("FeatureServer", "Attachments")
-            .AllowAnonymous();
-
-        // Backward-compatible legacy route.
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/deleteAttachments", HandleDeleteAttachments)
-            .WithDisplayName("Delete Feature Attachments (Legacy)")
             .WithName("DeleteAttachments")
             .WithSummary("Delete attachments from a feature")
             .WithDescription("Delete one or more attachments from a specific feature")
@@ -354,8 +330,11 @@ internal static class AttachmentEndpoints
         }
 
         var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
+        var file = form.Files.Count > 0 ? form.Files[0] : null;
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
+        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+        var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
         var result = await AttachmentHandler.UpdateAttachmentAsync(
@@ -363,8 +342,11 @@ internal static class AttachmentEndpoints
             layerId,
             featureId,
             attachmentId,
+            file,
             keywords,
             attachmentStore,
+            limitsOptions.Value.Attachments,
+            securityOptions.Value,
             logger,
             context.RequestAborted);
 
@@ -461,6 +443,58 @@ internal static class AttachmentEndpoints
             layerId,
             featureId,
             attachmentIds.ToArray(),
+            attachmentStore,
+            logger,
+            context.RequestAborted);
+
+        await result.ExecuteAsync(context);
+    }
+
+    private static async Task HandleAttachmentInfos(HttpContext context)
+    {
+        var resource = await TryValidateLayerAccessAsync(context);
+        if (resource == null)
+            return;
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!FeatureServerEndpoints.TryValidateOutputFormat(
+                requestedFormat,
+                FeatureServerEndpoints.JsonOnlyFormats,
+                out _,
+                out var formatError))
+        {
+            await StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid query parameters",
+                    [formatError ?? "Output format is not supported."])
+                .ExecuteAsync(context);
+            return;
+        }
+
+        if (!context.Request.RouteValues.TryGetValue("featureId", out var featureIdObj) ||
+            !long.TryParse(featureIdObj?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
+        {
+            await RouteValidationHelpers.WriteValidationErrorAsync(context, "Feature ID must be a valid long integer");
+            return;
+        }
+
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var feature = await featureReader.GetAsync(resource.Value.Layer.Id, featureId, context.RequestAborted);
+        if (feature == null)
+        {
+            await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
+            return;
+        }
+
+        var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
+
+        var result = await AttachmentHandler.GetAttachmentInfosAsync(
+            context,
+            resource.Value.Layer.Id,
+            featureId,
             attachmentStore,
             logger,
             context.RequestAborted);

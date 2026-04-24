@@ -13,6 +13,7 @@ internal static class ProtocolRequestClassifier
         StatusCodes.Status404NotFound => "ResourceNotFound",
         StatusCodes.Status408RequestTimeout => "RequestTimeout",
         StatusCodes.Status409Conflict when includeConflict => "Conflict",
+        StatusCodes.Status412PreconditionFailed => "PreconditionFailed",
         StatusCodes.Status413PayloadTooLarge => "PayloadTooLarge",
         StatusCodes.Status429TooManyRequests => "TooManyRequests",
         StatusCodes.Status500InternalServerError => "InternalServerError",
@@ -26,7 +27,7 @@ internal static class ProtocolRequestClassifier
     {
         if (!path.StartsWithSegments("/ogc/services", out var remaining))
         {
-            return false;
+            return IsRestOgcServiceAlias(path);
         }
 
         var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -37,6 +38,24 @@ internal static class ProtocolRequestClassifier
 
         return string.Equals(segments[1], "wms", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(segments[1], "wmts", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRestOgcServiceAlias(PathString path)
+    {
+        if (!path.StartsWithSegments("/rest/services", out var remaining))
+        {
+            return false;
+        }
+
+        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments is null || segments.Length < 3)
+        {
+            return false;
+        }
+
+        return string.Equals(segments[1], "MapServer", StringComparison.OrdinalIgnoreCase) &&
+               (string.Equals(segments[2], "wms", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(segments[2], "wmts", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool IsOgc(PathString path) =>

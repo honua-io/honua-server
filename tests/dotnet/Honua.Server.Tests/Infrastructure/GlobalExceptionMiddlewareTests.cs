@@ -282,7 +282,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Headers.Should().ContainKey("OData-Version");
-        response.Headers.GetValues("OData-Version").First().Should().Be("4.0");
+        response.Headers.GetValues("OData-Version").First().Should().Be("4.01");
 
         var content = await response.Content.ReadAsStringAsync();
         // OData error format should have "error" property with nested structure

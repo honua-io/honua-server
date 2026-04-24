@@ -185,7 +185,6 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
-                "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/gml-sf0",
 
                 // OGC API Features Part 2 - Coordinate Reference Systems by Reference
                 "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",

@@ -61,7 +61,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
-        values.Should().Contain("4.0");
+        values.Should().Contain("4.01");
     }
 
     [IntegrationTest]
@@ -77,7 +77,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -120,7 +120,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
-        values.Should().Contain("4.0");
+        values.Should().Contain("4.01");
     }
 
     [IntegrationTest]
@@ -179,6 +179,21 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var values = document.RootElement.GetProperty("value");
         values.ValueKind.Should().Be(JsonValueKind.Array);
         values.GetArrayLength().Should().BeLessThanOrEqualTo(3);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features?filter=...&top=...")]
+    public async Task Features_AllLayers_AcceptsOData401QueryOptionsWithoutDollarPrefix()
+    {
+        var response = await _fixture.Client.GetAsync($"/odata/Features?filter=LayerId eq {TestLayerId}&top=2&count=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.GetProperty("@odata.count").GetInt64().Should().BeGreaterOrEqualTo(0);
+        document.RootElement.GetProperty("value").GetArrayLength().Should().BeLessThanOrEqualTo(2);
     }
 
     [IntegrationTest]
@@ -266,6 +281,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(Protocols.ODataV4, "Metadata")]
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ReturnsXmlDocument()
     {
@@ -276,6 +292,12 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("edmx:Edmx");
+        content.Should().Contain("""<edmx:Edmx Version="4.01" """);
+        content.Should().Contain("""<edmx:Reference Uri="http://vocabs.odata.org/capabilities/v1">""");
+        content.Should().Contain("""<Annotation Term="Capabilities.ChangeTracking">""");
+        content.Should().NotContain("http://docs.oasis-open.org/odata/odata/v4.0/csdl/vocabularies");
+        response.Headers.TryGetValues("OData-Version", out var values).Should().BeTrue();
+        values.Should().Contain("4.01");
     }
 
     [IntegrationTest]
@@ -355,6 +377,25 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers?$orderby=Name desc")]
+    public async Task Layers_WithOrderBy_ReturnsOrderedResults()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Layers?$orderby=Name desc");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var names = document.RootElement.GetProperty("value")
+            .EnumerateArray()
+            .Select(layer => layer.GetProperty("Name").GetString())
+            .ToArray();
+
+        names.Should().ContainInOrder("US Cities", "City Landmarks");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Features_ReturnsCollection()
     {
@@ -393,7 +434,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "none", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -427,7 +468,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -443,7 +484,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -463,7 +504,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.Parameters.Should()
-            .Contain(p => p.Name == "odata.metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
+            .Contain(p => p.Name == "metadata" && string.Equals(p.Value, "minimal", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -529,17 +570,16 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})/$value")]
-    public async Task FeatureValueEndpoint_ReturnsRawFeaturePayload()
+    public async Task FeatureValueEndpoint_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)/$value");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
-        document.RootElement.GetProperty("ObjectId").GetInt64().Should().Be(1);
-        document.RootElement.GetProperty("LayerId").GetInt32().Should().Be(TestLayerId);
+        document.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be("ResourceNotFound");
     }
 
     [IntegrationTest]
@@ -725,7 +765,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
         // OData v4 error format
         document.RootElement.TryGetProperty("error", out var errorProperty).Should().BeTrue();
-        errorProperty.GetProperty("code").GetString().Should().Be("BadRequest");
+        errorProperty.GetProperty("code").GetString().Should().Be("InvalidQueryOption");
     }
 
     [IntegrationTest]
@@ -740,7 +780,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(content);
 
         document.RootElement.TryGetProperty("error", out var errorProperty).Should().BeTrue();
-        errorProperty.GetProperty("code").GetString().Should().Be("BadRequest");
+        errorProperty.GetProperty("code").GetString().Should().Be("InvalidQuery");
     }
 
     [IntegrationTest]

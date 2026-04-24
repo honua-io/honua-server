@@ -4,7 +4,9 @@
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Geometries;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.OgcFeatures.Models;
 using Microsoft.Extensions.Options;
@@ -20,15 +22,18 @@ namespace Honua.Server.Features.OgcFeatures.Services;
 internal sealed partial class OgcFeaturesGeometryServices
 {
     private readonly IGeometryService _geometryService;
+    private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly GeometryLimits _geometryLimits;
     private readonly ILogger<OgcFeaturesGeometryServices> _logger;
 
     public OgcFeaturesGeometryServices(
         IGeometryService geometryService,
+        ICoordinateTransformService coordinateTransformService,
         IOptions<LimitsOptions> limitsOptions,
         ILogger<OgcFeaturesGeometryServices> logger)
     {
         _geometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
+        _coordinateTransformService = coordinateTransformService ?? throw new ArgumentNullException(nameof(coordinateTransformService));
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _logger = logger;
     }
@@ -101,7 +106,7 @@ internal sealed partial class OgcFeaturesGeometryServices
         if (axisOrder == AxisOrder.NorthEast)
         {
             geometry = (Geometry)geometry.Copy();
-            geometry.Apply(new AxisSwapFilter());
+            geometry.Apply(new AxisSwapCoordinateFilter());
             geometry.GeometryChanged();
         }
 
@@ -144,54 +149,43 @@ internal sealed partial class OgcFeaturesGeometryServices
         int srid,
         AxisOrder axisOrder = AxisOrder.EastNorth)
     {
-        var coordinatesJson = geometry.CoordinatesJson;
-        var geometriesJson = geometry.GeometriesJson;
-
-        if (string.IsNullOrWhiteSpace(coordinatesJson) && string.IsNullOrWhiteSpace(geometriesJson))
+        var parseResult = TryCreateGeometryFromGeoJson(geometry, srid, axisOrder);
+        if (!parseResult.IsSuccess || parseResult.Geometry == null)
         {
-            return WkbCreationResult.Failure("Geometry coordinates are required.");
+            return WkbCreationResult.Failure(parseResult.ErrorMessage ?? "Invalid geometry.");
         }
 
-        var json = coordinatesJson is not null
-            ? $"{{\"type\":\"{geometry.Type}\",\"coordinates\":{coordinatesJson}}}"
-            : $"{{\"type\":\"{geometry.Type}\",\"geometries\":{geometriesJson}}}";
+        return WriteGeometryAsWkb(parseResult.Geometry, srid);
+    }
 
-        try
+    /// <summary>
+    /// Creates WKB from GeoJSON geometry and transforms it into the target SRID when necessary.
+    /// </summary>
+    public async Task<WkbCreationResult> TryCreateWkbFromGeoJsonAsync(
+        SimpleGeoJsonGeometry geometry,
+        int inputSrid,
+        int targetSrid,
+        AxisOrder axisOrder = AxisOrder.EastNorth,
+        CancellationToken cancellationToken = default)
+    {
+        var parseResult = TryCreateGeometryFromGeoJson(geometry, inputSrid, axisOrder);
+        if (!parseResult.IsSuccess || parseResult.Geometry == null)
         {
-            var converted = _geometryService.ConvertGeoJsonToWkb(json, srid > 0 ? srid : null);
-            if (converted == null || converted.Length == 0)
-            {
-                return WkbCreationResult.Failure("Invalid geometry.");
-            }
-
-            var reader = new WKBReader();
-            var ntsGeometry = reader.Read(converted);
-            if (ntsGeometry == null)
-            {
-                return WkbCreationResult.Failure("Invalid geometry.");
-            }
-
-            if (axisOrder == AxisOrder.NorthEast)
-            {
-                ntsGeometry = (Geometry)ntsGeometry.Copy();
-                ntsGeometry.Apply(new AxisSwapFilter());
-                ntsGeometry.GeometryChanged();
-            }
-
-            if (srid > 0)
-            {
-                ntsGeometry.SRID = srid;
-            }
-
-            var (hasZ, hasM) = GetHasZandM(ntsGeometry);
-            var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: srid > 0, emitZ: hasZ, emitM: hasM);
-            var wkb = writer.Write(ntsGeometry);
-            return WkbCreationResult.Success(wkb);
+            return WkbCreationResult.Failure(parseResult.ErrorMessage ?? "Invalid geometry.");
         }
-        catch (Exception ex) when (ex is ArgumentException or ParseException or FormatException or JsonException)
+
+        var ntsGeometry = parseResult.Geometry;
+        if (inputSrid > 0 && targetSrid > 0 && inputSrid != targetSrid)
         {
-            return WkbCreationResult.Failure("Invalid geometry.");
+            ntsGeometry = (Geometry)ntsGeometry.Copy();
+            if (!await TryTransformGeometryAsync(ntsGeometry, inputSrid, targetSrid, cancellationToken).ConfigureAwait(false))
+            {
+                return WkbCreationResult.Failure(
+                    $"Unable to transform geometry from SRID {inputSrid} to SRID {targetSrid}.");
+            }
         }
+
+        return WriteGeometryAsWkb(ntsGeometry, targetSrid > 0 ? targetSrid : inputSrid);
     }
 
     /// <summary>
@@ -335,6 +329,166 @@ internal sealed partial class OgcFeaturesGeometryServices
         throw new NotSupportedException("In-memory CRS transforms are not supported. Use PostGIS ST_Transform.");
     }
 
+    private async Task<bool> TryTransformGeometryAsync(
+        Geometry geometry,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        if (fromSrid == toSrid)
+        {
+            SetGeometrySridRecursive(geometry, toSrid);
+            return true;
+        }
+
+        switch (geometry)
+        {
+            case Point point:
+                return await TryTransformCoordinateSequenceAsync(point.CoordinateSequence, point, fromSrid, toSrid, cancellationToken).ConfigureAwait(false);
+            case LinearRing linearRing:
+                return await TryTransformCoordinateSequenceAsync(linearRing.CoordinateSequence, linearRing, fromSrid, toSrid, cancellationToken).ConfigureAwait(false);
+            case LineString lineString:
+                return await TryTransformCoordinateSequenceAsync(lineString.CoordinateSequence, lineString, fromSrid, toSrid, cancellationToken).ConfigureAwait(false);
+            case Polygon polygon:
+                if (!await TryTransformGeometryAsync(polygon.ExteriorRing, fromSrid, toSrid, cancellationToken).ConfigureAwait(false))
+                {
+                    return false;
+                }
+
+                for (var index = 0; index < polygon.NumInteriorRings; index++)
+                {
+                    if (!await TryTransformGeometryAsync(polygon.GetInteriorRingN(index), fromSrid, toSrid, cancellationToken).ConfigureAwait(false))
+                    {
+                        return false;
+                    }
+                }
+
+                polygon.SRID = toSrid;
+                polygon.GeometryChanged();
+                return true;
+            case GeometryCollection geometryCollection:
+                foreach (Geometry child in geometryCollection.Geometries)
+                {
+                    if (!await TryTransformGeometryAsync(child, fromSrid, toSrid, cancellationToken).ConfigureAwait(false))
+                    {
+                        return false;
+                    }
+                }
+
+                geometryCollection.SRID = toSrid;
+                geometryCollection.GeometryChanged();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private async Task<bool> TryTransformCoordinateSequenceAsync(
+        CoordinateSequence sequence,
+        Geometry geometry,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        for (var index = 0; index < sequence.Count; index++)
+        {
+            var transformed = await _coordinateTransformService.TransformPointAsync(
+                sequence.GetX(index),
+                sequence.GetY(index),
+                fromSrid,
+                toSrid,
+                cancellationToken).ConfigureAwait(false);
+            if (!transformed.HasValue)
+            {
+                return false;
+            }
+
+            sequence.SetX(index, transformed.Value.X);
+            sequence.SetY(index, transformed.Value.Y);
+        }
+
+        geometry.SRID = toSrid;
+        geometry.GeometryChanged();
+        return true;
+    }
+
+    private static void SetGeometrySridRecursive(Geometry geometry, int srid)
+    {
+        geometry.SRID = srid;
+        if (geometry is GeometryCollection geometryCollection)
+        {
+            foreach (Geometry child in geometryCollection.Geometries)
+            {
+                SetGeometrySridRecursive(child, srid);
+            }
+        }
+    }
+
+    private (bool IsSuccess, Geometry? Geometry, string? ErrorMessage) TryCreateGeometryFromGeoJson(
+        SimpleGeoJsonGeometry geometry,
+        int srid,
+        AxisOrder axisOrder)
+    {
+        var coordinatesJson = geometry.CoordinatesJson;
+        var geometriesJson = geometry.GeometriesJson;
+
+        if (string.IsNullOrWhiteSpace(coordinatesJson) && string.IsNullOrWhiteSpace(geometriesJson))
+        {
+            return (false, null, "Geometry coordinates are required.");
+        }
+
+        var json = coordinatesJson is not null
+            ? $"{{\"type\":\"{geometry.Type}\",\"coordinates\":{coordinatesJson}}}"
+            : $"{{\"type\":\"{geometry.Type}\",\"geometries\":{geometriesJson}}}";
+
+        try
+        {
+            var converted = _geometryService.ConvertGeoJsonToWkb(json, srid > 0 ? srid : null);
+            if (converted == null || converted.Length == 0)
+            {
+                return (false, null, "Invalid geometry.");
+            }
+
+            var reader = new WKBReader();
+            var ntsGeometry = reader.Read(converted);
+            if (ntsGeometry == null)
+            {
+                return (false, null, "Invalid geometry.");
+            }
+
+            if (axisOrder == AxisOrder.NorthEast)
+            {
+                ntsGeometry = (Geometry)ntsGeometry.Copy();
+                ntsGeometry.Apply(new AxisSwapCoordinateFilter());
+                ntsGeometry.GeometryChanged();
+            }
+
+            if (srid > 0)
+            {
+                ntsGeometry.SRID = srid;
+            }
+
+            return (true, ntsGeometry, null);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ParseException or FormatException or JsonException)
+        {
+            return (false, null, "Invalid geometry.");
+        }
+    }
+
+    private static WkbCreationResult WriteGeometryAsWkb(Geometry geometry, int srid)
+    {
+        if (srid > 0)
+        {
+            geometry.SRID = srid;
+        }
+
+        var (hasZ, hasM) = GetHasZandM(geometry);
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: srid > 0, emitZ: hasZ, emitM: hasM);
+        var wkb = writer.Write(geometry);
+        return WkbCreationResult.Success(wkb);
+    }
+
     private static int CountPolygonVertices(Polygon polygon)
     {
         var count = polygon.ExteriorRing?.NumPoints ?? 0;
@@ -357,22 +511,4 @@ internal sealed partial class OgcFeaturesGeometryServices
         public static partial void GeometryRepairFailed(ILogger logger, Exception exception);
     }
 
-}
-
-/// <summary>
-/// Coordinate sequence filter that swaps X and Y coordinates for axis order conversion.
-/// </summary>
-internal sealed class AxisSwapFilter : ICoordinateSequenceFilter
-{
-    public bool Done => false;
-
-    public bool GeometryChanged => true;
-
-    public void Filter(CoordinateSequence seq, int i)
-    {
-        var x = seq.GetX(i);
-        var y = seq.GetY(i);
-        seq.SetX(i, y);
-        seq.SetY(i, x);
-    }
 }

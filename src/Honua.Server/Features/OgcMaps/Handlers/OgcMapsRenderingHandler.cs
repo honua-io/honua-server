@@ -10,6 +10,8 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -18,7 +20,6 @@ using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.OgcMaps.Handlers;
 
@@ -43,6 +44,13 @@ internal sealed class OgcMapsRenderingHandler
         ["image/jpeg"] = RasterFormat.JPEG,
         ["image/tiff"] = RasterFormat.TIFF
     };
+
+    private static readonly string[] _supportedImageMediaTypes =
+    [
+        "image/png",
+        "image/jpeg",
+        "image/tiff"
+    ];
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterMapRenderer _mapRenderer;
@@ -161,6 +169,8 @@ internal sealed class OgcMapsRenderingHandler
             var primaryServices = context is not null
                 ? await GetPrimaryServicesAsync(cancellationToken)
                 : null;
+            var requiresAuth = false;
+            var hasDeniedEnabledLayer = false;
 
             // Resolve dataset layers from explicit selection or all accessible layers.
             var layers = new List<Core.Features.Catalog.Domain.LayerDefinition>();
@@ -202,6 +212,14 @@ internal sealed class OgcMapsRenderingHandler
                                     "Specify the collections parameter to narrow the request.");
                             }
                         }
+                        else
+                        {
+                            hasDeniedEnabledLayer = true;
+                            if (decision.RequiresAuthentication)
+                            {
+                                requiresAuth = true;
+                            }
+                        }
                     }
 
                     if (!sawEnabledLayer)
@@ -233,31 +251,7 @@ internal sealed class OgcMapsRenderingHandler
                 {
                     if (context is not null)
                     {
-                        var requiresAuth = false;
-                        foreach (var layer in allLayers)
-                        {
-                            var service = GetPrimaryService(layer.Id, primaryServices);
-                            if (!IsOgcApiMapsEnabled(layer, service))
-                            {
-                                continue;
-                            }
-
-                            var decision = AccessPolicyHelpers.EvaluateAccess(
-                                context,
-                                layer.Metadata?.AccessPolicy,
-                                service?.Metadata?.AccessPolicy);
-                            if (decision.IsAllowed)
-                            {
-                                continue;
-                            }
-
-                            if (decision.RequiresAuthentication)
-                            {
-                                requiresAuth = true;
-                            }
-                        }
-
-                        if (requiresAuth || allLayers.Length > 0)
+                        if (hasDeniedEnabledLayer)
                         {
                             return requiresAuth
                                 ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
@@ -619,7 +613,25 @@ internal sealed class OgcMapsRenderingHandler
             var current = combined.Value;
             if (current.SpatialReference != extent.SpatialReference)
             {
-                continue;
+                try
+                {
+                    var transformedExtent = CoordinateTransformer.TransformExtent(
+                        new RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY),
+                        extent.SpatialReference,
+                        current.SpatialReference);
+                    extent = FeatureExtent.Create(
+                        transformedExtent.MinX,
+                        transformedExtent.MinY,
+                        transformedExtent.MaxX,
+                        transformedExtent.MaxY,
+                        current.SpatialReference);
+                }
+                catch (NotSupportedException ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Unable to combine dataset extents because SRID {extent.SpatialReference} cannot be transformed to {current.SpatialReference}.",
+                        ex);
+                }
             }
 
             combined = FeatureExtent.Create(
@@ -658,26 +670,19 @@ internal sealed class OgcMapsRenderingHandler
             var acceptHeader = context.Request.Headers.Accept;
             if (!StringValues.IsNullOrEmpty(acceptHeader))
             {
-                var parsed = acceptHeader
-                    .SelectMany(h => h!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    .Select(ParseMediaTypeWithQuality)
-                    .Where(m => m.HasValue)
-                    .OrderByDescending(m => m!.Value.Quality)
-                    .Select(m => m!.Value.MediaType)
-                    .ToList();
-
-                foreach (var mediaType in parsed)
+                var acceptRanges = ContentNegotiationHelpers.ParseAcceptHeader(acceptHeader);
+                if (acceptRanges.IsDefaultOrEmpty)
                 {
-                    if (_acceptMediaTypeMap.TryGetValue(mediaType, out var format))
-                    {
-                        return format;
-                    }
+                    return null;
+                }
 
-                    // Accept: image/* or */*
-                    if (mediaType is "image/*" or "*/*")
-                    {
-                        return RasterFormat.PNG;
-                    }
+                if (ContentNegotiationHelpers.TrySelectBestMediaType(
+                        _supportedImageMediaTypes,
+                        acceptHeader,
+                        out var selectedMediaType) &&
+                    _acceptMediaTypeMap.TryGetValue(selectedMediaType, out var format))
+                {
+                    return format;
                 }
 
                 // Accept header present but no supported type matched
@@ -689,30 +694,6 @@ internal sealed class OgcMapsRenderingHandler
         return RasterFormat.PNG;
     }
 
-    private static (string MediaType, double Quality)? ParseMediaTypeWithQuality(string segment)
-    {
-        var parts = segment.Split(';', StringSplitOptions.TrimEntries);
-        if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0]))
-        {
-            return null;
-        }
-
-        var mediaType = parts[0].Trim();
-        var quality = 1.0;
-
-        for (var i = 1; i < parts.Length; i++)
-        {
-            var param = parts[i].Trim();
-            if (param.StartsWith("q=", StringComparison.OrdinalIgnoreCase) &&
-                double.TryParse(param[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var q))
-            {
-                quality = q;
-            }
-        }
-
-        return (mediaType, quality);
-    }
-
     private (MapRenderRequest?, string?) CreateMapRenderRequest(
         OgcMapRequest request,
         Core.Features.Catalog.Domain.LayerDefinition layer,
@@ -720,6 +701,24 @@ internal sealed class OgcMapsRenderingHandler
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(request.Datetime) ||
+                HasExplicitQueryParameter(context, "datetime"))
+            {
+                return (null, "The datetime parameter is not currently supported for OGC API Maps rendering.");
+            }
+
+            if (request.Transparent is false || HasExplicitQueryParameter(context, "transparent"))
+            {
+                return (null, "The transparent parameter is not currently supported for OGC API Maps rendering.");
+            }
+
+            if ((context is null && !string.IsNullOrWhiteSpace(request.BackgroundColor) &&
+                 !string.Equals(request.BackgroundColor, "0xFFFFFF", StringComparison.OrdinalIgnoreCase)) ||
+                HasExplicitQueryParameter(context, "bgcolor"))
+            {
+                return (null, "The bgcolor parameter is not currently supported for OGC API Maps rendering.");
+            }
+
             // Parse CRS - log when requested CRS is not recognized
             var outputCrs = SpatialReferenceHelpers.TryParseSrid(request.Crs);
             if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
@@ -842,4 +841,7 @@ internal sealed class OgcMapsRenderingHandler
             return (null, "Invalid map request parameters.");
         }
     }
+
+    private static bool HasExplicitQueryParameter(HttpContext? context, string parameterName)
+        => context?.Request.Query.ContainsKey(parameterName) == true;
 }

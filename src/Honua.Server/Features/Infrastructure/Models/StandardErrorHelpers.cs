@@ -78,6 +78,19 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Precondition Failed error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Precondition Failed response.</returns>
+    internal static IResult CreatePreconditionFailed(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = StandardErrorResponse.PreconditionFailed(detail, additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates an Internal Server Error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>
@@ -153,6 +166,19 @@ internal static class StandardErrorHelpers
         }
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
+    }
+
+    /// <summary>
+    /// Creates a Request Timeout error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Request Timeout response.</returns>
+    internal static IResult CreateRequestTimeout(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = StandardErrorResponse.RequestTimeout(detail, additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 
     /// <summary>

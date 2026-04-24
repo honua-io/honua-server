@@ -3,6 +3,7 @@
 
 using System.Text.RegularExpressions;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Security;
 
@@ -18,8 +19,14 @@ internal sealed class InputValidationMiddleware
 
     // Common injection patterns to detect and block
     private static readonly Regex _sqlInjectionPattern = new(
-        @"(\bunion\b|\bselect\b|\binsert\b|\bupdate\b|\bdelete\b|\bdrop\b|\bcreate\b|\balter\b|\bexec\b|\bexecute\b)" +
-        @"|(\-\-|\/\*|\*\/)|(\bor\b\s+\d+\s*=\s*\d+)|(\bor\b\s+['""][^'""]*['""])|(;\s*\w+\s*=)",
+        @"(\bunion\s+(?:all\s+)?select\b)|(\bselect\b.+\bfrom\b)|(\binsert\s+into\b)" +
+        @"|(\bupdate\s+[\w\.\[\]""`]+\s+set\b)|(\bdelete\s+from\b)" +
+        @"|(\bdrop\s+(?:table|database|schema|view|index)\b)" +
+        @"|(\b(?:create|alter)\s+(?:table|database|schema|view|index|procedure|function)\b)" +
+        @"|(\bexec(?:ute)?\s+[\w\.\[\]""`]+)" +
+        @"|(\-\-|\/\*|\*\/)|(\bor\b\s+\d+\s*=\s*\d+)" +
+        @"|(\bor\b\s+['""][^'""]*['""]\s*=\s*['""][^'""]*['""])" +
+        @"|(;\s*(?:select|insert|update|delete|drop|create|alter|exec|execute)\b)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex _xssPattern = new(
@@ -28,7 +35,10 @@ internal sealed class InputValidationMiddleware
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Singleline);
 
     private static readonly Regex _commandInjectionPattern = new(
-        @"(\|\s*\w+)|(;\s*\w+)|(&&\s*\w+)|(\$\(.*\))|(cmd\s+/c)|(powershell)|(\beval\b)|(\bexec\b)|(\bsystem\b)" +
+        @"(\|\s*(cat|ls|rm|mv|cp|chmod|chown|wget|curl|bash|sh|zsh|cmd|powershell|pwsh|python|perl|php|node|nc|netcat)\b)" +
+        @"|(;\s*(cat|ls|rm|mv|cp|chmod|chown|wget|curl|bash|sh|zsh|cmd|powershell|pwsh|python|perl|php|node|nc|netcat)\b)" +
+        @"|(&&\s*(cat|ls|rm|mv|cp|chmod|chown|wget|curl|bash|sh|zsh|cmd|powershell|pwsh|python|perl|php|node|nc|netcat)\b)" +
+        @"|(\$\(.*\))|(cmd\s+/c)|(powershell)|(\beval\b)|(\bexec\b)|(\bsystem\b)" +
         @"|(\bshell_exec\b)|(\bpassthru\b)|(\bpopen\b)|(\bproc_open\b)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -37,9 +47,8 @@ internal sealed class InputValidationMiddleware
         @"|(\.%2f)|(\.\%5c)|(\.%252f)|(\.%255c)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex _ldapInjectionPattern = new(
-        @"(\*\s*\)|(\)\s*\|)|(\)\s*&)|(\)\s*!)|(\*\s*\()|(\(\s*\|)|(\(\s*&)|(\(\s*!)" +
-        @"|(\*\s*=)|(\)\s*=)|(\(\s*=)|(\*\s*\))|(\)\s*\))|(\(\s*\()",
+    private static readonly Regex _odataSystemOptionPattern = new(
+        @"\$(select|filter|orderby|top|skip|count|expand|levels|search|compute|apply|deltatoken|format)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Suspicious header patterns
@@ -56,11 +65,11 @@ internal sealed class InputValidationMiddleware
     public InputValidationMiddleware(
         RequestDelegate next,
         ILogger<InputValidationMiddleware> logger,
-        InputValidationOptions options)
+        IOptions<InputValidationOptions> options)
     {
         _next = next;
         _logger = logger;
-        _options = options;
+        _options = options.Value;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -111,20 +120,20 @@ internal sealed class InputValidationMiddleware
             if (string.IsNullOrEmpty(param.Key))
                 continue;
 
-            var result = ValidateParameter("query", param.Key, param.Value);
+            var result = ValidateParameter(request, "query", param.Key, param.Value);
             if (!result.IsValid)
                 return result;
         }
 
         // Validate form data if applicable
-        if (request.HasFormContentType && request.Form != null)
+        if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null)
         {
             foreach (var param in request.Form)
             {
                 if (string.IsNullOrEmpty(param.Key))
                     continue;
 
-                var result = ValidateParameter("form", param.Key, param.Value);
+                var result = ValidateParameter(request, "form", param.Key, param.Value);
                 if (!result.IsValid)
                     return result;
             }
@@ -147,7 +156,7 @@ internal sealed class InputValidationMiddleware
             // Validate specific security-sensitive headers
             if (IsSecuritySensitiveHeader(header.Key))
             {
-                var result = ValidateParameter("header", header.Key, header.Value);
+                var result = ValidateParameter(request, "header", header.Key, header.Value);
                 if (!result.IsValid)
                     return result;
             }
@@ -156,7 +165,11 @@ internal sealed class InputValidationMiddleware
         return InputValidationResult.Valid();
     }
 
-    private InputValidationResult ValidateParameter(string paramType, string name, Microsoft.Extensions.Primitives.StringValues values)
+    private InputValidationResult ValidateParameter(
+        HttpRequest request,
+        string paramType,
+        string name,
+        Microsoft.Extensions.Primitives.StringValues values)
     {
         foreach (var value in values)
         {
@@ -169,8 +182,10 @@ internal sealed class InputValidationMiddleware
                 return InputValidationResult.Invalid($"Parameter '{name}' exceeds maximum length of {_options.MaxParameterLength}");
             }
 
+            var sqlValidationValue = NormalizeForSqlInspection(request, paramType, name, value);
+
             // SQL Injection detection
-            if (_options.DetectSqlInjection && _sqlInjectionPattern.IsMatch(value))
+            if (_options.DetectSqlInjection && _sqlInjectionPattern.IsMatch(sqlValidationValue))
             {
                 return InputValidationResult.Invalid($"SQL injection attempt detected in {paramType} parameter '{name}'");
             }
@@ -194,7 +209,9 @@ internal sealed class InputValidationMiddleware
             }
 
             // LDAP injection detection
-            if (_options.DetectLdapInjection && _ldapInjectionPattern.IsMatch(value))
+            if (_options.DetectLdapInjection &&
+                !ShouldSkipLdapInspection(request, paramType, name) &&
+                ContainsPotentialLdapInjection(value))
             {
                 return InputValidationResult.Invalid($"LDAP injection attempt detected in {paramType} parameter '{name}'");
             }
@@ -213,6 +230,46 @@ internal sealed class InputValidationMiddleware
         }
 
         return InputValidationResult.Valid();
+    }
+
+    private static string NormalizeForSqlInspection(HttpRequest request, string paramType, string name, string value)
+    {
+        if (!IsODataSystemQueryOption(request, paramType, name))
+        {
+            return value;
+        }
+
+        return _odataSystemOptionPattern.Replace(value, string.Empty);
+    }
+
+    private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name)
+        => IsODataSystemQueryOption(request, paramType, name) ||
+           IsProtocolFilterQueryOption(request, paramType, name);
+
+    private static bool IsODataSystemQueryOption(HttpRequest request, string paramType, string name)
+    {
+        if (!paramType.Equals("query", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return name.StartsWith('$') &&
+               request.Path.Value?.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static bool IsProtocolFilterQueryOption(HttpRequest request, string paramType, string name)
+    {
+        if (!paramType.Equals("query", StringComparison.Ordinal) ||
+            !name.Equals("filter", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var path = request.Path.Value;
+        return path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.Contains("/wfs", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.Contains("/wms", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static InputValidationResult ValidateHeaderValue(string headerName, Microsoft.Extensions.Primitives.StringValues values)
@@ -261,6 +318,36 @@ internal sealed class InputValidationMiddleware
         return value.Any(c => char.IsControl(c) && c != '\t' && c != '\r' && c != '\n');
     }
 
+    private static bool ContainsPotentialLdapInjection(string value)
+    {
+        ReadOnlySpan<string> suspiciousTokens =
+        [
+            "(|",
+            "(&",
+            "(!",
+            "|(",
+            "&(",
+            "!(",
+            "*(",
+            "*)",
+            "*=",
+            ")=",
+            "(=",
+            "))",
+            "(("
+        ];
+
+        foreach (var token in suspiciousTokens)
+        {
+            if (value.Contains(token, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsValidIpAddressList(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -279,17 +366,18 @@ internal sealed class InputValidationMiddleware
         return true;
     }
 
+    private static bool IsMultipartFormData(string? contentType)
+    {
+        return !string.IsNullOrWhiteSpace(contentType)
+            && contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static async Task CreateSecurityErrorResponse(HttpContext context, string message)
     {
-        context.Response.StatusCode = 400; // Bad Request
-        context.Response.ContentType = "application/problem+json; charset=utf-8";
-
-        await ProblemDetailsHelpers.CreateSecurityProblem(
+        context.Response.Clear();
+        await StandardErrorResponseFormatter.WriteErrorAsync(
             context,
-            StatusCodes.Status400BadRequest,
-            "Input Validation Failed",
-            "The request contains potentially malicious input and has been blocked for security reasons.")
-            .ExecuteAsync(context);
+            StandardErrorResponse.BadRequest(message));
     }
 }
 

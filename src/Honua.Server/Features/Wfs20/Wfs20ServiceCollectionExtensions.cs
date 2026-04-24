@@ -35,12 +35,7 @@ internal static class Wfs20ServiceCollectionExtensions
         // Register additional WFS 2.0 services for comprehensive OGC compliance
         services.AddScoped<IWfs20FeatureTypeSchemaGenerator, Wfs20FeatureTypeSchemaGenerator>();
         services.AddScoped<IGmlSerializer, GmlSerializer>();
-        services.AddScoped<Wfs20TransactionContext>();
-        services.AddScoped<IWfs20TransactionHandler, Wfs20TransactionHandler>();
         services.AddScoped<IWfs20FeatureFormatConverter, Wfs20FeatureFormatConverter>();
-
-        // Register enhanced observability and telemetry
-        services.AddSingleton<Wfs20TransactionTelemetry>();
 
         return services;
     }

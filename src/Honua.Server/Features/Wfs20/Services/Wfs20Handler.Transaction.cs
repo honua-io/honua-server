@@ -130,6 +130,7 @@ internal sealed partial class Wfs20Handler
             }
 
             Wfs20Log.TransactionReturned(_logger, editResult.CreatedCount, editResult.UpdatedCount, editResult.DeletedCount);
+            HonuaTelemetry.SetSuccess(activity, editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount);
 
             var responseXml = BuildTransactionResponseXml(prepared, editResult);
             return Results.Content(responseXml, "application/xml", Encoding.UTF8);
@@ -137,6 +138,7 @@ internal sealed partial class Wfs20Handler
         catch (InvalidDataException ex)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "OperationParsingFailed",
@@ -146,6 +148,7 @@ internal sealed partial class Wfs20Handler
         catch (WfsTransactionException ex)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 ex.ExceptionCode,
@@ -155,6 +158,7 @@ internal sealed partial class Wfs20Handler
         catch (ArgumentException ex)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "InvalidParameterValue",
@@ -164,6 +168,7 @@ internal sealed partial class Wfs20Handler
         catch (NotSupportedException ex)
         {
             Wfs20Log.UnsupportedOperationRequested(_logger, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
             return Wfs20ErrorResults.CreateNotImplemented(
                 context,
                 "OperationNotSupported",
@@ -173,6 +178,7 @@ internal sealed partial class Wfs20Handler
         catch (Exception ex)
         {
             Wfs20Log.DatabaseQueryFailed(_logger, Wfs20Utilities.Operations.Transaction, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process Transaction request.");
         }
     }
@@ -1421,6 +1427,12 @@ internal sealed partial class Wfs20Handler
         HttpRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.HttpContext.Items.TryGetValue(Wfs20DispatcherEndpoint.ParsedXmlDocumentItemKey, out var parsedDocument) &&
+            parsedDocument is XDocument document)
+        {
+            return document;
+        }
+
         request.EnableBuffering();
         request.Body.Position = 0;
 

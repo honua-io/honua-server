@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -14,6 +15,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.OgcTiles;
 
@@ -51,6 +53,7 @@ internal static class CollectionsEndpoints
         string? f,
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
+        [FromServices] ICoordinateTransformService coordinateTransformService,
         [FromServices] ICrsRegistry crsRegistry,
         [FromServices] ILogger<OgcTilesCollectionsLog> logger)
     {
@@ -135,6 +138,7 @@ internal static class CollectionsEndpoints
                         item.layer,
                         baseUrl,
                         featureReader,
+                        coordinateTransformService,
                         crsRegistry,
                         token);
                 });
@@ -181,6 +185,7 @@ internal static class CollectionsEndpoints
         string? f,
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
+        [FromServices] ICoordinateTransformService coordinateTransformService,
         [FromServices] ICrsRegistry crsRegistry,
         [FromServices] ILogger<OgcTilesCollectionsLog> logger)
     {
@@ -200,13 +205,8 @@ internal static class CollectionsEndpoints
                 return OgcCommonUtilities.CreateFormatError(context, formatError);
             }
 
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
+            var layer = await ResolveCollectionLayerAsync(context, collectionId, cancellationToken);
             if (layer == null)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
@@ -225,8 +225,15 @@ internal static class CollectionsEndpoints
                 return accessError;
             }
 
-            var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken);
-            var basePath = $"{baseUrl}/ogc/tiles/collections/{collectionId}";
+            var collection = await CreateCollectionAsync(
+                layer,
+                baseUrl,
+                featureReader,
+                coordinateTransformService,
+                crsRegistry,
+                cancellationToken);
+            var encodedCollectionId = Uri.EscapeDataString(collectionId);
+            var basePath = $"{baseUrl}/ogc/tiles/collections/{encodedCollectionId}";
             var selfHref = $"{basePath}{request.QueryString}";
             var updatedLinks = collection.Links.Select(link =>
                     string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
@@ -268,10 +275,21 @@ internal static class CollectionsEndpoints
         return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiTilesProtocol);
     }
 
+    private static async Task<LayerDefinition?> ResolveCollectionLayerAsync(
+        HttpContext context,
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
+        return validationResult.IsValid ? validationResult.Resource : null;
+    }
+
     private static async Task<CollectionInfo> CreateCollectionAsync(
         LayerDefinition layer,
         string baseUrl,
         IFeatureReader featureReader,
+        ICoordinateTransformService coordinateTransformService,
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {
@@ -312,37 +330,32 @@ internal static class CollectionsEndpoints
         SpatialExtent? spatialExtent = null;
         if (layer.Extent != null)
         {
-            var extentSrid = layer.Extent.Value.SpatialReference;
-            (double Lon, double Lat) min = default;
-            (double Lon, double Lat) max = default;
-            var transformedToCrs84 = false;
+            var layerExtent = layer.Extent.Value;
+            var transformedExtent = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                layerExtent.MinX,
+                layerExtent.MinY,
+                layerExtent.MaxX,
+                layerExtent.MaxY,
+                layerExtent.SpatialReference,
+                coordinateTransformService,
+                cancellationToken);
 
-            if (extentSrid != 4326)
+            if (transformedExtent.HasValue)
             {
-                transformedToCrs84 =
-                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, out min) &&
-                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, out max);
-            }
-
-            if (extentSrid == 4326 || transformedToCrs84)
-            {
-                if (extentSrid == 4326)
-                {
-                    min = (layer.Extent.Value.MinX, layer.Extent.Value.MinY);
-                    max = (layer.Extent.Value.MaxX, layer.Extent.Value.MaxY);
-                }
-
                 spatialExtent = new SpatialExtent
                 {
                     BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                        min.Lon, min.Lat, max.Lon, max.Lat)),
+                        transformedExtent.Value.MinLon,
+                        transformedExtent.Value.MinLat,
+                        transformedExtent.Value.MaxLon,
+                        transformedExtent.Value.MaxLat)),
                     Crs = OgcFeaturesUtilities.Crs84Uri
                 };
             }
         }
 
         var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);
-        var extent = spatialExtent == null && temporalExtent == null
+        var collectionExtent = spatialExtent == null && temporalExtent == null
             ? null
             : new Extent
             {
@@ -364,7 +377,7 @@ internal static class CollectionsEndpoints
             Title = layer.Name,
             Description = layer.Description,
             Links = collectionLinks,
-            Extent = extent,
+            Extent = collectionExtent,
             Crs = supportedCrs,
             StorageCrs = storageCrsDefinition?.Uri
         };

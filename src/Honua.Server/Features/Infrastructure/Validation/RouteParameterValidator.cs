@@ -269,9 +269,7 @@ internal sealed class RouteParameterValidator : IRouteParameterValidator
         if (string.IsNullOrWhiteSpace(identifier))
             return false;
 
-        // Must start with letter or underscore, contain only alphanumeric, hyphens, underscores
-        return identifier.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_') &&
-               (char.IsLetter(identifier[0]) || identifier[0] == '_');
+        return identifier.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_');
     }
 
     private static bool ContainsMalformedEscapeSequence(string value)

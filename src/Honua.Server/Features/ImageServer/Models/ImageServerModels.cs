@@ -96,10 +96,10 @@ public sealed class ImageServerServiceInfo
     public string DefaultResamplingMethod { get; init; } = "Bilinear";
 
     [JsonPropertyName("maxImageHeight")]
-    public int MaxImageHeight { get; init; } = 4100;
+    public int MaxImageHeight { get; init; } = 4096;
 
     [JsonPropertyName("maxImageWidth")]
-    public int MaxImageWidth { get; init; } = 15000;
+    public int MaxImageWidth { get; init; } = 4096;
 
     [JsonPropertyName("maxRecordCount")]
     public int MaxRecordCount { get; init; } = 1000;
@@ -506,12 +506,9 @@ public sealed class ExportImageRequest
     [StringLength(100, ErrorMessage = "Bbox is too long")]
     public string? Bbox { get; init; }
 
-    // Esri /exportImage size is "width,height" (comma-separated). Also accept a bare
-    // integer for callers that send only the width and let the server derive height
-    // from the raster's aspect ratio. Parsing is done in the handler so validation
-    // messages stay precise.
-    [RegularExpression(@"^\d{1,4}(,\d{1,4})?$",
-        ErrorMessage = "Size must be an integer or a comma-separated width,height pair")]
+    // Public /exportImage follows the ArcGIS contract: explicit width,height only.
+    [RegularExpression(@"^\d{1,4},\d{1,4}$",
+        ErrorMessage = "Size must be a comma-separated width,height pair")]
     [StringLength(11, ErrorMessage = "Size is too long")]
     public string? Size { get; init; }
 
@@ -525,8 +522,9 @@ public sealed class ExportImageRequest
         ErrorMessage = "Format must be png, jpg, jpeg, tiff, or tif")]
     public string? Format { get; init; } = "png";
 
-    [Range(0, 255, ErrorMessage = "PixelType must be between 0 and 255")]
-    public int? PixelType { get; init; }
+    [RegularExpression(@"(?i)^(C128|C64|F32|F64|S16|S32|S8|U1|U16|U2|U32|U4|U8|UNKNOWN)$",
+        ErrorMessage = "PixelType must be one of the ArcGIS ImageServer pixel type values")]
+    public string? PixelType { get; init; }
 
     [StringLength(100, ErrorMessage = "NoData value is too long")]
     public string? NoData { get; init; }
@@ -537,10 +535,11 @@ public sealed class ExportImageRequest
     [StringLength(50, ErrorMessage = "Interpolation value is too long")]
     public string? Interpolation { get; init; } = "RSP_BilinearInterpolation";
 
-    [Range(0, 100, ErrorMessage = "Compression must be between 0 and 100")]
-    public int? Compression { get; init; }
+    [RegularExpression(@"(?i)^(none|jpeg|lz77)$",
+        ErrorMessage = "Compression must be one of: None, JPEG, or LZ77")]
+    public string? Compression { get; init; }
 
-    [Range(1, 100, ErrorMessage = "CompressionQuality must be between 1 and 100")]
+    [Range(0, 100, ErrorMessage = "CompressionQuality must be between 0 and 100")]
     public int? CompressionQuality { get; init; } = 75;
 
     [StringLength(100, ErrorMessage = "BandIds is too long")]

@@ -10,12 +10,20 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcTiles.Models;
-using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.OgcTiles;
 
 internal static class OgcTilesUtilities
 {
+    private static readonly string[] _pngTileMediaTypes = ["image/png"];
+
+    private static readonly string[] _vectorTileMediaTypes =
+    [
+        MediaTypes.Mvt,
+        "application/x-protobuf",
+        "application/octet-stream"
+    ];
+
     /// <summary>
     /// Allowed query parameter sets for OGC Tiles endpoints.
     /// </summary>
@@ -299,13 +307,13 @@ internal static class OgcTilesUtilities
     /// </summary>
     public static bool AcceptsVectorTiles(HttpRequest request)
     {
-        var accept = request.GetTypedHeaders().Accept;
-        if (accept is null || accept.Count == 0)
+        var accept = request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
         {
             return true;
         }
 
-        var (_, vectorQuality) = GetTileAcceptQualities(accept);
+        var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
         return vectorQuality > 0;
     }
 
@@ -314,13 +322,13 @@ internal static class OgcTilesUtilities
     /// </summary>
     public static bool AcceptsPngTiles(HttpRequest request)
     {
-        var accept = request.GetTypedHeaders().Accept;
-        if (accept is null || accept.Count == 0)
+        var accept = request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
         {
             return false;
         }
 
-        var (pngQuality, _) = GetTileAcceptQualities(accept);
+        var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
         return pngQuality > 0;
     }
 
@@ -342,59 +350,15 @@ internal static class OgcTilesUtilities
             return false;
         }
 
-        var accept = request.GetTypedHeaders().Accept;
-        if (accept is null || accept.Count == 0)
+        var accept = request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
         {
             return false;
         }
 
-        var (pngQuality, vectorQuality) = GetTileAcceptQualities(accept);
+        var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
+        var vectorQuality = ContentNegotiationHelpers.GetBestQuality(_vectorTileMediaTypes, accept);
         return pngQuality > vectorQuality;
-    }
-
-    private static (double PngQuality, double VectorQuality) GetTileAcceptQualities(
-        IEnumerable<MediaTypeHeaderValue>? acceptHeaders)
-    {
-        var pngQuality = 0d;
-        var vectorQuality = 0d;
-
-        if (acceptHeaders is null)
-        {
-            return (pngQuality, vectorQuality);
-        }
-
-        foreach (var acceptHeader in acceptHeaders)
-        {
-            var quality = acceptHeader.Quality ?? 1d;
-            if (quality <= 0)
-            {
-                continue;
-            }
-
-            var mediaType = acceptHeader.MediaType.Value;
-            if (string.IsNullOrWhiteSpace(mediaType))
-            {
-                continue;
-            }
-
-            if (string.Equals(mediaType, "image/png", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "image/*", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "*/*", StringComparison.OrdinalIgnoreCase))
-            {
-                pngQuality = Math.Max(pngQuality, quality);
-            }
-
-            if (string.Equals(mediaType, MediaTypes.Mvt, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "application/*", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "*/*", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "application/x-protobuf", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(mediaType, "application/octet-stream", StringComparison.OrdinalIgnoreCase))
-            {
-                vectorQuality = Math.Max(vectorQuality, quality);
-            }
-        }
-
-        return (pngQuality, vectorQuality);
     }
 
     /// <summary>

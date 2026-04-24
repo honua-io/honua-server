@@ -33,7 +33,6 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
             [".gpkg"] = SupportedFileFormat.GeoPackage,
             [".gpx"] = SupportedFileFormat.Gpx,
             [".csv"] = SupportedFileFormat.Csv,
-            [".gdb"] = SupportedFileFormat.FileGdb,
             [".parquet"] = SupportedFileFormat.GeoParquet,
             [".geoparquet"] = SupportedFileFormat.GeoParquet,
             [".fgb"] = SupportedFileFormat.FlatGeobuf

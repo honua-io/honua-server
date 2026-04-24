@@ -51,12 +51,12 @@ public sealed class ResourceValidator : IResourceValidator
             return ResourceValidationResult.InvalidIdentifier<LayerDefinition>(ErrorMessages.Validation.CollectionIdRequired);
         }
 
-        if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+        var layer = await ResolveLayerByCollectionIdAsync(collectionId, cancellationToken);
+        if (layer == null &&
+            int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
-            return ResourceValidationResult.InvalidIdentifier<LayerDefinition>(ErrorMessages.Validation.FormatCollectionIdInvalid(collectionId));
+            layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
         }
-
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
 
         if (layer == null)
         {
@@ -64,6 +64,16 @@ public sealed class ResourceValidator : IResourceValidator
         }
 
         return ResourceValidationResult.Success(layer);
+    }
+
+    private async Task<LayerDefinition?> ResolveLayerByCollectionIdAsync(
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
+        return layers
+            .OrderBy(layer => layer.Id)
+            .FirstOrDefault(layer => string.Equals(layer.Name, collectionId, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <inheritdoc />

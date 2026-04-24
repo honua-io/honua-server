@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.FeatureServer;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.MapServer;
@@ -10,6 +11,7 @@ internal static partial class MapServerEndpoints
 {
     private static async Task<(Dictionary<string, StringValues>? Values, string? Error)> TryReadMapServerRequestValuesAsync(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var values = FeatureServerEndpoints.ToCaseInsensitiveDictionary(context.Request.Query);
 
         if (!HttpMethods.IsPost(context.Request.Method) && !HttpMethods.IsPut(context.Request.Method))
@@ -24,7 +26,7 @@ internal static partial class MapServerEndpoints
 
         var (bodyValues, error) = await FeatureServerEndpoints.TryReadRequestValuesAsync(
             context.Request,
-            context.RequestAborted);
+            cancellationToken);
         if (bodyValues == null)
         {
             return (null, error ?? "Invalid request body.");

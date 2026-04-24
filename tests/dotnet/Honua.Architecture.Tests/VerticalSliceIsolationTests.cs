@@ -55,9 +55,10 @@ public sealed class VerticalSliceIsolationTests
 
     /// <summary>
     /// Protocol-adapter features that are allowed to consume a specific domain
-    /// feature's transport-neutral services. The Mcp operator surface adapts
-    /// <c>IGeoprocessingJobService</c> the same way the gRPC and GPServer
-    /// adapters do, but lives in its own vertical slice per ticket #728.
+    /// feature's transport-neutral services. OGC API Processes and the Mcp
+    /// operator surface adapt <c>IGeoprocessingJobService</c> the same way the
+    /// gRPC and GPServer adapters do, but live in their own vertical slices per
+    /// ticket #728.
     /// Grounding is a domain feature that reuses the Geoprocessing process
     /// catalog + destructive classifier per ticket #742. Each entry lists the
     /// cross-feature references permitted for the key.
@@ -66,6 +67,7 @@ public sealed class VerticalSliceIsolationTests
         new(StringComparer.Ordinal)
         {
             ["Mcp"] = new[] { "Geoprocessing", "Grounding" },
+            ["OgcProcesses"] = new[] { "Geoprocessing" },
             ["Grounding"] = new[] { "Geoprocessing" }
         };
 

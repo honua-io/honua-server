@@ -27,6 +27,14 @@ public interface IReplicaRepository
     Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists persisted replicas for a specific feature service.
+    /// </summary>
+    /// <param name="serviceId">Feature service identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Replica records for the requested service.</returns>
+    Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes a replica record from persistent storage
     /// </summary>
     /// <param name="replicaId">Unique replica identifier to remove</param>

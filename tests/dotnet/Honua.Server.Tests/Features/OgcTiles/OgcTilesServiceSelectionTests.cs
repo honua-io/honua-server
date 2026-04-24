@@ -26,7 +26,12 @@ public sealed class OgcTilesServiceSelectionTests
     public void BuildPrimaryServiceMap_WithPreferredProtocol_SelectsProtocolEnabledService()
     {
         var layer = LayerDefinition.CreateBasic(10, "tiles-layer", CatalogGeometryType.Point);
-        var alpha = CreateService("alpha-service", layer, enabledProtocols: ServiceProtocols.All);
+        var alpha = CreateService(
+            "alpha-service",
+            layer,
+            enabledProtocols: ServiceProtocols.All
+                .Where(protocol => !string.Equals(protocol, OgcApiTilesProtocol, StringComparison.Ordinal))
+                .ToArray());
         var beta = CreateService("beta-service", layer, enabledProtocols: [OgcApiTilesProtocol]);
 
         var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap([alpha, beta], OgcApiTilesProtocol);

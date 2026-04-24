@@ -30,7 +30,7 @@ internal static class GeoParquetReader
     /// Shared between the import and preview rejection paths.
     /// </summary>
     internal const string UnsupportedEncodingMessage =
-        "GeoParquet file uses an unsupported geometry encoding. Only WKB encoding is supported in this version.";
+        "GeoParquet native geometry encodings are valid GeoParquet 1.1, but this importer supports only WKB geometry encoding.";
 
     /// <summary>
     /// Builds a rejection message for files containing a row group that exceeds the
@@ -198,7 +198,7 @@ internal static class GeoParquetReader
         // Check encoding
         if (!isWkbEncoding)
         {
-            warnings.Add($"GeoParquet file uses '{geoMeta.Encoding}' geometry encoding. Only WKB encoding is supported.");
+            warnings.Add($"GeoParquet file uses '{geoMeta.Encoding}' geometry encoding. This importer supports only WKB geometry encoding.");
         }
 
         // GeoParquet leaves the CRS key optional and implies OGC:CRS84 when absent.

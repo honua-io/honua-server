@@ -134,6 +134,36 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
+    public async Task MultipartBatch_WithAbsoluteSubrequestUrl_ExecutesPathWithoutEchoingHost()
+    {
+        const string boundary = "batch_absolute_url";
+        var payload = string.Join("\r\n",
+        [
+            $"--{boundary}",
+            "Content-Type: application/http",
+            "Content-Transfer-Encoding: binary",
+            string.Empty,
+            "GET https://attacker.example/odata/Layers?top=1 HTTP/1.1",
+            "Accept: application/json",
+            string.Empty,
+            $"--{boundary}--",
+            string.Empty
+        ]);
+
+        var content = new StringContent(payload, Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
+
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        responseBody.Should().Contain("HTTP/1.1 200");
+        responseBody.Should().NotContain("attacker.example");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
     public async Task MultipartBatch_WithChangeset_SupportsAtomicity()
     {
         const string batchBoundary = "batch_atomic";
@@ -195,7 +225,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseBody = await response.Content.ReadAsStringAsync();
-        responseBody.Should().Contain("OData-Version: 4.0",
+        responseBody.Should().Contain("OData-Version: 4.01",
             "each part in multipart response should include OData-Version header");
     }
 }

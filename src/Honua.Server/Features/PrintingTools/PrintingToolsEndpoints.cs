@@ -13,6 +13,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.PrintingTools.Layout;
@@ -108,6 +109,7 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleServiceInfo(HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var templateNames = LayoutTemplateRegistry.GetTemplateNames();
 
         // Resolve edition to filter advertised choices.
@@ -175,6 +177,7 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleGetLayoutTemplatesInfo(HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
         var edition = licenseProvider.GetCurrentStatus().Edition;
         var isPro = edition >= HonuaEdition.Pro;
@@ -232,10 +235,11 @@ internal static class PrintingToolsEndpoints
     private static async Task<(ValidatedPrintRequest? Request, IResult? Error)> ValidateAndResolveRequestAsync(
         HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.PrintingToolsEndpoints");
 
-        var (webMapJson, format, templateName) = await ReadRequestParametersAsync(context);
+        var (webMapJson, format, templateName) = await ReadRequestParametersAsync(context, cancellationToken);
 
         var webMap = PrintingToolsRequestHandlers.ParseWebMapJson(webMapJson);
         if (webMap is null)
@@ -286,6 +290,7 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var (validated, error) = await ValidateAndResolveRequestAsync(context, cancellationToken);
         if (error is not null) return error;
         var req = validated!.Value;
@@ -389,6 +394,7 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleSubmitJob(HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var (validated, error) = await ValidateAndResolveRequestAsync(context, cancellationToken);
         if (error is not null) return error;
         var req = validated!.Value;
@@ -449,6 +455,7 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.PrintingToolsEndpoints");
 
@@ -517,6 +524,7 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleJobResult(HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var jobId = context.Request.RouteValues["jobId"]?.ToString();
         if (string.IsNullOrWhiteSpace(jobId))
         {
@@ -550,7 +558,8 @@ internal static class PrintingToolsEndpoints
     }
 
     private static async Task<(string? WebMapJson, string? Format, string? TemplateName)> ReadRequestParametersAsync(
-        HttpContext context)
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         string? webMapJson;
         string? format;
@@ -558,7 +567,7 @@ internal static class PrintingToolsEndpoints
 
         if (context.Request.HasFormContentType)
         {
-            var form = await context.Request.ReadFormAsync();
+            var form = await context.Request.ReadFormAsync(cancellationToken);
             webMapJson = form["Web_Map_as_JSON"].FirstOrDefault();
             format = form["Format"].FirstOrDefault();
             templateName = form["Layout_Template"].FirstOrDefault();

@@ -178,7 +178,7 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
-    /// Resolves request CRS parameters against the collection baseline first, then falls back to the CRS registry.
+    /// Resolves request CRS parameters against the CRS contract advertised by the collection metadata.
     /// </summary>
     public static async ValueTask<(bool IsSuccess, CrsDefinition Definition, string? Error)> TryResolveCrsAsync(
         string? crs,
@@ -186,15 +186,12 @@ internal static class OgcFeaturesUtilities
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {
+        _ = crsRegistry;
+        _ = cancellationToken;
+
         if (TryResolveCrs(crs, supportedCrs, out var definition, out var error))
         {
             return (true, definition, null);
-        }
-
-        var resolvedDefinition = await crsRegistry.ResolveAsync(crs, cancellationToken).ConfigureAwait(false);
-        if (resolvedDefinition.HasValue)
-        {
-            return (true, resolvedDefinition.Value, null);
         }
 
         return (false, default, error ?? $"Unsupported CRS '{crs}'.");
@@ -299,15 +296,19 @@ internal static class OgcFeaturesUtilities
         HttpRequest request,
         string collectionId,
         string featureId,
-        string outputFormat)
+        string outputFormat,
+        string? responseCrsUri = null)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
-        var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
+        var collectionSegment = Uri.EscapeDataString(collectionId);
+        var featureSegment = Uri.EscapeDataString(featureId);
+        var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}/items/{featureSegment}";
+        var selfHref = BuildFeatureRepresentationUrl(request, basePath, outputFormat, responseCrsUri);
 
         var links = new List<Link>
         {
             Link.Create(
-                href: basePath,
+                href: selfHref,
                 rel: RelationTypes.Self,
                 type: outputFormat,
                 title: "Feature")
@@ -321,14 +322,14 @@ internal static class OgcFeaturesUtilities
             }
 
             links.Add(Link.Create(
-                href: $"{basePath}?f={Uri.EscapeDataString(format.QueryValue)}",
+                href: BuildFeatureRepresentationUrl(request, basePath, format.MediaType, responseCrsUri),
                 rel: RelationTypes.Alternate,
                 type: format.MediaType,
                 title: format.Title));
         }
 
         links.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
+            href: $"{baseUrl}/ogc/features/collections/{collectionSegment}",
             rel: RelationTypes.Collection,
             type: MediaTypes.Json,
             title: "Collection"));
@@ -345,7 +346,37 @@ internal static class OgcFeaturesUtilities
         string featureId)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
-        return $"{baseUrl}/ogc/features/collections/{collectionId}/items/{featureId}";
+        return $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items/{Uri.EscapeDataString(featureId)}";
+    }
+
+    private static string BuildFeatureRepresentationUrl(
+        HttpRequest request,
+        string basePath,
+        string outputFormat,
+        string? responseCrsUri)
+    {
+        var queryParameters = new List<string>();
+
+        if (request.Query.TryGetValue("crs", out var crsValue) && !string.IsNullOrWhiteSpace(crsValue))
+        {
+            queryParameters.Add($"crs={Uri.EscapeDataString(crsValue.ToString())}");
+        }
+        else if (!string.IsNullOrWhiteSpace(responseCrsUri))
+        {
+            queryParameters.Add($"crs={Uri.EscapeDataString(responseCrsUri)}");
+        }
+
+        var formatQueryValue = FeatureFormats
+            .FirstOrDefault(format => string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
+            .QueryValue;
+        if (!string.IsNullOrWhiteSpace(formatQueryValue))
+        {
+            queryParameters.Add($"f={Uri.EscapeDataString(formatQueryValue)}");
+        }
+
+        return queryParameters.Count == 0
+            ? basePath
+            : $"{basePath}?{string.Join("&", queryParameters)}";
     }
 }
 

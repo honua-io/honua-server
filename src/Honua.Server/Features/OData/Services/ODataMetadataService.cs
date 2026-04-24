@@ -73,6 +73,10 @@ internal sealed partial class ODataMetadataService
             var resolvedLayers = layers ?? await _layerCatalog.ListLayersAsync(cancellationToken);
             return GenerateODataMetadata(resolvedLayers.ToArray());
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.MetadataFallback(_logger, ex);
@@ -88,8 +92,8 @@ internal sealed partial class ODataMetadataService
     {
         var sb = new StringBuilder();
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""");
-        sb.AppendLine("""<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">""");
-        sb.AppendLine("""  <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/csdl/vocabularies/Org.OData.Capabilities.V1.xml">""");
+        sb.AppendLine("""<edmx:Edmx Version="4.01" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">""");
+        sb.AppendLine("""  <edmx:Reference Uri="http://vocabs.odata.org/capabilities/v1">""");
         sb.AppendLine("""    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>""");
         sb.AppendLine("""  </edmx:Reference>""");
         sb.AppendLine("  <edmx:DataServices>");
@@ -161,6 +165,11 @@ internal sealed partial class ODataMetadataService
         sb.AppendLine("            <PropertyValue Property=\"Expandable\" Bool=\"true\"/>");
         sb.AppendLine("          </Record>");
         sb.AppendLine("        </Annotation>");
+        sb.AppendLine("        <Annotation Term=\"Capabilities.ChangeTracking\">");
+        sb.AppendLine("          <Record>");
+        sb.AppendLine("            <PropertyValue Property=\"Supported\" Bool=\"true\"/>");
+        sb.AppendLine("          </Record>");
+        sb.AppendLine("        </Annotation>");
         sb.AppendLine("      </Annotations>");
         sb.AppendLine("      <Annotations Target=\"Honua.Container/Layers\">");
         sb.AppendLine("        <Annotation Term=\"Capabilities.FilterRestrictions\">");
@@ -183,8 +192,8 @@ internal sealed partial class ODataMetadataService
     {
         return """
             <?xml version="1.0" encoding="utf-8"?>
-            <edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
-                <edmx:Reference Uri="http://docs.oasis-open.org/odata/odata/v4.0/csdl/vocabularies/Org.OData.Capabilities.V1.xml">
+            <edmx:Edmx Version="4.01" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+                <edmx:Reference Uri="http://vocabs.odata.org/capabilities/v1">
                     <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
                 </edmx:Reference>
                 <edmx:DataServices>
@@ -235,6 +244,11 @@ internal sealed partial class ODataMetadataService
                             <Annotation Term="Capabilities.ExpandRestrictions">
                                 <Record>
                                     <PropertyValue Property="Expandable" Bool="true"/>
+                                </Record>
+                            </Annotation>
+                            <Annotation Term="Capabilities.ChangeTracking">
+                                <Record>
+                                    <PropertyValue Property="Supported" Bool="true"/>
                                 </Record>
                             </Annotation>
                         </Annotations>

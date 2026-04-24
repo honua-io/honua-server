@@ -51,11 +51,6 @@ internal static class OgcRequestCrsResolver
             }
         }
 
-        if (definition.Srid != layerSrid)
-        {
-            return (false, default, $"Content-Crs SRID {definition.Srid} does not match layer SRID {layerSrid}.");
-        }
-
         return (true, definition, null);
     }
 

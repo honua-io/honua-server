@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
@@ -12,6 +14,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.MapServer.Models;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.MapServer;
@@ -23,6 +26,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         if (!TryValidateMetadataFormat(context.Request.Query, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Output format is not supported.");
@@ -34,42 +38,67 @@ internal static partial class MapServerEndpoints
             return serviceError;
         }
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
-        if (!serviceResult.IsValid)
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "metadata",
+            HonuaTelemetry.Protocols.MapServer,
+            "*");
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, "get-service-metadata");
+        var stopwatch = Stopwatch.StartNew();
+
+        try
         {
-            var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-            if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+            if (!serviceResult.IsValid)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
+                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+                }
+
+                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
             }
 
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
-        }
+            var service = serviceResult.Resource!;
+            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+            if (protocolError is not null)
+            {
+                return protocolError;
+            }
 
-        var service = serviceResult.Resource!;
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-        if (protocolError is not null)
+            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
+            var visibleLayers = service.Layers
+                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                .ToArray();
+
+            var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
+            var response = MapServiceToMapServerResponse(
+                service with { Layers = visibleLayers },
+                limitsOptions.Query.MaxRecordCount,
+                limitsOptions.Tiles.MaxTileZoom);
+
+            stopwatch.Stop();
+            scope.SetSuccess(visibleLayers.Length);
+            scope.CategorizeLatency(stopwatch.Elapsed.TotalMilliseconds);
+
+            return Results.Json(response, MapServerJsonContext.Default.MapServerResponse, contentType: "application/json");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return protocolError;
+            throw;
         }
-
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
-        if (accessError != null)
+        catch (Exception ex)
         {
-            return accessError;
+            scope.RecordException(ex);
+            throw;
         }
-
-        var visibleLayers = service.Layers
-            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
-            .ToArray();
-
-        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-        var response = MapServiceToMapServerResponse(
-            service with { Layers = visibleLayers },
-            limitsOptions.Query.MaxRecordCount,
-            limitsOptions.Tiles.MaxTileZoom);
-        return Results.Json(response, MapServerJsonContext.Default.MapServerResponse, contentType: "application/json");
     }
 
     /// <summary>
@@ -77,6 +106,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleGetLayerMetadata(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         if (!TryValidateMetadataFormat(context.Request.Query, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Output format is not supported.");
@@ -94,45 +124,71 @@ internal static partial class MapServerEndpoints
             return layerError;
         }
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceLayerResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, context.RequestAborted);
-        if (!serviceLayerResult.IsValid)
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "metadata",
+            HonuaTelemetry.Protocols.MapServer,
+            layerId.ToString(CultureInfo.InvariantCulture));
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId)
+            .WithTag(HonuaTelemetry.Tags.Operation, "get-layer-metadata");
+        var stopwatch = Stopwatch.StartNew();
+
+        try
         {
-            var errorMessage = serviceLayerResult.ErrorMessage ?? "Resource not found.";
-            if (serviceLayerResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+            var serviceLayerResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
+            if (!serviceLayerResult.IsValid)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+                var errorMessage = serviceLayerResult.ErrorMessage ?? "Resource not found.";
+                if (serviceLayerResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+                }
+
+                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
             }
 
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            var service = serviceLayerResult.Resource!.Service;
+            var layer = serviceLayerResult.Resource!.Layer;
+
+            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+            if (protocolError is not null)
+            {
+                return protocolError;
+            }
+
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
+            var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
+
+            var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("Honua.Server.MapServerRequestHandlers.Metadata");
+            var drawingInfo = await LayerStyleMetadataResolver.TryGetDrawingInfoAsync(
+                context.RequestServices,
+                layer,
+                logger,
+                cancellationToken).ConfigureAwait(false);
+
+            var response = MapLayerToMapServerLayerResponse(service, layer, limitsOptions.Query.MaxRecordCount, drawingInfo);
+
+            stopwatch.Stop();
+            scope.SetSuccess(1);
+            scope.CategorizeLatency(stopwatch.Elapsed.TotalMilliseconds);
+
+            return Results.Json(response, MapServerJsonContext.Default.MapServerLayerResponse, contentType: "application/json");
         }
-
-        var service = serviceLayerResult.Resource!.Service;
-        var layer = serviceLayerResult.Resource!.Layer;
-
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-        if (protocolError is not null)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return protocolError;
+            throw;
         }
-
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
-        if (accessError != null)
+        catch (Exception ex)
         {
-            return accessError;
+            scope.RecordException(ex);
+            throw;
         }
-
-        var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-
-        var styleService = context.RequestServices.GetService<ILayerStyleService>();
-        JsonElement? drawingInfo = null;
-        if (styleService != null)
-        {
-            drawingInfo = await styleService.GetDrawingInfoAsync(layer, context.RequestAborted).ConfigureAwait(false);
-        }
-
-        var response = MapLayerToMapServerLayerResponse(service, layer, limitsOptions.Query.MaxRecordCount, drawingInfo);
-        return Results.Json(response, MapServerJsonContext.Default.MapServerLayerResponse, contentType: "application/json");
     }
 
     private static bool TryValidateMetadataFormat(IQueryCollection query, out string? error)
@@ -190,7 +246,9 @@ internal static partial class MapServerEndpoints
             })],
             CopyrightText = string.Empty,
             SupportedImageFormatTypes = "PNG,PNG8,PNG24,PNG32,JPG,GIF",
-            SupportsDynamicLayers = true,
+            // The current MapServer implementation only accepts a narrow dynamicLayers subset
+            // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
+            SupportsDynamicLayers = false,
             SingleFusedMapCache = false,
             Units = ResolveMapUnits(service.SpatialReference),
             Capabilities = BuildMapServerCapabilities(service),
@@ -372,14 +430,6 @@ internal static partial class MapServerEndpoints
             capabilities.Add("Data");
         }
 
-        if (service.SupportsEditing)
-        {
-            capabilities.Add("Create");
-            capabilities.Add("Update");
-            capabilities.Add("Delete");
-            capabilities.Add("Editing");
-        }
-
         if (service.Capabilities.Any(cap => cap.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
         {
             capabilities.Add("Extract");
@@ -400,14 +450,6 @@ internal static partial class MapServerEndpoints
         {
             capabilities.Add("Query");
             capabilities.Add("Data");
-        }
-
-        if (service.SupportsEditing)
-        {
-            capabilities.Add("Create");
-            capabilities.Add("Update");
-            capabilities.Add("Delete");
-            capabilities.Add("Editing");
         }
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));

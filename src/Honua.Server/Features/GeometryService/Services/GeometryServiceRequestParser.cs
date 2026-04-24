@@ -14,25 +14,45 @@ namespace Honua.Server.Features.GeometryService.Services;
 /// </summary>
 internal static class GeometryServiceRequestParser
 {
+    private const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
+
     private static readonly FrozenDictionary<string, double> _unitMultipliers = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
     {
         // String name forms
         ["esriMeters"] = 1.0,
         ["esriSRUnit_Meter"] = 1.0,
+        ["esriMillimeters"] = 0.001,
+        ["esriSRUnit_Millimeter"] = 0.001,
+        ["esriCentimeters"] = 0.01,
+        ["esriSRUnit_Centimeter"] = 0.01,
+        ["esriDecimeters"] = 0.1,
+        ["esriSRUnit_Decimeter"] = 0.1,
+        ["esriInches"] = 0.0254,
+        ["esriSRUnit_Inch"] = 0.0254,
         ["esriFeet"] = 0.3048,
         ["esriSRUnit_Foot"] = 0.3048,
+        ["esriSurveyFeet"] = 0.3048006096012192,
+        ["esriSRUnit_SurveyFoot"] = 0.3048006096012192,
         ["esriKilometers"] = 1000.0,
         ["esriSRUnit_Kilometer"] = 1000.0,
         ["esriMiles"] = 1609.344,
         ["esriSRUnit_StatuteMile"] = 1609.344,
+        ["esriSurveyMiles"] = 1609.3472186944373,
+        ["esriSRUnit_SurveyMile"] = 1609.3472186944373,
         ["esriNauticalMiles"] = 1852.0,
         ["esriSRUnit_NauticalMile"] = 1852.0,
         ["esriYards"] = 0.9144,
         ["esriSRUnit_Yard"] = 0.9144,
         // Numeric codes
         ["9001"] = 1.0,        // meters
-        ["9002"] = 0.3048,     // feet
+        ["9002"] = 0.3048,     // international feet
+        ["9003"] = 0.3048006096012192, // survey feet
+        ["109008"] = 0.0254,   // inches
+        ["109006"] = 0.01,     // centimeters
+        ["109007"] = 0.001,    // millimeters
+        ["109005"] = 0.1,      // decimeters
         ["9036"] = 1000.0,     // kilometers
+        ["9035"] = 1609.3472186944373, // survey miles
         ["9093"] = 1609.344,   // miles
         ["9030"] = 1852.0,     // nautical miles
         ["9096"] = 0.9144,     // yards
@@ -70,6 +90,14 @@ internal static class GeometryServiceRequestParser
             return (null, "Request body is required.");
         }
 
+        if (!IsSupportedJsonContentType(request.ContentType))
+        {
+            var receivedContentType = string.IsNullOrWhiteSpace(request.ContentType)
+                ? "(missing)"
+                : request.ContentType.Split(';', 2)[0].Trim();
+            return (null, UnsupportedMediaTypeErrorPrefix + receivedContentType);
+        }
+
         try
         {
             using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken);
@@ -94,6 +122,32 @@ internal static class GeometryServiceRequestParser
         {
             return (null, "Invalid JSON payload.");
         }
+    }
+
+    public static bool TryGetUnsupportedMediaType(string? error, out string? receivedContentType)
+    {
+        receivedContentType = null;
+        if (string.IsNullOrWhiteSpace(error) ||
+            !error.StartsWith(UnsupportedMediaTypeErrorPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        receivedContentType = error[UnsupportedMediaTypeErrorPrefix.Length..];
+        return true;
+    }
+
+    private static bool IsSupportedJsonContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return false;
+        }
+
+        var mediaType = contentType.Split(';', 2)[0].Trim();
+        return string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase) ||
+               (mediaType.StartsWith("application/", StringComparison.OrdinalIgnoreCase) &&
+                mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

@@ -46,6 +46,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// <param name="transparent">Whether background should be transparent</param>
     /// <param name="backgroundColor">Background color (when not transparent)</param>
     /// <param name="geometryType">Geometry type of the layer</param>
+    /// <param name="zoom">Optional MapLibre zoom level for evaluating layer minzoom/maxzoom gates</param>
     /// <returns>PNG image bytes</returns>
     internal byte[] RenderMap(
         IReadOnlyList<Feature> features,
@@ -55,7 +56,8 @@ internal sealed class SkiaMapRenderer : IDisposable
         int imageHeight,
         bool transparent,
         SKColor? backgroundColor,
-        GeometryType geometryType)
+        GeometryType geometryType,
+        double? zoom = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ValidatePositiveDimension(imageWidth, nameof(imageWidth));
@@ -85,7 +87,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         // Render features with style
         if (styleLayers.Length > 0)
         {
-            RenderWithStyles(canvas, features, styleLayers, transform);
+            RenderWithStyles(canvas, features, styleLayers, transform, zoom);
         }
         else
         {
@@ -106,7 +108,8 @@ internal sealed class SkiaMapRenderer : IDisposable
         RenderExtent extent,
         int imageWidth,
         int imageHeight,
-        GeometryType geometryType)
+        GeometryType geometryType,
+        double? zoom = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -119,7 +122,7 @@ internal sealed class SkiaMapRenderer : IDisposable
 
         if (styleLayers.Length > 0)
         {
-            RenderWithStyles(canvas, features, styleLayers, transform);
+            RenderWithStyles(canvas, features, styleLayers, transform, zoom);
         }
         else
         {
@@ -266,11 +269,12 @@ internal sealed class SkiaMapRenderer : IDisposable
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer[] styleLayers,
-        Func<double, double, SKPoint> transform)
+        Func<double, double, SKPoint> transform,
+        double? zoom = null)
     {
         foreach (var styleLayer in styleLayers)
         {
-            if (styleLayer.Type == null)
+            if (styleLayer.Type == null || !StyleTranslator.ShouldRenderLayer(styleLayer, zoom))
             {
                 continue;
             }
@@ -283,6 +287,11 @@ internal sealed class SkiaMapRenderer : IDisposable
             foreach (var feature in features)
             {
                 if (feature.Geometry == null || feature.Geometry.Length < 5)
+                {
+                    continue;
+                }
+
+                if (!StyleTranslator.ShouldRenderLayer(styleLayer, zoom, feature.Attributes))
                 {
                     continue;
                 }

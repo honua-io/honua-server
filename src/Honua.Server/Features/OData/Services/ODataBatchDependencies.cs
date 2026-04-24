@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -29,6 +30,8 @@ internal sealed class ODataBatchDependencies
         EditLimits editLimits,
         ODataValidationService validationService,
         IETagService eTagService,
+        IEditParameterAdapter<ODataEditRequest> editParameterAdapter,
+        IEditProcessor editProcessor,
         IFeatureChangeEventPublisher featureChangeEventPublisher)
         : this(
             layerCatalog,
@@ -40,6 +43,8 @@ internal sealed class ODataBatchDependencies
             editLimits,
             validationService,
             eTagService,
+            editParameterAdapter,
+            editProcessor,
             new FeatureMutationEventService(featureChangeEventPublisher))
     {
     }
@@ -54,6 +59,8 @@ internal sealed class ODataBatchDependencies
         EditLimits editLimits,
         ODataValidationService validationService,
         IETagService eTagService,
+        IEditParameterAdapter<ODataEditRequest> editParameterAdapter,
+        IEditProcessor editProcessor,
         FeatureMutationEventService mutationEventService)
     {
         // Validation framework eliminates 10 lines of duplicate null checks
@@ -66,6 +73,8 @@ internal sealed class ODataBatchDependencies
         EditLimits = editLimits.ThrowIfNull();
         ValidationService = validationService.ThrowIfNull();
         ETagService = eTagService.ThrowIfNull();
+        EditParameterAdapter = editParameterAdapter.ThrowIfNull();
+        EditProcessor = editProcessor.ThrowIfNull();
         MutationEventService = mutationEventService.ThrowIfNull();
     }
 
@@ -86,6 +95,10 @@ internal sealed class ODataBatchDependencies
     public ODataValidationService ValidationService { get; }
 
     public IETagService ETagService { get; }
+
+    public IEditParameterAdapter<ODataEditRequest> EditParameterAdapter { get; }
+
+    public IEditProcessor EditProcessor { get; }
 
     public FeatureMutationEventService MutationEventService { get; }
 }

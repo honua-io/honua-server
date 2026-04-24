@@ -34,7 +34,8 @@ public class RouteParameterValidatorTests
     [InlineData("_service", true)]
     [InlineData("Service_123", true)]
     [InlineData("", false)] // Empty
-    [InlineData("123service", false)] // Starts with number
+    [InlineData("123service", true)] // Leading digits are valid service identifiers
+    [InlineData("123", true)]
     [InlineData("service with spaces", false)] // Contains spaces
     [InlineData("service@domain", false)] // Contains special characters
     [InlineData("service<script>", false)] // Contains dangerous characters

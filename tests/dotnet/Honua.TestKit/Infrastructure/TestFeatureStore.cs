@@ -60,6 +60,36 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                 .Add("category", "test")
                 .Add("timestamp", new DateTimeOffset(2023, 01, 20, 0, 0, 0, TimeSpan.Zero)))
         };
+        _layerFeatures[99] = new List<Feature>
+        {
+            Feature.Create(1, CreatePointWkb(-122.1, 37.1), ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 1)
+                .Add("id", "alpha-1")
+                .Add("name", "String ID Alpha")),
+            Feature.Create(2, CreatePointWkb(-122.2, 37.2), ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 2)
+                .Add("id", "beta-2")
+                .Add("name", "String ID Beta")),
+            Feature.Create(3, CreatePointWkb(-122.3, 37.3), ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 3)
+                .Add("id", "space id")
+                .Add("name", "String ID With Space")),
+            Feature.Create(4, CreatePointWkb(-122.4, 37.4), ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 4)
+                .Add("id", "001")
+                .Add("name", "String ID Leading Zero")),
+            Feature.Create(5, CreatePointWkb(-122.5, 37.5), ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 5)
+                .Add("id", "1")
+                .Add("name", "String ID Numeric Collision"))
+        };
+        _layerFeatures[100] = new List<Feature>
+        {
+            Feature.Create(1, CreatePointWkb(-122.1, 37.1), ImmutableDictionary<string, object?>.Empty
+                .Add("objectid", 1)
+                .Add("id", "alpha-1")
+                .Add("name", "Numeric Collection Name Alpha"))
+        };
     }
 
     public static Feature CreateTestFeature(long id, double x, double y, IDictionary<string, object?>? attributes = null)

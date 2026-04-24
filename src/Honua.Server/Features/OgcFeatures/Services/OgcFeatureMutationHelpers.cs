@@ -64,10 +64,12 @@ internal static class OgcFeatureMutationHelpers
         byte[]? geometryWkb = null;
         if (requestFeature.Geometry != null)
         {
-            var wkbResult = geometryServices.TryCreateWkbFromGeoJson(
+            var wkbResult = await geometryServices.TryCreateWkbFromGeoJsonAsync(
                 requestFeature.Geometry,
                 inputCrs.Srid,
-                inputCrs.AxisOrder);
+                layer.SpatialReference.ToSrid(),
+                inputCrs.AxisOrder,
+                cancellationToken);
             if (!wkbResult.IsSuccess)
             {
                 return new FeatureBuildResult(

@@ -361,6 +361,52 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         content.Should().Contain("id=");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetSingleItem_WithFormatAndCrs_PreservesRepresentationLinks()
+    {
+        var crs = "http://www.opengis.net/def/crs/EPSG/0/4326";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items/1?f=json&crs={Uri.EscapeDataString(crs)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        var representationLinks = links
+            .Where(link =>
+                link.TryGetProperty("rel", out var rel) &&
+                (rel.GetString() == RelationTypes.Self || rel.GetString() == RelationTypes.Alternate))
+            .ToArray();
+
+        representationLinks.Should().NotBeEmpty();
+        representationLinks.Should().OnlyContain(link =>
+            link.GetProperty("href").GetString()!.Contains(
+                "crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326",
+                StringComparison.Ordinal));
+        representationLinks.Should().OnlyContain(link =>
+            link.GetProperty("href").GetString()!.Contains("f=", StringComparison.Ordinal));
+        representationLinks.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == RelationTypes.Self &&
+            link.GetProperty("href").GetString()!.Contains("f=json", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetSingleItem_WithGmlFormat_ReturnsSingleFeatureDocument()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items/1?f=gml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("<app:Feature");
+        content.Should().Contain("gml:id=");
+        content.Should().NotContain("<wfs:FeatureCollection");
+    }
+
     #endregion
 
     #region Bbox Parameter Tests (Issue #157)
@@ -626,13 +672,25 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /openapi.json")]
-    [Endpoint("GET /ogc/features/api")]
-    public async Task GetOpenApiSpec_ReturnsValidOpenApiSpecification()
+    public async Task GetOpenApiSpec_RootRoute_ReturnsValidOpenApiSpecification()
     {
-        // Act
         var response = await _fixture.Client.GetAsync("/openapi.json");
 
-        // Assert
+        await AssertOpenApiSpecAsync(response);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/api")]
+    public async Task GetOpenApiSpec_OgcFeaturesApiRoute_ReturnsValidOpenApiSpecification()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/api");
+
+        await AssertOpenApiSpecAsync(response);
+    }
+
+    private static async Task AssertOpenApiSpecAsync(HttpResponseMessage response)
+    {
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().StartWith("application/vnd.oai.openapi+json");
 
@@ -661,6 +719,86 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         paths.TryGetProperty("/collections", out _).Should().BeTrue();
         paths.TryGetProperty("/collections/{collectionId}/items", out _).Should().BeTrue();
         paths.TryGetProperty("/collections/{collectionId}/items/{featureId}", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /openapi.json")]
+    public async Task GetOpenApiSpec_DocumentsWriteSecurityAndConditionalHeaders()
+    {
+        var response = await _fixture.Client.GetAsync("/openapi.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        var components = json.RootElement.GetProperty("components");
+        var securitySchemes = components.GetProperty("securitySchemes");
+        securitySchemes.TryGetProperty("ApiKeyAuth", out _).Should().BeTrue();
+        securitySchemes.TryGetProperty("BearerAuth", out _).Should().BeTrue();
+
+        var itemCollectionPath = json.RootElement.GetProperty("paths").GetProperty("/collections/{collectionId}/items");
+        var postOperation = itemCollectionPath.GetProperty("post");
+        postOperation.GetProperty("security").EnumerateArray().Should().NotBeEmpty();
+        postOperation.GetProperty("parameters").EnumerateArray()
+            .Any(parameter => parameter.GetProperty("name").GetString() == "Content-Crs")
+            .Should()
+            .BeTrue();
+        postOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        postOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+
+        var featureItemPath = json.RootElement.GetProperty("paths").GetProperty("/collections/{collectionId}/items/{featureId}");
+        var putOperation = featureItemPath.GetProperty("put");
+        putOperation.GetProperty("security").EnumerateArray().Should().NotBeEmpty();
+        putOperation.GetProperty("parameters").EnumerateArray()
+            .Any(parameter => parameter.GetProperty("name").GetString() == "Content-Crs")
+            .Should()
+            .BeTrue();
+        putOperation.GetProperty("parameters").EnumerateArray()
+            .Any(parameter => parameter.GetProperty("name").GetString() == "If-Match")
+            .Should()
+            .BeTrue();
+        putOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        putOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+        putOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+
+        var patchOperation = featureItemPath.GetProperty("patch");
+        patchOperation.GetProperty("security").EnumerateArray().Should().NotBeEmpty();
+        patchOperation.GetProperty("parameters").EnumerateArray()
+            .Any(parameter => parameter.GetProperty("name").GetString() == "Content-Crs")
+            .Should()
+            .BeTrue();
+        patchOperation.GetProperty("parameters").EnumerateArray()
+            .Any(parameter => parameter.GetProperty("name").GetString() == "If-Match")
+            .Should()
+            .BeTrue();
+        patchOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        patchOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+        patchOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+
+        var deleteOperation = featureItemPath.GetProperty("delete");
+        deleteOperation.GetProperty("security").EnumerateArray().Should().NotBeEmpty();
+        deleteOperation.GetProperty("responses").TryGetProperty("401", out _).Should().BeTrue();
+        deleteOperation.GetProperty("responses").TryGetProperty("403", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/conformance")]
+    public async Task GetConformance_DoesNotAdvertiseGmlSf0()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/conformance");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("conformsTo")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .Should()
+            .NotContain("http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/gml-sf0");
     }
 
     #endregion

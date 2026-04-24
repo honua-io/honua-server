@@ -45,6 +45,19 @@ public sealed class OgcProcessesAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_WithMalformedJsonWithoutAuth_ReturnsUnauthorized()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Content = new StringContent("{", Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /ogc/processes/jobs")]
     public async Task JobList_WithoutAuth_ReturnsUnauthorized()

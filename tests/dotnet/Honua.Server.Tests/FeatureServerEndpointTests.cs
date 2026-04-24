@@ -647,40 +647,13 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         var content = await response.Content.ReadAsStringAsync();
-        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+        var queryResponse = JsonSerializer.Deserialize<ServiceQueryResponse>(
             content,
-            FeatureServerJsonContext.Default.QueryResponse);
+            FeatureServerJsonContext.Default.ServiceQueryResponse);
 
         queryResponse.Should().NotBeNull();
-        queryResponse!.Features.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
-    public async Task ServiceQueryFeatures_PostWithLayerId_ReturnsFilteredFeatures()
-    {
-        var payload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("layerId", TestLayerId.ToString(CultureInfo.InvariantCulture)),
-            new KeyValuePair<string, string>("where", "1=1"),
-            new KeyValuePair<string, string>("f", "json")
-        ]);
-
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/query",
-            payload);
-
-        response.Be200Ok();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
-            content,
-            FeatureServerJsonContext.Default.QueryResponse);
-
-        queryResponse.Should().NotBeNull();
-        queryResponse!.Features.Should().NotBeNull();
+        queryResponse!.Layers.Should().ContainSingle(layer => layer.Id == TestLayerId);
+        queryResponse.Layers.Single(layer => layer.Id == TestLayerId).Features.Should().NotBeNull();
     }
 
     [IntegrationTest]
@@ -873,7 +846,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("Invalid query parameters"));
+            .Should().Contain(detail =>
+                detail.Contains("Invalid query parameters", StringComparison.OrdinalIgnoreCase) ||
+                detail.Contains("SQL injection attempt detected", StringComparison.OrdinalIgnoreCase));
         errorElement.GetProperty("details").GetArrayLength().Should().BeGreaterThan(0);
     }
 

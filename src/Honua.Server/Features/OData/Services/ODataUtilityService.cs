@@ -18,10 +18,13 @@ namespace Honua.Server.Features.OData.Services;
 /// </summary>
 internal static class ODataUtilityService
 {
+    internal const string TrackChangesContinuationParameter = "honua_track_changes";
+    internal const string TrackChangesPreferenceValue = "odata.track-changes";
+
     /// <summary>
     /// OData protocol version
     /// </summary>
-    private const string ODataVersion = "4.0";
+    private const string ODataVersion = "4.01";
 
     /// <summary>
     /// OData JSON content type with minimal metadata
@@ -30,14 +33,18 @@ internal static class ODataUtilityService
     private const string ODataMetadataMinimal = "minimal";
     private const string ODataMetadataFull = "full";
     private const string ODataMetadataNone = "none";
-    private const string ODataContentType = $"{ODataMediaType};odata.metadata={ODataMetadataMinimal}";
+    private const string ODataContentType = $"{ODataMediaType};metadata={ODataMetadataMinimal}";
 
     private static readonly FrozenSet<string> _allowedFormats = new[]
         {
             "json",
             "application/json",
+            "json;metadata=minimal",
+            "json;metadata=none",
             "json;odata.metadata=minimal",
             "json;odata.metadata=none",
+            "application/json;metadata=minimal",
+            "application/json;metadata=none",
             "application/json;odata.metadata=minimal",
             "application/json;odata.metadata=none"
         }
@@ -102,7 +109,13 @@ internal static class ODataUtilityService
             _ => new StandardErrorResponse(statusCode, code, message, additionalDetails)
         };
 
-        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        return StandardErrorResponseFormatter.FormatError(
+            context,
+            errorResponse,
+            new ErrorResponseFormatterOptions
+            {
+                ODataErrorCode = code
+            });
     }
 
     /// <summary>
@@ -146,7 +159,8 @@ internal static class ODataUtilityService
         string? expand = null,
         bool useSkipToken = false,
         string? compute = null,
-        string? format = null)
+        string? format = null,
+        bool trackChanges = false)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         var queryParams = new List<string>();
@@ -198,6 +212,11 @@ internal static class ODataUtilityService
             queryParams.Add($"$format={Uri.EscapeDataString(format)}");
         }
 
+        if (trackChanges)
+        {
+            queryParams.Add($"{TrackChangesContinuationParameter}=true");
+        }
+
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
     }
 
@@ -206,14 +225,43 @@ internal static class ODataUtilityService
     /// </summary>
     public static string GenerateDeltaLink(
         HttpRequest request,
-        int layerId,
-        DateTimeOffset timestamp)
+        ODataDeltaService.DeltaQueryState state)
     {
         return ODataDeltaService.GenerateDeltaLink(
             request,
             BaseUrlResolver.GetBaseUrl(request),
-            layerId,
-            timestamp);
+            state);
+    }
+
+    /// <summary>
+    /// Generates a paged next link for delta responses.
+    /// </summary>
+    public static string GenerateDeltaNextLink(
+        HttpRequest request,
+        string deltaToken,
+        int nextSkip,
+        int top,
+        bool useSkipToken,
+        string? filter,
+        string? orderby)
+    {
+        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
+        var queryParams = new List<string>
+        {
+            $"$deltatoken={Uri.EscapeDataString(deltaToken)}",
+            $"$top={top}"
+        };
+
+        if (useSkipToken)
+        {
+            queryParams.Add($"$skiptoken={Uri.EscapeDataString(ODataSkipTokenService.Encode(nextSkip, filter, orderby))}");
+        }
+        else
+        {
+            queryParams.Add($"$skip={nextSkip}");
+        }
+
+        return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
     }
 
     /// <summary>
@@ -305,7 +353,48 @@ internal static class ODataUtilityService
     public static string GetODataContentType(HttpRequest request, string? format)
     {
         var metadataLevel = ResolveMetadataLevel(request, format);
-        return $"{ODataMediaType};odata.metadata={metadataLevel}";
+        return $"{ODataMediaType};metadata={metadataLevel}";
+    }
+
+    public static bool HasTrackChangesPreference(string? preferHeader)
+    {
+        if (string.IsNullOrWhiteSpace(preferHeader))
+        {
+            return false;
+        }
+
+        foreach (var token in preferHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (token.Equals(TrackChangesPreferenceValue, StringComparison.OrdinalIgnoreCase) ||
+                token.Equals("track-changes", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool RequestsTrackChanges(HttpRequest request)
+    {
+        if (HasTrackChangesPreference(request.Headers["Prefer"].ToString()))
+        {
+            return true;
+        }
+
+        if (request.Query.TryGetValue(TrackChangesContinuationParameter, out var values))
+        {
+            var raw = values.ToString();
+            return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                   raw.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    public static void ApplyTrackChangesPreference(HttpContext context)
+    {
+        context.Response.Headers["Preference-Applied"] = TrackChangesPreferenceValue;
     }
 
     public static bool ShouldIncludeContext(HttpRequest request, string? format)
@@ -428,6 +517,7 @@ internal static class ODataUtilityService
         {
             context.Response.Headers.Location = crudResult.LocationHeader;
             context.Response.Headers["OData-EntityId"] = crudResult.LocationHeader;
+            context.Response.Headers["EntityId"] = crudResult.LocationHeader;
         }
 
         if (crudResult.StatusCode == 204)
@@ -849,7 +939,8 @@ internal static class ODataUtilityService
                 continue;
             }
 
-            if (!kvp[0].Equals("odata.metadata", StringComparison.OrdinalIgnoreCase))
+            if (!kvp[0].Equals("metadata", StringComparison.OrdinalIgnoreCase) &&
+                !kvp[0].Equals("odata.metadata", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

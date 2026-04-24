@@ -77,7 +77,8 @@ internal sealed class OgcMapsTileSetHandler
             var relativeTilesListPath = $"/ogc/maps/collections/{layerId}/map/tiles";
             var tilesListPath = BuildPath(basePathPrefix, relativeTilesListPath);
             var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
-            var tileSets = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath);
+            var includeOgcTilesLinks = IsOgcApiTilesEnabled(layer, service);
+            var tileSets = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath, includeOgcTilesLinks);
 
             var response = new TileSetsList
             {
@@ -160,7 +161,8 @@ internal sealed class OgcMapsTileSetHandler
 
             var basePathPrefix = ResolveBasePathPrefix(context);
             var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
-            var tileSet = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath)
+            var includeOgcTilesLinks = IsOgcApiTilesEnabled(layer, service);
+            var tileSet = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath, includeOgcTilesLinks)
                 .FirstOrDefault(candidate => string.Equals(
                     candidate.TileMatrixSetId,
                     tileMatrixSetId,
@@ -200,7 +202,8 @@ internal sealed class OgcMapsTileSetHandler
         int layerId,
         string? layerName,
         string basePathPrefix,
-        string tileMatrixSetBasePath)
+        string tileMatrixSetBasePath,
+        bool includeOgcTilesLinks)
     {
         var displayName = string.IsNullOrWhiteSpace(layerName)
             ? $"Layer {layerId}"
@@ -212,7 +215,8 @@ internal sealed class OgcMapsTileSetHandler
                 displayName,
                 basePathPrefix,
                 tileMatrixSetBasePath,
-                descriptor))
+                descriptor,
+                includeOgcTilesLinks))
             .ToArray();
     }
 
@@ -221,7 +225,8 @@ internal sealed class OgcMapsTileSetHandler
         string displayName,
         string basePathPrefix,
         string tileMatrixSetBasePath,
-        OgcTileMatrixSetDescriptor descriptor)
+        OgcTileMatrixSetDescriptor descriptor,
+        bool includeOgcTilesLinks)
     {
         var tileSetPath = BuildPath(
             basePathPrefix,
@@ -229,6 +234,35 @@ internal sealed class OgcMapsTileSetHandler
         var tileTemplate = BuildPath(
             basePathPrefix,
             $"/ogc/tiles/collections/{layerId}/tiles/{descriptor.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?f=png");
+        var links = new List<OgcLink>
+        {
+            new()
+            {
+                Href = tileSetPath,
+                Rel = "self",
+                Type = MediaTypes.Json,
+                Title = "This tileset"
+            }
+        };
+
+        if (includeOgcTilesLinks)
+        {
+            links.Add(new OgcLink
+            {
+                Href = tileTemplate,
+                Rel = "item",
+                Type = MediaTypes.Png,
+                Title = "PNG map tiles",
+                Templated = true
+            });
+            links.Add(new OgcLink
+            {
+                Href = $"{tileMatrixSetBasePath}/{descriptor.Id}",
+                Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
+                Type = MediaTypes.Json,
+                Title = $"{descriptor.ProjectionName} tile matrix set definition"
+            });
+        }
 
         return new TileSet
         {
@@ -237,44 +271,13 @@ internal sealed class OgcMapsTileSetHandler
             Crs = descriptor.Crs,
             TileMatrixSetId = descriptor.Id,
             TileMatrixSetUri = descriptor.Uri,
-            Links =
-            [
-                new OgcLink
-                {
-                    Href = tileSetPath,
-                    Rel = "self",
-                    Type = MediaTypes.Json,
-                    Title = "This tileset"
-                },
-                new OgcLink
-                {
-                    Href = tileTemplate,
-                    Rel = "item",
-                    Type = MediaTypes.Png,
-                    Title = "PNG map tiles",
-                    Templated = true
-                },
-                new OgcLink
-                {
-                    Href = $"{tileMatrixSetBasePath}/{descriptor.Id}",
-                    Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
-                    Type = MediaTypes.Json,
-                    Title = $"{descriptor.ProjectionName} tile matrix set definition"
-                }
-            ]
+            Links = [.. links]
         };
     }
 
     private static string ResolveBasePathPrefix(HttpContext? context)
     {
-        if (context is not null &&
-            BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
-            !string.IsNullOrWhiteSpace(configuredBaseUrl))
-        {
-            return configuredBaseUrl;
-        }
-
-        return string.Empty;
+        return context is null ? string.Empty : BaseUrlResolver.GetBaseUrl(context);
     }
 
     private static string BuildPath(string basePathPrefix, string relativePath)
@@ -286,6 +289,12 @@ internal sealed class OgcMapsTileSetHandler
     {
         var metadata = service?.Metadata ?? layer.Metadata;
         return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiMapsProtocol);
+    }
+
+    private static bool IsOgcApiTilesEnabled(LayerDefinition layer, ServiceDefinition? service)
+    {
+        var metadata = service?.Metadata ?? layer.Metadata;
+        return ServiceProtocols.IsProtocolEnabled(metadata, ServiceProtocols.OgcApiTiles);
     }
 
     private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)

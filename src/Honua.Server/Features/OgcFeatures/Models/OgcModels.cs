@@ -123,7 +123,7 @@ public sealed class FeatureIdConverter : JsonConverter<object?>
         }
     }
 
-    private static object? ReadStringId(ref Utf8JsonReader reader)
+    private static string? ReadStringId(ref Utf8JsonReader reader)
     {
         var str = reader.GetString();
         if (str == null)
@@ -131,14 +131,6 @@ public sealed class FeatureIdConverter : JsonConverter<object?>
             return null;
         }
 
-        // Try to parse as long for numeric string IDs
-        if (long.TryParse(str, System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture, out var parsed))
-        {
-            return parsed;
-        }
-
-        // Keep as string for non-numeric IDs (UUID, slug, etc.)
         return str;
     }
 }

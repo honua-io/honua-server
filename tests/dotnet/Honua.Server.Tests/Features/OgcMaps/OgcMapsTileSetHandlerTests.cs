@@ -27,6 +27,7 @@ namespace Honua.Server.Tests.Features.OgcMaps;
 public class OgcMapsTileSetHandlerTests
 {
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
+    private const string OgcApiTilesProtocol = "OGC-API-Tiles";
 
     private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
     private readonly OgcMapsTileSetHandler _handler;
@@ -177,6 +178,28 @@ public class OgcMapsTileSetHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_WithoutConfiguredBaseUrl_UsesSafeAbsoluteLinks()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreatePublicLayer());
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+
+        var okResult = result as Ok<TileSetsList>;
+        okResult.Should().NotBeNull();
+        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
+        foreach (var tileSet in okResult.Value.Tilesets)
+        {
+            foreach (var link in tileSet.Links)
+            {
+                link.Href.Should().StartWith("http://localhost", "tile set links should use the shared safe-origin fallback");
+            }
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_TileSets_IncludeTilingSchemeLinks()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -225,6 +248,26 @@ public class OgcMapsTileSetHandlerTests
         okResult!.Value!.Links.Should().ContainSingle(link =>
             link.Rel == "item" &&
             link.Templated == true);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetAsync_WhenOgcTilesDisabled_OmitsTileItemLinks()
+    {
+        var layer = CreatePublicLayer();
+        var service = CreateMapsOnlyService(layer);
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([service]);
+
+        var result = await _handler.GetMapTileSetAsync(1, "WebMercatorQuad", context: CreateOgcMapsContext());
+
+        var okResult = result as Ok<TileSet>;
+        okResult.Should().NotBeNull();
+        okResult!.Value!.Links.Should().NotContain(link => link.Rel == "item");
+        okResult.Value.Links.Should().NotContain(link =>
+            link.Href.Contains("/ogc/tiles/", StringComparison.OrdinalIgnoreCase));
     }
 
     [UnitTest]
@@ -312,12 +355,26 @@ public class OgcMapsTileSetHandlerTests
             Metadata = new CatalogMetadata
             {
                 EnabledProtocols = ServiceProtocols.All
+                    .Where(protocol => !string.Equals(protocol, OgcApiMapsProtocol, StringComparison.Ordinal))
+                    .ToArray()
             }
         };
 
     private static ServiceDefinition CreateProtocolEnabledService(LayerDefinition layer)
         => ServiceDefinition.CreateSingle(
             "protocol-enabled-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = [OgcApiMapsProtocol, OgcApiTilesProtocol]
+            }
+        };
+
+    private static ServiceDefinition CreateMapsOnlyService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "maps-only-service",
             layer,
             SpatialReference.Create(layer.SpatialReference.Wkid)) with
         {
@@ -355,7 +412,9 @@ public class OgcMapsTileSetHandlerTests
 
     private static DefaultHttpContext CreateAnonymousOgcMapsContext()
     {
+        var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(configuration)
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
             .BuildServiceProvider();
 
@@ -364,6 +423,7 @@ public class OgcMapsTileSetHandlerTests
             RequestServices = services,
             User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity())
         };
+        context.Request.Scheme = "http";
         context.Request.Path = "/ogc/maps/collections/1/map/tiles";
         return context;
     }

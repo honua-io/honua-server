@@ -29,7 +29,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /wfs")]
+    [Endpoint("POST /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_ReturnsXmlWithTransactionOperation()
     {
@@ -560,6 +560,27 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ExceptionReport");
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "Transaction")]
+    public async Task Wfs_Transaction_WithXmlLockId_ReturnsExceptionReport()
+    {
+        const string requestBody = """
+            <wfs:Transaction service="WFS" version="2.0.0" lockId="abc123" releaseAction="ALL"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" />
+            """;
+
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", requestContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"lockId\"");
     }
 
     [IntegrationTest]
@@ -1121,16 +1142,20 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Query)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
-    public async Task Wfs_Post_GetFeature_WithMultipleQueries_ReturnsOperationNotSupported()
+    public async Task Wfs_Post_GetFeature_WithMultipleQueries_ReturnsFeatureCollection()
     {
         const string requestBody = """
-            <wfs:GetFeature service="WFS" version="2.0.0"
+            <wfs:GetFeature service="WFS" version="2.0.0" outputFormat="application/geo+json" count="100"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0">
-              <wfs:Query typeNames="test_layer" />
-              <wfs:Query typeNames="test_layer" />
+              <wfs:Query typeNames="test_layer">
+                <wfs:PropertyName>name</wfs:PropertyName>
+              </wfs:Query>
+              <wfs:Query typeNames="test_layer">
+                <wfs:PropertyName>category</wfs:PropertyName>
+              </wfs:Query>
             </wfs:GetFeature>
             """;
 
@@ -1138,10 +1163,76 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/wfs", content);
 
         var responseBody = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, responseBody);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        responseBody.Should().Contain("exceptionCode=\"OperationNotSupported\"");
-        responseBody.Should().Contain("locator=\"Query\"");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        using var document = JsonDocument.Parse(responseBody);
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Any(feature =>
+        {
+            var properties = feature.GetProperty("properties");
+            return properties.TryGetProperty("name", out _) &&
+                   !properties.TryGetProperty("category", out _);
+        }).Should().BeTrue();
+        features.Any(feature =>
+        {
+            var properties = feature.GetProperty("properties");
+            return properties.TryGetProperty("category", out _) &&
+                   !properties.TryGetProperty("name", out _);
+        }).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_Post_GetFeature_QueryWithoutTypeNames_ReturnsExceptionReport()
+    {
+        const string requestBody = """
+            <wfs:GetFeature service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0">
+              <wfs:Query />
+            </wfs:GetFeature>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+        responseBody.Should().Contain("exceptionCode=\"MissingParameterValue\"");
+        responseBody.Should().Contain("locator=\"typeNames\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_Post_GetFeature_WithXmlSortBy_AppliesQuerySortOrder()
+    {
+        const string requestBody = """
+            <wfs:GetFeature service="WFS" version="2.0.0" outputFormat="application/geo+json" count="1"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:Query typeNames="test_layer">
+                <fes:SortBy>
+                  <fes:SortProperty>
+                    <fes:ValueReference>objectid</fes:ValueReference>
+                    <fes:SortOrder>DESC</fes:SortOrder>
+                  </fes:SortProperty>
+                </fes:SortBy>
+              </wfs:Query>
+            </wfs:GetFeature>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        using var document = JsonDocument.Parse(responseBody);
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        feature.GetProperty("id").GetString().Should().EndWith(".5");
     }
 
     [IntegrationTest]
@@ -1172,6 +1263,43 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             properties.TryGetProperty("id", out _).Should().BeFalse();
             properties.TryGetProperty("objectid", out _).Should().BeFalse();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_GetPropertyValue_WithUnsupportedResolve_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&RESOLVE=local");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"resolve\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_Post_GetPropertyValue_WithResolveDepth_ReturnsExceptionReport()
+    {
+        const string requestBody = """
+            <wfs:GetPropertyValue service="WFS" version="2.0.0" valueReference="name" resolveDepth="1"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0">
+              <wfs:Query typeNames="test_layer" />
+            </wfs:GetPropertyValue>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+        responseBody.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        responseBody.Should().Contain("locator=\"resolveDepth\"");
     }
 
     [IntegrationTest]

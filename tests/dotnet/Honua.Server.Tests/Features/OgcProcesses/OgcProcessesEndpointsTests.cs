@@ -88,6 +88,35 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
             .Contain("Processes");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/processes/openapi.json")]
+    public async Task OpenApiSpec_ProtectedOperationsDeclareApiKeySecurity()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/processes/openapi.json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var scheme = json.RootElement.GetProperty("components")
+            .GetProperty("securitySchemes")
+            .GetProperty("ApiKeyAuth");
+        scheme.GetProperty("type").GetString().Should().Be("apiKey");
+        scheme.GetProperty("in").GetString().Should().Be("header");
+        scheme.GetProperty("name").GetString().Should().Be("X-API-Key");
+
+        json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/processes/processes/{processId}/execution")
+            .GetProperty("post")
+            .GetProperty("security")
+            .GetArrayLength().Should().BeGreaterThan(0);
+
+        json.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/processes/jobs")
+            .GetProperty("get")
+            .GetProperty("security")
+            .GetArrayLength().Should().BeGreaterThan(0);
+    }
+
     // -----------------------------------------------------------------------
     // Conformance
     // -----------------------------------------------------------------------
@@ -107,7 +136,8 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
 
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/core");
         conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/json");
-        conformsTo.Should().Contain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss");
+        conformsTo.Should().NotContain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/dismiss",
+            "V1 exposes DELETE /jobs/{jobId} but does not yet claim full conf/dismiss semantics for finished-job cleanup.");
         conformsTo.Should().NotContain("http://www.opengis.net/spec/ogcapi-processes-1/1.0/conf/job-list",
             "V1 job list is MVP-scoped and does not fully implement conf/job-list");
     }
@@ -174,19 +204,15 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_WithoutRespondAsync_Returns501()
+    public async Task Execute_WithoutRespondAsync_DefaultsToAsync()
     {
-        var body = """{"inputs":{"plan":{"steps":[]}}}""";
+        var body = """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""";
         var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/honua-geoprocessing/execution", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
-
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        json.RootElement.GetProperty("type").GetString().Should().Be("about:blank");
-        json.RootElement.GetProperty("type").GetString().Should()
-            .NotContain("no-such-process", "sync rejection must not reuse the no-such-process problem type");
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
     }
 
     [IntegrationTest]
@@ -543,6 +569,57 @@ public sealed class OgcProcessesEndpointsTests : IAsyncLifetime
         {
             await approvalFixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_DuplicateStepIds_Returns400()
+    {
+        var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution",
+            new StringContent(
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"dup","kind":"queryFeatures"},{"stepId":"dup","kind":"queryFeatures"}]}}}""",
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("Duplicate step identifier");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_UnknownDependsOn_Returns400()
+    {
+        var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution",
+            new StringContent(
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures","dependsOn":["missing-step"]}]}}}""",
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("unknown step");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_CyclicDependsOn_Returns400()
+    {
+        var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution",
+            new StringContent(
+                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures","dependsOn":["s2"]},{"stepId":"s2","kind":"queryFeatures","dependsOn":["s1"]}]}}}""",
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("cycle");
     }
 
     private sealed class DestructiveOnlyApprovalEvaluator : IOperatorApprovalEvaluator

@@ -156,6 +156,15 @@ public static class HonuaTelemetry
         /// <summary>The collection identifier (OGC APIs).</summary>
         public const string CollectionId = "honua.collection.id";
 
+        /// <summary>The GP task or named operation identifier.</summary>
+        public const string TaskName = "honua.task.name";
+
+        /// <summary>The durable job identifier.</summary>
+        public const string JobId = "honua.job.id";
+
+        /// <summary>The named parameter or result identifier.</summary>
+        public const string ParameterName = "honua.parameter.name";
+
         /// <summary>The operation type (query, edit, delete, etc.).</summary>
         public const string Operation = "honua.operation";
 
@@ -233,6 +242,9 @@ public static class HonuaTelemetry
 
         /// <summary>OGC API Maps.</summary>
         public const string OgcMaps = "OGC-Maps";
+
+        /// <summary>OGC API Processes.</summary>
+        public const string OgcProcesses = "OGC-Processes";
 
         /// <summary>GeoServices MapServer REST API.</summary>
         public const string MapServer = "MapServer";

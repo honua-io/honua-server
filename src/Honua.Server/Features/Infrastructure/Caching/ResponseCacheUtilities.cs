@@ -139,11 +139,16 @@ internal static class ResponseCacheUtilities
     {
         var canonicalQuery = BuildCanonicalQueryString(request.Query);
         var accept = request.Headers.Accept.ToString();
+        var prefer = request.Headers["Prefer"].ToString();
         var keyMaterial = string.Concat(
             request.Method, '|',
+            request.Scheme, '|',
+            request.Host.Value, '|',
+            request.PathBase.Value ?? string.Empty, '|',
             request.Path.Value ?? string.Empty, '|',
             canonicalQuery, '|',
-            accept);
+            accept, '|',
+            prefer);
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)))
             .ToLowerInvariant();

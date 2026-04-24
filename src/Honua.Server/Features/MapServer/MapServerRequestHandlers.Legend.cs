@@ -36,11 +36,12 @@ internal static partial class MapServerEndpoints
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
         MapServerLog.LegendRequested(logger, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
         if (!serviceResult.IsValid)
         {
             var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -99,7 +100,7 @@ internal static partial class MapServerEndpoints
 
         foreach (var layer in visibleLayers)
         {
-            var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
+            var style = await styleCatalog.GetLayerStyleAsync(layer.Id, cancellationToken);
             var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
 
             var entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);

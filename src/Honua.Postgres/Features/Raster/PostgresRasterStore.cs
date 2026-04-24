@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using System.Data.Common;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -153,6 +154,10 @@ internal sealed class PostgresRasterStore : IRasterStore
                 connection, blockSize: exportBlockSize, layerId, rasterId,
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+        }
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -228,6 +233,59 @@ internal sealed class PostgresRasterStore : IRasterStore
             BandCount = bandCount,
             Extent = extent
         };
+    }
+
+    internal static string[] BuildExportCreationOptions(RasterQuery query, string formatName)
+    {
+        var options = new List<string>();
+
+        if (string.Equals(formatName, "JPEG", StringComparison.Ordinal))
+        {
+            if (query.Quality.HasValue)
+            {
+                options.Add(string.Create(CultureInfo.InvariantCulture, $"QUALITY={query.Quality.Value}"));
+            }
+
+            return [.. options];
+        }
+
+        if (!string.Equals(formatName, "GTiff", StringComparison.Ordinal) || !query.TiffCompression.HasValue)
+        {
+            return [.. options];
+        }
+
+        switch (query.TiffCompression.Value)
+        {
+            case TiffCompression.None:
+                options.Add("COMPRESS=NONE");
+                break;
+            case TiffCompression.LZW:
+                options.Add("COMPRESS=LZW");
+                break;
+            case TiffCompression.Deflate:
+                options.Add("COMPRESS=DEFLATE");
+                break;
+            case TiffCompression.JPEG:
+                options.Add("COMPRESS=JPEG");
+                if (query.Quality.HasValue)
+                {
+                    options.Add(string.Create(CultureInfo.InvariantCulture, $"JPEG_QUALITY={query.Quality.Value}"));
+                }
+                break;
+        }
+
+        return [.. options];
+    }
+
+    private static string BuildCreationOptionsClause(string[] creationOptions)
+    {
+        if (creationOptions.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var quotedOptions = creationOptions.Select(static option => $"'{option}'");
+        return $", ARRAY[{string.Join(", ", quotedOptions)}]";
     }
 
     /// <inheritdoc />

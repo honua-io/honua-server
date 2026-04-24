@@ -14,7 +14,7 @@ namespace Honua.Server.Features.GeometryService.Models;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(GeometryServiceResponse))]
 [JsonSerializable(typeof(GeometryServiceSpatialReference))]
-[JsonSerializable(typeof(GeometryServiceAreaResponse))]
+[JsonSerializable(typeof(GeometryServiceAreasAndLengthsResponse))]
 [JsonSerializable(typeof(GeometryServiceLengthResponse))]
 [JsonSerializable(typeof(GeometryServiceErrorResponse))]
 [JsonSerializable(typeof(JsonElement))]

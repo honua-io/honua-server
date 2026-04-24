@@ -73,7 +73,12 @@ internal sealed class ODataQueryParameterAdapter(
                     new FilterSource(parameters.Filter, FilterLanguage.OData, ProtocolName));
             }
 
-            var outFields = ResolveSelectedFields(parameters.Select, layer, out var selectError);
+            var outFields = ResolveSelectedFields(
+                parameters.Select,
+                parameters.Expand,
+                parameters.Compute,
+                layer,
+                out var selectError);
             if (selectError != null)
             {
                 return Task.FromResult(QueryAdapterResult.Failure(selectError));
@@ -133,6 +138,8 @@ internal sealed class ODataQueryParameterAdapter(
 
     private static ImmutableArray<string>? ResolveSelectedFields(
         string? select,
+        string? expand,
+        string? compute,
         LayerDefinition layer,
         out string? error)
     {
@@ -146,12 +153,18 @@ internal sealed class ODataQueryParameterAdapter(
         var availableFields = layer.AttributeFields.ToDictionary(
             field => field.Name,
             StringComparer.OrdinalIgnoreCase);
+        var allowedVirtualSelections = GetAllowedVirtualSelections(expand, compute);
         var builder = ImmutableArray.CreateBuilder<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var segment in select.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (string.IsNullOrWhiteSpace(segment))
+            {
+                continue;
+            }
+
+            if (allowedVirtualSelections.Contains(segment))
             {
                 continue;
             }
@@ -168,6 +181,47 @@ internal sealed class ODataQueryParameterAdapter(
             }
         }
 
-        return builder.Count == 0 ? null : builder.ToImmutable();
+        return builder.Count == 0 ? ImmutableArray<string>.Empty : builder.ToImmutable();
+    }
+
+    private static HashSet<string> GetAllowedVirtualSelections(string? expand, string? compute)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "ObjectId",
+            "LayerId",
+            "Geometry"
+        };
+
+        if (!string.IsNullOrWhiteSpace(expand))
+        {
+            foreach (var segment in expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!string.IsNullOrWhiteSpace(segment))
+                {
+                    allowed.Add(segment);
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(compute))
+        {
+            foreach (var segment in compute.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var aliasIndex = segment.LastIndexOf(" as ", StringComparison.OrdinalIgnoreCase);
+                if (aliasIndex < 0)
+                {
+                    continue;
+                }
+
+                var alias = segment[(aliasIndex + 4)..].Trim();
+                if (!string.IsNullOrWhiteSpace(alias))
+                {
+                    allowed.Add(alias);
+                }
+            }
+        }
+
+        return allowed;
     }
 }

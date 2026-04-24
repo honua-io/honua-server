@@ -142,6 +142,16 @@ public class StyleTranslatorTests
     }
 
     [UnitTest]
+    public void ResolveFillStyle_WithColorAlphaAndOpacity_ComposesAlpha()
+    {
+        var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"rgba(255,0,0,0.5)","fill-opacity":0.5}}]""");
+
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps);
+
+        style.FillColor.Alpha.Should().BeInRange((byte)63, (byte)64);
+    }
+
+    [UnitTest]
     public void ResolveFillStyle_WithOutlineColor_SetsOutline()
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"#ff0000","fill-outline-color":"#00ff00"}}]""");
@@ -194,6 +204,37 @@ public class StyleTranslatorTests
         style.FillColor.Green.Should().Be(255);
         style.StrokeColor.Should().NotBeNull();
         style.StrokeWidth.Should().Be(2f);
+    }
+
+    [UnitTest]
+    public void ResolveCircleStyle_WithColorAlphaAndOpacity_ComposesAlpha()
+    {
+        var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","paint":{"circle-color":"rgba(0,255,0,0.5)","circle-opacity":0.5}}]""");
+
+        var style = StyleTranslator.ResolveCircleStyle(layers[0], _emptyProps);
+
+        style.FillColor.Alpha.Should().BeInRange((byte)63, (byte)64);
+    }
+
+    [UnitTest]
+    public void ShouldRenderLayer_WithVisibilityNone_ReturnsFalse()
+    {
+        var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","layout":{"visibility":"none"}}]""");
+
+        StyleTranslator.ShouldRenderLayer(layers[0]).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(4.99, false)]
+    [InlineData(5.0, true)]
+    [InlineData(9.99, true)]
+    [InlineData(10.0, false)]
+    public void ShouldRenderLayer_WithZoomContext_AppliesMinInclusiveMaxExclusive(double? zoom, bool expected)
+    {
+        var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","minzoom":5,"maxzoom":10}]""");
+
+        StyleTranslator.ShouldRenderLayer(layers[0], zoom).Should().Be(expected);
     }
 
     [UnitTest]

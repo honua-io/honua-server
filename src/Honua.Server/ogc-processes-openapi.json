@@ -10,6 +10,9 @@
       "get": {
         "summary": "OGC API Processes landing page",
         "operationId": "OgcProcessesLandingPage",
+        "parameters": [
+          { "$ref": "#/components/parameters/fMetadata" }
+        ],
         "responses": {
           "200": {
             "description": "Landing page",
@@ -26,12 +29,45 @@
       "get": {
         "summary": "OGC API Processes conformance declaration",
         "operationId": "OgcProcessesConformance",
+        "parameters": [
+          { "$ref": "#/components/parameters/fMetadata" }
+        ],
         "responses": {
           "200": {
             "description": "Conformance declaration",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ConformanceDeclaration" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/processes/openapi.json": {
+      "get": {
+        "summary": "Get OGC API Processes OpenAPI document",
+        "operationId": "OgcProcessesOpenApiSpec",
+        "parameters": [
+          { "$ref": "#/components/parameters/fOpenApi" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json": {
+                "schema": { "type": "object" }
+              },
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "404": {
+            "description": "OpenAPI document not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
               }
             }
           }
@@ -100,9 +136,12 @@
           {
             "name": "Prefer",
             "in": "header",
-            "description": "Use 'respond-async' for asynchronous execution",
+            "description": "Optional preference hint. Async execution is the default for this process; 'respond-async' is accepted and echoed via Preference-Applied when supplied.",
             "schema": { "type": "string" }
           }
+        ],
+        "security": [
+          { "ApiKeyAuth": [] }
         ],
         "requestBody": {
           "required": true,
@@ -121,7 +160,7 @@
                 "schema": { "type": "string" }
               },
               "Preference-Applied": {
-                "description": "Applied preference header. V1 returns 'respond-async' on successful submissions.",
+                "description": "Returned when the client requested 'respond-async' and the server applied that preference.",
                 "schema": { "type": "string" }
               }
             },
@@ -164,7 +203,7 @@
             }
           },
           "501": {
-            "description": "Synchronous execution or unsupported response mode not supported in V1",
+            "description": "Unsupported response mode in V1",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -186,6 +225,9 @@
       "get": {
         "summary": "List jobs",
         "operationId": "OgcProcessesJobList",
+        "security": [
+          { "ApiKeyAuth": [] }
+        ],
         "parameters": [
           {
             "name": "limit",
@@ -241,6 +283,9 @@
       "get": {
         "summary": "Get job status",
         "operationId": "OgcProcessesJobStatus",
+        "security": [
+          { "ApiKeyAuth": [] }
+        ],
         "parameters": [
           {
             "name": "jobId",
@@ -293,8 +338,11 @@
         }
       },
       "delete": {
-        "summary": "Dismiss (cancel) a job",
+        "summary": "Request dismissal of a job",
         "operationId": "OgcProcessesDismissJob",
+        "security": [
+          { "ApiKeyAuth": [] }
+        ],
         "parameters": [
           {
             "name": "jobId",
@@ -305,7 +353,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Job dismissed",
+            "description": "Job dismissal confirmed",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/StatusInfo" }
@@ -337,7 +385,7 @@
             }
           },
           "409": {
-            "description": "Job in terminal state",
+            "description": "Dismiss could not be applied or confirmed",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -359,6 +407,9 @@
       "get": {
         "summary": "Get job results",
         "operationId": "OgcProcessesJobResults",
+        "security": [
+          { "ApiKeyAuth": [] }
+        ],
         "parameters": [
           {
             "name": "jobId",
@@ -429,6 +480,34 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Administrative API key used by protected OGC API Processes operations."
+      }
+    },
+    "parameters": {
+      "fMetadata": {
+        "name": "f",
+        "in": "query",
+        "description": "Metadata response format.",
+        "schema": {
+          "type": "string",
+          "enum": ["json", "html"]
+        }
+      },
+      "fOpenApi": {
+        "name": "f",
+        "in": "query",
+        "description": "OpenAPI document response format.",
+        "schema": {
+          "type": "string",
+          "enum": ["json"]
+        }
+      }
+    },
     "schemas": {
       "LandingPage": {
         "type": "object",

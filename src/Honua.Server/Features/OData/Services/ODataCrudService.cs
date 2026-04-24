@@ -233,6 +233,7 @@ internal sealed partial class ODataCrudService
         string baseUrl,
         string? ifMatch,
         string? ifNoneMatch,
+        bool replace = false,
         CancellationToken cancellationToken = default)
     {
         try
@@ -282,9 +283,9 @@ internal sealed partial class ODataCrudService
                     "Resource has not changed.");
             }
 
-            // Process geometry - use existing if not provided in update
-            byte[]? geometryBytes = existingFeatureValue.Geometry;
-            if (payload.Geometry != null)
+            // PATCH preserves omitted geometry; PUT replaces it with null unless supplied.
+            byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
+            if (payload.GeometrySpecified && payload.Geometry != null)
             {
                 var geometryResult = await ProcessGeometryAsync(payload.Geometry, layer.SpatialReference.ToSrid(), cancellationToken);
                 if (!geometryResult.IsValid)
@@ -293,9 +294,15 @@ internal sealed partial class ODataCrudService
                 }
                 geometryBytes = geometryResult.Geometry;
             }
+            else if (payload.GeometrySpecified)
+            {
+                geometryBytes = null;
+            }
 
-            // Merge attributes - new values override existing (PATCH semantics)
-            var mergedAttributes = new Dictionary<string, object?>(existingFeatureValue.Attributes, StringComparer.OrdinalIgnoreCase);
+            // PATCH merges attributes; PUT replaces them with the supplied open-type payload.
+            var mergedAttributes = replace
+                ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, object?>(existingFeatureValue.Attributes, StringComparer.OrdinalIgnoreCase);
             if (payload.Attributes.Count > 0)
             {
                 var attributesResult = _mutationValidator.ValidateAttributes(
@@ -314,11 +321,12 @@ internal sealed partial class ODataCrudService
                 }
             }
 
+            var operation = replace ? ODataOperation.Update : ODataOperation.Patch;
             var editResult = await ExecuteEditAsync(
                 layer,
                 new ODataEditRequest
                 {
-                    Operation = ODataOperation.Patch,
+                    Operation = operation,
                     ObjectId = objectId,
                     IfMatch = ifMatch,
                     IfNoneMatch = ifNoneMatch,

@@ -115,6 +115,12 @@ internal static class JobEndpoints
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfos = jobs
+            .Where(job => gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                ResourceId = job.OperationId,
+                Operation = OperatorOperation.Read
+            }).IsAllowed)
             .Take(effectiveLimit)
             .Select(j => OgcProcessesConversionHelpers.ToOgcStatusInfo(
                 j, ProcessEndpoints.CanonicalProcessId, baseUrl))
@@ -165,6 +171,18 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
+        authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            ResourceId = job.OperationId,
+            Operation = OperatorOperation.Read
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
+
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var statusInfo = OgcProcessesConversionHelpers.ToOgcStatusInfo(
             job, ProcessEndpoints.CanonicalProcessId, baseUrl);
@@ -205,6 +223,18 @@ internal static class JobEndpoints
         {
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);
+        }
+
+        authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            ResourceId = job.OperationId,
+            Operation = OperatorOperation.Read
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
         }
 
         if (!OgcProcessesConversionHelpers.IsTerminal(job.Status))
@@ -306,6 +336,19 @@ internal static class JobEndpoints
             return JobNotFoundResult(jobId);
         }
 
+        authDecision = gate.CheckAuthorization(context.User, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            ResourceId = job.OperationId,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        });
+        if (!authDecision.IsAllowed)
+        {
+            OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Execute.ToString());
+            return ProcessEndpoints.FormatOgcAuthError(authDecision);
+        }
+
         // Already dismissed — reconcile side effects and return current status
         if (job.Status == ExecutionJobStatus.Cancelled)
         {
@@ -331,11 +374,7 @@ internal static class JobEndpoints
             }
 
             var baseUrl2 = BaseUrlResolver.GetBaseUrl(context);
-            return Results.Json(
-                OgcProcessesConversionHelpers.ToOgcStatusInfo(
-                    job, ProcessEndpoints.CanonicalProcessId, baseUrl2),
-                OgcProcessesJsonContext.Default.OgcStatusInfo,
-                MediaTypes.Json);
+            return OgcProcessesResults.Dismissed(job, ProcessEndpoints.CanonicalProcessId, baseUrl2);
         }
 
         // Cannot dismiss terminal jobs (succeeded/failed)
@@ -439,11 +478,7 @@ internal static class JobEndpoints
                                 progressStore, preResult.Job!, TimeSpan.FromDays(7), cancellationToken: context.RequestAborted).ConfigureAwait(false);
                             job = preResult.Job!;
                             var baseUrlLocal = BaseUrlResolver.GetBaseUrl(context);
-                            return Results.Json(
-                                OgcProcessesConversionHelpers.ToOgcStatusInfo(
-                                    job, ProcessEndpoints.CanonicalProcessId, baseUrlLocal),
-                                OgcProcessesJsonContext.Default.OgcStatusInfo,
-                                MediaTypes.Json);
+                            return OgcProcessesResults.Dismissed(job, ProcessEndpoints.CanonicalProcessId, baseUrlLocal);
                         }
 
                         // Stamp CancellationRequestedAt before the remote cancel so a
@@ -547,11 +582,7 @@ internal static class JobEndpoints
 
                         job = cancelled;
                         var baseUrlBackend = BaseUrlResolver.GetBaseUrl(context);
-                        return Results.Json(
-                            OgcProcessesConversionHelpers.ToOgcStatusInfo(
-                                job, ProcessEndpoints.CanonicalProcessId, baseUrlBackend),
-                            OgcProcessesJsonContext.Default.OgcStatusInfo,
-                            MediaTypes.Json);
+                        return OgcProcessesResults.Dismissed(job, ProcessEndpoints.CanonicalProcessId, baseUrlBackend);
                     }
                 }
             }
@@ -698,36 +729,26 @@ internal static class JobEndpoints
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        return Results.Json(
-            OgcProcessesConversionHelpers.ToOgcStatusInfo(
-                job, ProcessEndpoints.CanonicalProcessId, baseUrl),
-            OgcProcessesJsonContext.Default.OgcStatusInfo,
-            MediaTypes.Json);
+        return BuildDismissOutcomeResult(baseUrl, jobId, job);
     }
 
-    private static IResult JobStoreUnavailableResult() => Results.Json(
-        new OgcProcessError
-        {
-            Type = "about:blank",
-            Title = "Service unavailable",
-            Status = StatusCodes.Status503ServiceUnavailable,
-            Detail = "Job operations require Redis-backed durable storage."
-        },
-        OgcProcessesJsonContext.Default.OgcProcessError,
-        MediaTypes.Json,
-        StatusCodes.Status503ServiceUnavailable);
+    private static IResult JobStoreUnavailableResult() => OgcProcessesResults.StoreUnavailable();
 
-    private static IResult JobNotFoundResult(string jobId) => Results.Json(
-        new OgcProcessError
-        {
-            Type = "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/no-such-job",
-            Title = "No such job",
-            Status = StatusCodes.Status404NotFound,
-            Detail = $"Job '{jobId}' does not exist."
-        },
-        OgcProcessesJsonContext.Default.OgcProcessError,
-        MediaTypes.Json,
-        StatusCodes.Status404NotFound);
+    private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
+
+    private static IResult BuildDismissOutcomeResult(
+        string baseUrl,
+        string jobId,
+        ExecutionJobRecord job)
+        => job.Status == ExecutionJobStatus.Cancelled
+            ? OgcProcessesResults.Dismissed(job, ProcessEndpoints.CanonicalProcessId, baseUrl)
+            : Results.Json(
+                OgcProcessesConversionHelpers.ToOgcStatusInfo(
+                    job,
+                    ProcessEndpoints.CanonicalProcessId,
+                    baseUrl),
+                OgcProcessesJsonContext.Default.OgcStatusInfo,
+                MediaTypes.Json);
 
     private static void EnrichActivity(string operation)
     {

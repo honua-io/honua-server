@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,7 @@ using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Net.Http.Headers;
 
@@ -41,8 +43,15 @@ internal sealed partial class ODataBatchOperationHandler(
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
+        Activity? activity = null;
         try
         {
+            activity = HonuaTelemetry.ActivitySource.StartActivity(
+                HonuaTelemetry.Activities.FeatureEdit,
+                ActivityKind.Internal);
+            activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
+            activity?.SetTag(HonuaTelemetry.Tags.Operation, "batch");
+
             var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
                 context,
                 _batchDependencies.ValidationService,
@@ -71,16 +80,18 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             ODataLog.BatchRequested(_logger, batchRequest.Requests.Length);
+            activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, batchRequest.Requests.Length);
 
             // Process the batch
             var handler = new ODataBatchHandler(_batchDependencies, _batchDependencies.ETagService, _logger);
             var response = await handler.ProcessBatchAsync(context, batchRequest, baseUrl, effectiveToken);
 
             // Handle cache invalidation for successful mutation responses.
-            await InvalidateCacheForBatchAsync(context, batchRequest, response, effectiveToken);
+            await InvalidateCacheForBatchAsync(context, batchRequest, response, CancellationToken.None);
             await PublishBatchFeatureEventsAsync(context, batchRequest, response, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
+            HonuaTelemetry.SetSuccess(activity, batchRequest.Requests.Length);
 
             if (isMultipartRequest)
             {
@@ -99,9 +110,14 @@ internal sealed partial class ODataBatchOperationHandler(
         }
         catch (Exception ex)
         {
+            HonuaTelemetry.RecordException(activity, ex);
             Log.BatchFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the batch request", 500);
+        }
+        finally
+        {
+            activity?.Dispose();
         }
     }
 
@@ -470,12 +486,14 @@ internal sealed partial class ODataBatchOperationHandler(
 
     private static string NormalizeBatchUrl(string url)
     {
-        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute))
+        var trimmed = url.Trim();
+        if (trimmed.Contains("://", StringComparison.Ordinal) &&
+            Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
         {
-            return absolute.PathAndQuery.TrimStart('/');
+            return absoluteUri.PathAndQuery.TrimStart('/');
         }
 
-        return url.Trim().TrimStart('/');
+        return trimmed.TrimStart('/');
     }
 
     private static string CreateMultipartBatchResponsePayload(ODataBatchResponse response, string boundary)
@@ -486,14 +504,20 @@ internal sealed partial class ODataBatchOperationHandler(
         {
             builder.Append("--").Append(boundary).Append("\r\n");
             builder.Append("Content-Type: application/http\r\n");
-            builder.Append("Content-Transfer-Encoding: binary\r\n\r\n");
+            builder.Append("Content-Transfer-Encoding: binary\r\n");
+            if (!string.IsNullOrWhiteSpace(item.Id))
+            {
+                builder.Append("Content-ID: ").Append(item.Id).Append("\r\n");
+            }
+
+            builder.Append("\r\n");
             builder.Append("HTTP/1.1 ")
                 .Append(item.Status.ToString(CultureInfo.InvariantCulture))
                 .Append(' ')
                 .Append(ReasonPhrases.GetReasonPhrase(item.Status))
                 .Append("\r\n");
 
-            builder.Append("OData-Version: 4.0\r\n");
+            builder.Append("OData-Version: 4.01\r\n");
             if (item.Headers != null)
             {
                 foreach (var header in item.Headers)
@@ -665,7 +689,7 @@ internal sealed partial class ODataBatchOperationHandler(
     {
         layerId = default;
 
-        if (!ODataPathParser.TryParse(request.Url, out var parsed, out _))
+        if (!ODataPathParser.TryParse(NormalizeBatchUrl(request.Url), out var parsed, out _))
         {
             if (request.Body == null ||
                 !ODataFeaturePayloadParser.TryParse(request.Body, out var fallbackPayload, out _) ||
@@ -708,7 +732,7 @@ internal sealed partial class ODataBatchOperationHandler(
         var method = request.Method.ToUpperInvariant();
         if (method is "PATCH" or "DELETE" or "PUT")
         {
-            if (!ODataPathParser.TryParse(request.Url, out var parsed, out _) ||
+            if (!ODataPathParser.TryParse(NormalizeBatchUrl(request.Url), out var parsed, out _) ||
                 !parsed.ObjectId.HasValue)
             {
                 return false;
@@ -730,7 +754,8 @@ internal sealed partial class ODataBatchOperationHandler(
 
         if (response.Headers != null)
         {
-            if (response.Headers.TryGetValue("OData-EntityId", out var entityId) &&
+            if ((response.Headers.TryGetValue("EntityId", out var entityId) ||
+                 response.Headers.TryGetValue("OData-EntityId", out entityId)) &&
                 TryGetObjectIdFromLocation(entityId, out objectId))
             {
                 return true;

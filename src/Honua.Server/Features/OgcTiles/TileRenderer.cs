@@ -1,11 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers.Binary;
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Server.Features.Infrastructure.Rendering;
 using SkiaSharp;
 
 namespace Honua.Server.Features.OgcTiles;
@@ -92,191 +92,43 @@ internal static class TileRenderer
         SKPaint? stroke,
         GeometryType geometryType)
     {
-        // Minimal WKB reading: byte order (1 byte) + type (4 bytes)
-        if (wkb.Length < 5)
+        if (geometryType is GeometryType.Point or GeometryType.MultiPoint &&
+            WkbToSkiaConverter.TryConvertPoint(wkb, transform, out var point))
         {
+            canvas.DrawCircle(point, 4f, fill);
             return;
         }
 
-        var littleEndian = wkb[0] == 1;
-        var wkbType = ReadInt32(wkb, 1, littleEndian) & 0xFF; // mask off SRID flags
-
-        switch (wkbType)
+        var conversion = WkbToSkiaConverter.Convert(wkb, transform);
+        if (conversion.IsPoint && conversion.Points is { Length: > 0 })
         {
-            case 1: // Point
-                RenderPoint(canvas, wkb, 5, littleEndian, transform, fill);
-                break;
-            case 2: // LineString
-                RenderLineString(canvas, wkb, 5, littleEndian, transform, fill);
-                break;
-            case 3: // Polygon
-                RenderPolygon(canvas, wkb, 5, littleEndian, transform, fill, stroke);
-                break;
-            case 4: // MultiPoint
-                RenderMultiPoint(canvas, wkb, littleEndian, transform, fill);
-                break;
-            case 5: // MultiLineString
-                RenderMultiLineString(canvas, wkb, littleEndian, transform, fill);
-                break;
-            case 6: // MultiPolygon
-                RenderMultiPolygon(canvas, wkb, littleEndian, transform, fill, stroke);
-                break;
-        }
-    }
-
-    private static void RenderPoint(
-        SKCanvas canvas, byte[] wkb, int offset, bool littleEndian,
-        Func<double, double, SKPoint> transform, SKPaint fill)
-    {
-        if (offset + 16 > wkb.Length)
-            return;
-        var x = ReadDouble(wkb, offset, littleEndian);
-        var y = ReadDouble(wkb, offset + 8, littleEndian);
-        var pt = transform(x, y);
-        canvas.DrawCircle(pt, 4f, fill);
-    }
-
-    private static int RenderLineString(
-        SKCanvas canvas, byte[] wkb, int offset, bool littleEndian,
-        Func<double, double, SKPoint> transform, SKPaint paint)
-    {
-        if (offset + 4 > wkb.Length)
-            return offset;
-        var count = ReadInt32(wkb, offset, littleEndian);
-        offset += 4;
-
-        if (count < 2 || offset + count * 16 > wkb.Length)
-            return offset + count * 16;
-
-        using var path = new SKPath();
-        var first = true;
-        for (var i = 0; i < count; i++)
-        {
-            var x = ReadDouble(wkb, offset, littleEndian);
-            var y = ReadDouble(wkb, offset + 8, littleEndian);
-            offset += 16;
-            var pt = transform(x, y);
-            if (first)
-            { path.MoveTo(pt); first = false; }
-            else
-            { path.LineTo(pt); }
-        }
-
-        canvas.DrawPath(path, paint);
-        return offset;
-    }
-
-    private static int RenderPolygon(
-        SKCanvas canvas, byte[] wkb, int offset, bool littleEndian,
-        Func<double, double, SKPoint> transform, SKPaint fill, SKPaint? stroke)
-    {
-        if (offset + 4 > wkb.Length)
-            return offset;
-        var ringCount = ReadInt32(wkb, offset, littleEndian);
-        offset += 4;
-
-        using var path = new SKPath();
-        for (var r = 0; r < ringCount; r++)
-        {
-            if (offset + 4 > wkb.Length)
-                break;
-            var pointCount = ReadInt32(wkb, offset, littleEndian);
-            offset += 4;
-
-            if (pointCount < 1 || offset + pointCount * 16 > wkb.Length)
-            { offset += pointCount * 16; continue; }
-
-            var first = true;
-            for (var i = 0; i < pointCount; i++)
+            foreach (var convertedPoint in conversion.Points)
             {
-                var x = ReadDouble(wkb, offset, littleEndian);
-                var y = ReadDouble(wkb, offset + 8, littleEndian);
-                offset += 16;
-                var pt = transform(x, y);
-                if (first)
-                { path.MoveTo(pt); first = false; }
-                else
-                { path.LineTo(pt); }
+                canvas.DrawCircle(convertedPoint, 4f, fill);
             }
 
-            path.Close();
-        }
-
-        canvas.DrawPath(path, fill);
-        if (stroke != null)
-        {
-            canvas.DrawPath(path, stroke);
-        }
-
-        return offset;
-    }
-
-    private static void RenderMultiPoint(
-        SKCanvas canvas, byte[] wkb, bool littleEndian,
-        Func<double, double, SKPoint> transform, SKPaint fill)
-    {
-        if (wkb.Length < 9)
             return;
-        var count = ReadInt32(wkb, 5, littleEndian);
-        var offset = 9;
-        for (var i = 0; i < count; i++)
-        {
-            if (offset + 21 > wkb.Length)
-                break;
-            offset += 5; // skip WKB header of sub-geometry
-            RenderPoint(canvas, wkb, offset, littleEndian, transform, fill);
-            offset += 16;
         }
-    }
 
-    private static void RenderMultiLineString(
-        SKCanvas canvas, byte[] wkb, bool littleEndian,
-        Func<double, double, SKPoint> transform, SKPaint fill)
-    {
-        if (wkb.Length < 9)
+        var path = conversion.Path;
+        if (path is null)
+        {
             return;
-        var count = ReadInt32(wkb, 5, littleEndian);
-        var offset = 9;
-        for (var i = 0; i < count; i++)
-        {
-            if (offset + 5 > wkb.Length)
-                break;
-            offset += 5; // skip WKB header
-            offset = RenderLineString(canvas, wkb, offset, littleEndian, transform, fill);
         }
-    }
 
-    private static void RenderMultiPolygon(
-        SKCanvas canvas, byte[] wkb, bool littleEndian,
-        Func<double, double, SKPoint> transform, SKPaint fill, SKPaint? stroke)
-    {
-        if (wkb.Length < 9)
-            return;
-        var count = ReadInt32(wkb, 5, littleEndian);
-        var offset = 9;
-        for (var i = 0; i < count; i++)
+        using (path)
         {
-            if (offset + 5 > wkb.Length)
-                break;
-            offset += 5; // skip WKB header
-            offset = RenderPolygon(canvas, wkb, offset, littleEndian, transform, fill, stroke);
+            if (conversion.IsPolygon)
+            {
+                path.FillType = SKPathFillType.EvenOdd;
+            }
+
+            canvas.DrawPath(path, fill);
+            if (stroke != null)
+            {
+                canvas.DrawPath(path, stroke);
+            }
         }
-    }
-
-    private static int ReadInt32(byte[] wkb, int offset, bool littleEndian)
-    {
-        var span = wkb.AsSpan(offset, 4);
-        return littleEndian
-            ? BinaryPrimitives.ReadInt32LittleEndian(span)
-            : BinaryPrimitives.ReadInt32BigEndian(span);
-    }
-
-    private static double ReadDouble(byte[] wkb, int offset, bool littleEndian)
-    {
-        var span = wkb.AsSpan(offset, 8);
-        return littleEndian
-            ? BinaryPrimitives.ReadDoubleLittleEndian(span)
-            : BinaryPrimitives.ReadDoubleBigEndian(span);
     }
 
     private static SKPaint CreateDefaultFillPaint(GeometryType geometryType) =>

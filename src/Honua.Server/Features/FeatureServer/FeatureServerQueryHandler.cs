@@ -69,6 +69,24 @@ internal sealed class FeatureServerQueryHandler(
         HttpContext context,
         ICommonQueryValidator queryValidator,
         CancellationToken cancellationToken = default)
+        => await HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            values,
+            context,
+            queryValidator,
+            requiredProtocol: null,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<IResult> HandleQueryFeaturesAsync(
+        string serviceId,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        HttpContext context,
+        ICommonQueryValidator queryValidator,
+        string? requiredProtocol,
+        CancellationToken cancellationToken = default)
     {
         if (!FeatureServerEndpoints.TryParseQueryParameters(values, out var queryParams, out var parseError))
         {
@@ -83,6 +101,7 @@ internal sealed class FeatureServerQueryHandler(
             queryParams,
             context,
             queryValidator,
+            requiredProtocol,
             cancellationToken);
     }
 
@@ -95,6 +114,24 @@ internal sealed class FeatureServerQueryHandler(
         QueryParameters queryParams,
         HttpContext context,
         ICommonQueryValidator queryValidator,
+        CancellationToken cancellationToken = default)
+        => await HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            queryParams,
+            context,
+            queryValidator,
+            requiredProtocol: null,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<(QueryResponse? Response, IResult? Error)> HandleServiceQueryLayerAsync(
+        string serviceId,
+        int layerId,
+        QueryParameters queryParams,
+        HttpContext context,
+        ICommonQueryValidator queryValidator,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         Activity? featureActivity = null;
@@ -113,6 +150,158 @@ internal sealed class FeatureServerQueryHandler(
                 layerId,
                 context,
                 _logger,
+                requiredProtocol ?? ServiceProtocols.FeatureServer,
+                cancellationToken).ConfigureAwait(false);
+            if (!resourceValidationResult.IsValid)
+            {
+                return (null, resourceValidationResult.ErrorResult!);
+            }
+
+            ServiceDefinition service = resourceValidationResult.Service!;
+            LayerDefinition layer = resourceValidationResult.Layer!;
+            var telemetryProtocol = ResolveTelemetryProtocol(requiredProtocol);
+            var requestActivity = Activity.Current;
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, telemetryProtocol);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
+
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            if (accessError != null)
+            {
+                return (null, accessError);
+            }
+
+            featureActivity = HonuaTelemetry.StartFeatureActivity(
+                "query",
+                telemetryProtocol,
+                layerId.ToString(CultureInfo.InvariantCulture),
+                context.TraceIdentifier);
+            featureActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+
+            var whereValidation = queryValidator.ValidateWhereClause(queryParams.Where);
+            if (!whereValidation.IsValid)
+            {
+                var message = whereValidation.ErrorMessage ?? ErrorMessages.Validation.InvalidParameter;
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [message]));
+            }
+
+            var queryLimits = queryValidator.QueryLimits;
+
+            var queryValidationResult = _queryServices.ValidateQueryLimits(queryParams);
+            if (!queryValidationResult.IsValid)
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Query parameters exceed configured limits",
+                    [queryValidationResult.ErrorMessage!]));
+            }
+
+            QueryParameters validatedParams = queryValidationResult.ValidatedParameters!;
+
+            if (!TryValidateUnsupportedParameters(validatedParams, out var unsupportedError))
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Unsupported query parameters",
+                    [unsupportedError!]));
+            }
+
+            var requestedFormat = validatedParams.FormatSpecified ? validatedParams.F : "json";
+            if (!FeatureServerEndpoints.TryValidateOutputFormat(
+                requestedFormat,
+                FeatureServerEndpoints.JsonOnlyFormats,
+                out _,
+                out var formatError))
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    [formatError ?? "Output format is not supported."]));
+            }
+
+            var (query, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
+                context,
+                layer,
+                validatedParams,
+                queryLimits,
+                "json",
+                cancellationToken).ConfigureAwait(false);
+            if (preparationError != null)
+            {
+                return (null, preparationError);
+            }
+
+            if (!query.HasValue)
+            {
+                return (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
+            }
+
+            var response = await ExecuteJsonQueryResponseAsync(
+                serviceId,
+                layerId,
+                layer,
+                validatedParams,
+                query.Value,
+                outputSrid,
+                context,
+                cancellationToken).ConfigureAwait(false);
+
+            HonuaTelemetry.SetSuccess(featureActivity, CountResponseItems(response));
+            return (response, null);
+        }
+        catch (ArgumentException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            return (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter));
+        }
+        catch (InvalidOperationException ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+
+            return IsClientSafeInvalidOperation(ex)
+                ? (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter))
+                : (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
+        }
+        catch (Exception ex)
+        {
+            FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
+            HonuaTelemetry.RecordException(featureActivity, ex);
+            return (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
+        }
+        finally
+        {
+            featureActivity?.Dispose();
+        }
+    }
+
+    public async Task<IResult> HandleQueryFeaturesAsync(
+        string serviceId,
+        int layerId,
+        QueryParameters queryParams,
+        HttpContext context,
+        ICommonQueryValidator queryValidator,
+        string? requiredProtocol,
+        CancellationToken cancellationToken = default)
+    {
+        Activity? featureActivity = null;
+        try
+        {
+            var hasWhereClause = !string.IsNullOrWhiteSpace(queryParams.Where);
+            FeatureServerLog.QueryRequested(
+                _logger,
+                serviceId,
+                layerId,
+                hasWhereClause);
+
+            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+                _resourceValidator,
+                serviceId,
+                layerId,
+                context,
+                _logger,
+                requiredProtocol ?? ServiceProtocols.FeatureServer,
                 cancellationToken);
             if (!resourceValidationResult.IsValid)
             {
@@ -121,8 +310,9 @@ internal sealed class FeatureServerQueryHandler(
 
             ServiceDefinition service = resourceValidationResult.Service!;
             LayerDefinition layer = resourceValidationResult.Layer!;
+            var telemetryProtocol = ResolveTelemetryProtocol(requiredProtocol);
             var requestActivity = Activity.Current;
-            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
+            requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, telemetryProtocol);
             requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
 
@@ -134,7 +324,7 @@ internal sealed class FeatureServerQueryHandler(
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "query",
-                HonuaTelemetry.Protocols.FeatureServer,
+                telemetryProtocol,
                 layerId.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
             featureActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
@@ -181,6 +371,13 @@ internal sealed class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid query parameters",
                     [formatError ?? "Output format is not supported."]);
+            }
+
+            if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase) && validatedParams.ReturnM)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid query parameters",
+                    ["GeoJSON output does not support returnM=true."]);
             }
 
             var canCache = ResponseCacheUtilities.ShouldCache(context, _cacheOptions);
@@ -235,207 +432,24 @@ internal sealed class FeatureServerQueryHandler(
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
-            GeoServicesGeometry? parsedGeometry = null;
-            if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    ErrorMessages.Validation.InvalidGeometryParameter,
-                    [geometryError ?? "Geometry parameter is invalid."]);
-            }
-
-            var inputSrid = await _queryServices.ResolveSridAsync(validatedParams.InSr, parsedGeometry?.SpatialReference, cancellationToken);
-            if (validatedParams.InSrSpecified && !inputSrid.HasValue)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid input spatial reference",
-                    [CreateSpatialReferenceErrorMessage("inSR", validatedParams.InSr)]);
-            }
-
-            if (parsedGeometry != null && !inputSrid.HasValue)
-            {
-                inputSrid = layer.SpatialReference.ToSrid();
-            }
-
-            if (parsedGeometry != null && inputSrid.HasValue)
-            {
-                var queryGeometrySpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
-
-                var geometryValidationResult = ValidateGeometryCoordinates(parsedGeometry, queryGeometrySpatialReference);
-                if (!geometryValidationResult.IsValid)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidGeometryParameter,
-                        [geometryValidationResult.ErrorMessage!]);
-                }
-
-                if (queryLimits.MaxBboxAreaSqKm > 0)
-                {
-                    var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, queryGeometrySpatialReference, queryLimits.MaxBboxAreaSqKm);
-                    if (!areaLimitResult.IsValid)
-                    {
-                        return StandardErrorHelpers.CreateBadRequest(context,
-                            "Query parameters exceed configured limits",
-                            [areaLimitResult.ErrorMessage!]);
-                    }
-                }
-            }
-
-            var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
-            if (validatedParams.OutSrSpecified && !outputSrid.HasValue)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid output spatial reference",
-                    [CreateSpatialReferenceErrorMessage("outSR", validatedParams.OutSr)]);
-            }
-
-            var wgs84Srid = SpatialReference.WGS84.Wkid;
-
-            var requiresGeoJsonOutput = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase)
-                && !validatedParams.ReturnCountOnly
-                && !validatedParams.ReturnExtentOnly
-                && !validatedParams.ReturnIdsOnly;
-
-            if (requiresGeoJsonOutput)
-            {
-                if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        "GeoJSON output only supports EPSG:4326 (WGS84).");
-                }
-
-                outputSrid ??= wgs84Srid;
-            }
-
-            // Cloud-native CRS metadata: GeoParquet and GeoArrow formatters can only emit
-            // spec-compliant CRS for EPSG:4326 (omitted key = OGC:CRS84). Non-4326 outSR
-            // would produce a file with reprojected coordinates but "crs": null, misleading
-            // analytics clients. Only enforce when the response will actually contain geometry
-            // metadata — statistics, count, extent, and IDs queries always return JSON
-            // regardless of f=, and returnGeometry=false omits the geometry column entirely.
-            var isCloudNativeFormat = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
-            var requiresCloudNativeGeometry = isCloudNativeFormat
-                && !validatedParams.ReturnCountOnly
-                && !validatedParams.ReturnExtentOnly
-                && !validatedParams.ReturnIdsOnly
-                && validatedParams.ReturnGeometry
-                && layer.HasGeometry
-                && string.IsNullOrWhiteSpace(validatedParams.OutStatistics);
-            if (requiresCloudNativeGeometry)
-            {
-                var formatLabel = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
-                    ? "GeoParquet"
-                    : "GeoArrow";
-
-                if (validatedParams.ReturnM)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"{formatLabel} output does not support returnM=true. GeoParquet 1.1.0 only supports XY and XYZ geometries.");
-                }
-
-                if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        $"{formatLabel} output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference.");
-                }
-
-                // Force 4326 reprojection for cloud-native output, matching GeoJSON behavior.
-                // Without this, a layer natively in e.g. EPSG:3857 would produce a file
-                // with 3857 coordinates but "crs": null metadata, misleading analytics clients.
-                outputSrid ??= wgs84Srid;
-            }
-
-            FilterExpression? filterExpression = null;
-            if (!string.IsNullOrWhiteSpace(validatedParams.Where))
-            {
-                var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
-                if (!parseResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                filterExpression = parseResult.Expression;
-                if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        ["Invalid where clause."]);
-                }
-            }
-
-            FilterExpression? temporalExpression = null;
-            if (!string.IsNullOrWhiteSpace(validatedParams.Time))
-            {
-                try
-                {
-                    temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(validatedParams, layer);
-                }
-                catch (ArgumentException)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [InvalidTimeParameterMessage]);
-                }
-            }
-
-            if (filterExpression != null && temporalExpression != null)
-            {
-                filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
-            }
-            else
-            {
-                filterExpression ??= temporalExpression;
-            }
-
-            SqlFragment? sqlFilter = null;
-            if (filterExpression != null)
-            {
-                var translationResult = _filterExpressionService.Translate(filterExpression, layer);
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
-
-            var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
-                new GeoServicesQueryRequest
-                {
-                    Parameters = validatedParams,
-                    ParsedGeometry = parsedGeometry,
-                    InputSrid = inputSrid,
-                    OutputSrid = outputSrid,
-                    QueryLimits = queryLimits,
-                    SqlFilter = sqlFilter
-                },
+            var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
+                context,
                 layer,
-                cancellationToken);
-            if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
+                validatedParams,
+                queryLimits,
+                format,
+                cancellationToken).ConfigureAwait(false);
+            if (preparationError != null)
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid query parameters",
-                    [queryAdapterResult.ErrorMessage ?? "Invalid query parameters."]);
+                return preparationError;
             }
 
-            var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
-            var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
-            if (!unifiedQueryValidation.IsValid)
+            if (!preparedQuery.HasValue)
             {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    "Invalid query parameters",
-                    [unifiedQueryValidation.ErrorMessage ?? "Invalid query parameters."]);
+                return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
             }
 
-            FeatureQuery query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer) with
-            {
-                Where = validatedParams.Where
-            };
+            var query = preparedQuery.Value;
 
             // Handle statistics queries (outStatistics)
             if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
@@ -806,6 +820,360 @@ internal sealed class FeatureServerQueryHandler(
             featureActivity?.Dispose();
         }
     }
+
+    private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
+        HttpContext context,
+        LayerDefinition layer,
+        QueryParameters validatedParams,
+        QueryLimits queryLimits,
+        string format,
+        CancellationToken cancellationToken)
+    {
+        GeoServicesGeometry? parsedGeometry = null;
+        if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                ErrorMessages.Validation.InvalidGeometryParameter,
+                [geometryError ?? "Geometry parameter is invalid."]));
+        }
+
+        var inputSrid = await _queryServices.ResolveSridAsync(validatedParams.InSr, parsedGeometry?.SpatialReference, cancellationToken).ConfigureAwait(false);
+        if (validatedParams.InSrSpecified && !inputSrid.HasValue)
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid input spatial reference",
+                [CreateSpatialReferenceErrorMessage("inSR", validatedParams.InSr)]));
+        }
+
+        if (parsedGeometry != null && !inputSrid.HasValue)
+        {
+            inputSrid = layer.SpatialReference.ToSrid();
+        }
+
+        if (parsedGeometry != null && inputSrid.HasValue)
+        {
+            var queryGeometrySpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
+
+            var geometryValidationResult = ValidateGeometryCoordinates(parsedGeometry, queryGeometrySpatialReference);
+            if (!geometryValidationResult.IsValid)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidGeometryParameter,
+                    [geometryValidationResult.ErrorMessage!]));
+            }
+
+            if (queryLimits.MaxBboxAreaSqKm > 0)
+            {
+                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, queryGeometrySpatialReference, queryLimits.MaxBboxAreaSqKm);
+                if (!areaLimitResult.IsValid)
+                {
+                    return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                        "Query parameters exceed configured limits",
+                        [areaLimitResult.ErrorMessage!]));
+                }
+            }
+        }
+
+        var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken).ConfigureAwait(false);
+        if (validatedParams.OutSrSpecified && !outputSrid.HasValue)
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid output spatial reference",
+                [CreateSpatialReferenceErrorMessage("outSR", validatedParams.OutSr)]));
+        }
+
+        var wgs84Srid = SpatialReference.WGS84.Wkid;
+        var requiresGeoJsonOutput = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase)
+            && !validatedParams.ReturnCountOnly
+            && !validatedParams.ReturnExtentOnly
+            && !validatedParams.ReturnIdsOnly;
+
+        if (requiresGeoJsonOutput)
+        {
+            if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    "GeoJSON output only supports EPSG:4326 (WGS84)."));
+            }
+
+            outputSrid ??= wgs84Srid;
+        }
+
+        var isCloudNativeFormat = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
+        var requiresCloudNativeGeometry = isCloudNativeFormat
+            && !validatedParams.ReturnCountOnly
+            && !validatedParams.ReturnExtentOnly
+            && !validatedParams.ReturnIdsOnly
+            && validatedParams.ReturnGeometry
+            && layer.HasGeometry
+            && string.IsNullOrWhiteSpace(validatedParams.OutStatistics);
+        if (requiresCloudNativeGeometry)
+        {
+            var formatLabel = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
+                ? "GeoParquet"
+                : "GeoArrow";
+
+            if (validatedParams.ReturnM)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"{formatLabel} output does not support returnM=true. GeoParquet 1.1.0 only supports XY and XYZ geometries."));
+            }
+
+            if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    $"{formatLabel} output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference."));
+            }
+
+            outputSrid ??= wgs84Srid;
+        }
+
+        FilterExpression? filterExpression = null;
+        if (!string.IsNullOrWhiteSpace(validatedParams.Where))
+        {
+            var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+            if (!parseResult.IsSuccess)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]));
+            }
+
+            filterExpression = parseResult.Expression;
+            if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    ["Invalid where clause."]));
+            }
+        }
+
+        FilterExpression? temporalExpression = null;
+        if (!string.IsNullOrWhiteSpace(validatedParams.Time))
+        {
+            try
+            {
+                temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(validatedParams, layer);
+            }
+            catch (ArgumentException)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [InvalidTimeParameterMessage]));
+            }
+        }
+
+        if (filterExpression != null && temporalExpression != null)
+        {
+            filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
+        }
+        else
+        {
+            filterExpression ??= temporalExpression;
+        }
+
+        SqlFragment? sqlFilter = null;
+        if (filterExpression != null)
+        {
+            var translationResult = _filterExpressionService.Translate(filterExpression, layer);
+            if (!translationResult.IsSuccess)
+            {
+                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                    ErrorMessages.Validation.InvalidParameter,
+                    [translationResult.ErrorMessage ?? "Invalid filter syntax."]));
+            }
+
+            sqlFilter = translationResult.SqlFilter;
+        }
+
+        var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
+            new GeoServicesQueryRequest
+            {
+                Parameters = validatedParams,
+                ParsedGeometry = parsedGeometry,
+                InputSrid = inputSrid,
+                OutputSrid = outputSrid,
+                QueryLimits = queryLimits,
+                SqlFilter = sqlFilter
+            },
+            layer,
+            cancellationToken).ConfigureAwait(false);
+        if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [queryAdapterResult.ErrorMessage ?? "Invalid query parameters."]));
+        }
+
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
+        var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        if (!unifiedQueryValidation.IsValid)
+        {
+            return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [unifiedQueryValidation.ErrorMessage ?? "Invalid query parameters."]));
+        }
+
+        var query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer) with
+        {
+            Where = validatedParams.Where
+        };
+        return (query, outputSrid, null);
+    }
+
+    private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
+        string serviceId,
+        int layerId,
+        LayerDefinition layer,
+        QueryParameters validatedParams,
+        FeatureQuery query,
+        int? outputSrid,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
+        {
+            if (!TryParseStatisticsDefinitions(validatedParams.OutStatistics, layer, out var statisticsDefs, out var statsError))
+            {
+                throw new ArgumentException(statsError ?? InvalidOutStatisticsJsonMessage);
+            }
+
+            ImmutableArray<string>? groupByFields = null;
+            if (!string.IsNullOrWhiteSpace(validatedParams.GroupByFieldsForStatistics))
+            {
+                var parsed = validatedParams.GroupByFieldsForStatistics
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(f => f.Trim())
+                    .ToImmutableArray();
+                if (parsed.IsDefaultOrEmpty)
+                {
+                    throw new ArgumentException("groupByFieldsForStatistics must contain valid field names.");
+                }
+
+                groupByFields = parsed;
+            }
+
+            var statisticsQuery = query with
+            {
+                OutStatistics = statisticsDefs,
+                GroupByFields = groupByFields,
+                Limit = null,
+                Offset = null,
+                OrderBy = null,
+                Distinct = false
+            };
+
+            var stopwatch = Stopwatch.StartNew();
+            var statisticsRows = await _queryExecutor.QueryStatisticsAsync(layerId, statisticsQuery, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+            FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+
+            var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
+            {
+                Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
+                Geometry = null
+            }).ToArray();
+
+            return new QueryResponse { Features = statisticsFeatures };
+        }
+
+        var objectIdFieldName = layer.ObjectIdFieldName;
+
+        if (validatedParams.ReturnCountOnly)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var count = await _queryExecutor.CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+            FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+            return new QueryResponse
+            {
+                Count = count,
+                Features = null
+            };
+        }
+
+        if (validatedParams.ReturnExtentOnly)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            var extent = await _queryExecutor.GetExtentAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+            FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+            extent ??= await ResolveExtentFallbackAsync(context, validatedParams, layer, outputSrid, cancellationToken).ConfigureAwait(false);
+            return new QueryResponse
+            {
+                Extent = extent.HasValue ? extent.Value.ToExtentInfo() : null,
+                Features = null
+            };
+        }
+
+        if (validatedParams.ReturnIdsOnly)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+            FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+
+            return new QueryResponse
+            {
+                ObjectIdFieldName = objectIdFieldName,
+                ObjectIds = result.Items.Select(feature => feature.Id).ToArray(),
+                Features = null
+            };
+        }
+
+        string[]? outFields;
+        if (string.IsNullOrEmpty(validatedParams.OutFields))
+        {
+            outFields = null;
+        }
+        else
+        {
+            var parsed = validatedParams.OutFields
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(f => f.Trim())
+                .Where(f => f.Length > 0)
+                .ToArray();
+            outFields = parsed.Length == 0 ? null : parsed;
+        }
+
+        var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+        var queryForExecution = shouldApplyDistinct
+            ? query with { Limit = null, Offset = null }
+            : query;
+        var queryStopwatch = Stopwatch.StartNew();
+        QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken).ConfigureAwait(false);
+        queryStopwatch.Stop();
+        FeatureServerLog.QueryExecuted(_logger, "query", serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
+
+        if (shouldApplyDistinct)
+        {
+            queryResult = ApplyDistinctValues(queryResult, outFields!);
+            queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit);
+        }
+
+        (object? formattedResponse, _) = await _queryServices.FormatQueryResultAsync(
+            queryResult,
+            layer,
+            "json",
+            validatedParams.ReturnGeometry,
+            outputSrid,
+            validatedParams.ReturnZ,
+            validatedParams.ReturnM,
+            validatedParams.GeometryPrecision,
+            validatedParams.MaxAllowableOffset,
+            outFields).ConfigureAwait(false);
+
+        var response = (QueryResponse)formattedResponse!;
+        FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, queryResult.Items.Length, queryResult.TotalCount);
+        return response;
+    }
+
+    private static int CountResponseItems(QueryResponse response)
+        => response.Features?.Length
+           ?? response.ObjectIds?.Length
+           ?? (int)Math.Min(response.Count ?? 0, int.MaxValue);
 
     private sealed class StreamingResult : IResult
     {
@@ -1505,6 +1873,11 @@ internal sealed class FeatureServerQueryHandler(
 
         return QueryResult<Feature>.Create(distinct.Count, distinct.ToImmutable());
     }
+
+    private static string ResolveTelemetryProtocol(string? requiredProtocol)
+        => string.Equals(requiredProtocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase)
+            ? HonuaTelemetry.Protocols.MapServer
+            : HonuaTelemetry.Protocols.FeatureServer;
 
     private static QueryResult<Feature> ApplyPaginationWindow(
         QueryResult<Feature> result,

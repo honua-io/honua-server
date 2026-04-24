@@ -27,10 +27,10 @@ public sealed class GeometryServiceInfoTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest/services/geometry/GeometryServer")]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer")]
     public async Task GeometryServerInfo_ReturnsServiceDescriptor()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/geometry/GeometryServer");
+        var response = await _fixture.Client.GetAsync("/rest/services/Utilities/Geometry/GeometryServer");
 
         response.Be200Ok();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");

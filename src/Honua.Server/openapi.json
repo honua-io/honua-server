@@ -354,6 +354,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Content-Crs",
+            "in": "header",
+            "required": false,
+            "description": "Coordinate reference system URI for request geometry. Must be one of the collection-advertised CRSs.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
           }
         ],
         "requestBody": {
@@ -383,6 +401,12 @@
           "404": {
             "description": "Collection not found"
           },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Authenticated caller is not authorized to create features in this collection"
+          },
           "409": {
             "description": "Conflict"
           }
@@ -407,6 +431,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Content-Crs",
+            "in": "header",
+            "required": false,
+            "description": "Coordinate reference system URI applied to every GeoJSON feature in the batch payload. Must be one of the collection-advertised CRSs.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
           }
         ],
         "requestBody": {
@@ -442,6 +484,12 @@
           },
           "400": {
             "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Authenticated caller is not authorized to modify this collection"
           },
           "404": {
             "description": "Collection not found"
@@ -670,6 +718,33 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Content-Crs",
+            "in": "header",
+            "required": false,
+            "description": "Coordinate reference system URI for request geometry. Must be one of the collection-advertised CRSs.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "description": "Strong ETag from a prior GET item response for optimistic concurrency control.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
           }
         ],
         "requestBody": {
@@ -699,8 +774,17 @@
           "400": {
             "description": "Invalid request"
           },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Authenticated caller is not authorized to replace this feature"
+          },
           "404": {
             "description": "Feature not found"
+          },
+          "412": {
+            "description": "ETag precondition failed - the feature has been modified since the provided ETag"
           }
         }
       },
@@ -729,6 +813,33 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Content-Crs",
+            "in": "header",
+            "required": false,
+            "description": "Coordinate reference system URI for request geometry. Must be one of the collection-advertised CRSs.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "description": "Strong ETag from a prior GET item response for optimistic concurrency control.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
           }
         ],
         "requestBody": {
@@ -754,6 +865,12 @@
           },
           "400": {
             "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Authenticated caller is not authorized to patch this feature"
           },
           "404": {
             "description": "Feature not found"
@@ -790,12 +907,26 @@
             }
           }
         ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "204": {
             "description": "Feature deleted"
           },
           "400": {
             "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Authenticated caller is not authorized to delete this feature"
           },
           "404": {
             "description": "Feature not found"
@@ -1391,6 +1522,18 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "schemas": {
       "LandingPage": {
         "type": "object",

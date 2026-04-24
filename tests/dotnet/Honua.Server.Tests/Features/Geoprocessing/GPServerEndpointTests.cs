@@ -7,12 +7,17 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -27,6 +32,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 [Protocol(Protocols.GPServer)]
 public sealed class GPServerEndpointTests : IAsyncLifetime
 {
+    private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
+    private const string ServiceId = WebAppFixture.TestServiceId;
+
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
 
@@ -50,7 +58,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_ReturnsGPServerMetadata()
     {
-        var response = await _client.GetAsync("/rest/services/TestService/GPServer");
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadAsStringAsync();
@@ -59,7 +67,59 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         root.GetProperty("currentVersion").GetDouble().Should().Be(10.81);
         root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
-        root.TryGetProperty("tasks", out _).Should().BeTrue();
+        root.TryGetProperty("capabilities", out _).Should().BeTrue();
+        root.GetProperty("resultMapServerName").GetString().Should().BeEmpty();
+        root.GetProperty("tasks").ValueKind.Should().Be(JsonValueKind.Array);
+        root.GetProperty("tasks").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().Contain("geometry.buffer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_Post_ReturnsGPServerMetadata()
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json"
+        });
+
+        var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("tasks").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().Contain("geometry.buffer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_UnknownService_ReturnsNotFound()
+    {
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateServiceAsync("MissingService", Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.NotFound<ServiceDefinition>("Service 'MissingService' was not found."));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IResourceValidator>();
+                services.AddSingleton(resourceValidator);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.Client.GetAsync("/rest/services/MissingService/GPServer");
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -69,44 +129,123 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
-    public async Task TaskInfo_WithoutProcessCatalog_ReturnsNotImplemented()
+    public async Task TaskInfo_KnownTask_ReturnsCatalogMetadata()
     {
-        var response = await _client.GetAsync("/rest/services/TestService/GPServer/BufferAnalysis");
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
 
-        // Without a formal process catalog, task metadata cannot be resolved.
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        root.GetProperty("name").GetString().Should().Be("geometry.buffer");
+        root.GetProperty("displayName").GetString().Should().Be("Buffer");
+        root.GetProperty("description").GetString().Should().Contain("Creates a polygon");
+        root.GetProperty("category").GetString().Should().Be("geometry");
+        root.GetProperty("helpUrl").GetString().Should().BeEmpty();
+        root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
+
+        var parameters = root.GetProperty("parameters").EnumerateArray().ToArray();
+        parameters.Should().Contain(parameter =>
+            parameter.GetProperty("name").GetString() == "distance" &&
+            parameter.GetProperty("description").GetString() == "Buffer distance in meters." &&
+            parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionInput" &&
+            parameter.GetProperty("dataType").GetString() == "GPDouble");
+        parameters.Should().Contain(parameter =>
+            parameter.GetProperty("name").GetString() == "wkb" &&
+            parameter.GetProperty("description").GetString()!.Contains("base64-encoded WKB", StringComparison.Ordinal) &&
+            parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionInput");
+        parameters.Should().Contain(parameter =>
+            parameter.GetProperty("name").GetString() == "outputFeatureLayer" &&
+            parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionOutput");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_Post_KnownTask_ReturnsCatalogMetadata()
+    {
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json"
+        });
+
+        var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("name").GetString().Should().Be("geometry.buffer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_UnknownTask_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/BufferAnalysis");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_ProtocolDisabledService_ReturnsNotFound()
+    {
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateServiceAsync(ServiceId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateGpServerService(gpServerEnabled: false)));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IResourceValidator>();
+                services.AddSingleton(resourceValidator);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     // -----------------------------------------------------------------------
-    // Execute (sync — returns 501)
+    // Execute
     // -----------------------------------------------------------------------
 
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task Execute_ReturnsNotImplemented()
+    public async Task ExecuteGet_GenericAsyncTaskRouteIsNotPublished()
     {
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/execute?f=json");
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute?f=json");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecutePost_ReturnsNotImplemented()
+    public async Task ExecutePost_GenericAsyncTaskRouteIsNotPublished()
     {
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["input_features"] = "test"
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10"
         });
 
         var response = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/execute", content);
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     // -----------------------------------------------------------------------
@@ -116,7 +255,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithoutProcessCatalog_ReturnsNotImplemented()
+    public async Task SubmitJob_UnknownTask_ReturnsNotFound()
     {
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -126,23 +265,121 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         });
 
         var response = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob", content);
 
-        // Without a formal process catalog, job submission is rejected to prevent
-        // creating durable jobs for unresolved processes.
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobGet_WithoutProcessCatalog_ReturnsNotImplemented()
+    public async Task SubmitJobGet_UnknownTask_ReturnsNotFound()
     {
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob?f=json&input=test");
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
-        // Without a formal process catalog, job submission is rejected.
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ProtocolDisabledService_ReturnsNotFound()
+    {
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateServiceAsync(ServiceId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateGpServerService(gpServerEnabled: false)));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IResourceValidator>();
+                services.AddSingleton(resourceValidator);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "25.5"
+            });
+
+            using var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_KnownTask_BuildsPlanAndStoresProtocolMetadata()
+    {
+        var recordingService = new RecordingGeoprocessingJobService();
+        var submitFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(recordingService);
+            });
+
+        await submitFixture.InitializeAsync();
+        try
+        {
+            using var client = submitFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "25.5",
+                ["geodesic"] = "true",
+                ["context"] = "{\"extent\":{}}"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+
+            root.GetProperty("jobId").GetString().Should().Be("gp-job-123");
+            root.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+
+            recordingService.LastPlan.Should().NotBeNull();
+            recordingService.LastPlan!.Steps.Should().ContainSingle();
+            var step = recordingService.LastPlan.Steps[0];
+            step.Kind.Should().Be(AnalysisPlanStepKind.Geoprocess);
+            step.ProcessId.Should().Be("geometry.buffer");
+            step.Inputs.Should().Contain(new KeyValuePair<string, string>("wkb", PointWkbBase64));
+            step.Inputs.Should().Contain(new KeyValuePair<string, string>("srid", "4326"));
+            step.Inputs.Should().Contain(new KeyValuePair<string, string>("distance", "25.5"));
+            step.Inputs.Should().Contain(new KeyValuePair<string, string>("geodesic", "true"));
+            step.Inputs.Should().NotContainKey("f");
+            step.Inputs.Should().NotContainKey("context");
+
+            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("submittedVia", "GPServer"));
+            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.serviceId", ServiceId));
+            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.taskName", "geometry.buffer"));
+            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.context", "{\"extent\":{}}"));
+        }
+        finally
+        {
+            await submitFixture.DisposeAsync();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -155,7 +392,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task JobStatus_WithInvalidJobId_Returns404()
     {
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/jobs/nonexistent-job-id?f=json");
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent-job-id?f=json");
 
         // Without Redis: ServiceUnavailable; With Redis: NotFound
         response.StatusCode.Should().BeOneOf(
@@ -173,12 +410,76 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task JobResult_WithInvalidJobId_ReturnsError()
     {
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/jobs/nonexistent/results/Output?f=json");
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/results/Output?f=json");
 
         // Without Redis: ServiceUnavailable; With Redis: NotFound
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.NotFound,
             HttpStatusCode.ServiceUnavailable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task JobStatus_SucceededJobWithResultPackage_ReturnsNamedResultReferences()
+    {
+        var resultFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new ResultBackedGeoprocessingJobService());
+            });
+
+        await resultFixture.InitializeAsync();
+        try
+        {
+            using var client = resultFixture.CreateAdminClient();
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/gp-result-job?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var outputFeatureLayer = doc.RootElement.GetProperty("results").GetProperty("outputFeatureLayer");
+            outputFeatureLayer.GetProperty("paramUrl").GetString().Should().Be("results/outputFeatureLayer");
+        }
+        finally
+        {
+            await resultFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task JobResult_WithResultPackage_ReturnsNamedOutput()
+    {
+        var resultFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new ResultBackedGeoprocessingJobService());
+            });
+
+        await resultFixture.InitializeAsync();
+        try
+        {
+            using var client = resultFixture.CreateAdminClient();
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/gp-result-job/results/outputFeatureLayer?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            root.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
+            root.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
+            root.GetProperty("value").GetString().Should().Be("https://example.test/artifacts/output.geojson");
+        }
+        finally
+        {
+            await resultFixture.DisposeAsync();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -191,7 +492,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task CancelJob_WithInvalidJobId_ReturnsError()
     {
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/jobs/nonexistent/cancel?f=json");
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel?f=json");
 
         // Without Redis: ServiceUnavailable; With Redis: NotFound
         response.StatusCode.Should().BeOneOf(
@@ -205,7 +506,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task CancelJobPost_WithInvalidJobId_ReturnsError()
     {
         var response = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/jobs/nonexistent/cancel",
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel",
             new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
 
         response.StatusCode.Should().BeOneOf(
@@ -245,7 +546,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 WorkloadName = "gptest",
                 Parameters = new Dictionary<string, string>
                 {
-                    ["gpserver.serviceId"] = "TestService",
+                    ["gpserver.serviceId"] = ServiceId,
                     ["gpserver.taskName"] = "BufferAnalysis"
                 }
             }
@@ -292,7 +593,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 WorkloadName = "gptest",
                 Parameters = new Dictionary<string, string>
                 {
-                    ["gpserver.serviceId"] = "TestService",
+                    ["gpserver.serviceId"] = ServiceId,
                     ["gpserver.taskName"] = "BufferAnalysis"
                 }
             }
@@ -306,7 +607,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         // Query status under a different task — should be rejected
         var statusResponse = await _client.GetAsync(
-            $"/rest/services/TestService/GPServer/DifferentTask/jobs/{jobId}?f=json");
+            $"/rest/services/{ServiceId}/GPServer/DifferentTask/jobs/{jobId}?f=json");
 
         statusResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -371,12 +672,14 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["input_features"] = "test-layer",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
             ["env:outSR"] = "4326"
         });
 
         var response = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -391,11 +694,13 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["input_features"] = "test-layer"
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10"
         });
 
         var response = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob?env:outSR=4326", content);
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?env:outSR=4326", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -406,47 +711,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task SubmitJobGet_WithEnvProcessSR_ReturnsBadRequest()
     {
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/submitJob?f=json&input=test&env:processSR=3857");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecuteGet_WithEnvOutSR_ReturnsBadRequest()
-    {
-        var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/execute?f=json&env:outSR=4326");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecutePost_WithEnvOutSR_ReturnsBadRequest()
-    {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["f"] = "json",
-            ["input_features"] = "test-layer",
-            ["env:outSR"] = "4326"
-        });
-
-        var response = await _client.PostAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/execute", content);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecuteGet_WithContextParam_ReturnsBadRequest()
-    {
-        var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/execute?f=json&context=%7B%22extent%22%3A%7B%7D%7D");
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -462,9 +727,65 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         // Empty jobId in the route — the routing framework will either 404 or match
         var response = await _client.GetAsync(
-            "/rest/services/TestService/GPServer/BufferAnalysis/jobs/?f=json");
+            $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/?f=json");
 
         response.IsSuccessStatusCode.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task JobStatus_WithRequestTimeout_Returns408()
+    {
+        var timeoutFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService, TimeoutGeoprocessingJobService>();
+            });
+
+        await timeoutFixture.InitializeAsync();
+        try
+        {
+            using var client = timeoutFixture.CreateClient(c => c.Timeout = TimeSpan.FromSeconds(5));
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/slow-job?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.RequestTimeout);
+        }
+        finally
+        {
+            await timeoutFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task JobStatus_WithPreconditionFailure_Returns412()
+    {
+        var preconditionFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService, PreconditionFailedGeoprocessingJobService>();
+            });
+
+        await preconditionFixture.InitializeAsync();
+        try
+        {
+            using var client = preconditionFixture.CreateClient(c => c.Timeout = TimeSpan.FromSeconds(5));
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/completed-job?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        }
+        finally
+        {
+            await preconditionFixture.DisposeAsync();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -499,12 +820,14 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
-                ["input_features"] = "test-layer",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "10",
                 ["env:outSR"] = "4326"
             });
 
             var response = await client.PostAsync(
-                "/rest/services/TestService/GPServer/BufferAnalysis/submitJob", content);
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
             // Auth must be checked before parameter validation — expect 401 not 400.
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
@@ -514,5 +837,247 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         {
             await authFixture.DisposeAsync();
         }
+    }
+
+    private sealed class TimeoutGeoprocessingJobService : IGeoprocessingJobService
+    {
+        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
+        {
+        }
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public async Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            throw new TimeoutException("Timed out waiting for GPServer job status.");
+        }
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class PreconditionFailedGeoprocessingJobService : IGeoprocessingJobService
+    {
+        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
+        {
+        }
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new GeoprocessingPreconditionFailedException(
+                $"Job '{jobId}' has not reached a terminal state.");
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingGeoprocessingJobService : IGeoprocessingJobService
+    {
+        public AnalysisPlan? LastPlan { get; private set; }
+
+        public IReadOnlyDictionary<string, string>? LastProtocolMetadata { get; private set; }
+
+        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
+        {
+        }
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+        {
+            LastPlan = plan;
+            LastProtocolMetadata = protocolMetadata;
+
+            return Task.FromResult(new ExecutionJobRecord
+            {
+                OperationId = "gp-job-123",
+                Status = ExecutionJobStatus.Queued,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "gp-recording",
+                    Parameters = protocolMetadata != null
+                        ? new Dictionary<string, string>(protocolMetadata)
+                        : new Dictionary<string, string>()
+                }
+            });
+        }
+
+        public Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class ResultBackedGeoprocessingJobService : IGeoprocessingJobService
+    {
+        private readonly ExecutionJobRecord _job = new()
+        {
+            OperationId = "gp-result-job",
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "gp-results",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["gpserver.serviceId"] = ServiceId,
+                    ["gpserver.taskName"] = "geometry.buffer",
+                    ["gpserver.output.0"] = "outputFeatureLayer"
+                }
+            }
+        };
+
+        private readonly AnalysisResultPackage _results = AnalysisResultPackage.CreateCompleted(
+            resultPackageId: "pkg-gp-result-job",
+            summary: new ResultSummary { Title = "GPServer output" },
+            artifacts:
+            [
+                new ArtifactRef
+                {
+                    ArtifactId = "art-output-1",
+                    Kind = ArtifactKind.FeatureLayer,
+                    Label = "Buffered Output",
+                    Uri = "https://example.test/artifacts/output.geojson"
+                }
+            ],
+            workspaceRefs: [],
+            provenance: new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["geometry.buffer"],
+                ExecutedAt = DateTimeOffset.UtcNow
+            });
+
+        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
+        {
+        }
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_job);
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_results);
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private static ServiceDefinition CreateGpServerService(bool gpServerEnabled)
+    {
+        var layer = LayerDefinition.CreateBasic(0, "gp-layer", GeometryType.Point);
+        return ServiceDefinition.CreateSingle(ServiceId, layer, Honua.Core.Features.Shared.Models.SpatialReference.Create(4326)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = gpServerEnabled
+                    ? [ServiceProtocols.GPServer]
+                    : [ServiceProtocols.FeatureServer]
+            }
+        };
     }
 }

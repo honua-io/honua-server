@@ -20,8 +20,8 @@ namespace Honua.Server.Tests.Features.ImageServer;
 
 /// <summary>
 /// Tests for <see cref="ImageServerAnalyzeHandler"/>. Verifies that the
-/// computeClass / analyze endpoint validates a raster function chain document
-/// and returns the planned execution metadata.
+/// internal raster-function analysis helper validates a raster function chain
+/// document and returns the planned execution metadata.
 /// </summary>
 [Protocol(Protocols.ImageServer)]
 public class ImageServerAnalyzeHandlerTests
@@ -321,7 +321,7 @@ public class ImageServerAnalyzeHandlerTests
 
         var context = new DefaultHttpContext();
         context.RequestServices = services.BuildServiceProvider();
-        context.Request.Path = "/rest/services/1/ImageServer/computeClass";
+        context.Request.Path = "/rest/services/1/ImageServer/_internal/analyzeRasterFunction";
         context.Response.Body = new MemoryStream();
         return context;
     }

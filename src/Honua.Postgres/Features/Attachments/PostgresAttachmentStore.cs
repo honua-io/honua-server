@@ -116,7 +116,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
     {
         var sql = $@"
             UPDATE {_tableName}
-            SET filename = $4, content_type = $5, keywords = $6
+            SET filename = $4, content_type = $5, size = $6, storage_path = $7, keywords = $8
             WHERE layer_id = $1 AND feature_id = $2 AND id = $3
             RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
 
@@ -127,6 +127,8 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         command.Parameters.AddWithValue(attachment.Id);
         command.Parameters.AddWithValue(attachment.Filename);
         command.Parameters.AddWithValue(attachment.ContentType);
+        command.Parameters.AddWithValue(attachment.Size);
+        command.Parameters.AddWithValue(attachment.StoragePath);
         command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -136,6 +138,91 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         }
 
         return ReadAttachment(reader);
+    }
+
+    public async Task<Attachment> ReplaceAsync(
+        int layerId,
+        long featureId,
+        long attachmentId,
+        string filename,
+        string contentType,
+        Stream content,
+        string? keywords = null,
+        CancellationToken cancellationToken = default)
+    {
+        var existingAttachment = await GetAsync(layerId, featureId, attachmentId, cancellationToken).ConfigureAwait(false);
+        if (!existingAttachment.HasValue)
+        {
+            throw new ResourceNotFoundException($"Attachment {attachmentId} not found for update");
+        }
+
+        var existing = existingAttachment.Value;
+        var sanitizedFilename = SanitizeFileName(filename);
+        var folder = BuildAttachmentFolder(layerId, featureId);
+        var sizeBytes = content.CanSeek ? content.Length : (long?)null;
+
+        var uploadResult = await _fileStorage.UploadAsync(new FileUploadRequest
+        {
+            Content = content,
+            FileName = sanitizedFilename,
+            ContentType = contentType,
+            SizeBytes = sizeBytes,
+            Folder = folder
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (!uploadResult.Success || uploadResult.File == null)
+        {
+            var message = uploadResult.ErrorMessage ?? "Attachment upload failed.";
+            AttachmentLog.AttachmentUploadFailed(_logger, layerId, featureId, message);
+            throw new InvalidOperationException(message);
+        }
+
+        var updatedAttachment = Attachment.Create(
+            existing.Id,
+            existing.FeatureId,
+            existing.LayerId,
+            sanitizedFilename,
+            uploadResult.File.ContentType,
+            uploadResult.File.SizeBytes,
+            existing.CreatedAt,
+            uploadResult.File.FileId,
+            keywords);
+
+        try
+        {
+            var updated = await UpdateAsync(layerId, featureId, updatedAttachment, cancellationToken).ConfigureAwait(false);
+
+            if (!string.Equals(existing.StoragePath, updated.StoragePath, StringComparison.Ordinal))
+            {
+                try
+                {
+                    var deleted = await _fileStorage.DeleteAsync(existing.StoragePath, cancellationToken).ConfigureAwait(false);
+                    if (!deleted)
+                    {
+                        AttachmentLog.AttachmentFileMissing(_logger, existing.StoragePath, layerId, featureId);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, existing.StoragePath);
+                }
+            }
+
+            return updated;
+        }
+        catch
+        {
+            try
+            {
+                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
+            }
+
+            throw;
+        }
     }
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)

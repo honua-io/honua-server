@@ -10,7 +10,22 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 internal static class ExecutionJobParameterKeys
 {
     /// <summary>
+    /// Separator used when serializing ordered metadata lists into a single spec parameter value.
+    /// </summary>
+    public const string MetadataListSeparator = "|";
+
+    /// <summary>
     /// Stable analysis plan identifier for geoprocessing execution jobs.
     /// </summary>
     public const string GeoprocessingPlanId = "honua.geoprocessing.plan_id";
+
+    /// <summary>
+    /// Ordered process identifiers referenced by the submitted analysis plan.
+    /// </summary>
+    public const string GeoprocessingProcessDefinitions = "honua.geoprocessing.process_definitions";
+
+    /// <summary>
+    /// Ordered output artifact kinds declared by the submitted analysis plan.
+    /// </summary>
+    public const string GeoprocessingOutputArtifactKinds = "honua.geoprocessing.output_artifact_kinds";
 }

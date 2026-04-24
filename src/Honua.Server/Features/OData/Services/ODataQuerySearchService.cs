@@ -84,8 +84,20 @@ internal sealed class ODataQuerySearchService
         LayerDefinition layer,
         long[] objectIds,
         CancellationToken cancellationToken)
+        => await ProcessExpandAsync(expand, layer, objectIds, context: null, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Processes $expand to fetch related entities for features.
+    /// </summary>
+    public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
+        string expand,
+        LayerDefinition layer,
+        long[] objectIds,
+        HttpContext? context,
+        CancellationToken cancellationToken = default)
     {
-        return await _searchService.ProcessExpandAsync(expand, layer, objectIds, cancellationToken);
+        return await _searchService.ProcessExpandAsync(expand, layer, objectIds, context, cancellationToken);
     }
 
     /// <summary>
@@ -103,6 +115,37 @@ internal sealed class ODataQuerySearchService
         string? select = null,
         string? expand = null,
         CancellationToken cancellationToken = default)
+        => await HandleSearchAsync(
+            layerId,
+            searchExpression,
+            baseUrl,
+            top,
+            skip,
+            count,
+            filter,
+            orderby,
+            select,
+            expand,
+            context: null,
+            cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Handles OData $search full-text search operations with PostgreSQL text search.
+    /// </summary>
+    public async Task<ODataSearchResult> HandleSearchAsync(
+        int layerId,
+        string searchExpression,
+        string baseUrl,
+        int? top = null,
+        int? skip = null,
+        bool? count = null,
+        string? filter = null,
+        string? orderby = null,
+        string? select = null,
+        string? expand = null,
+        HttpContext? context = null,
+        CancellationToken cancellationToken = default)
     {
         return await _searchService.HandleSearchAsync(
             layerId,
@@ -115,6 +158,7 @@ internal sealed class ODataQuerySearchService
             orderby,
             select,
             expand,
+            context,
             cancellationToken);
     }
 

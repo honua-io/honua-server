@@ -81,4 +81,31 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
     }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_WhenCreateFails_DoesNotReturnCreated()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((ExecutionJobRecord?)null);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/honua-geoprocessing/execution");
+        request.Content = new StringContent(
+            """{"inputs":{"plan":{"planId":"plan-create-fail","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        await _jobQueue.DidNotReceive().EnqueueAsync(
+            Arg.Any<string>(),
+            Arg.Any<OperationPriority>(),
+            Arg.Any<CancellationToken>());
+    }
 }

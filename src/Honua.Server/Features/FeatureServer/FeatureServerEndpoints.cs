@@ -77,33 +77,10 @@ internal static partial class FeatureServerEndpoints
             .WithDisplayName("Query FeatureServer Service (GET)")
             .WithName("QueryFeatureServiceGet")
             .WithSummary("Query features from a FeatureServer service using GET")
-            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithDescription("GET-only service-level query endpoint that returns per-layer results for the selected accessible layers")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .Produces<QueryResponse>(200, "application/json")
-            .Produces(StatusCodes.Status200OK, contentType: "application/geo+json")
-            .Produces(StatusCodes.Status200OK, contentType: "application/x-protobuf")
-            .Produces(StatusCodes.Status200OK, contentType: "application/vnd.flatgeobuf")
-            .Produces(StatusCodes.Status200OK, contentType: "application/geobuf")
-            .Produces(StatusCodes.Status200OK, contentType: "application/vnd.apache.parquet")
-            .Produces(StatusCodes.Status200OK, contentType: "application/vnd.apache.arrow.stream")
-            .Produces(400)
-            .Produces(404);
-
-        var serviceQueryPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
-            .WithDisplayName("Query FeatureServer Service (POST)")
-            .WithName("QueryFeatureServicePost")
-            .WithSummary("Query features from a FeatureServer service using POST")
-            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
-            .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<QueryResponse>(200, "application/json")
-            .Produces(StatusCodes.Status200OK, contentType: "application/geo+json")
-            .Produces(StatusCodes.Status200OK, contentType: "application/x-protobuf")
-            .Produces(StatusCodes.Status200OK, contentType: "application/vnd.flatgeobuf")
-            .Produces(StatusCodes.Status200OK, contentType: "application/geobuf")
-            .Produces(StatusCodes.Status200OK, contentType: "application/vnd.apache.parquet")
-            .Produces(StatusCodes.Status200OK, contentType: "application/vnd.apache.arrow.stream")
+            .Produces<ServiceQueryResponse>(200, "application/json")
             .Produces(400)
             .Produces(404);
 
@@ -123,7 +100,10 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Apply feature edits across multiple layers")
             .WithDescription("Apply feature edits to multiple layers in a single request including add, update, and delete operations")
             .WithTags("FeatureServer")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .Produces<ServiceApplyEditsResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/applyEdits", HandleApplyEdits)
             .WithDisplayName("Apply Feature Edits")
@@ -204,6 +184,26 @@ internal static partial class FeatureServerEndpoints
         .Produces(404);
 
         // Replication endpoints
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas", HandleReplicas)
+            .WithDisplayName("List Replicas")
+            .WithName("Replicas")
+            .WithSummary("List replicas for a feature service")
+            .WithDescription("Returns registered replica metadata for the feature service")
+            .WithTags("FeatureServer")
+            .Produces<ReplicaSummary[]>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", HandleReplicaInfo)
+            .WithDisplayName("Get Replica Info")
+            .WithName("ReplicaInfo")
+            .WithSummary("Get metadata for a specific replica")
+            .WithDescription("Returns replica metadata for a specific registered replica")
+            .WithTags("FeatureServer")
+            .Produces<ReplicaInfoResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/createReplica", HandleCreateReplica)
             .WithDisplayName("Create Replica")
             .WithName("CreateReplica")
@@ -244,7 +244,10 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Unregister a replica")
             .WithDescription("Removes a registered replica and frees associated resources")
             .WithTags("FeatureServer")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .Produces<SuccessResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         // Maintenance/utility endpoints
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/append", HandleServiceAppend)
@@ -253,7 +256,10 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Append features to a service layer")
             .WithDescription("Bulk append features to a layer within the service")
             .WithTags("FeatureServer")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .Produces<AppendResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/append", HandleLayerAppend)
             .WithDisplayName("Append Features (Layer)")
@@ -261,7 +267,10 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Append features to a specific layer")
             .WithDescription("Bulk append features to a specific layer")
             .WithTags("FeatureServer")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .Produces<AppendResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
             .WithDisplayName("Calculate")
@@ -269,7 +278,21 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Calculate field values for features")
             .WithDescription("Calculates new field values using expressions for matching features")
             .WithTags("FeatureServer")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .Produces<CalculateResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
+            .WithDisplayName("Calculate (POST)")
+            .WithName("CalculatePost")
+            .WithSummary("Calculate field values for features")
+            .WithDescription("Calculates new field values using expressions for matching features")
+            .WithTags("FeatureServer")
+            .AllowAnonymous()
+            .Produces<CalculateResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/getEstimates", HandleGetEstimates)
             .WithDisplayName("Get Estimates (Layer)")
@@ -282,8 +305,11 @@ internal static partial class FeatureServerEndpoints
             .WithDisplayName("Get Estimates (Service)")
             .WithName("GetEstimatesService")
             .WithSummary("Get approximate count and extent estimates for a service")
-            .WithDescription("Returns aggregated estimated feature count and spatial extent across all layers")
-            .WithTags("FeatureServer");
+            .WithDescription("Returns per-layer estimated feature count and spatial extent for the selected accessible layers")
+            .WithTags("FeatureServer")
+            .Produces<ServiceGetEstimatesResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryTopFeatures", HandleQueryTopFeaturesGet)
             .WithDisplayName("Query Top Features (GET)")
@@ -337,15 +363,21 @@ internal static partial class FeatureServerEndpoints
             .WithDisplayName("Query Domains")
             .WithName("QueryDomains")
             .WithSummary("Query coded-value domains for the service")
-            .WithDescription("Returns domain definitions including coded values and ranges for service fields")
-            .WithTags("FeatureServer");
+            .WithDescription("Returns schema-defined domains for accessible service layers")
+            .WithTags("FeatureServer")
+            .Produces<QueryDomainsResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/relationships", HandleQueryRelationships)
             .WithDisplayName("Query Relationships")
             .WithName("QueryRelationships")
             .WithSummary("Query relationship metadata for a service")
-            .WithDescription("Returns relationship definitions across all layers in the feature service")
-            .WithTags("FeatureServer");
+            .WithDescription("Returns relationship definitions for accessible layers without exposing hidden related layers")
+            .WithTags("FeatureServer")
+            .Produces<QueryRelationshipsResponse>(200, "application/json")
+            .Produces(400)
+            .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/validateSQL", HandleValidateSql)
             .WithDisplayName("Validate SQL")

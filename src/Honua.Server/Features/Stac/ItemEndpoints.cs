@@ -22,6 +22,8 @@ namespace Honua.Server.Features.Stac;
 /// </summary>
 internal static class ItemEndpoints
 {
+    private const int Wgs84Srid = 4326;
+
     /// <summary>
     /// Maps STAC item endpoints.
     /// </summary>
@@ -86,7 +88,9 @@ internal static class ItemEndpoints
             var query = new FeatureQuery
             {
                 Limit = effectiveLimit,
-                Offset = effectiveOffset > 0 ? effectiveOffset : null
+                Offset = effectiveOffset > 0 ? effectiveOffset : null,
+                SpatialReferenceSrid = layer.SpatialReference.Wkid,
+                OutputSrid = Wgs84Srid
             };
 
             // Apply bbox filter
@@ -117,7 +121,7 @@ internal static class ItemEndpoints
             var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
 
             var items = result.Features
-                .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl))
+                .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl, geometrySrid: Wgs84Srid))
                 .ToImmutableArray();
 
             var stacBase = $"{baseUrl}/stac";
@@ -201,10 +205,20 @@ internal static class ItemEndpoints
             }
 
             var layer = validation.Layer!;
-            Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(featureReader, layer.Id, itemId, cancellationToken);
+            Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(
+                featureReader,
+                layer.Id,
+                layer.SpatialReference.Wkid,
+                itemId,
+                cancellationToken);
             if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
-                feature = await featureReader.GetAsync(layer.Id, objectId, cancellationToken);
+                feature = await TryGetFeatureByObjectIdAsStacAsync(
+                    featureReader,
+                    layer.Id,
+                    layer.SpatialReference.Wkid,
+                    objectId,
+                    cancellationToken);
             }
 
             if (feature is null)
@@ -214,7 +228,7 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var item = StacMappingService.MapFeatureToItem(feature.Value, layer, baseUrl);
+            var item = StacMappingService.MapFeatureToItem(feature.Value, layer, baseUrl, geometrySrid: Wgs84Srid);
 
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);
         }
@@ -244,6 +258,7 @@ internal static class ItemEndpoints
     private static async Task<Feature?> TryGetFeatureByCanonicalItemIdAsync(
         IFeatureReader featureReader,
         int layerId,
+        int layerSrid,
         string itemId,
         CancellationToken cancellationToken)
     {
@@ -260,7 +275,12 @@ internal static class ItemEndpoints
 
         foreach (var objectId in objectIds)
         {
-            var feature = await featureReader.GetAsync(layerId, objectId, cancellationToken);
+            var feature = await TryGetFeatureByObjectIdAsStacAsync(
+                featureReader,
+                layerId,
+                layerSrid,
+                objectId,
+                cancellationToken);
             var matchRank = GetCanonicalItemMatchRank(feature, itemId);
             if (!matchRank.HasValue)
             {
@@ -280,6 +300,30 @@ internal static class ItemEndpoints
         }
 
         return bestMatch;
+    }
+
+    private static async Task<Feature?> TryGetFeatureByObjectIdAsStacAsync(
+        IFeatureReader featureReader,
+        int layerId,
+        int layerSrid,
+        long objectId,
+        CancellationToken cancellationToken)
+    {
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(objectId),
+            SpatialReferenceSrid = layerSrid,
+            OutputSrid = Wgs84Srid,
+            Limit = 1
+        };
+
+        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+        foreach (var feature in result.Features)
+        {
+            return feature;
+        }
+
+        return null;
     }
 
     private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)

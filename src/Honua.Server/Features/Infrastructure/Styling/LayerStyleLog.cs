@@ -15,4 +15,10 @@ internal static partial class LayerStyleLog
         Level = LogLevel.Warning,
         Message = "Unsupported GeoServices renderer type '{RendererType}' for layer {LayerId}. Falling back to default MapLibre style.")]
     public static partial void UnsupportedRendererType(ILogger logger, string rendererType, int layerId);
+
+    [LoggerMessage(
+        EventId = 6401,
+        Level = LogLevel.Warning,
+        Message = "Failed to resolve optional drawingInfo for layer {LayerId}. Returning metadata without drawingInfo.")]
+    public static partial void OptionalDrawingInfoUnavailable(ILogger logger, int layerId, Exception exception);
 }

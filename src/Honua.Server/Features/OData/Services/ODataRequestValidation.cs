@@ -27,15 +27,28 @@ internal static class ODataRequestValidation
             return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", error);
         }
 
-        var format = context.Request.Query.TryGetValue("$format", out var formatValues)
-            ? formatValues.ToString()
-            : null;
+        var format = GetQueryValue(context.Request.Query, "$format");
         if (ODataUtilityService.TryGetUnsupportedMetadataLevel(context.Request, format, out var metadataLevel))
         {
             return ODataUtilityService.CreateODataError(
                 context,
                 "InvalidQueryOption",
-                $"Unsupported odata.metadata level '{metadataLevel}'. Supported values are 'minimal' and 'none'.");
+                $"Unsupported metadata level '{metadataLevel}'. Supported values are 'minimal' and 'none'.");
+        }
+
+        return null;
+    }
+
+    internal static string? GetQueryValue(IQueryCollection query, string key)
+    {
+        if (query.TryGetValue(key, out var values))
+        {
+            return values.ToString();
+        }
+
+        if (key.Length > 1 && key[0] == '$' && query.TryGetValue(key[1..], out values))
+        {
+            return values.ToString();
         }
 
         return null;

@@ -711,8 +711,8 @@ builder.Services.AddSingleton<AdminAuthSessionStore>();
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
+builder.Services.AddInputValidation(builder.Configuration);
 // Rate limiting disabled per project requirements
-// Input validation disabled to fix integration tests
 
 // Configure API versioning for admin endpoints
 builder.Services.AddApiVersioning(options =>
@@ -937,6 +937,37 @@ app.UseSerilogRequestLogging(options =>
         diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
         diagnosticContext.Set("UserAgent", httpContext.Request.Headers.UserAgent.ToString());
         diagnosticContext.Set("Protocol", httpContext.Request.Protocol);
+        diagnosticContext.Set("HonuaProtocol", RequestTelemetryClassifier.ResolveProtocol(httpContext.Request.Path) ?? "unknown");
+        diagnosticContext.Set("HonuaOperation", RequestTelemetryClassifier.ResolveOperation(httpContext) ?? "unknown");
+
+        if (httpContext.Request.RouteValues.TryGetValue("serviceId", out var serviceId) && serviceId != null)
+        {
+            diagnosticContext.Set("ServiceId", serviceId.ToString()!);
+        }
+        else if (httpContext.Request.RouteValues.TryGetValue("id", out var id) && id != null)
+        {
+            diagnosticContext.Set("ServiceId", id.ToString()!);
+        }
+
+        if (httpContext.Request.RouteValues.TryGetValue("layerId", out var layerId) && layerId != null)
+        {
+            diagnosticContext.Set("LayerId", layerId.ToString()!);
+        }
+
+        if (httpContext.Request.RouteValues.TryGetValue("taskName", out var taskName) && taskName != null)
+        {
+            diagnosticContext.Set("TaskName", taskName.ToString()!);
+        }
+
+        if (httpContext.Request.RouteValues.TryGetValue("jobId", out var jobId) && jobId != null)
+        {
+            diagnosticContext.Set("JobId", jobId.ToString()!);
+        }
+
+        if (httpContext.Request.RouteValues.TryGetValue("paramName", out var paramName) && paramName != null)
+        {
+            diagnosticContext.Set("ParamName", paramName.ToString()!);
+        }
 
         if (httpContext.User.Identity?.IsAuthenticated == true)
         {
@@ -959,10 +990,11 @@ app.UseGlobalExceptionHandling();
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
-// Input validation disabled to fix integration tests
-
 // Add CORS middleware before auth to handle preflight requests
 app.UseHonuaCors(app.Environment);
+
+// Validate query, form, and selected header inputs before authentication and endpoint execution.
+app.UseInputValidation();
 
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();

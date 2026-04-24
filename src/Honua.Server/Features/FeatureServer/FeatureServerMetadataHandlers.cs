@@ -115,10 +115,12 @@ internal static partial class FeatureServerEndpoints
             FeatureServerLog.ServiceMetadataRequested(logger, service.Name);
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
             FeatureServerResponse response = MapServiceToResponse(
                 service,
                 limits,
-                supportsGeobufOutput: featureReader is IGeobufFeatureStore);
+                supportsGeobufOutput: featureReader is IGeobufFeatureStore,
+                supportsAttachmentUploads: supportsAttachmentUploads);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Name, response.Layers.Length);
 
@@ -230,13 +232,13 @@ internal static partial class FeatureServerEndpoints
             FeatureServerLog.LayerMetadataRequested(logger, serviceId, layer.Id);
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
             var timeInfo = await BuildTimeInfoAsync(layer, featureReader, cancellationToken).ConfigureAwait(false);
-            var styleService = context.RequestServices.GetService<ILayerStyleService>();
-            JsonElement? drawingInfo = null;
-            if (styleService != null)
-            {
-                drawingInfo = await styleService.GetDrawingInfoAsync(layer, cancellationToken).ConfigureAwait(false);
-            }
+            var drawingInfo = await LayerStyleMetadataResolver.TryGetDrawingInfoAsync(
+                context.RequestServices,
+                layer,
+                logger,
+                cancellationToken).ConfigureAwait(false);
 
             LayerResponse response = MapLayerToResponse(
                 service,
@@ -244,7 +246,8 @@ internal static partial class FeatureServerEndpoints
                 limits,
                 timeInfo,
                 drawingInfo,
-                supportsGeobufOutput: featureReader is IGeobufFeatureStore);
+                supportsGeobufOutput: featureReader is IGeobufFeatureStore,
+                supportsAttachmentUploads: supportsAttachmentUploads);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layer.Id, layer.Name);
 

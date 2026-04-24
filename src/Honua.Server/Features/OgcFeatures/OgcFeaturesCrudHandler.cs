@@ -10,7 +10,9 @@ using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -34,6 +36,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly IEditParameterAdapter<OgcFeaturesEditRequest> _editParameterAdapter = dependencies.EditParameterAdapter;
     private readonly IEditProcessor _editProcessor = dependencies.EditProcessor;
+    private readonly IQueryProcessor _queryProcessor = dependencies.QueryProcessor;
+    private readonly IETagService _etagService = dependencies.ETagService;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -110,6 +114,18 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return StandardErrorHelpers.CreateInternalServerError(context, "Created feature could not be reloaded.");
             }
 
+            var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+                _featureReader,
+                layerId,
+                layer,
+                createResult.ObjectId.Value,
+                inputCrs,
+                cancellationToken).ConfigureAwait(false);
+            if (!responseFeature.HasValue)
+            {
+                return StandardErrorHelpers.CreateInternalServerError(context, "Created feature response could not be projected.");
+            }
+
             await _mutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
             await TryPublishFeatureChangeAsync(
                 context,
@@ -117,16 +133,18 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 created.Value.Id,
                 "create",
                 created.Value).ConfigureAwait(false);
+            var featureIdString = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer);
             var createLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                 context.Request,
                 collectionId,
-                FormattableString.Invariant($"{created.Value.Id}"),
-                MediaTypes.GeoJson);
+                featureIdString,
+                MediaTypes.GeoJson,
+                inputCrs.Uri);
             context.Response.Headers["Content-Crs"] = $"<{inputCrs.Uri}>";
-            var featureIdString = FormattableString.Invariant($"{created.Value.Id}");
+            context.Response.Headers.ETag = OgcFeatureEntityTag.Compute(created.Value, _etagService);
             var locationUrl = OgcFeaturesUtilities.BuildFeatureSelfUrl(context.Request, collectionId, featureIdString);
             context.Response.Headers.Location = locationUrl;
-            var response = ToOgcFeature(created.Value, inputCrs.AxisOrder, createLinks);
+            var response = ToOgcFeature(responseFeature.Value, layer, inputCrs.AxisOrder, createLinks);
 
             HonuaTelemetry.SetSuccess(activity);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
@@ -137,11 +155,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
         catch (ResourceConflictException ex)
         {
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while creating the feature.");
         }
     }
@@ -172,10 +192,18 @@ internal sealed partial class OgcFeaturesCrudHandler(
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "delete");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
-            if (!long.TryParse(featureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
+                _featureReader,
+                _queryProcessor,
+                layer,
+                featureId,
+                cancellationToken).ConfigureAwait(false);
+            if (!resolvedFeature.HasValue)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
+
+            var objectId = resolvedFeature.Value.ObjectId;
 
             var editResult = await ExecuteEditAsync(
                 layerId,
@@ -211,18 +239,22 @@ internal sealed partial class OgcFeaturesCrudHandler(
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(_logger, collectionId, ex);
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while deleting the feature.");
         }
     }
 
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
+        LayerDefinition layer,
         AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
-    {
-        var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
-    }
+        => OgcGeoJsonFeatureBuilder.Create(
+            feature,
+            layer,
+            axisOrder,
+            _geometryServices,
+            links: links);
 
     private async Task TryPublishFeatureChangeAsync(
         HttpContext context,

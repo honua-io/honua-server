@@ -32,7 +32,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Upload_WithFileGdbArchive_ImportsFeaturesToTable()
+    public async Task Upload_WithMultiLayerFileGdbArchive_FailsWithClearLayerMessage()
     {
         // Arrange
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
@@ -61,8 +61,8 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("filegdb_import_test");
         responseContent.Should().Contain("FileGdb");
-        responseContent.Should().Contain("warnings");
-        responseContent.Should().Contain("\"success\":true");
+        responseContent.Should().Contain("\"success\":false");
+        responseContent.Should().Contain("multiple feature classes");
     }
 
     [IntegrationTest]
@@ -100,7 +100,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Upload_WithFileGdbArchive_OverwriteExisting_Succeeds()
+    public async Task Upload_WithMultiLayerFileGdbArchive_OverwriteExisting_DoesNotMergeFeatureClasses()
     {
         // Arrange
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
@@ -122,6 +122,9 @@ public sealed class FileGdbImportTests : IAsyncLifetime
 
         var response1 = await _client.PostAsync("/api/v1/admin/import/upload", content1);
         response1.BeSuccessful();
+        var responseContent1 = await response1.Content.ReadAsStringAsync();
+        responseContent1.Should().Contain("\"success\":false");
+        responseContent1.Should().Contain("multiple feature classes");
 
         // Second import with overwrite
         var content2 = new MultipartFormDataContent();
@@ -147,7 +150,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         var responseContent = await response2.Content.ReadAsStringAsync();
         responseContent.Should().Contain("filegdb_overwrite_test");
         responseContent.Should().Contain("FileGdb");
-        responseContent.Should().Contain("warnings");
-        responseContent.Should().Contain("\"success\":true");
+        responseContent.Should().Contain("\"success\":false");
+        responseContent.Should().Contain("multiple feature classes");
     }
 }

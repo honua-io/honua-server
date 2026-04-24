@@ -12,7 +12,6 @@ namespace Honua.Server.Features.Infrastructure.Rendering;
 internal static class CoordinateTransformer
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
-    private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
     private const double GeographicWorldWidth = 360.0;
     private const int ExtentSampleSegmentsPerEdge = 4;
     private static readonly double WebMercatorWorldHalfWidth = Math.PI * EarthRadius;
@@ -262,22 +261,13 @@ internal static class CoordinateTransformer
     /// Converts longitude/latitude (EPSG:4326) to Web Mercator (EPSG:3857).
     /// </summary>
     public static (double X, double Y) LonLatToWebMercator(double longitude, double latitude)
-    {
-        var clampedLat = Math.Clamp(latitude, -MaxLatitude, MaxLatitude);
-        var x = longitude * Math.PI / 180.0 * EarthRadius;
-        var y = Math.Log(Math.Tan((90.0 + clampedLat) * Math.PI / 360.0)) * EarthRadius;
-        return (x, y);
-    }
+        => WebMercatorMath.LonLatToWebMercator(longitude, latitude);
 
     /// <summary>
     /// Converts Web Mercator (EPSG:3857) to longitude/latitude (EPSG:4326).
     /// </summary>
     public static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
-    {
-        var lon = x / EarthRadius * 180.0 / Math.PI;
-        var lat = Math.Atan(Math.Exp(y / EarthRadius)) * 360.0 / Math.PI - 90.0;
-        return (lon, lat);
-    }
+        => WebMercatorMath.WebMercatorToLonLat(x, y);
 
     /// <summary>
     /// Adjusts an extent to match a requested scale denominator, keeping the center point fixed.

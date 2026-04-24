@@ -90,6 +90,144 @@ public sealed class CreateReplicaResponse
 }
 
 /// <summary>
+/// Summary metadata returned by the replicas resource.
+/// </summary>
+public sealed class ReplicaSummary
+{
+    /// <summary>
+    /// Name of the replica.
+    /// </summary>
+    [JsonPropertyName("replicaName")]
+    public string? ReplicaName { get; set; }
+
+    /// <summary>
+    /// Unique identifier for the replica.
+    /// </summary>
+    [JsonPropertyName("replicaID")]
+    public string? ReplicaId { get; set; }
+
+    /// <summary>
+    /// Timestamp of the last successful synchronization, in Unix milliseconds.
+    /// </summary>
+    [JsonPropertyName("lastSyncDate")]
+    public long? LastSyncDate { get; set; }
+}
+
+/// <summary>
+/// Detailed metadata returned by the replica info resource.
+/// </summary>
+public sealed class ReplicaInfoResponse
+{
+    /// <summary>
+    /// Name of the replica.
+    /// </summary>
+    [JsonPropertyName("replicaName")]
+    public string? ReplicaName { get; set; }
+
+    /// <summary>
+    /// Unique identifier for the replica.
+    /// </summary>
+    [JsonPropertyName("replicaID")]
+    public string? ReplicaId { get; set; }
+
+    /// <summary>
+    /// Synchronization model used by the replica.
+    /// </summary>
+    [JsonPropertyName("syncModel")]
+    public string? SyncModel { get; set; }
+
+    /// <summary>
+    /// Replica-wide server generation for per-replica sync models.
+    /// </summary>
+    [JsonPropertyName("replicaServerGen")]
+    public long? ReplicaServerGen { get; set; }
+
+    /// <summary>
+    /// Layer generation metadata encoded using the ArcGIS replicas resource shape.
+    /// </summary>
+    [JsonPropertyName("layerServerGens")]
+    public string? LayerServerGens { get; set; }
+
+    /// <summary>
+    /// Timestamp when the replica was created, in Unix milliseconds.
+    /// </summary>
+    [JsonPropertyName("creationDate")]
+    public long CreationDate { get; set; }
+
+    /// <summary>
+    /// Timestamp of the last successful synchronization, in Unix milliseconds.
+    /// </summary>
+    [JsonPropertyName("lastSyncDate")]
+    public long LastSyncDate { get; set; }
+
+    /// <summary>
+    /// Layers included in the replica definition.
+    /// </summary>
+    [JsonPropertyName("layers")]
+    public ReplicaInfoLayer[]? Layers { get; set; }
+}
+
+/// <summary>
+/// Layer metadata returned in the replica info resource.
+/// </summary>
+public sealed class ReplicaInfoLayer
+{
+    /// <summary>
+    /// Layer identifier.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>
+    /// Replica query option applied to the layer.
+    /// </summary>
+    [JsonPropertyName("queryOption")]
+    public string QueryOption { get; set; } = "all";
+
+    /// <summary>
+    /// Indicates whether the replica uses the layer geometry.
+    /// </summary>
+    [JsonPropertyName("useGeometry")]
+    public bool UseGeometry { get; set; } = true;
+
+    /// <summary>
+    /// Indicates whether related records are included for the layer.
+    /// </summary>
+    [JsonPropertyName("includeRelated")]
+    public bool IncludeRelated { get; set; }
+
+    /// <summary>
+    /// Definition query associated with the layer replica entry.
+    /// </summary>
+    [JsonPropertyName("where")]
+    public string Where { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Layer generation metadata encoded into the replica info response.
+/// </summary>
+public sealed class ReplicaInfoLayerServerGeneration
+{
+    /// <summary>
+    /// Layer identifier.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    /// <summary>
+    /// Current server generation recorded for the layer.
+    /// </summary>
+    [JsonPropertyName("serverGen")]
+    public long ServerGen { get; set; }
+
+    /// <summary>
+    /// Current sibling generation recorded for the layer.
+    /// </summary>
+    [JsonPropertyName("serverSibGen")]
+    public long ServerSibGen { get; set; }
+}
+
+/// <summary>
 /// Layer information within a replica.
 /// </summary>
 public sealed class ReplicaLayerInfo

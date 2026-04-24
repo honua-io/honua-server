@@ -12,6 +12,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Geoprocessing.GPServer;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -34,6 +35,7 @@ public sealed class GeoprocessingJobServiceTests
     private readonly IJobCancellationNotifier _cancellationNotifier = Substitute.For<IJobCancellationNotifier>();
     private readonly IOperatorAuthorizationEvaluator _authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
     private readonly IOperatorApprovalEvaluator _approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+    private readonly IGeoprocessingResultPackageStore _resultPackageStore = Substitute.For<IGeoprocessingResultPackageStore>();
     private readonly GeoprocessingJobService _sut;
 
     public GeoprocessingJobServiceTests()
@@ -51,7 +53,8 @@ public sealed class GeoprocessingJobServiceTests
             _authEvaluator, _approvalEvaluator,
             new BuiltInProcessCatalog(),
             NullLogger<GeoprocessingJobService>.Instance,
-            _jobStore, _jobQueue);
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore);
     }
 
     // -----------------------------------------------------------------------
@@ -138,9 +141,11 @@ public sealed class GeoprocessingJobServiceTests
         var plan = CreateValidPlan();
         var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
-        job.Spec.Parameters.Should().ContainSingle();
+        job.Spec.Parameters.Should().HaveCount(2);
         job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingPlanId)
             .WhoseValue.Should().Be("plan-1");
+        job.Spec.Parameters.Should().ContainKey(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions)
+            .WhoseValue.Should().Be("geometry.buffer");
     }
 
     [UnitTest]
@@ -408,6 +413,109 @@ public sealed class GeoprocessingJobServiceTests
         var act = async () => await _sut.GetJobAsync("", CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
+    public async Task GetJobResults_WithStoredResultPackage_ReturnsStoredPackage()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
+        {
+            Version = 7
+        };
+        var package = AnalysisResultPackage.CreateCompleted(
+            GeoprocessingResultPackageFactory.CreateResultPackageId(record),
+            new ResultSummary { Title = "Stored result" },
+            [],
+            [],
+            new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["geometry.buffer"]
+            });
+
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(package);
+
+        var result = await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        result.Should().BeSameAs(package);
+        await _resultPackageStore.DidNotReceive().SetAsync(
+            Arg.Any<string>(),
+            Arg.Any<AnalysisResultPackage>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
+    public async Task GetJobResults_WithSucceededTerminalJob_SynthesizesAndPersistsPackage()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
+        {
+            Version = 4,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ArtifactReferences = ["https://example.test/artifacts/output.geojson"],
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = LocalBatchComputeBackend.BackendId,
+                WorkloadName = "test-workload",
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.GeoprocessingPlanId] = "plan-1",
+                    [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer",
+                    [ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds] = "FeatureLayer",
+                    [$"{GeoprocessingProtocolMetadataKeys.GPServerOutputNamePrefix}0"] = "outputFeatureLayer"
+                }
+            }
+        };
+
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns((AnalysisResultPackage?)null);
+
+        var result = await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        result.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        result.ResultPackageId.Should().Be("job-1:v4");
+        result.Artifacts.Should().ContainSingle();
+        result.Artifacts[0].Kind.Should().Be(ArtifactKind.FeatureLayer);
+        result.Artifacts[0].Uri.Should().Be("https://example.test/artifacts/output.geojson");
+        result.Artifacts[0].Metadata.Should().ContainKey(GPServerParameterTranslation.OutputParameterMetadataKey)
+            .WhoseValue.Should().Be("outputFeatureLayer");
+        await _resultPackageStore.Received(1).SetAsync(
+            "job-1",
+            Arg.Is<AnalysisResultPackage>(package =>
+                package.ResultPackageId == "job-1:v4" &&
+                package.Artifacts.Count == 1),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResults")]
+    public async Task GetJobResults_WithCancelledTerminalJob_SynthesizesCancelledPackage()
+    {
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Cancelled) with
+        {
+            Version = 3,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ErrorMessage = "Cancelled by operator."
+        };
+
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns((AnalysisResultPackage?)null);
+
+        var result = await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        result.Status.Should().Be(GeoprocessingWorkflowStatus.Cancelled);
+        result.Errors.Should().ContainSingle(error => error.Kind == GeoprocessingErrorKind.Cancelled);
     }
 
     // -----------------------------------------------------------------------

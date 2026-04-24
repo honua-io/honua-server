@@ -73,8 +73,25 @@ public sealed class ArchiveExtractionSafetyTests
         exception.Message.Should().Contain("maximum total uncompressed size");
     }
 
+    [Fact]
+    public async Task PreviewFileAsync_ShapefileZip_DoesNotPairComponentsAcrossDirectories()
+    {
+        await using var stream = CreateZipArchive(
+            ("alpha/roads.shp", CreatePatternBytes(128)),
+            ("beta/roads.dbf", CreatePatternBytes(128)));
+        var service = CreateService();
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => service.PreviewFileAsync(stream, "mixed.zip"));
+
+        exception.Message.Should().Contain("required .shp and .dbf");
+    }
+
     private static IFileImportService CreateService(ImportLimits limits) =>
         PreviewImportServiceFactory.Create(limits);
+
+    private static IFileImportService CreateService() =>
+        PreviewImportServiceFactory.Create();
 
     private static MemoryStream CreateZipArchive(params (string Name, byte[] Content)[] entries)
     {

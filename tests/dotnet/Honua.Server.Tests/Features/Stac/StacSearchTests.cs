@@ -82,6 +82,54 @@ public sealed class StacSearchTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithStringIds_FiltersByStacItemId()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var itemId = $"stac-search-get-{Guid.NewGuid():N}";
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC Search GET String ID");
+        await SetFeatureAttributeAsync(featureId, "id", itemId);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={Uri.EscapeDataString(itemId)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray()
+            .Should().ContainSingle(feature => feature.GetProperty("id").GetString() == itemId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("POST /stac/search")]
+    public async Task SearchPost_WithStringIds_FiltersByStacItemId()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var itemId = $"stac-search-post-{Guid.NewGuid():N}";
+        var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "STAC Search POST String ID");
+        await SetFeatureAttributeAsync(featureId, "stac_id", itemId);
+        var body = JsonSerializer.Serialize(new
+        {
+            collections = new[] { collectionId },
+            ids = new[] { itemId }
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            "/stac/search",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray()
+            .Should().ContainSingle(feature => feature.GetProperty("id").GetString() == itemId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
     public async Task SearchGet_WithUnsupportedExplicitGeometryCrsInFilter_ReturnsBadRequest()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
@@ -318,5 +366,20 @@ public sealed class StacSearchTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         return (reader.GetDouble(0), reader.GetDouble(1));
+    }
+
+    private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE features
+            SET attributes = attributes || jsonb_build_object(@attributeName, @attributeValue)
+            WHERE objectid = @featureId;
+            """;
+        command.Parameters.AddWithValue("attributeName", attributeName);
+        command.Parameters.AddWithValue("attributeValue", attributeValue);
+        command.Parameters.AddWithValue("featureId", featureId);
+        await command.ExecuteNonQueryAsync();
     }
 }

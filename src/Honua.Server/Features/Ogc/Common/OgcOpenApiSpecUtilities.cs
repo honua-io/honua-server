@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.Ogc.Common;
@@ -13,6 +15,16 @@ namespace Honua.Server.Features.Ogc.Common;
 internal static class OgcOpenApiSpecUtilities
 {
     private const int MaxCacheEntries = 50;
+    private static readonly IReadOnlyDictionary<string, string> _openApiFormatParameters =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["json"] = MediaTypes.OpenApi
+        };
+    private static readonly string[] _openApiSupportedMediaTypes =
+    [
+        MediaTypes.OpenApi,
+        MediaTypes.Json
+    ];
 
     private static readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _openApiCache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -32,15 +44,16 @@ internal static class OgcOpenApiSpecUtilities
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!string.IsNullOrWhiteSpace(formatParameter) &&
-            !string.Equals(formatParameter, "json", StringComparison.OrdinalIgnoreCase))
+        if (!OgcCommonUtilities.TryGetOutputFormat(
+                formatParameter,
+                context,
+                _openApiFormatParameters,
+                _openApiSupportedMediaTypes,
+                MediaTypes.OpenApi,
+                out _,
+                out var formatError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, $"Unsupported format '{formatParameter}'");
-        }
-
-        if (!IsOpenApiAcceptable(request))
-        {
-            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested format is not acceptable.");
+            return OgcCommonUtilities.CreateFormatError(context, formatError);
         }
 
         string? openApiContent = null;
@@ -50,24 +63,11 @@ internal static class OgcOpenApiSpecUtilities
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            openApiContent = null;
+            HonuaTelemetry.RecordException(Activity.Current, ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while loading the OpenAPI document.");
         }
 
         return Results.Content(string.IsNullOrWhiteSpace(openApiContent) ? fallbackSpec : openApiContent, MediaTypes.OpenApi);
-    }
-
-    private static bool IsOpenApiAcceptable(HttpRequest request)
-    {
-        var acceptHeader = request.Headers.Accept.ToString();
-        if (string.IsNullOrWhiteSpace(acceptHeader))
-        {
-            return true;
-        }
-
-        return acceptHeader.Contains("*/*", StringComparison.OrdinalIgnoreCase) ||
-               acceptHeader.Contains("application/vnd.oai.openapi+json", StringComparison.OrdinalIgnoreCase) ||
-               acceptHeader.Contains("application/json", StringComparison.OrdinalIgnoreCase) ||
-               acceptHeader.Contains("+json", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Task<string?> GetOpenApiContentAsync(string contentRootPath, string openApiFileName)

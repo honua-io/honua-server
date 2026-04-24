@@ -59,6 +59,8 @@ internal static class ODataServiceCollectionExtensions
                 limitsOptions.Edits,
                 sp.GetRequiredService<ODataValidationService>(),
                 sp.GetRequiredService<IETagService>(),
+                sp.GetRequiredService<IEditParameterAdapter<ODataEditRequest>>(),
+                sp.GetRequiredService<IEditProcessor>(),
                 sp.GetRequiredService<FeatureMutationEventService>());
         });
 

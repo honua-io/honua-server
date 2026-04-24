@@ -155,6 +155,63 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_DatetimeRequested_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "-180,-90,180,90",
+            F = "png",
+            Datetime = "2024-01-01T00:00:00Z"
+        };
+
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_TransparentRequested_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "-180,-90,180,90",
+            F = "png",
+            Transparent = false
+        };
+
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_BackgroundColorRequested_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "-180,-90,180,90",
+            F = "png",
+            BackgroundColor = "0xFF0000"
+        };
+
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_DimensionsExceedMax_ReturnsBadRequest()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -741,6 +798,88 @@ public class OgcMapsRenderingHandlerTests
         capturedRequest.Value.BoundingBoxCrs.Should().Be(4326);
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_WithoutBbox_TransformsMixedSridExtents()
+    {
+        MapRenderRequest? capturedRequest = null;
+        var mercatorExtent = CreateWebMercatorExtent(20d, -5d, 30d, 5d);
+
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(1, -180d, -90d, -10d, 10d));
+        _layerCatalog.GetLayerAsync(2, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(
+                2,
+                mercatorExtent.MinX,
+                mercatorExtent.MinY,
+                mercatorExtent.MaxX,
+                mercatorExtent.MaxY,
+                spatialReference: 3857));
+        _mapRenderer.RenderDatasetMapAsync(
+                Arg.Any<int[]>(),
+                Arg.Do<MapRenderRequest>(request => capturedRequest = request),
+                Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [0x89, 0x50],
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var result = await _handler.RenderDatasetMapAsync([1, 2], new OgcMapRequest
+        {
+            Width = 256,
+            Height = 256,
+            F = "png"
+        });
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest.Value.BoundingBoxCrs.Should().Be(4326);
+        capturedRequest.Value.BoundingBox[0].Should().BeApproximately(-180d, 0.0001d);
+        capturedRequest.Value.BoundingBox[1].Should().BeApproximately(-90d, 0.0001d);
+        capturedRequest.Value.BoundingBox[2].Should().BeApproximately(30d, 0.05d);
+        capturedRequest.Value.BoundingBox[3].Should().BeApproximately(10d, 0.05d);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_WithoutBbox_UnsupportedMixedSridExtentReturnsServerError()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(1, -180d, -90d, 180d, 90d));
+        _layerCatalog.GetLayerAsync(2, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(2, -123d, 37d, -122d, 38d, spatialReference: 4269));
+
+        var result = await _handler.RenderDatasetMapAsync([1, 2], new OgcMapRequest
+        {
+            Width = 256,
+            Height = 256,
+            F = "png"
+        });
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        await _mapRenderer.DidNotReceive().RenderDatasetMapAsync(
+            Arg.Any<int[]>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public void ResolveOutputFormat_WithOnlyZeroQualityAcceptedMediaTypes_ReturnsNull()
+    {
+        var context = CreateAuthenticatedOgcMapsContext();
+        context.Request.Headers.Accept = "image/png;q=0, image/*;q=0";
+
+        var result = OgcMapsRenderingHandler.ResolveOutputFormat(null, context);
+
+        result.Should().BeNull();
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
@@ -804,6 +943,8 @@ public class OgcMapsRenderingHandlerTests
             Metadata = new CatalogMetadata
             {
                 EnabledProtocols = ServiceProtocols.All
+                    .Where(protocol => !string.Equals(protocol, OgcApiMapsProtocol, StringComparison.Ordinal))
+                    .ToArray()
             }
         };
 
@@ -837,6 +978,18 @@ public class OgcMapsRenderingHandlerTests
                 SpatialReference = spatialReference
             }
         };
+
+    private static FeatureExtent CreateWebMercatorExtent(double minLon, double minLat, double maxLon, double maxLat)
+    {
+        static double ToX(double lon) => lon * 20037508.34d / 180d;
+        static double ToY(double lat)
+        {
+            var radians = lat * Math.PI / 180d;
+            return Math.Log(Math.Tan(Math.PI / 4d + radians / 2d)) * 6378137d;
+        }
+
+        return FeatureExtent.Create(ToX(minLon), ToY(minLat), ToX(maxLon), ToY(maxLat), 3857);
+    }
 
     private static DefaultHttpContext CreateAnonymousOgcMapsContext()
     {

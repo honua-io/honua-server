@@ -134,7 +134,7 @@ public class OgcMapsConformanceTests : IAsyncLifetime
         var classes = await GetConformanceClassesAsync();
 
         classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
-            "styled map rendering is not currently implemented");
+            "the full styled-map conformance class is not claimed by this service");
     }
 
     [IntegrationTest]
@@ -161,8 +161,10 @@ public class OgcMapsConformanceTests : IAsyncLifetime
 
         classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/crs",
             "must declare CRS conformance");
-        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox",
-            "must declare bbox conformance (narrower than spatial-subsetting, which would also require the `subset` dimension parameter)");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/bbox",
+            "OGC API Maps does not define a bbox conformance class");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/spatial-subsetting",
+            "the generic subset dimension parameter is not implemented");
     }
 
     [IntegrationTest]

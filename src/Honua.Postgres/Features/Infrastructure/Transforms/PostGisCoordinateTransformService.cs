@@ -78,8 +78,6 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
     private static bool IsWgs84Srid(int srid)
         => srid == 4326;
 
-    private const double EarthRadius = SpatialConstants.EarthRadius;
-    private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
     private const int ExtentSampleSegmentsPerEdge = 4;
 
     private static bool TryTransformExtentInMemory(
@@ -125,73 +123,43 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
     }
 
     private static (double X, double Y) LonLatToWebMercator(double longitude, double latitude)
-    {
-        var clampedLat = Math.Clamp(latitude, -MaxLatitude, MaxLatitude);
-        var x = longitude * Math.PI / 180.0 * EarthRadius;
-        var y = Math.Log(Math.Tan((90.0 + clampedLat) * Math.PI / 360.0)) * EarthRadius;
-        return (x, y);
-    }
+        => WebMercatorMath.LonLatToWebMercator(longitude, latitude);
 
     private static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
-    {
-        var lon = x / EarthRadius * 180.0 / Math.PI;
-        var lat = Math.Atan(Math.Exp(y / EarthRadius)) * 360.0 / Math.PI - 90.0;
-        return (lon, lat);
-    }
+        => WebMercatorMath.WebMercatorToLonLat(x, y);
 
     private static (double MinX, double MinY, double MaxX, double MaxY) TransformSampledExtent(
         double minX, double minY, double maxX, double maxY,
         Func<double, double, (double X, double Y)> transform)
     {
-        var transformedMinX = double.PositiveInfinity;
-        var transformedMinY = double.PositiveInfinity;
-        var transformedMaxX = double.NegativeInfinity;
-        var transformedMaxY = double.NegativeInfinity;
-
-        foreach (var (x, y) in EnumerateSampledExtentPoints(minX, minY, maxX, maxY))
-        {
-            var (tx, ty) = transform(x, y);
-            transformedMinX = Math.Min(transformedMinX, tx);
-            transformedMinY = Math.Min(transformedMinY, ty);
-            transformedMaxX = Math.Max(transformedMaxX, tx);
-            transformedMaxY = Math.Max(transformedMaxY, ty);
-        }
-
-        return (transformedMinX, transformedMinY, transformedMaxX, transformedMaxY);
+        return WebMercatorMath.TransformSampledExtent(
+            minX,
+            minY,
+            maxX,
+            maxY,
+            transform,
+            ExtentSampleSegmentsPerEdge);
     }
 
     private static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(
         double minX, double minY, double maxX, double maxY)
     {
-        for (var i = 0; i <= ExtentSampleSegmentsPerEdge; i++)
+        foreach (var point in WebMercatorMath.EnumerateSampledExtentPoints(
+                     minX,
+                     minY,
+                     maxX,
+                     maxY,
+                     ExtentSampleSegmentsPerEdge))
         {
-            var t = (double)i / ExtentSampleSegmentsPerEdge;
-            var x = InterpolateLongitude(minX, maxX, t);
-            var y = minY + ((maxY - minY) * t);
-
-            yield return (x, minY);
-            yield return (x, maxY);
-            yield return (minX, y);
-            yield return (maxX, y);
+            yield return point;
         }
-
-        yield return (InterpolateLongitude(minX, maxX, 0.5), (minY + maxY) / 2.0);
     }
 
     private static double InterpolateLongitude(double minX, double maxX, double t)
-    {
-        if (!IsAntimeridianCrossing(minX, maxX))
-        {
-            return minX + ((maxX - minX) * t);
-        }
-
-        var wrappedMaxX = maxX + 360.0;
-        var value = minX + ((wrappedMaxX - minX) * t);
-        return value > 180.0 ? value - 360.0 : value;
-    }
+        => WebMercatorMath.InterpolateLongitude(minX, maxX, t);
 
     private static bool IsAntimeridianCrossing(double minX, double maxX)
-        => minX > maxX && minX >= -180.0 && minX <= 180.0 && maxX >= -180.0 && maxX <= 180.0;
+        => WebMercatorMath.IsAntimeridianCrossing(minX, maxX);
 
     private static string BuildLongitudeSampleExpression(string minX, string maxX, string t)
     {

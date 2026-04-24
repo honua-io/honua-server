@@ -144,6 +144,16 @@ public sealed class CachingReplicaStoreTests
             return Task.FromResult<ReplicaRecord?>(record);
         }
 
+        public Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
+        {
+            var records = _records.Values
+                .Where(record => string.Equals(record.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(record => record.CreatedAt)
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyList<ReplicaRecord>>(records);
+        }
+
         public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
         {
             RemoveCalls++;

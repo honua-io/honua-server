@@ -113,6 +113,8 @@ public static class Operations
     public const string DownloadAttachment = "DownloadAttachment";
 
     // Replication Operations
+    public const string ListReplicas = "ListReplicas";
+    public const string ReplicaInfo = "ReplicaInfo";
     public const string CreateReplica = "CreateReplica";
     public const string ExtractChanges = "ExtractChanges";
     public const string SynchronizeReplica = "SynchronizeReplica";

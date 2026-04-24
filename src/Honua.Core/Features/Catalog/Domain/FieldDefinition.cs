@@ -12,13 +12,15 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="Nullable">Whether the field accepts null values</param>
 /// <param name="DefaultValue">Default value for the field (optional)</param>
 /// <param name="Description">Human-readable description of the field (optional)</param>
+/// <param name="Domain">Optional schema-defined domain for the field.</param>
 public record FieldDefinition(
     string Name,
     FieldType Type,
     int? Length = null,
     bool Nullable = true,
     object? DefaultValue = null,
-    string? Description = null)
+    string? Description = null,
+    FieldDomainDefinition? Domain = null)
 {
     /// <summary>
     /// Display name for the field (uses Name if not specified)

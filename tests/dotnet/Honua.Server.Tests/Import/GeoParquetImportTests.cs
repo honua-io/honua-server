@@ -100,7 +100,8 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("geoparquet_reject_test");
         responseContent.Should().Contain("\"success\":false");
-        responseContent.Should().Contain("Only WKB encoding is supported");
+        responseContent.Should().Contain("native geometry encodings");
+        responseContent.Should().Contain("WKB");
     }
 
     [IntegrationTest]

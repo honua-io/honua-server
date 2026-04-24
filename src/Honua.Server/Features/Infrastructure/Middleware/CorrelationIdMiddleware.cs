@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Primitives;
 using Serilog.Context;
 using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
@@ -94,13 +95,13 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
             return;
         }
 
-        var protocol = ResolveProtocol(context.Request.Path);
+        var protocol = RequestTelemetryClassifier.ResolveProtocol(context.Request.Path);
         if (!string.IsNullOrWhiteSpace(protocol))
         {
             activity.SetTag(HonuaTelemetry.Tags.Protocol, protocol);
         }
 
-        var operation = ResolveOperation(context);
+        var operation = RequestTelemetryClassifier.ResolveOperation(context);
         if (!string.IsNullOrWhiteSpace(operation))
         {
             activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
@@ -110,266 +111,69 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         var routeValues = context.Request.RouteValues;
 
         // Service ID from route
-        if (routeValues.TryGetValue("serviceId", out var serviceId) && serviceId != null)
+        if (TryGetRouteValue(routeValues, out var serviceId, "serviceId", "id"))
         {
-            activity.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         }
 
         // Layer ID from route
-        if (routeValues.TryGetValue("layerId", out var layerId) && layerId != null)
+        if (TryGetRouteValue(routeValues, out var layerId, "layerId"))
         {
-            activity.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         }
 
         // Collection ID for OGC API Features
-        if (routeValues.TryGetValue("collectionId", out var collectionId) && collectionId != null)
+        if (TryGetRouteValue(routeValues, out var collectionId, "collectionId"))
         {
-            activity.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
+        }
+
+        if (TryGetRouteValue(routeValues, out var taskName, "taskName"))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.TaskName, taskName);
+        }
+
+        if (TryGetRouteValue(routeValues, out var jobId, "jobId"))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.JobId, jobId);
+        }
+
+        if (TryGetRouteValue(routeValues, out var parameterName, "paramName"))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.ParameterName, parameterName);
         }
 
         // Tile coordinates for MVT tile requests
-        if (routeValues.TryGetValue("z", out var z) && z != null)
+        if (TryGetRouteValue(routeValues, out var z, "z", "level"))
         {
-            activity.SetTag(HonuaTelemetry.Tags.TileZ, z.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.TileZ, z);
         }
-        if (routeValues.TryGetValue("x", out var x) && x != null)
+        if (TryGetRouteValue(routeValues, out var x, "x", "col"))
         {
-            activity.SetTag(HonuaTelemetry.Tags.TileX, x.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.TileX, x);
         }
-        if (routeValues.TryGetValue("y", out var y) && y != null)
+        if (TryGetRouteValue(routeValues, out var y, "y", "row"))
         {
-            activity.SetTag(HonuaTelemetry.Tags.TileY, y.ToString());
+            activity.SetTag(HonuaTelemetry.Tags.TileY, y);
         }
     }
 
-    private static string? ResolveProtocol(PathString path)
+    private static bool TryGetRouteValue(
+        RouteValueDictionary routeValues,
+        out string? value,
+        params string[] keys)
     {
-        var value = path.Value ?? string.Empty;
-
-        if (value.StartsWith("/ogc/tiles", StringComparison.OrdinalIgnoreCase))
+        foreach (var key in keys)
         {
-            return HonuaTelemetry.Protocols.OgcTiles;
-        }
-
-        if (value.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase) ||
-            value.StartsWith("/tiles", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.FeatureServer;
-        }
-
-        if (value.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase) ||
-            value.StartsWith("/collections", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.OgcFeatures;
-        }
-
-        if (value.StartsWith("/odata", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.OData;
-        }
-
-        if (value.StartsWith("/import", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.Import;
-        }
-
-        if (value.Contains("/admin", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.Admin;
-        }
-
-        if (value.StartsWith("/health", StringComparison.OrdinalIgnoreCase) ||
-            value.StartsWith("/alive", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.Health;
-        }
-
-        if (value.Contains("/metrics", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.Monitoring;
-        }
-
-        if (value.Contains("/streaming", StringComparison.OrdinalIgnoreCase))
-        {
-            return HonuaTelemetry.Protocols.Streaming;
-        }
-
-        return null;
-    }
-
-    private static string? ResolveOperation(HttpContext context)
-    {
-        var path = context.Request.Path.Value ?? string.Empty;
-        var method = context.Request.Method;
-
-        if (path.Contains("/FeatureServer", StringComparison.OrdinalIgnoreCase))
-        {
-            if (path.Contains("/queryRelatedRecords", StringComparison.OrdinalIgnoreCase))
+            if (routeValues.TryGetValue(key, out var routeValue) && routeValue != null)
             {
-                return "related";
-            }
-
-            if (path.Contains("/applyEdits", StringComparison.OrdinalIgnoreCase))
-            {
-                return "edit";
-            }
-
-            if (path.Contains("/generateRenderer", StringComparison.OrdinalIgnoreCase))
-            {
-                return "renderer";
-            }
-
-            if (path.Contains("/query", StringComparison.OrdinalIgnoreCase))
-            {
-                return "query";
-            }
-
-            if (path.Contains("/queryTopFeatures", StringComparison.OrdinalIgnoreCase))
-            {
-                return "queryTopFeatures";
-            }
-
-            if (path.Contains("/queryBins", StringComparison.OrdinalIgnoreCase))
-            {
-                return "queryBins";
-            }
-
-            if (path.Contains("/getEstimates", StringComparison.OrdinalIgnoreCase))
-            {
-                return "getEstimates";
-            }
-
-            if (path.Contains("/queryH3", StringComparison.OrdinalIgnoreCase))
-            {
-                return "queryH3";
-            }
-
-            return "metadata";
-        }
-
-        if (path.StartsWith("/tiles", StringComparison.OrdinalIgnoreCase))
-        {
-            return "tile";
-        }
-
-        if (path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase))
-        {
-            if (string.Equals(path, "/odata", StringComparison.OrdinalIgnoreCase))
-            {
-                return "service_document";
-            }
-
-            if (path.EndsWith("/$metadata", StringComparison.OrdinalIgnoreCase))
-            {
-                return "metadata";
-            }
-
-            if (path.Contains("/$batch", StringComparison.OrdinalIgnoreCase))
-            {
-                return "batch";
-            }
-
-            if (path.Contains("/$apply", StringComparison.OrdinalIgnoreCase))
-            {
-                return "aggregate";
-            }
-
-            if (path.Contains("/$search", StringComparison.OrdinalIgnoreCase))
-            {
-                return "search";
-            }
-
-            if (path.Contains("/Layers", StringComparison.OrdinalIgnoreCase))
-            {
-                return "layers";
-            }
-
-            if (path.Contains("/Features", StringComparison.OrdinalIgnoreCase))
-            {
-                return method.ToUpperInvariant() switch
-                {
-                    "POST" => "create",
-                    "PATCH" => "update",
-                    "PUT" => "update",
-                    "DELETE" => "delete",
-                    _ => "query"
-                };
+                value = routeValue.ToString();
+                return !string.IsNullOrWhiteSpace(value);
             }
         }
 
-        if (path.StartsWith("/ogc/features", StringComparison.OrdinalIgnoreCase))
-        {
-            if (path.EndsWith("/conformance", StringComparison.OrdinalIgnoreCase))
-            {
-                return "conformance";
-            }
-
-            if (string.Equals(path, "/ogc/features", StringComparison.OrdinalIgnoreCase))
-            {
-                return "landing";
-            }
-
-            if (path.EndsWith("/collections", StringComparison.OrdinalIgnoreCase))
-            {
-                return "collections";
-            }
-
-            if (path.Contains("/queryables", StringComparison.OrdinalIgnoreCase))
-            {
-                return "queryables";
-            }
-
-            if (path.Contains("/items/batch", StringComparison.OrdinalIgnoreCase))
-            {
-                return "batch";
-            }
-
-            if (path.Contains("/items/", StringComparison.OrdinalIgnoreCase))
-            {
-                return method.Equals("GET", StringComparison.OrdinalIgnoreCase)
-                    ? "feature"
-                    : method.ToUpperInvariant() switch
-                    {
-                        "POST" => "create",
-                        "PUT" => "update",
-                        "PATCH" => "update",
-                        "DELETE" => "delete",
-                        _ => "feature"
-                    };
-            }
-
-            if (path.Contains("/items", StringComparison.OrdinalIgnoreCase))
-            {
-                return method.Equals("GET", StringComparison.OrdinalIgnoreCase)
-                    ? "query"
-                    : method.ToUpperInvariant() switch
-                    {
-                        "POST" => "create",
-                        "PUT" => "update",
-                        "PATCH" => "update",
-                        "DELETE" => "delete",
-                        _ => "query"
-                    };
-            }
-        }
-
-        if (path.StartsWith("/ogc/tiles", StringComparison.OrdinalIgnoreCase))
-        {
-            return "tiles";
-        }
-
-        if (path.Contains("/streaming", StringComparison.OrdinalIgnoreCase) &&
-            !path.Contains("/metrics", StringComparison.OrdinalIgnoreCase))
-        {
-            if (path.Contains("/sessions", StringComparison.OrdinalIgnoreCase))
-            {
-                return "sessions";
-            }
-
-            return "stream";
-        }
-
-        return null;
+        value = null;
+        return false;
     }
 
     /// <summary>

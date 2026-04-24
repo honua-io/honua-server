@@ -46,6 +46,7 @@ internal static partial class MapServerEndpoints
             values,
             context,
             queryValidator,
+            ServiceProtocols.MapServer,
             cancellationToken);
     }
 
@@ -76,6 +77,11 @@ internal static partial class MapServerEndpoints
         var (values, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [readError ?? "Invalid request body."]);
@@ -105,6 +111,7 @@ internal static partial class MapServerEndpoints
             mergedValues,
             context,
             queryValidator,
+            ServiceProtocols.MapServer,
             cancellationToken);
     }
 
@@ -148,6 +155,7 @@ internal static partial class MapServerEndpoints
             values,
             context,
             queryValidator,
+            ServiceProtocols.MapServer,
             cancellationToken);
     }
 
@@ -178,6 +186,11 @@ internal static partial class MapServerEndpoints
         var (bodyValues, readError) = await FeatureServerEndpoints.TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues == null)
         {
+            if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [readError ?? "Invalid request body."]);
@@ -214,6 +227,7 @@ internal static partial class MapServerEndpoints
             mergedValues,
             context,
             queryValidator,
+            ServiceProtocols.MapServer,
             cancellationToken);
     }
 
@@ -273,8 +287,9 @@ internal static partial class MapServerEndpoints
 
     private static async Task<IResult?> TryValidateMapServerServiceAsync(string serviceId, HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
         if (!serviceResult.IsValid)
         {
             var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -287,6 +302,12 @@ internal static partial class MapServerEndpoints
         }
 
         var service = serviceResult.Resource!;
-        return ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
+        if (protocolError != null)
+        {
+            return protocolError;
+        }
+
+        return null;
     }
 }

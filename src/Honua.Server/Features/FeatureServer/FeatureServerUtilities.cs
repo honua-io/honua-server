@@ -2,13 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
@@ -21,6 +24,37 @@ namespace Honua.Server.Features.FeatureServer;
 /// </summary>
 internal static partial class FeatureServerEndpoints
 {
+    private static readonly string[] _queryAcceptMediaTypes =
+    [
+        "application/json",
+        "text/json",
+        "application/geo+json",
+        "application/x-protobuf",
+        "application/vnd.google.protobuf",
+        "application/vnd.flatgeobuf",
+        "application/x-flatgeobuf",
+        "application/flatgeobuf",
+        "application/geobuf",
+        "application/vnd.apache.parquet",
+        "application/vnd.apache.arrow.stream"
+    ];
+
+    private static readonly Dictionary<string, string> _queryAcceptFormatByMediaType =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["application/json"] = "json",
+            ["text/json"] = "json",
+            ["application/geo+json"] = "geojson",
+            ["application/x-protobuf"] = "pbf",
+            ["application/vnd.google.protobuf"] = "pbf",
+            ["application/vnd.flatgeobuf"] = "fgb",
+            ["application/x-flatgeobuf"] = "fgb",
+            ["application/flatgeobuf"] = "fgb",
+            ["application/geobuf"] = "geobuf",
+            ["application/vnd.apache.parquet"] = "parquet",
+            ["application/vnd.apache.arrow.stream"] = "arrow"
+        };
+
     /// <summary>
     /// Allowed query parameters for each endpoint
     /// </summary>
@@ -79,6 +113,7 @@ internal static partial class FeatureServerEndpoints
             Query
                 .Append("layerId")
                 .Append("layers")
+                .Append("layerDefs")
                 .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> GenerateRenderer = new[]
@@ -139,6 +174,15 @@ internal static partial class FeatureServerEndpoints
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> GetEstimates =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> ServiceGetEstimates =
+            new[] { "f", "layers", "layerId" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryDomains =
+            new[] { "f", "layers", "layerId" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> Relationships =
             new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> QueryTopFeatures = new[]
@@ -265,7 +309,8 @@ internal static partial class FeatureServerEndpoints
     private static FeatureServerResponse MapServiceToResponse(
         ServiceDefinition service,
         QueryLimits queryLimits,
-        bool supportsGeobufOutput)
+        bool supportsGeobufOutput,
+        bool supportsAttachmentUploads)
     {
         var objectIdField = ResolveServiceObjectIdField(service);
         var supportsStatistics = true;
@@ -282,7 +327,7 @@ internal static partial class FeatureServerEndpoints
             FullExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats, supportsGeobufOutput),
-            Capabilities = BuildServiceCapabilities(service),
+            Capabilities = BuildServiceCapabilities(service, supportsAttachmentUploads),
             Fields = [.. service.AllFields.Select(MapFieldInfo)],
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
@@ -330,7 +375,8 @@ internal static partial class FeatureServerEndpoints
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
         JsonElement? drawingInfo,
-        bool supportsGeobufOutput)
+        bool supportsGeobufOutput,
+        bool supportsAttachmentUploads)
     {
         var objectIdField = layer.ObjectIdFieldName;
         var displayField = ResolveDisplayFieldFromLayer(layer, objectIdField);
@@ -363,7 +409,7 @@ internal static partial class FeatureServerEndpoints
             DisplayField = displayField,
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
-            Capabilities = BuildLayerCapabilities(service, layer),
+            Capabilities = BuildLayerCapabilities(service, layer, supportsAttachmentUploads),
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
             SupportsCountDistinct = supportsStatistics,
@@ -373,7 +419,7 @@ internal static partial class FeatureServerEndpoints
             SupportsTrueCurve = false,
             SupportsRollbackOnFailureParameter = service.SupportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
-            HasAttachments = layer.SupportsAttachments,
+            HasAttachments = layer.SupportsAttachments && supportsAttachmentUploads,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = false,
@@ -466,7 +512,8 @@ internal static partial class FeatureServerEndpoints
             Length = field.Length,
             Nullable = field.Nullable,
             Editable = !field.IsGeometry,
-            DefaultValue = field.DefaultValue
+            DefaultValue = field.DefaultValue,
+            Domain = MapFieldDomainInfo(field.Domain, field.GeoServicesType)
         };
     }
 
@@ -559,7 +606,7 @@ internal static partial class FeatureServerEndpoints
         formats.Add(format.ToUpperInvariant());
     }
 
-    private static string BuildServiceCapabilities(ServiceDefinition service)
+    private static string BuildServiceCapabilities(ServiceDefinition service, bool supportsAttachmentUploads)
     {
         var capabilities = new List<string>();
         if (service.Capabilities.Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase)))
@@ -580,7 +627,7 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Extract");
         }
 
-        if (service.Layers.Any(layer => layer.SupportsAttachments))
+        if (supportsAttachmentUploads && service.Layers.Any(layer => layer.SupportsAttachments))
         {
             capabilities.Add("Uploads");
         }
@@ -588,7 +635,7 @@ internal static partial class FeatureServerEndpoints
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
-    private static string BuildLayerCapabilities(ServiceDefinition service, LayerDefinition layer)
+    private static string BuildLayerCapabilities(ServiceDefinition service, LayerDefinition layer, bool supportsAttachmentUploads)
     {
         var capabilities = new List<string>();
         if (service.Capabilities.Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase)))
@@ -609,12 +656,212 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Extract");
         }
 
-        if (layer.SupportsAttachments)
+        if (supportsAttachmentUploads && layer.SupportsAttachments)
         {
             capabilities.Add("Uploads");
         }
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    internal static bool HasAttachmentSurface(IServiceProvider services)
+        => services.GetService<IAttachmentStore>() != null;
+
+    internal static bool TryResolveRequestedServiceLayers(
+        ServiceDefinition service,
+        IReadOnlyDictionary<string, StringValues> values,
+        out LayerDefinition[] layers,
+        out bool selectorSpecified,
+        out string? error)
+    {
+        layers = service.Layers;
+        selectorSpecified = false;
+        error = null;
+
+        HashSet<int>? requestedLayerIds = null;
+
+        if (TryGetValue(values, "layerId", out var layerIdRaw) && !StringValues.IsNullOrEmpty(layerIdRaw))
+        {
+            if (!int.TryParse(layerIdRaw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            {
+                error = "layerId must be an integer.";
+                return false;
+            }
+
+            requestedLayerIds ??= [];
+            requestedLayerIds.Add(layerId);
+        }
+
+        if (TryGetValue(values, "layers", out var layersRaw) && !StringValues.IsNullOrEmpty(layersRaw))
+        {
+            if (!TryParseLayerIdList(layersRaw.ToString(), out var parsedLayerIds, out error))
+            {
+                return false;
+            }
+
+            requestedLayerIds ??= [];
+            foreach (var layerId in parsedLayerIds)
+            {
+                requestedLayerIds.Add(layerId);
+            }
+        }
+
+        if (requestedLayerIds is null or { Count: 0 })
+        {
+            return true;
+        }
+
+        selectorSpecified = true;
+        layers = [.. service.Layers.Where(layer => requestedLayerIds.Contains(layer.Id))];
+        if (layers.Length != requestedLayerIds.Count)
+        {
+            error = "layers must reference valid layer identifiers in the service.";
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static LayerDefinition[] FilterAccessibleLayers(
+        HttpContext context,
+        ServiceDefinition service,
+        IEnumerable<LayerDefinition> layers)
+        => [.. layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))];
+
+    internal static DomainInfo? MapQueryDomainInfo(LayerDefinition layer, FieldDefinition field)
+    {
+        if (field.Domain == null)
+        {
+            return null;
+        }
+
+        return new DomainInfo
+        {
+            Type = field.Domain.Type,
+            Name = field.Domain.Name,
+            FieldName = field.Name,
+            LayerId = layer.Id,
+            CodedValues = field.Domain.CodedValues?
+                .Select(static codedValue => new DomainCodedValueInfo
+                {
+                    Name = codedValue.Name,
+                    Code = Convert.ToString(codedValue.Code, CultureInfo.InvariantCulture) ?? string.Empty
+                })
+                .ToArray()
+        };
+    }
+
+    internal static object? MapFieldDomainInfo(FieldDomainDefinition? domain, string fieldType)
+    {
+        if (domain == null)
+        {
+            return null;
+        }
+
+        var fieldDomain = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["type"] = domain.Type,
+            ["name"] = domain.Name,
+            ["fieldType"] = fieldType
+        };
+
+        if (domain.CodedValues is { Length: > 0 })
+        {
+            fieldDomain["codedValues"] = domain.CodedValues
+                .Select(static codedValue => new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = codedValue.Name,
+                    ["code"] = codedValue.Code
+                })
+                .ToArray();
+        }
+
+        if (domain.Range != null)
+        {
+            fieldDomain["range"] = new object[] { domain.Range.MinValue, domain.Range.MaxValue };
+        }
+
+        if (!string.IsNullOrWhiteSpace(domain.MergePolicy))
+        {
+            fieldDomain["mergePolicy"] = domain.MergePolicy;
+        }
+
+        if (!string.IsNullOrWhiteSpace(domain.SplitPolicy))
+        {
+            fieldDomain["splitPolicy"] = domain.SplitPolicy;
+        }
+
+        return fieldDomain;
+    }
+
+    internal static ServiceQueryLayerResponse MapServiceQueryLayerResponse(int layerId, QueryResponse response)
+    {
+        return new ServiceQueryLayerResponse
+        {
+            Id = layerId,
+            GeometryType = response.GeometryType,
+            SpatialReference = response.SpatialReference,
+            DisplayFieldName = response.DisplayFieldName,
+            Fields = response.Fields,
+            HasZ = response.HasZ,
+            HasM = response.HasM,
+            ObjectIdFieldName = response.ObjectIdFieldName,
+            ObjectIds = response.ObjectIds,
+            Count = response.Count,
+            Extent = response.Extent,
+            UniqueIdField = response.UniqueIdField,
+            GlobalIdFieldName = response.GlobalIdFieldName,
+            Features = response.Features,
+            ExceededTransferLimit = response.ExceededTransferLimit
+        };
+    }
+
+    internal static bool TryParseLayerIdList(string rawValue, out int[] layerIds, out string? error)
+    {
+        layerIds = [];
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            error = "layers parameter must contain at least one layer ID.";
+            return false;
+        }
+
+        var normalized = rawValue.Trim();
+        if (normalized.StartsWith('[') &&
+            normalized.EndsWith(']') &&
+            normalized.Length >= 2)
+        {
+            normalized = normalized[1..^1];
+        }
+
+        var tokens = normalized.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0 || tokens.Any(static token => token.Length == 0))
+        {
+            error = "layers parameter must contain only numeric layer IDs.";
+            return false;
+        }
+
+        var ids = new HashSet<int>();
+        foreach (var token in tokens)
+        {
+            if (!int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            {
+                error = "layers parameter must contain only numeric layer IDs.";
+                return false;
+            }
+
+            ids.Add(layerId);
+        }
+
+        if (ids.Count == 0)
+        {
+            error = "layers parameter must contain at least one layer ID.";
+            return false;
+        }
+
+        layerIds = ids.ToArray();
+        return true;
     }
 
     private static LayerRelationshipInfo[] BuildRelationshipResponse(LayerDefinition layer)
@@ -655,72 +902,14 @@ internal static partial class FeatureServerEndpoints
     private static bool TryResolveQueryFormatFromAcceptHeader(StringValues acceptHeader, out string format)
     {
         format = "json";
-        if (StringValues.IsNullOrEmpty(acceptHeader))
+        if (!ContentNegotiationHelpers.TrySelectBestMediaType(_queryAcceptMediaTypes, acceptHeader, out var selectedMediaType) ||
+            !_queryAcceptFormatByMediaType.TryGetValue(selectedMediaType, out var resolvedFormat))
         {
             return false;
         }
 
-        foreach (var rawHeader in acceptHeader)
-        {
-            if (string.IsNullOrWhiteSpace(rawHeader))
-            {
-                continue;
-            }
-
-            foreach (var mediaTypeEntry in rawHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var mediaType = mediaTypeEntry.Split(';', 2, StringSplitOptions.TrimEntries)[0];
-
-                if (mediaType.Equals("application/vnd.flatgeobuf", StringComparison.OrdinalIgnoreCase) ||
-                    mediaType.Equals("application/x-flatgeobuf", StringComparison.OrdinalIgnoreCase) ||
-                    mediaType.Equals("application/flatgeobuf", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "fgb";
-                    return true;
-                }
-
-                if (mediaType.Equals("application/geobuf", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "geobuf";
-                    return true;
-                }
-
-                if (mediaType.Equals("application/x-protobuf", StringComparison.OrdinalIgnoreCase) ||
-                    mediaType.Equals("application/vnd.google.protobuf", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "pbf";
-                    return true;
-                }
-
-                if (mediaType.Equals("application/vnd.apache.parquet", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "parquet";
-                    return true;
-                }
-
-                if (mediaType.Equals("application/vnd.apache.arrow.stream", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "arrow";
-                    return true;
-                }
-
-                if (mediaType.Equals("application/geo+json", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "geojson";
-                    return true;
-                }
-
-                if (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase) ||
-                    mediaType.Equals("text/json", StringComparison.OrdinalIgnoreCase) ||
-                    mediaType.Equals("*/*", StringComparison.OrdinalIgnoreCase))
-                {
-                    format = "json";
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        format = resolvedFormat;
+        return true;
     }
 
     internal static bool TryValidateOutputFormat(

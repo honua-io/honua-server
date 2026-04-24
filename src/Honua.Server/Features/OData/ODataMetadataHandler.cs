@@ -91,7 +91,11 @@ internal sealed class ODataMetadataHandler(
 
         if (!XmlContentNegotiation.IsXmlAccepted(context.Request.Headers.Accept.ToString()))
         {
-            return Results.StatusCode(StatusCodes.Status406NotAcceptable);
+            return ODataUtilityService.CreateODataError(
+                context,
+                "NotAcceptable",
+                "Metadata requires an XML Accept header.",
+                StatusCodes.Status406NotAcceptable);
         }
 
         ODataUtilityService.SetODataHeaders(context);

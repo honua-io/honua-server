@@ -154,9 +154,26 @@ internal static class ObservabilityServiceCollectionExtensions
             });
 
             // OGC API Maps conformance caching policy
+            options.AddPolicy("OgcMapsLandingPage", policy =>
+            {
+                policy.Expire(ttl.OgcMapsLandingPage);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-maps", "metadata");
+            });
+
             options.AddPolicy("OgcMapsConformance", policy =>
             {
                 policy.Expire(ttl.OgcMapsConformance);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-maps", "metadata");
+            });
+
+            options.AddPolicy("OgcMapsOpenApi", policy =>
+            {
+                policy.Expire(ttl.OgcMapsOpenApi);
+                policy.SetVaryByQuery("f");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-maps", "metadata");
             });

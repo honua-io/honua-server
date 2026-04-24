@@ -27,6 +27,20 @@ public static partial class Extensions
     private const double DefaultSlowRequestThresholdMs = 1000.0;
     private const int DefaultMemorySamplingIntervalMs = 100;
     private const int DefaultHttpErrorStatusCode = 400;
+    private static readonly string[] _meterNames =
+    [
+        HonuaTelemetry.ServiceName,
+        "Honua.Wfs20.Transactions",
+        "Honua.Database.ConnectionPool",
+        "Honua.Production.Metrics"
+    ];
+    private static readonly string[] _activitySourceNames =
+    [
+        HonuaTelemetry.ServiceName,
+        "Honua.Server.Export",
+        "Honua.Wfs20.Transactions",
+        "Honua.Core.Metadata"
+    ];
 
     /// <summary>
     /// Adds the standard Honua service defaults for telemetry, health checks, and service discovery.
@@ -111,7 +125,7 @@ public static partial class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
-                .AddMeter(HonuaTelemetry.ServiceName)
+                .AddMeter(_meterNames)
                 .AddPrometheusExporter();
 
             if (useOtlp)
@@ -154,7 +168,7 @@ public static partial class Extensions
                 });
 
                 tracing
-                    .AddSource(HonuaTelemetry.ServiceName)
+                    .AddSource(_activitySourceNames)
                     .SetResourceBuilder(
                         ResourceBuilder.CreateDefault()
                             .AddService(

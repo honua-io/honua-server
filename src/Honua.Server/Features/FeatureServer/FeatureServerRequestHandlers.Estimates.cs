@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -14,13 +17,34 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> HandleGetEstimates(
         string serviceId,
         int layerId,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
-        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.getEstimates");
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
-        activity?.SetTag(HonuaTelemetry.Tags.Operation, "getEstimates");
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.GetEstimates, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "getEstimates",
+            HonuaTelemetry.Protocols.FeatureServer,
+            layerId.ToString(CultureInfo.InvariantCulture),
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -47,35 +71,49 @@ internal static partial class FeatureServerEndpoints
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var estimates = await featureReader.GetEstimatesAsync(layer.Id, cancellationToken);
 
-        ExtentInfo? extentInfo = null;
-        if (estimates.Extent.HasValue)
-        {
-            var ext = estimates.Extent.Value;
-            extentInfo = new ExtentInfo
-            {
-                Xmin = ext.MinX,
-                Ymin = ext.MinY,
-                Xmax = ext.MaxX,
-                Ymax = ext.MaxY,
-                SpatialReference = layer.SpatialReference.ToSpatialReferenceInfo()
-            };
-        }
-
         var response = new GetEstimatesResponse
         {
             Count = estimates.EstimatedCount,
-            Extent = extentInfo
+            Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
         };
 
-        return Results.Json(response, FeatureServerJsonContext.Default.GetEstimatesResponse, contentType: "application/json");
+        scope.SetSuccess((int)Math.Min(response.Count, int.MaxValue));
+        return Results.Json(
+            response,
+            FeatureServerJsonContext.Default.GetEstimatesResponse,
+            contentType: "application/json");
     }
 
     private static async Task<IResult> HandleServiceGetEstimates(
         string serviceId,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
-        using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.serviceGetEstimates");
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.ServiceGetEstimates, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
+            ? formatValue.ToString()
+            : null;
+        if (!TryValidateOutputFormat(requestedFormat, JsonOnlyFormats, out _, out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "getEstimates",
+            HonuaTelemetry.Protocols.FeatureServer,
+            "service",
+            context.TraceIdentifier);
+        scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -91,51 +129,45 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!TryResolveRequestedServiceLayers(service, values, out var selectedLayers, out _, out var selectionError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [selectionError ?? "Invalid layer selection."]);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, selectedLayers, service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        // Aggregate estimates across all layers
+        var accessibleLayers = FilterAccessibleLayers(context, service, selectedLayers);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        long totalCount = 0;
-        double? xmin = null, ymin = null, xmax = null, ymax = null;
+        var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 
-        foreach (var layer in service.Layers)
+        foreach (var layer in accessibleLayers)
         {
             var estimates = await featureReader.GetEstimatesAsync(layer.Id, cancellationToken);
-            totalCount += estimates.EstimatedCount;
-
-            if (estimates.Extent.HasValue)
+            layerEstimates.Add(new ServiceLayerEstimateInfo
             {
-                var ext = estimates.Extent.Value;
-                xmin = xmin.HasValue ? Math.Min(xmin.Value, ext.MinX) : ext.MinX;
-                ymin = ymin.HasValue ? Math.Min(ymin.Value, ext.MinY) : ext.MinY;
-                xmax = xmax.HasValue ? Math.Max(xmax.Value, ext.MaxX) : ext.MaxX;
-                ymax = ymax.HasValue ? Math.Max(ymax.Value, ext.MaxY) : ext.MaxY;
-            }
+                Id = layer.Id,
+                Count = estimates.EstimatedCount,
+                Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
+            });
         }
 
-        ExtentInfo? extentInfo = null;
-        if (xmin.HasValue)
+        var response = new ServiceGetEstimatesResponse
         {
-            extentInfo = new ExtentInfo
-            {
-                Xmin = xmin.Value,
-                Ymin = ymin!.Value,
-                Xmax = xmax!.Value,
-                Ymax = ymax!.Value,
-                SpatialReference = service.SpatialReference.ToSpatialReferenceInfo()
-            };
-        }
-
-        var response = new GetEstimatesResponse
-        {
-            Count = totalCount,
-            Extent = extentInfo
+            Layers = [.. layerEstimates]
         };
 
-        return Results.Json(response, FeatureServerJsonContext.Default.GetEstimatesResponse, contentType: "application/json");
+        scope.SetSuccess(response.Layers.Length);
+        return Results.Json(
+            response,
+            FeatureServerJsonContext.Default.ServiceGetEstimatesResponse,
+            contentType: "application/json");
     }
 }
