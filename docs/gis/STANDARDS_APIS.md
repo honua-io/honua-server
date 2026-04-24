@@ -17,6 +17,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
 | **Esri geoprocessing** | GPServer | `/rest/services/{id}/GPServer` | Esri GP compatibility over the canonical runtime |
 | **Geoprocessing (OGC)** | OGC API Processes | `/ogc/processes` | Standards-based async geoprocessing |
+| **Spec plan/apply engine** | REST + gRPC | `/v1/spec/*` + `geospatial.v1.SpecService` | Terraform-style plan/apply with content-hash artifact cache — see [Spec Engine reference](../developer/SPEC_ENGINE.md) |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---

@@ -280,8 +280,15 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         // Allow refresh to complete
         refreshCanProceed.SetResult(true);
 
-        // Wait for processing to complete
-        await Task.Delay(500);
+        // Poll for the skipped bookkeeping to settle instead of a fixed 500ms wait.
+        // Under CI load, the async invalidation → skipped-counter path can take more
+        // than 500ms to propagate, which caused intermittent failures showing
+        // SkippedCount=0 when the refresh hadn't yet finalized its skip accounting.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < deadline && coordinator.SkippedCount == 0)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
 
         coordinator.SkippedCount.Should().Be(1);
         coordinator.SuccessCount.Should().Be(0);

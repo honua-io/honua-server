@@ -308,9 +308,20 @@ public sealed class FeatureChangeWebhookDispatcherTests
             coordinator,
             [TimeSpan.FromMilliseconds(50), cts.Token])!;
 
-        await Task.Delay(TimeSpan.FromMilliseconds(250));
-
-        var extendCalls = database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync));
+        // Poll for at least 2 lease extensions with a generous timeout so CI-load scheduler
+        // jitter doesn't intermittently fail the test. Original fixed 250ms wait failed under
+        // contention when the Task scheduler delayed the first renewal past ~150ms.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        var extendCalls = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            extendCalls = database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.LockExtendAsync));
+            if (extendCalls >= 2)
+            {
+                break;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
         Assert.True(extendCalls >= 2, $"expected at least two lease extensions while delivery was in flight, but saw {extendCalls}");
 
         cts.Cancel();

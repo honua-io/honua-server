@@ -44,7 +44,11 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
     /// </summary>
     public SystemMetrics GetCurrentMetrics()
     {
-        ThrowIfDisposed();
+        // Do not throw when disposed: this is called from the OpenTelemetry
+        // sampling pipeline (AdaptiveSampler) which is registered at process
+        // scope and can outlive fixture-scoped collectors during test
+        // teardown. Returning the last-captured snapshot keeps tracing alive
+        // without crashing in-flight Npgsql commands.
         return _currentMetrics;
     }
 

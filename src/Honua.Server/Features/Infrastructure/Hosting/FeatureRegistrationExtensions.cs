@@ -27,6 +27,7 @@ using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Ogc.Classic;
 using Honua.Server.Features.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Stac;
+using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
 
@@ -65,6 +66,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeoprocessing(configuration);
         services.AddMcpOperatorSurface(configuration);
         services.AddSpatialAnalytics();
+        services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
         services.AddOrchestration();
 
@@ -101,6 +103,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSpatialAnalyticsOgcEndpoints();
         endpoints.MapGPServerEndpoints();
         endpoints.MapMcpOperatorSurface();
+        endpoints.MapSpecEndpoints();
 
         return endpoints;
     }
